@@ -1,18 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-cd /home/imre/fleet_ubuntu_mvp_full/deploy/docker
+cd /home/keegi/fleet_ubuntu_mvp_full/deploy/docker
 
 # Rebuild/restart services without destroying the database container/volume.
 # NOTE: `docker compose down` would remove the DB container; while the volume persists now,
 # keeping the containers up avoids unnecessary churn.
 docker compose up -d --build --remove-orphans
 
-cd /home/imre/fleet_ubuntu_mvp_full/agent
+cd /home/keegi/fleet_ubuntu_mvp_full/agent
 go build -o fleet-agent ./cmd/fleet-agent
 
 # Deploy the freshly built agent binary to the remote host(s)
-ansible 192.168.100.216 -m copy -a "src=/home/imre/fleet_ubuntu_mvp_full/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" -i hosts -b
+ansible 192.168.100.216 -m copy -a "src=/home/keegi/fleet_ubuntu_mvp_full/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" -i hosts -b
 
 # Restart agent service so new binary is actually used
 ansible 192.168.100.216 -i hosts -b -m shell -a "systemctl restart fleet-agent || true; systemctl is-active fleet-agent || true"
