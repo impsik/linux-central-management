@@ -36,6 +36,7 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 
 ### 2) Configure secrets
 ```bash
+Clone the code: git@github.com:impsik/linux-central-management.git
 cd deploy/docker
 # If your system hides dotfiles, you can use env.example instead.
 cp .env.example .env 2>/dev/null || cp env.example .env
