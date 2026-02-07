@@ -1,0 +1,26 @@
+#!/usr/bin/env ansible-playbook
+- name: Kasutaja eemaldamine
+  hosts: "{{ server }}"
+  remote_user: imre
+  become: true
+  become_method: ansible.builtin.sudo
+
+  vars_prompt:
+    - name: "username"
+      prompt: "Enter username "
+      private: false
+    - name: "server"
+      prompt: "Enter server FQDN name, group name or allservers:vod"
+      private: false
+
+  tasks:
+    - name: Remove the user {{ username }}
+      ansible.builtin.user:
+        name: "{{ username }}"
+        state: absent
+        remove: true
+
+    - name: "Restart sshd service"
+      ansible.builtin.service:
+        name: ssh
+        state: restarted

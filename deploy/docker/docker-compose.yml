@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: fleet
+      POSTGRES_USER: fleet
+      POSTGRES_PASSWORD: fleet
+    ports:
+      - "5432:5432"
+    volumes:
+      - fleet_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U fleet -d fleet"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  server:
+    build:
+      context: ../../server
+    env_file:
+      - .env
+    environment:
+      # Defaults; can be overridden in deploy/docker/.env
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://fleet:fleet@db:5432/fleet}
+      ANSIBLE_DIR: /ansible
+      ANSIBLE_INVENTORY: /ansible/inventory.yml
+      ANSIBLE_LOG_DIR: /ansible_logs
+
+      # UI bootstrap admin user (set in .env; do NOT commit real values)
+      BOOTSTRAP_USERNAME: ${BOOTSTRAP_USERNAME:-admin}
+      BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:-}
+      UI_COOKIE_SECURE: ${UI_COOKIE_SECURE:-false}
+
+      # Once Alembic is in use, disable auto-create in production deployments:
+      DB_AUTO_CREATE_TABLES: "true"
+      # Admin migration endpoint should remain disabled in production:
+      ADMIN_ENABLE_MIGRATIONS_ENDPOINT: "false"
+
+      # Agent auth tokens (set in .env; do NOT commit real values)
+      AGENT_SHARED_TOKEN: ${AGENT_SHARED_TOKEN:-}
+      # High-risk feature: only enable if agent has FLEET_TERMINAL_TOKEN set too
+      AGENT_TERMINAL_TOKEN: ${AGENT_TERMINAL_TOKEN:-}
+
+      # Background metrics refresh
+      METRICS_BACKGROUND_REFRESH_SECONDS: ${METRICS_BACKGROUND_REFRESH_SECONDS:-60}
+      METRICS_BACKGROUND_BATCH_LIMIT: ${METRICS_BACKGROUND_BATCH_LIMIT:-50}
+
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../ansible:/ansible:ro
+      - ../../ansible_logs:/ansible_logs
+      - /home/imre/.ssh:/root/.ssh:ro
+
+volumes:
+  fleet_postgres_data:

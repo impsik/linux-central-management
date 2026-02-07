@@ -1,0 +1,14 @@
+# Install as: /etc/sudoers.d/fleet-agent (0440)
+Cmnd_Alias FLEET_APT_UPDATE = /usr/bin/apt-get update
+Cmnd_Alias FLEET_APT_UPGRADE = /usr/bin/apt-get -y install --only-upgrade *
+Cmnd_Alias FLEET_APT_UPGRADE_I = /usr/bin/apt-get install --only-upgrade *
+Cmnd_Alias FLEET_APT_REINSTALL = /usr/bin/apt-get -y install --reinstall *
+Cmnd_Alias FLEET_APT_REINSTALL_I = /usr/bin/apt-get install --reinstall *
+Cmnd_Alias FLEET_APT_REMOVE = /usr/bin/apt-get -y remove *
+Cmnd_Alias FLEET_APT_REMOVE_I = /usr/bin/apt-get remove *
+Cmnd_Alias FLEET_PASSWD = /usr/bin/passwd -S *, /usr/bin/passwd -l *, /usr/bin/passwd -u *
+Cmnd_Alias FLEET_GETENT = /usr/bin/getent shadow *
+Cmnd_Alias FLEET_SYSTEMCTL = /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl enable *, /usr/bin/systemctl disable *
+Cmnd_Alias FLEET_USERMOD = /usr/sbin/usermod --expiredate *, /usr/sbin/usermod -s *
+
+%fleet-agent ALL=(root) NOPASSWD: FLEET_APT_UPDATE, FLEET_APT_UPGRADE, FLEET_APT_UPGRADE_I, FLEET_APT_REINSTALL, FLEET_APT_REINSTALL_I, FLEET_APT_REMOVE, FLEET_APT_REMOVE_I, FLEET_PASSWD, FLEET_GETENT, FLEET_SYSTEMCTL, FLEET_USERMOD

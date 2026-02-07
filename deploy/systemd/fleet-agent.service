@@ -1,0 +1,16 @@
+[Unit]
+Description=Fleet Agent (Ubuntu MVP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=FLEET_SERVER_URL=http://mgmt.example.local:8000
+Environment=FLEET_AGENT_ID=srv-001
+Environment=FLEET_LABELS=env=prod,role=web
+ExecStart=/usr/local/bin/fleet-agent
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

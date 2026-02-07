@@ -1,0 +1,5 @@
+Alembic migrations for fleet server.
+
+Usage:
+  alembic upgrade head
+  alembic revision -m "..." --autogenerate

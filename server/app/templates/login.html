@@ -1,0 +1,142 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Fleet UI Login</title>
+  <script>
+    (function(){
+      try {
+        const saved = localStorage.getItem('fleet_theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const theme = saved || (prefersDark ? 'dark' : 'light');
+        document.documentElement.dataset.theme = theme;
+      } catch (e) {
+        document.documentElement.dataset.theme = 'dark';
+      }
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --panel: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #475569;
+      --primary: #2563eb;
+      --shadow: rgba(2, 6, 23, 0.08);
+    }
+    :root[data-theme="dark"] {
+      --bg: #0b1220;
+      --panel: #0f172a;
+      --border: #1f2937;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --primary: #2563eb;
+      --shadow: rgba(0,0,0,0.45);
+    }
+    /* Prevent 100% width inputs from overflowing due to padding/borders */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:var(--bg); margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; color:var(--text); }
+    .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:1.5rem; width:380px; max-width:92vw; box-shadow:0 10px 30px var(--shadow); }
+    .card-head { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; }
+    .theme-btn { border:1px solid var(--border); background:transparent; color:var(--muted); border-radius:10px; padding:0.4rem 0.6rem; cursor:pointer; font-weight:600; }
+    h1 { font-size:1.25rem; margin:0 0 1rem 0; }
+    label { display:block; font-size:0.85rem; color:var(--muted); margin-top:0.75rem; }
+    input { width:100%; padding:0.65rem 0.75rem; border:1px solid var(--border); border-radius:10px; font-size:0.95rem; outline:none; background: #fff; }
+    :root[data-theme="dark"] input { background: rgba(255,255,255,0.04); color: var(--text); }
+    input:focus { border-color:#1d4ed8; box-shadow:0 0 0 3px rgba(29,78,216,0.15); }
+    button { margin-top:1rem; width:100%; padding:0.7rem 0.75rem; border:none; border-radius:10px; background:#1d4ed8; color:white; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:0.6; cursor:not-allowed; }
+    .err { display:none; }
+    .hint { margin-top:0.75rem; color:var(--muted); font-size:0.8rem; }
+    .caps-hint { margin-top:0.5rem; color:#b45309; font-size:0.8rem; display:none; }
+    .toast-container { position:fixed; right:1.5rem; bottom:1.5rem; display:flex; flex-direction:column; gap:0.75rem; z-index:2000; pointer-events:none; }
+    .toast { background:var(--panel); color:var(--text); border:1px solid var(--border); padding:0.7rem 0.95rem; border-radius:10px; min-width:200px; max-width:320px; box-shadow:0 12px 30px var(--shadow); opacity:0; transform:translateY(8px); transition:opacity 0.2s ease, transform 0.2s ease; }
+    .toast.show { opacity:1; transform:translateY(0); }
+    .toast-success { border-color: rgba(16, 185, 129, 0.5); }
+    .toast-error { border-color: rgba(239, 68, 68, 0.6); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="card-head">
+      <h1>Sign in</h1>
+      <button class="theme-btn" id="theme-btn" type="button">Theme</button>
+    </div>
+    <label for="u">Username</label>
+    <input id="u" autocomplete="username" />
+    <label for="p">Password</label>
+    <input id="p" type="password" autocomplete="current-password" />
+    <div class="caps-hint" id="caps-hint">Caps Lock is on.</div>
+    <button id="btn">Login</button>
+    <div class="err" id="err"></div>
+    <div class="hint">Your session is stored in a secure cookie (HttpOnly). Passwords are stored hashed in DB.</div>
+  </div>
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+  <script>
+    const themeBtn = document.getElementById('theme-btn');
+    function getTheme() { return document.documentElement.dataset.theme || 'dark'; }
+    function setTheme(t) { document.documentElement.dataset.theme = t; try { localStorage.setItem('fleet_theme', t); } catch {} }
+    themeBtn?.addEventListener('click', () => setTheme(getTheme() === 'dark' ? 'light' : 'dark'));
+
+    const u = document.getElementById('u');
+    const p = document.getElementById('p');
+    const btn = document.getElementById('btn');
+    const err = document.getElementById('err');
+    const capsHint = document.getElementById('caps-hint');
+
+    setTimeout(() => { u?.focus(); }, 0);
+
+    const updateCapsHint = (event) => {
+      if (!capsHint) return;
+      const caps = event && event.getModifierState ? event.getModifierState('CapsLock') : false;
+      capsHint.style.display = caps ? 'block' : 'none';
+    };
+    p?.addEventListener('keydown', updateCapsHint);
+    p?.addEventListener('keyup', updateCapsHint);
+    p?.addEventListener('blur', () => { if (capsHint) capsHint.style.display = 'none'; });
+
+    function showToast(message, type = 'info', timeoutMs = 3000) {
+      const container = document.getElementById('toast-container');
+      if (!container) return;
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add('show'));
+      const remove = () => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 200);
+      };
+      setTimeout(remove, timeoutMs);
+    }
+
+    async function login() {
+      err.textContent = '';
+      btn.disabled = true;
+      try {
+        const resp = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: u.value || '', password: p.value || '' })
+        });
+        if (!resp.ok) {
+          let msg = resp.statusText;
+          try { const j = await resp.json(); msg = j.detail || j.message || msg; } catch {}
+          throw new Error(msg);
+        }
+        showToast('Signed in.', 'success');
+        setTimeout(() => { window.location.href = '/'; }, 400);
+      } catch (e) {
+        const msg = e.message || String(e);
+        showToast(msg, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    btn.addEventListener('click', (e) => { e.preventDefault(); login(); });
+    p.addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+  </script>
+</body>
+</html>

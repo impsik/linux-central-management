@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Fleet Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+  <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; height: 100vh; background: #111827; color: #e5e7eb; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    .bar { padding: 10px 12px; display:flex; gap:12px; align-items:center; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .tag { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-weight:700; }
+    .hint { color:#9ca3af; font-size: 12px; }
+    #terminal { height: calc(100vh - 44px); }
+  </style>
+</head>
+<body>
+  <div class="bar">
+    <div>Terminal:</div>
+    <div class="tag" id="aid">-</div>
+    <div class="hint" id="hint"></div>
+  </div>
+  <div id="terminal"></div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const agentId = params.get('agent_id') || '';
+    const cmd = params.get('cmd') || '';
+    document.getElementById('aid').textContent = agentId || '-';
+    document.getElementById('hint').textContent = cmd ? 'Auto-running command…' : '';
+
+    const term = new Terminal({ convertEol: true });
+    term.open(document.getElementById("terminal"));
+
+    if (!agentId) {
+      term.write("Missing agent_id\\r\\n");
+      throw new Error("Missing agent_id");
+    }
+
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${encodeURIComponent(agentId)}`);
+    ws.binaryType = "arraybuffer";
+
+    ws.onopen = () => {
+      term.write(`Connected to ${agentId}\\r\\n`);
+      if (cmd) {
+        // Send the command + newline
+        ws.send(new TextEncoder().encode(cmd + "\\n"));
+      }
+    };
+    ws.onmessage = (e) => {
+      if (e.data instanceof ArrayBuffer) {
+        term.write(new TextDecoder().decode(e.data));
+      } else {
+        term.write(e.data);
+      }
+    };
+    ws.onerror = () => term.write("\\r\\n[ERROR] WebSocket error\\r\\n");
+    ws.onclose = (e) => term.write(`\\r\\nConnection closed (code: ${e.code}, reason: ${e.reason || 'unknown'})\\r\\n`);
+  </script>
+</body>
+</html>

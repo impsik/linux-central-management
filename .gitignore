@@ -1,0 +1,25 @@
+# Secrets / local env
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+
+# Local virtualenvs
+.venv/
+venv/
+server/.venv*/
+
+# Go
+agent/fleet-agent
+*.exe
+
+# Logs
+*.log
+ansible_logs/
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
