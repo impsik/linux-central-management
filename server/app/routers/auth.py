@@ -78,7 +78,7 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
 
 @router.get("/admin-info")
 def auth_admin_info():
-    return {"admin_username": getattr(settings, "bootstrap_username", "imre")}
+    return {"admin_username": getattr(settings, "bootstrap_username", "admin")}
 
 
 @router.post("/register")

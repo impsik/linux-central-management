@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ansible_store_output_max_chars: int = 20000
 
     # Ansible SSH defaults (used by in-app Ansible runner)
-    ansible_ssh_user: str = "imre"
+    ansible_ssh_user: str = "ubuntu"
     ansible_private_key_file: str | None = None  # e.g. /root/.ssh/id_ed25519
 
     # UI auth
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # Bootstrap UI user (only used if the user doesn't exist yet)
     # SECURITY: do NOT ship a default password; require env override on first run.
-    bootstrap_username: str = "imre"
+    bootstrap_username: str = "admin"
     bootstrap_password: str | None = None
 
     # Terminal proxy to agent (high-risk feature)

@@ -170,7 +170,7 @@ def run_playbook(playbook: str, agent_ids: list[str], extra_vars: dict[str, Any]
     log_name = f"{slug}-{timestamp}-{run_id}.log"
     log_path = (log_dir / log_name) if log_dir_ok else None
 
-    ssh_user = (getattr(settings, "ansible_ssh_user", None) or "imre").strip() or "imre"
+    ssh_user = (getattr(settings, "ansible_ssh_user", None) or "ubuntu").strip() or "ubuntu"
     key_file = (getattr(settings, "ansible_private_key_file", None) or "").strip() or None
 
     # Best-effort default key selection inside container

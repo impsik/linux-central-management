@@ -1,25 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 
-cd /home/keegi/fleet_ubuntu_mvp_full/deploy/docker
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+cd "$ROOT_DIR/deploy/docker"
 
 # Rebuild/restart services without destroying the database container/volume.
 # NOTE: `docker compose down` would remove the DB container; while the volume persists now,
 # keeping the containers up avoids unnecessary churn.
 docker compose up -d --build --remove-orphans
 
-cd /home/keegi/fleet_ubuntu_mvp_full/agent
+cd "$ROOT_DIR/agent"
 go build -o fleet-agent ./cmd/fleet-agent
 
 # Deploy the freshly built agent binary to the remote host(s)
-ansible 192.168.100.216 -m copy -a "src=/home/keegi/fleet_ubuntu_mvp_full/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" -i hosts -b
+ansible 192.168.100.216 -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" -i "$ROOT_DIR/hosts" -b
 
 # Restart agent service so new binary is actually used
-ansible 192.168.100.216 -i hosts -b -m shell -a "systemctl restart fleet-agent || true; systemctl is-active fleet-agent || true"
+ansible 192.168.100.216 -i "$ROOT_DIR/hosts" -b -m shell -a "systemctl restart fleet-agent || true; systemctl is-active fleet-agent || true"
 
 # Kill any stray user-run agent instances (to avoid duplicate heartbeats / confusion)
 # (Don't use pkill -f with a pattern that appears in our own command line.)
-ansible 192.168.100.216 -i hosts -b -m shell -a "pkill -u imre -x fleet-agent || true"
+ansible 192.168.100.216 -i "$ROOT_DIR/hosts" -b -m shell -a "pkill -x fleet-agent || true"
 
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 TERM_TOKEN="${TERM_TOKEN:-}"
@@ -31,7 +33,7 @@ TERM_TOKEN="${TERM_TOKEN:-}"
 #      FLEET_LABELS=env=prod,role=web \
 #      FLEET_AGENT_TOKEN="{{ agent_token }}" \
 #      FLEET_TERMINAL_TOKEN="{{ term_token }}" \
-#      nohup /home/imre/fleet-agent >/tmp/fleet-agent.log 2>&1 &' \
+#      nohup /home/USER/fleet-agent >/tmp/fleet-agent.log 2>&1 &' \
 #  -e "agent_token=$AGENT_TOKEN term_token=$TERM_TOKEN" \
 #  -i hosts
 
@@ -42,7 +44,7 @@ TERM_TOKEN="${TERM_TOKEN:-}"
 #      FLEET_LABELS=env=prod,role=database \
 #      FLEET_AGENT_TOKEN="{{ agent_token }}" \
 #      FLEET_TERMINAL_TOKEN="{{ term_token }}" \
-#      nohup /home/imre/fleet-agent >/tmp/fleet-agent.log 2>&1 &' \
+#      nohup /home/USER/fleet-agent >/tmp/fleet-agent.log 2>&1 &' \
 #  -e "agent_token=$AGENT_TOKEN term_token=$TERM_TOKEN" \
 #  -i hosts
 

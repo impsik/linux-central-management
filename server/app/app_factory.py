@@ -44,7 +44,7 @@ def _startup() -> None:
     from .models import AppUser
 
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    username = getattr(settings, "bootstrap_username", None) or "imre"
+    username = getattr(settings, "bootstrap_username", None) or "admin"
     password = getattr(settings, "bootstrap_password", None)
     if not password:
         logger.warning(

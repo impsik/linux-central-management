@@ -53,7 +53,9 @@ services:
     volumes:
       - ../../ansible:/ansible:ro
       - ../../ansible_logs:/ansible_logs
-      - /home/imre/.ssh:/root/.ssh:ro
+      # Optional: mount SSH keys for in-container Ansible.
+      # Set SSH_DIR in deploy/docker/.env (example: SSH_DIR=/home/youruser/.ssh)
+      - ${SSH_DIR:-/root/.ssh}:/root/.ssh:ro
 
 volumes:
   fleet_postgres_data:

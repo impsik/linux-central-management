@@ -1,7 +1,7 @@
 #!/usr/bin/env ansible-playbook
 - name: Kasutaja eemaldamine
   hosts: "{{ server }}"
-  remote_user: imre
+  remote_user: ubuntu
   become: true
   become_method: ansible.builtin.sudo
 
