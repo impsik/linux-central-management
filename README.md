@@ -32,7 +32,7 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 
 ### 1) Prereqs
 - Docker + Docker Compose
-sudo apt install docker.io docker-compose
+- sudo apt install docker.io docker-compose
 
 ### 2) Configure secrets (do not commit)
 ```bash
