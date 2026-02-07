@@ -36,7 +36,8 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 ### 2) Configure secrets (do not commit)
 ```bash
 cd deploy/docker
-cp .env.example .env
+# If your system hides dotfiles, you can use env.example instead.
+cp .env.example .env 2>/dev/null || cp env.example .env
 # edit .env and set:
 # BOOTSTRAP_PASSWORD, AGENT_SHARED_TOKEN, (optional) AGENT_TERMINAL_TOKEN
 ```
@@ -156,7 +157,7 @@ Do **not** commit:
 - logs (`ansible_logs/`)
 - local build artifacts (agent binary, `.venv`, caches)
 
-See `.gitignore` and `deploy/docker/.env.example`.
+See `.gitignore` and `deploy/docker/.env.example` (or `deploy/docker/env.example`).
 
 ### Pre-publish checklist
 Before you push to a public GitHub repo:
