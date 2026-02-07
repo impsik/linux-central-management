@@ -25,28 +25,7 @@ ansible 192.168.100.216 -i "$ROOT_DIR/hosts" -b -m shell -a "pkill -x fleet-agen
 
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 TERM_TOKEN="${TERM_TOKEN:-}"
-#ansible 192.168.100.216 \
-#  -m shell \
-#  -a 'killall -9 fleet-agent >/dev/null 2>&1 || true; \
-#      FLEET_SERVER_URL=http://192.168.100.215:8000 \
-#      FLEET_AGENT_ID=192.168.100.216 \
-#      FLEET_LABELS=env=prod,role=web \
-#      FLEET_AGENT_TOKEN="{{ agent_token }}" \
-#      FLEET_TERMINAL_TOKEN="{{ term_token }}" \
-#      nohup /home/USER/fleet-agent >/tmp/fleet-agent.log 2>&1 &' \
-#  -e "agent_token=$AGENT_TOKEN term_token=$TERM_TOKEN" \
-#  -i hosts
 
-#ansible 192.168.100.184 \
-#  -m shell \
-#  -a 'FLEET_SERVER_URL=http://192.168.1.9:8000 \
-#      FLEET_AGENT_ID=srv-003 \
-#      FLEET_LABELS=env=prod,role=database \
-#      FLEET_AGENT_TOKEN="{{ agent_token }}" \
-#      FLEET_TERMINAL_TOKEN="{{ term_token }}" \
-#      nohup /home/USER/fleet-agent >/tmp/fleet-agent.log 2>&1 &' \
-#  -e "agent_token=$AGENT_TOKEN term_token=$TERM_TOKEN" \
-#  -i hosts
 
 killall -9 fleet-agent >/dev/null 2>&1 || true
 
