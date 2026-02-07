@@ -34,7 +34,7 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Docker + Docker Compose
 - sudo apt install docker.io docker-compose
 
-### 2) Configure secrets (do not commit)
+### 2) Configure secrets
 ```bash
 cd deploy/docker
 # If your system hides dotfiles, you can use env.example instead.
