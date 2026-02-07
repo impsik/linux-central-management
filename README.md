@@ -186,3 +186,14 @@ grep -RIn --exclude-dir=.venv --exclude-dir=server/.venv --exclude-dir=node_modu
 - No DB dumps, exports, or user lists.
 
 Tip: keep `deploy/docker/.env` locally for development, but never commit it.
+
+### Factory reset (wipe local DB)
+If you want a truly clean instance (no users/hosts/keys/jobs), you can delete the local Postgres volume.
+
+From `deploy/docker/`:
+```bash
+docker compose down -v
+docker compose up -d --build
+```
+
+This removes all local DB contents (including `app_users`, SSH keys, jobs history, metrics snapshots, etc.).
