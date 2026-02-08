@@ -30,10 +30,32 @@ go build -o fleet-agent ./cmd/fleet-agent
 #   TARGETS=192.168.100.228 ./script.sh
 TARGETS="${TARGETS:-all}"
 
+# Ensure install dir exists
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m file -a "path=/opt/fleet-agent state=directory mode=0755"
+
+# Copy agent binary
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755"
 
-# Restart agent service so new binary is actually used
-ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m shell -a "systemctl restart fleet-agent || true; systemctl is-active fleet-agent || true"
+# Optional: bootstrap a systemd service on targets.
+# Provide at least SERVER_URL + AGENT_TOKEN for a working agent:
+#   SERVER_URL=http://<SERVER_IP>:8000 AGENT_TOKEN=<shared> ./script.sh
+SERVER_URL="${SERVER_URL:-}"
+REMOTE_AGENT_TOKEN="${AGENT_TOKEN:-}"
+REMOTE_LABELS="${AGENT_LABELS:-env=prod,role=host}"
+
+if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
+  echo "[INFO] Installing/updating fleet-agent systemd service on targets"
+
+  # Write env file (root-readable)
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m copy -a "dest=/etc/fleet-agent.env mode=0600 content=FLEET_SERVER_URL=$SERVER_URL\nFLEET_AGENT_ID=$(hostname -s)\nFLEET_LABELS=$REMOTE_LABELS\nFLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN\n"
+
+  # Write systemd unit
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m copy -a "dest=/etc/systemd/system/fleet-agent.service mode=0644 content=[Unit]\nDescription=Fleet Agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nEnvironmentFile=/etc/fleet-agent.env\nExecStart=/opt/fleet-agent/fleet-agent\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n"
+
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m shell -a "systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl is-active fleet-agent"
+else
+  echo "[WARN] SERVER_URL and/or AGENT_TOKEN not set; skipping systemd service setup. Binary copied only."
+fi
 
 # Kill any stray user-run agent instances (to avoid duplicate heartbeats / confusion)
 # (Don't use pkill -f with a pattern that appears in our own command line.)
