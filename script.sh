@@ -62,8 +62,24 @@ if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
   # Write env file (root-readable)
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -a "dest=/etc/fleet-agent.env mode=0600 content=FLEET_SERVER_URL=$SERVER_URL\nFLEET_AGENT_ID=$(hostname -s)\nFLEET_LABELS=$REMOTE_LABELS\nFLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN\n"
 
-  # Write systemd unit
-  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -a "dest=/etc/systemd/system/fleet-agent.service mode=0644 content=[Unit]\nDescription=Fleet Agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nEnvironmentFile=/etc/fleet-agent.env\nExecStart=/opt/fleet-agent/fleet-agent\nRestart=always\nRestartSec=2\n\n[Install]\nWantedBy=multi-user.target\n"
+  # Write systemd unit (use shell heredoc; ad-hoc copy module is awkward with spaces/newlines)
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "cat > /etc/systemd/system/fleet-agent.service <<'EOF'
+[Unit]
+Description=Fleet Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/fleet-agent.env
+ExecStart=/opt/fleet-agent/fleet-agent
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 /etc/systemd/system/fleet-agent.service"
 
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl is-active fleet-agent"
 else
