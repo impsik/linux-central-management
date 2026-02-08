@@ -63,7 +63,8 @@ Login with the bootstrap user you set in `deploy/docker/.env`.
 
 ### 1) Build (or copy the binary)
 ```bash
-cd agent
+cd ../../agent
+sudo apt  install golang-go
 go build -o fleet-agent ./cmd/fleet-agent
 ```
 
