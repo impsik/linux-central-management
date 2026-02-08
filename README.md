@@ -53,7 +53,7 @@ curl -s http://localhost:8000/health
 ```
 
 Open UI:
-- http://IP ADDRESS:8000/
+- http://<IP ADDRESS>:8000/
 
 Login with the bootstrap user you set in `deploy/docker/.env`.
 
@@ -73,7 +73,7 @@ scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
 ```bash
 export FLEET_SERVER_URL=http://<SERVER_IP>:8000
 export FLEET_AGENT_ID=<unique-id>        # can be host IP or stable name
-export FLEET_LABELS=env=prod,role=web
+export FLEET_LABELS=env=prod,role=web    # Add env and role as you see fit
 export FLEET_AGENT_TOKEN=<AGENT_SHARED_TOKEN>
 
 ./fleet-agent
