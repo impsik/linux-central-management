@@ -3,12 +3,24 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-cd "$ROOT_DIR/deploy/docker"
+RUN_SERVER="${RUN_SERVER:-1}"
 
-# Rebuild/restart services without destroying the database container/volume.
-# NOTE: `docker compose down` would remove the DB container; while the volume persists now,
-# keeping the containers up avoids unnecessary churn.
-docker compose up -d --build --remove-orphans
+if [ "$RUN_SERVER" = "1" ]; then
+  cd "$ROOT_DIR/deploy/docker"
+
+  # Docker Compose expects a .env next to docker-compose.yml.
+  if [ ! -f .env ]; then
+    echo "[ERROR] $ROOT_DIR/deploy/docker/.env not found."
+    echo "Create it first: cd deploy/docker && cp .env.example .env (or cp env.example .env)"
+    echo "Then edit it and set BOOTSTRAP_PASSWORD, AGENT_SHARED_TOKEN, (optional) AGENT_TERMINAL_TOKEN."
+    exit 1
+  fi
+
+  # Rebuild/restart services without destroying the database container/volume.
+  # NOTE: `docker compose down` would remove the DB container; while the volume persists now,
+  # keeping the containers up avoids unnecessary churn.
+  docker compose up -d --build --remove-orphans
+fi
 
 cd "$ROOT_DIR/agent"
 go build -o fleet-agent ./cmd/fleet-agent
