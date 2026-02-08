@@ -25,9 +25,20 @@ var upgrader = websocket.Upgrader{
 }
 
 func StartTerminalServer() {
+	// Terminal feature is intentionally opt-in.
+	// Back-compat env var names:
+	// - preferred: FLEET_TERMINAL_TOKEN (agent-side)
+	// - legacy:   AGENT_TERMINAL_TOKEN (server-side name; some deploys reused it)
+	// - legacy:   TERM_TOKEN (used by script.sh)
 	token := getenv("FLEET_TERMINAL_TOKEN", "")
 	if token == "" {
-		log.Println("Terminal server disabled (FLEET_TERMINAL_TOKEN not set)")
+		token = getenv("AGENT_TERMINAL_TOKEN", "")
+	}
+	if token == "" {
+		token = getenv("TERM_TOKEN", "")
+	}
+	if token == "" {
+		log.Println("Terminal server disabled (set FLEET_TERMINAL_TOKEN)")
 		return
 	}
 	listenAddr := getenv("FLEET_TERMINAL_LISTEN", "0.0.0.0:18080")

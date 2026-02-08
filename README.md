@@ -129,6 +129,10 @@ All agent endpoints require a shared token:
 The agent has an optional websocket PTY feature.
 Enable only on trusted networks and only with explicit tokens.
 
+Token wiring (must match):
+- **Server** env: `AGENT_TERMINAL_TOKEN`
+- **Agent** env: `FLEET_TERMINAL_TOKEN` (agent also accepts legacy `TERM_TOKEN` / `AGENT_TERMINAL_TOKEN`)
+
 ---
 
 ## Background metrics refresh
