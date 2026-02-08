@@ -53,7 +53,7 @@ curl -s http://localhost:8000/health
 ```
 
 Open UI:
-- http://localhost:8000/
+- http://IP ADDRESS:8000/
 
 Login with the bootstrap user you set in `deploy/docker/.env`.
 
@@ -66,6 +66,7 @@ Login with the bootstrap user you set in `deploy/docker/.env`.
 cd ../../agent
 sudo apt  install golang-go
 go build -o fleet-agent ./cmd/fleet-agent
+scp fleet-agent 192.168.100.222:/home/USERNAME/fleet-agent
 ```
 
 ### 2) Run (foreground)
@@ -140,7 +141,7 @@ Config via env (server):
 
 ## Developer workflow
 
-### script.sh
+### script.sh (Change the script's IP addresses to test it out) 
 `./script.sh` is a convenience script that:
 - rebuilds/restarts Docker Compose server
 - builds the agent
@@ -150,55 +151,3 @@ Config via env (server):
 It expects local environment variables for tokens if you use the “local agent” portion.
 
 ---
-
-## Cleaning for GitHub
-This repo should NOT contain real credentials.
-
-Do **not** commit:
-- `deploy/docker/.env`
-- root `.env`
-- any real tokens/passwords/keys
-- logs (`ansible_logs/`)
-- local build artifacts (agent binary, `.venv`, caches)
-
-See `.gitignore` and `deploy/docker/.env.example` (or `deploy/docker/env.example`).
-
-### Pre-publish checklist
-Before you push to a public GitHub repo:
-
-1) **Delete local-only secrets/artifacts**
-```bash
-./scripts/sanitize.sh --apply
-```
-
-2) **Confirm secret env files are gone**
-```bash
-test ! -f deploy/docker/.env
-test ! -f .env
-```
-
-3) **Scan the repo for accidental secrets** (tokens/passwords)
-```bash
-grep -RIn --exclude-dir=.venv --exclude-dir=server/.venv --exclude-dir=node_modules \
-  "BOOTSTRAP_PASSWORD\\|AGENT_SHARED_TOKEN\\|AGENT_TERMINAL_TOKEN\\|TERM_TOKEN\\|PASSWORD\\|TOKEN" .
-```
-
-4) **(If you already committed secrets)** rotate them and rewrite history
-- Rotate the leaked tokens/passwords.
-- Use `git filter-repo` (or BFG) to remove the secret file(s) from history.
-
-5) **Double-check you’re not uploading data**
-- No DB dumps, exports, or user lists.
-
-Tip: keep `deploy/docker/.env` locally for development, but never commit it.
-
-### Factory reset (wipe local DB)
-If you want a truly clean instance (no users/hosts/keys/jobs), you can delete the local Postgres volume.
-
-From `deploy/docker/`:
-```bash
-docker compose down -v
-docker compose up -d --build
-```
-
-This removes all local DB contents (including `app_users`, SSH keys, jobs history, metrics snapshots, etc.).
