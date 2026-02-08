@@ -60,11 +60,11 @@ if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
   echo "[INFO] Installing/updating fleet-agent systemd service on targets"
 
   # Write env file on the REMOTE host (so hostname is correct)
-  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"$(hostname -s)\"; cat > /etc/fleet-agent.env <<EOF
-FLEET_SERVER_URL=$SERVER_URL
-FLEET_AGENT_ID=$HOSTID
-FLEET_LABELS=$REMOTE_LABELS
-FLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"\$(hostname -s)\"; SERVER_URL=\"$SERVER_URL\"; LABELS=\"$REMOTE_LABELS\"; TOKEN=\"$REMOTE_AGENT_TOKEN\"; cat > /etc/fleet-agent.env <<EOF
+FLEET_SERVER_URL=\$SERVER_URL
+FLEET_AGENT_ID=\$HOSTID
+FLEET_LABELS=\$LABELS
+FLEET_AGENT_TOKEN=\$TOKEN
 EOF"
 
   # Write systemd unit (use shell heredoc; ad-hoc copy module is awkward with spaces/newlines)
