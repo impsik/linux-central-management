@@ -48,6 +48,8 @@ cp .env.example .env 2>/dev/null || cp env.example .env
 ### 3) Start
 ```bash
 cd deploy/docker
+cp .env.example .env 2>/dev/null || cp env.example .env
+# edit .env
 docker-compose up -d --build
 curl -s http://localhost:8000/health
 ```
