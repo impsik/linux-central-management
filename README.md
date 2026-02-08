@@ -27,7 +27,7 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - `/jobs/*` to dispatch/inspect jobs
 
 ---
-
+![Screenshot](docs/image.png)
 ## Quick start (server)
 
 ### 1) Prereqs
