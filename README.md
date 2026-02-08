@@ -34,7 +34,7 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Docker + Docker Compose
 - If needed: sudo apt install docker.io docker-compose -y
 
-### 2) Configure secrets
+### 2) Clone the code and configure secrets
 ```bash
 Clone the code:
 git clone https://github.com/impsik/linux-central-management.git
