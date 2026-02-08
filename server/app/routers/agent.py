@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..dispatcher import dispatcher
-from ..models import Host, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
+from ..models import Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
 from ..services.agent_auth import require_agent_token
@@ -196,6 +196,38 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     if host:
         host.last_seen = now
+
+    # Persist CVE check results (best-effort)
+    if payload.status in ("success", "failed") and job.job_type == "cve-check" and payload.stdout:
+        try:
+            import json
+
+            host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
+            if host:
+                data = json.loads(payload.stdout or "{}")
+                cve = str(data.get("cve") or job.payload.get("cve") or "").strip().upper()
+                if cve:
+                    affected = bool(data.get("affected") or False)
+                    summary = (str(data.get("summary") or "") or "").strip() or None
+                    raw = (str(data.get("raw") or "") or "").strip() or None
+
+                    row = db.execute(
+                        select(HostCVEStatus).where(HostCVEStatus.host_id == host.id, HostCVEStatus.cve == cve)
+                    ).scalar_one_or_none()
+                    if not row:
+                        row = HostCVEStatus(host_id=host.id, cve=cve)
+                        db.add(row)
+
+                    row.affected = affected
+                    row.summary = summary
+                    row.raw = raw
+                    row.checked_at = now
+        except Exception:
+            # best-effort
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
     # Persist package update availability cache when an update-check job completes
     if payload.status == "success" and job.job_type == "query-pkg-updates" and payload.stdout:

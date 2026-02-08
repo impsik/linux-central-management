@@ -95,6 +95,9 @@
             <div class="filter-section-body" id="vuln-filter-body">
               <div class="vuln-filter">
                 <div class="vuln-row">
+                  <input id="vuln-cve" class="host-search" type="text" placeholder="CVE (e.g. CVE-2021-45105)" />
+                </div>
+                <div class="vuln-row">
                   <input id="vuln-package" class="host-search" type="text" placeholder="Package name (e.g. openssl)" />
                 </div>
                 <div class="vuln-row">
@@ -2068,6 +2071,7 @@
       const labelsSection = document.getElementById('labels-filter-section');
       const labelsToggle = document.getElementById('labels-filter-toggle');
       const labelsToggleBtn = document.getElementById('labels-toggle-btn');
+      const cveEl = document.getElementById('vuln-cve');
       const pkgEl = document.getElementById('vuln-package');
       const verEl = document.getElementById('vuln-version');
       const applyBtn = document.getElementById('vuln-apply');
@@ -2152,34 +2156,73 @@
       // Toggle open/close when clicking the header or the + button
       vulnToggle?.addEventListener('click', (e) => {
         // Prevent focusing inputs from toggling
-        if (e.target && (e.target.id === 'vuln-package' || e.target.id === 'vuln-version')) return;
+        if (e.target && (e.target.id === 'vuln-cve' || e.target.id === 'vuln-package' || e.target.id === 'vuln-version')) return;
         e.preventDefault();
         const isOpen = vulnSection?.classList.contains('open');
         setVulnOpen(!isOpen);
       });
 
       async function applyVulnFilter() {
+        const cve = (cveEl?.value || '').trim().toUpperCase();
         const name = (pkgEl?.value || '').trim();
         const version = (verEl?.value || '').trim();
 
-        if (!name) {
-          if (statusEl) statusEl.textContent = 'Enter a package name.';
+        if (!cve && !name) {
+          if (statusEl) statusEl.textContent = 'Enter a CVE or a package name.';
           setVulnOpen(true);
           return;
         }
 
-        if (statusEl) statusEl.textContent = 'Searching…';
+        if (statusEl) statusEl.textContent = cve ? 'Running CVE check…' : 'Searching…';
         if (applyBtn) applyBtn.disabled = true;
         if (clearBtn) clearBtn.disabled = true;
 
         try {
-          const params = new URLSearchParams({ name });
-          if (version) params.set('version', version);
-          const resp = await fetch(`/search/packages?${params.toString()}`);
-          if (!resp.ok) throw new Error(resp.statusText);
-          const rows = await resp.json();
+          if (cve) {
+            if (!/^CVE-\d{4}-\d{4,}$/i.test(cve)) {
+              throw new Error('Invalid CVE format. Example: CVE-2021-45105');
+            }
 
-          vulnFilteredAgentIds = new Set((rows || []).map(r => r.agent_id));
+            // Run on all currently loaded online hosts.
+            const targets = (allHosts || []).map(h => h.agent_id).filter(Boolean);
+            if (!targets.length) throw new Error('No hosts loaded');
+
+            const resp0 = await fetch('/jobs/cve-check', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agent_ids: targets, cve })
+            });
+            if (!resp0.ok) {
+              let msg = resp0.statusText;
+              try { const err = await resp0.json(); msg = err.detail || err.message || msg; } catch { }
+              throw new Error(msg);
+            }
+            const out = await resp0.json();
+            const jobId = out.job_id;
+            if (statusEl) statusEl.textContent = `CVE check started (job_id: ${jobId}). Waiting…`;
+
+            const data = await pollJob(jobId, statusEl, 180000);
+            const affectedIds = [];
+            for (const r of (data?.runs || [])) {
+              if (r.status !== 'success' || !r.stdout) continue;
+              try {
+                const j = JSON.parse(r.stdout);
+                if (j && j.affected === true) affectedIds.push(r.agent_id);
+              } catch { }
+            }
+
+            vulnFilteredAgentIds = new Set(affectedIds);
+            if (statusEl) statusEl.textContent = `CVE ${cve}: ${affectedIds.length} host(s) affected (online).`;
+          } else {
+            const params = new URLSearchParams({ name });
+            if (version) params.set('version', version);
+            const resp = await fetch(`/search/packages?${params.toString()}`);
+            if (!resp.ok) throw new Error(resp.statusText);
+            const rows = await resp.json();
+            vulnFilteredAgentIds = new Set((rows || []).map(r => r.agent_id));
+            if (statusEl) statusEl.textContent = `Package ${name}: ${vulnFilteredAgentIds.size} host(s) matched.`;
+          }
+
           if (clearBtn) clearBtn.disabled = false;
           // Reset selection when changing vuln filter to avoid hidden selections
           selectedAgentIds = new Set();
@@ -2187,8 +2230,6 @@
           // Reset last verification (different host set now)
           lastPkgVerification = null;
 
-          const count = vulnFilteredAgentIds.size;
-          if (statusEl) statusEl.textContent = `Found ${count} host(s) with ${name}${version ? ` = ${version}` : ''}.`;
           applyHostFilters();
           setVulnOpen(true);
         } catch (e) {
@@ -2205,6 +2246,9 @@
         vulnFilteredAgentIds = null;
         if (statusEl) statusEl.textContent = '';
         if (clearBtn) clearBtn.disabled = true;
+        if (cveEl) cveEl.value = '';
+        if (pkgEl) pkgEl.value = '';
+        if (verEl) verEl.value = '';
         // Reset selection when clearing vuln filter
         selectedAgentIds = new Set();
         if (selectVisibleEl) selectVisibleEl.checked = false;

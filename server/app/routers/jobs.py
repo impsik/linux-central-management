@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Job, JobRun
-from ..schemas import JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade
+from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.targets import resolve_agent_ids
@@ -158,6 +158,35 @@ async def inventory_now(payload: JobCreateInventoryNow, db: Session = Depends(ge
     return {"job_id": created.job_key, "targets": targets}
 
 
+@router.post("/cve-check")
+async def cve_check(payload: JobCreateCVECheck, db: Session = Depends(get_db)):
+    """Run an Ubuntu-native CVE inspection (pro fix <CVE> --dry-run) on targeted agents."""
+
+    cve = (payload.cve or "").strip().upper()
+    if not cve.startswith("CVE-"):
+        raise HTTPException(400, "invalid cve format")
+
+    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
+    if not targets:
+        raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="cve-check",
+            payload={"cve": cve},
+            agent_ids=targets,
+            commit=False,
+        )
+
+    await push_job_to_agents(
+        agent_ids=targets,
+        job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "cve-check", "cve": cve},
+    )
+
+    return {"job_id": created.job_key, "targets": targets, "cve": cve}
+
+
 @router.post("/dist-upgrade")
 async def dist_upgrade(payload: JobCreateDistUpgrade, db: Session = Depends(get_db)):
     """Run apt-get dist-upgrade/full-upgrade on targeted agents."""
@@ -192,7 +221,7 @@ def job_status(job_id: str, db: Session = Depends(get_db)):
     runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
 
     result_data = {}
-    if job.job_type in ("query-users", "query-services", "query-pkg-version") and runs:
+    if job.job_type in ("query-users", "query-services", "query-pkg-version", "cve-check") and runs:
         run = runs[0]
         if run.status == "success" and run.stdout:
             import json
@@ -223,7 +252,7 @@ def job_status(job_id: str, db: Session = Depends(get_db)):
                 "finished_at": r.finished_at,
                 "exit_code": r.exit_code,
                 "error": r.error,
-                "stdout": r.stdout if job.job_type in ("query-users", "query-services", "query-pkg-version") else None,
+                "stdout": r.stdout if job.job_type in ("query-users", "query-services", "query-pkg-version", "cve-check") else None,
             }
             for r in runs
         ],

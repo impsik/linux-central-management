@@ -61,3 +61,9 @@ class JobCreateServiceControl(BaseModel):
     labels: Optional[Dict[str,str]] = None
     service_name: str
     action: str  # start, stop, restart
+
+
+class JobCreateCVECheck(BaseModel):
+    agent_ids: Optional[List[str]] = None
+    labels: Optional[Dict[str, str]] = None
+    cve: str

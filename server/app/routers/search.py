@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Host, HostPackage
+from ..models import Host, HostCVEStatus, HostPackage
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -35,3 +35,24 @@ def search_packages(name: str, version: str | None = None, db: Session = Depends
             stmt = stmt.where(HostPackage.version == version)
     rows = db.execute(stmt).all()
     return [{"hostname": r[0], "agent_id": r[1], "version": r[2], "arch": r[3]} for r in rows]
+
+
+@router.get("/cve")
+def search_cve(cve: str, affected: bool = True, db: Session = Depends(get_db)):
+    cve_norm = (cve or "").strip().upper()
+    if not cve_norm.startswith("CVE-"):
+        return []
+
+    stmt = (
+        select(Host.hostname, Host.agent_id, HostCVEStatus.affected, HostCVEStatus.checked_at)
+        .join(HostCVEStatus, Host.id == HostCVEStatus.host_id)
+        .where(HostCVEStatus.cve == cve_norm)
+    )
+    if affected:
+        stmt = stmt.where(HostCVEStatus.affected == True)  # noqa: E712
+
+    rows = db.execute(stmt).all()
+    return [
+        {"hostname": r[0], "agent_id": r[1], "affected": bool(r[2]), "checked_at": r[3]}
+        for r in rows
+    ]

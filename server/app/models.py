@@ -44,6 +44,27 @@ class HostPackageUpdate(Base):
         Index("ix_host_package_updates_name", "name"),
     )
 
+
+class HostCVEStatus(Base):
+    __tablename__ = "host_cve_status"
+
+    host_id = Column(UUID(as_uuid=True), ForeignKey("hosts.id", ondelete="CASCADE"), primary_key=True)
+    cve = Column(String, primary_key=True)
+
+    affected = Column(Boolean, nullable=False, default=False, index=True)
+    summary = Column(String)
+
+    checked_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    # raw output (best-effort, may be truncated by agent)
+    raw = Column(Text)
+
+    __table_args__ = (
+        Index("ix_host_cve_status_host_id", "host_id"),
+        Index("ix_host_cve_status_cve", "cve"),
+        Index("ix_host_cve_status_cve_affected", "cve", "affected"),
+    )
+
 class HostUser(Base):
     __tablename__ = "host_users"
     host_id = Column(UUID(as_uuid=True), ForeignKey("hosts.id", ondelete="CASCADE"), primary_key=True)

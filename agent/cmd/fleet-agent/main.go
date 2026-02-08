@@ -74,6 +74,7 @@ type Job struct {
 	Action      string   `json:"action,omitempty"`
 	PackageName string   `json:"package_name,omitempty"`
 	Refresh     bool     `json:"refresh,omitempty"`
+	CVE         string   `json:"cve,omitempty"`
 }
 
 type JobEvent struct {
@@ -598,6 +599,14 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		ev.Error = errMsg
 		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
 		return
+
+	case "cve-check":
+		cve := strings.TrimSpace(job.CVE)
+		if cve == "" {
+			// backwards compat: allow passing via package_name
+			cve = strings.TrimSpace(job.PackageName)
+		}
+		stdout, stderr, code, errMsg := checkCVE(ctx, cve)
 		if code == 0 && errMsg == "" {
 			ev.Status = "success"
 		} else {
@@ -740,17 +749,17 @@ func queryServiceDetails(ctx context.Context, serviceName string) (string, strin
 	}
 
 	out := map[string]any{
-		"name": name,
-		"fragment_path": m["FragmentPath"],
-		"memory_current": memCur,
+		"name":                 name,
+		"fragment_path":        m["FragmentPath"],
+		"memory_current":       memCur,
 		"memory_current_human": formatBytes(memBytes),
-		"requires": m["Requires"],
-		"wants": m["Wants"],
-		"wanted_by": m["WantedBy"],
-		"consists_of": m["ConsistsOf"],
-		"conflicts": m["Conflicts"],
-		"before": m["Before"],
-		"after": m["After"],
+		"requires":             m["Requires"],
+		"wants":                m["Wants"],
+		"wanted_by":            m["WantedBy"],
+		"consists_of":          m["ConsistsOf"],
+		"conflicts":            m["Conflicts"],
+		"before":               m["Before"],
+		"after":                m["After"],
 	}
 
 	j, err := json.Marshal(out)
@@ -1279,6 +1288,10 @@ func runPkgInstall(ctx context.Context, packages []string) (string, string, int,
 		return string(append(updOut, out...)), "", exit, fmt.Sprintf("apt-get install failed: %v", err)
 	}
 	return string(append(updOut, out...)), "", 0, ""
+}
+
+func checkCVE(ctx context.Context, cve string) (string, string, int, string) {
+	return internal.CheckCVE(ctx, cve)
 }
 
 func runDistUpgrade(ctx context.Context) (string, string, int, string) {
@@ -2178,7 +2191,7 @@ func controlUser(ctx context.Context, username, action string) (string, string, 
 				return allOutput.String(), "", 1, fmt.Sprintf("passwd -u failed: %v, output: %s", err1, outStr)
 			}
 		}
-		passwd_unlocked:
+	passwd_unlocked:
 
 		// Remove expiration (set to empty string to clear expiration)
 		cmd2 := exec.CommandContext(controlCtx, "sudo", "-n", "usermod", "--expiredate", "", username)
