@@ -14,14 +14,18 @@ cd "$ROOT_DIR/agent"
 go build -o fleet-agent ./cmd/fleet-agent
 
 # Deploy the freshly built agent binary to the remote host(s)
-ansible 192.168.100.216 -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" -i "$ROOT_DIR/hosts" -b
+# Targets default to "all" hosts from $ROOT_DIR/hosts. Override with:
+#   TARGETS=192.168.100.228 ./script.sh
+TARGETS="${TARGETS:-all}"
+
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755"
 
 # Restart agent service so new binary is actually used
-ansible 192.168.100.216 -i "$ROOT_DIR/hosts" -b -m shell -a "systemctl restart fleet-agent || true; systemctl is-active fleet-agent || true"
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m shell -a "systemctl restart fleet-agent || true; systemctl is-active fleet-agent || true"
 
 # Kill any stray user-run agent instances (to avoid duplicate heartbeats / confusion)
 # (Don't use pkill -f with a pattern that appears in our own command line.)
-ansible 192.168.100.216 -i "$ROOT_DIR/hosts" -b -m shell -a "pkill -x fleet-agent || true"
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b -m shell -a "pkill -x fleet-agent || true"
 
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 TERM_TOKEN="${TERM_TOKEN:-}"
