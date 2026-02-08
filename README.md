@@ -66,7 +66,7 @@ Login with the bootstrap user you set in `deploy/docker/.env`.
 cd ../../agent
 sudo apt  install golang-go
 go build -o fleet-agent ./cmd/fleet-agent
-scp fleet-agent 192.168.100.222:/home/USERNAME/fleet-agent
+scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
 ```
 
 ### 2) Run (foreground)
