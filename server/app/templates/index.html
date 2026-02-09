@@ -119,6 +119,7 @@
                   <div id="cve-packages-panel" style="display:none;margin:0.5rem 0 0.25rem 0;">
                     <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:0.25rem;">Affected packages (CVE)</div>
                     <div id="cve-packages-list" style="display:flex;flex-direction:column;gap:0.25rem;max-height:220px;overflow:auto;padding:0.25rem 0.25rem;border:1px solid #2d3748;border-radius:8px;"></div>
+                    <div id="cve-plan-summary" style="font-size:0.8rem;color:#94a3b8;margin-top:0.35rem;"></div>
                     <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem;">We’ll upgrade the selected packages on each selected host, but only if that host reported the package as affected.</div>
                   </div>
 
@@ -2120,6 +2121,7 @@
       const upgradeStatusEl = document.getElementById('upgrade-status');
       const cvePackagesPanel = document.getElementById('cve-packages-panel');
       const cvePackagesList = document.getElementById('cve-packages-list');
+      const cvePlanSummaryEl = document.getElementById('cve-plan-summary');
       const vulnSection = document.getElementById('vuln-filter-section');
       const vulnToggle = document.getElementById('vuln-filter-toggle');
       const vulnToggleBtn = document.getElementById('vuln-toggle-btn');
@@ -2347,6 +2349,7 @@
         if (!cve || !lastCveCheck || lastCveCheck.cve !== cve || !Array.isArray(lastCveUnionPackages) || lastCveUnionPackages.length === 0) {
           cvePackagesPanel.style.display = 'none';
           cvePackagesList.innerHTML = '';
+          if (cvePlanSummaryEl) cvePlanSummaryEl.innerHTML = '';
           selectedCvePackages = new Set();
           return;
         }
@@ -2388,15 +2391,66 @@
         const isCveMode = !!cve && lastCveCheck && lastCveCheck.cve === cve && Array.isArray(lastCveUnionPackages) && lastCveUnionPackages.length > 0;
         renderCvePackagesPanel(isCveMode ? cve : '');
 
+        // In CVE mode, only enable upgrade if at least one selected host has at least one effective package.
+        let effectiveTotalPkgs = 0;
+        let effectiveHostsWithPkgs = 0;
+        let effectiveHostsWithoutPkgs = 0;
+
+        if (isCveMode && selectedCvePackages && selectedCvePackages.size > 0) {
+          const selectedHosts = Array.from(selectedAgentIds);
+          for (const aid of selectedHosts) {
+            const r = lastCveCheck?.resultsByAgentId?.[aid];
+            const pk = Array.isArray(r?.packages) ? r.packages : [];
+            const eff = pk.filter(p => selectedCvePackages.has(p));
+            if (eff.length > 0) {
+              effectiveHostsWithPkgs += 1;
+              effectiveTotalPkgs += eff.length;
+            } else {
+              effectiveHostsWithoutPkgs += 1;
+            }
+          }
+        }
+
         const canRun = isCveMode
-          ? (totalSelected > 0 && selectedCvePackages && selectedCvePackages.size > 0)
+          ? (totalSelected > 0 && selectedCvePackages && selectedCvePackages.size > 0 && effectiveTotalPkgs > 0)
           : (totalSelected > 0 && !!pkgName);
 
         if (upgradeBtn) upgradeBtn.disabled = !canRun;
 
+        if (cvePlanSummaryEl) {
+          if (isCveMode) {
+            const selectedPkgs = Array.from(selectedCvePackages || []).sort();
+            const selectedHosts = Array.from(selectedAgentIds);
+
+            const planLines = [];
+            planLines.push(`<div><b>Plan:</b> ${selectedHosts.length} host(s), ${selectedPkgs.length} package(s) selected.</div>`);
+
+            if (selectedHosts.length > 0) {
+              planLines.push(`<div><b>Effective upgrades:</b> ${effectiveHostsWithPkgs}/${selectedHosts.length} host(s), ${effectiveTotalPkgs} package upgrade(s) total.</div>`);
+
+              // Show per-host counts (compact)
+              const rows = selectedHosts.map(aid => {
+                const r = lastCveCheck?.resultsByAgentId?.[aid];
+                const pk = Array.isArray(r?.packages) ? r.packages : [];
+                const eff = pk.filter(p => selectedCvePackages.has(p));
+                return `<div style="display:flex;justify-content:space-between;gap:8px;"><span><code>${escapeHtml(aid)}</code></span><span>${eff.length} pkg(s)</span></div>`;
+              }).join('');
+              planLines.push(`<details style="margin-top:4px"><summary>Per-host package counts</summary><div style="margin-top:4px">${rows}</div></details>`);
+
+              if (effectiveTotalPkgs === 0) {
+                planLines.push(`<div style="margin-top:4px;color:#fbbf24">No selected packages apply to the selected host(s).</div>`);
+              }
+            }
+
+            cvePlanSummaryEl.innerHTML = planLines.join('');
+          } else {
+            cvePlanSummaryEl.innerHTML = '';
+          }
+        }
+
         if (upgradeStatusEl) {
           if (isCveMode) {
-            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}. Packages selected: ${selectedCvePackages.size}.`;
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}. Packages selected: ${(selectedCvePackages && selectedCvePackages.size) ? selectedCvePackages.size : 0}.`;
           } else if (pkgName) {
             upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Package: ${pkgName}`;
           } else if (cve) {
