@@ -2247,16 +2247,23 @@
           setVulnOpen(true);
 
           // UX: if CVE search found affected hosts, jump straight to Packages for the first one.
-          try {
-            if (cve && Array.isArray(lastCveAffectedAgentIds) && lastCveAffectedAgentIds.length > 0) {
-              const first = lastCveAffectedAgentIds[0];
-              const hostObj = (allHosts || []).find(h => h.agent_id === first);
-              const hostname = hostObj?.hostname || first;
-              // Use the same selection path as clicking a host in the UI.
-              selectHost(first, hostname);
-              showPackages();
-            }
-          } catch { }
+          // UX: jump into Packages view for the first affected host.
+          // Use a small timeout so the host list has finished re-rendering before we switch views.
+          if (cve && Array.isArray(lastCveAffectedAgentIds) && lastCveAffectedAgentIds.length > 0) {
+            const first = lastCveAffectedAgentIds[0];
+            const hostObj = (allHosts || []).find(h => h.agent_id === first);
+            const hostname = hostObj?.hostname || first;
+            if (statusEl) statusEl.textContent = `CVE ${cve}: opening Packages for ${hostname}…`;
+            setTimeout(() => {
+              try {
+                selectHost(first, hostname);
+                showPackages();
+              } catch (e2) {
+                console.warn('Failed to auto-open Packages after CVE search:', e2);
+                if (statusEl) statusEl.textContent = `CVE ${cve}: failed to open Packages (${e2?.message || e2}).`;
+              }
+            }, 50);
+          }
 
         } catch (e) {
           vulnFilteredAgentIds = null;
@@ -2359,6 +2366,25 @@
           selectedAgentIds = new Set();
         }
         applyHostFilters(); // re-render to update checkbox states + status text
+
+        // If user is doing a CVE workflow and just selected visible hosts, jump into Packages for convenience.
+        try {
+          const cve = (cveEl?.value || '').trim().toUpperCase();
+          if (selectVisibleEl.checked && cve && Array.isArray(lastCveAffectedAgentIds) && lastCveAffectedAgentIds.length > 0) {
+            const first = Array.from(selectedAgentIds)[0] || lastCveAffectedAgentIds[0];
+            const hostObj = (allHosts || []).find(h => h.agent_id === first);
+            const hostname = hostObj?.hostname || first;
+            if (statusEl) statusEl.textContent = `Selected hosts for ${cve}. Opening Packages for ${hostname}…`;
+            setTimeout(() => {
+              try {
+                selectHost(first, hostname);
+                showPackages();
+              } catch (e2) {
+                console.warn('Failed to auto-open Packages after select-all:', e2);
+              }
+            }, 50);
+          }
+        } catch { }
       });
 
       async function upgradeSelected() {
