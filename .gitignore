@@ -2,6 +2,10 @@
 .env
 .env.*
 
+# Allow example env files to be tracked
+!.env.example
+!deploy/docker/.env.example
+
 # Python
 __pycache__/
 *.pyc
