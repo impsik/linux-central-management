@@ -2271,7 +2271,11 @@
 
             // If nothing is affected, don't apply a filter that hides everything.
             vulnFilteredAgentIds = affectedIds.length ? new Set(affectedIds) : null;
-            if (statusEl) statusEl.textContent = `CVE ${cve}: ${affectedIds.length} host(s) affected (online). Affected packages: ${lastCveUnionPackages.length}.`;
+            if (statusEl) {
+              const total = targets.length;
+              const scopeMsg = affectedIds.length ? `Showing ${affectedIds.length} affected host(s) in the list.` : `Showing all hosts (none affected).`;
+              statusEl.textContent = `CVE ${cve}: ${affectedIds.length}/${total} host(s) affected (online). Affected packages: ${lastCveUnionPackages.length}. ${scopeMsg}`;
+            }
           } else {
             const params = new URLSearchParams({ name });
             if (version) params.set('version', version);
