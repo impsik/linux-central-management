@@ -13,6 +13,7 @@ from ..models import Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, H
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
 from ..services.agent_auth import require_agent_token
+from ..services.db_utils import transaction
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
