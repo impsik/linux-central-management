@@ -1499,6 +1499,14 @@
       const updatesOnlyEl = document.getElementById('packages-updates-only');
       if (updatesOnlyEl) updatesOnlyEl.checked = false;
 
+      // Reset package selection when switching hosts (prevents stale selections and enables CVE pre-select)
+      selectedPackages = new Set();
+      const selPkgsEl = document.getElementById('select-visible-packages');
+      if (selPkgsEl) selPkgsEl.checked = false;
+      currentPackageName = null;
+      const infoEl = document.getElementById('package-info');
+      if (infoEl) infoEl.innerHTML = '';
+
       const hostActions = document.getElementById('host-actions');
       if (hostActions) hostActions.style.display = 'flex';
 
