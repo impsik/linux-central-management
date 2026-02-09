@@ -2268,13 +2268,24 @@
 
       updateUpgradeControlsFn = function updateUpgradeControls() {
         const pkgName = (pkgEl?.value || '').trim();
+        const cve = (cveEl?.value || '').trim().toUpperCase();
         const totalSelected = selectedAgentIds.size;
         const visibleSelected = lastRenderedAgentIds.filter(aid => selectedAgentIds.has(aid)).length;
-        if (upgradeBtn) upgradeBtn.disabled = !(pkgName && totalSelected > 0);
+
+        // Enable when:
+        // - package name is provided (package upgrade), OR
+        // - CVE is provided (fallback to dist-upgrade / security upgrades)
+        const canRun = totalSelected > 0 && (!!pkgName || !!cve);
+        if (upgradeBtn) upgradeBtn.disabled = !canRun;
+
         if (upgradeStatusEl) {
-          upgradeStatusEl.textContent = pkgName
-            ? `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Package: ${pkgName}`
-            : `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Enter a package name above to enable upgrade.`;
+          if (pkgName) {
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Package: ${pkgName}`;
+          } else if (cve) {
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}. Action: apply available upgrades (dist-upgrade).`;
+          } else {
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Enter a CVE or a package name to enable upgrade.`;
+          }
         }
       };
 
@@ -2292,11 +2303,8 @@
       async function upgradeSelected() {
         const pkgName = (pkgEl?.value || '').trim();
         const vulnVersion = (verEl?.value || '').trim();
-        if (!pkgName) {
-          if (upgradeStatusEl) upgradeStatusEl.textContent = 'Enter a package name first.';
-          setVulnOpen(true);
-          return;
-        }
+        const cve = (cveEl?.value || '').trim().toUpperCase();
+
         const agentIds = Array.from(selectedAgentIds);
         if (agentIds.length === 0) {
           if (upgradeStatusEl) upgradeStatusEl.textContent = 'Select at least one host.';
@@ -2304,14 +2312,29 @@
           return;
         }
 
-        if (upgradeStatusEl) upgradeStatusEl.textContent = `Starting upgrade of ${pkgName} on ${agentIds.length} host(s)…`;
+        // If user searched by CVE but didn't specify a package, we still want a sane "do something" action.
+        // We can't reliably map CVE -> exact package from Ubuntu Pro output in this MVP, so fall back to dist-upgrade.
+        const mode = pkgName ? 'pkg-upgrade' : (cve ? 'dist-upgrade' : 'none');
+        if (mode === 'none') {
+          if (upgradeStatusEl) upgradeStatusEl.textContent = 'Enter a CVE or a package name first.';
+          setVulnOpen(true);
+          return;
+        }
+
+        if (upgradeStatusEl) {
+          upgradeStatusEl.textContent = (mode === 'pkg-upgrade')
+            ? `Starting upgrade of ${pkgName} on ${agentIds.length} host(s)…`
+            : `Applying available upgrades (dist-upgrade) on ${agentIds.length} host(s)…`;
+        }
         if (upgradeBtn) upgradeBtn.disabled = true;
 
         try {
-          const resp = await fetch('/jobs/pkg-upgrade', {
+          const resp = await fetch(mode === 'pkg-upgrade' ? '/jobs/pkg-upgrade' : '/jobs/dist-upgrade', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds, packages: [pkgName] })
+            body: mode === 'pkg-upgrade'
+              ? JSON.stringify({ agent_ids: agentIds, packages: [pkgName] })
+              : JSON.stringify({ agent_ids: agentIds })
           });
           if (!resp.ok) {
             let msg = resp.statusText;
@@ -2325,7 +2348,14 @@
           const jobId = out.job_id;
           const targets = out.targets || agentIds;
           if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade job started (job_id: ${jobId}). Waiting for completion…`;
-          await pollUpgradeJob(jobId, targets, pkgName, upgradeStatusEl);
+          await pollUpgradeJob(jobId, targets, mode === 'pkg-upgrade' ? pkgName : 'dist-upgrade', upgradeStatusEl);
+
+          if (mode !== 'pkg-upgrade') {
+            // For dist-upgrade, we don't have a reliable CVE→package mapping to verify here.
+            // The user can re-run CVE check or look at Packages -> Updates.
+            if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished (dist-upgrade). Re-run the CVE check to confirm remediation.`;
+            return;
+          }
 
           // Verify installed version after upgrade (real check, not just job success)
           if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. Verifying installed version of ${pkgName}…`;
@@ -2544,8 +2574,13 @@
         upgradeSelected();
       });
 
-      // Update upgrade controls when package name changes (also reset verification badges)
+      // Update upgrade controls when inputs change (also reset verification badges)
       pkgEl?.addEventListener('input', () => {
+        lastPkgVerification = null;
+        updateUpgradeControlsFn();
+        applyHostFilters();
+      });
+      cveEl?.addEventListener('input', () => {
         lastPkgVerification = null;
         updateUpgradeControlsFn();
         applyHostFilters();
