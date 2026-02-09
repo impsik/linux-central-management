@@ -2493,7 +2493,29 @@
             if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. Verifying installed version of ${chosenPkg}…`;
             await verifyPackageVersions(targets, chosenPkg, vulnVersion, upgradeStatusEl);
           } else {
-            if (upgradeStatusEl) upgradeStatusEl.innerHTML = `Upgrade finished. <a href="/jobs/${encodeURIComponent(jobId)}/logs.zip" target="_blank" rel="noopener noreferrer">Download logs.zip</a>. Re-run CVE check to confirm remediation.`;
+            if (upgradeStatusEl) {
+              const rerunId = `rerun-cve-${jobId}`;
+              upgradeStatusEl.innerHTML =
+                `Upgrade finished. ` +
+                `<a href="/jobs/${encodeURIComponent(jobId)}/logs.zip" target="_blank" rel="noopener noreferrer">Download logs.zip</a>. ` +
+                `<button id="${rerunId}" class="btn btn-sm" type="button" style="margin-left:6px">Re-run CVE check</button>`;
+
+              // Wire up rerun button (keep it local; if it disappears due to other UI updates, no harm)
+              setTimeout(() => {
+                const btn = document.getElementById(rerunId);
+                if (!btn) return;
+                btn.onclick = async () => {
+                  try {
+                    if (cveEl && lastCveCheck && lastCveCheck.cve) {
+                      cveEl.value = lastCveCheck.cve;
+                    }
+                    await applyVulnFilter();
+                  } catch (e2) {
+                    upgradeStatusEl.textContent = `Re-run failed: ${e2.message || e2}`;
+                  }
+                };
+              }, 0);
+            }
           }
         } catch (e) {
           if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade failed: ${e.message || e}`;
