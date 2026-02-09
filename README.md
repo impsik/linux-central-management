@@ -36,21 +36,22 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 
 ### 2) Clone the code and configure secrets
 ```bash
-Clone the code:
 git clone https://github.com/impsik/linux-central-management.git
 cd linux-central-management
-# If your system hides dotfiles, you can use env.example instead.
-cp .env.example .env 2>/dev/null || cp env.example .env
-# edit .env and set:
-# BOOTSTRAP_PASSWORD, AGENT_SHARED_TOKEN, (optional) AGENT_TERMINAL_TOKEN
+
+# Configure server env
+cd deploy/docker
+cp .env.example .env
+# edit .env and set at least:
+#   BOOTSTRAP_PASSWORD
+#   AGENT_SHARED_TOKEN
+# optionally:
+#   AGENT_TERMINAL_TOKEN (only if you enable terminal)
 ```
 
 ### 3) Start
 ```bash
-cd deploy/docker
-cp .env.example .env 2>/dev/null || cp env.example .env
-# edit .env
-docker-compose up -d --build
+docker compose up -d --build
 curl -s http://localhost:8000/health
 ```
 
@@ -77,8 +78,7 @@ export FLEET_SERVER_URL=http://<SERVER_IP>:8000
 export FLEET_AGENT_ID=<unique-id>        # can be host IP or stable name
 export FLEET_LABELS=env=prod,role=web    # Add env and role as you see fit
 export FLEET_AGENT_TOKEN=<AGENT_SHARED_TOKEN>
-export FLEET_TERMINAL_TOKEN=<TERM_TOKEN>
-
+export FLEET_TERMINAL_TOKEN=<AGENT_TERMINAL_TOKEN>
 
 ./fleet-agent
 ```
@@ -149,13 +149,18 @@ Config via env (server):
 
 ## Developer workflow
 
-### script.sh (Change the script's IP addresses to test it out) 
+### script.sh (developer convenience)
 `./script.sh` is a convenience script that:
 - rebuilds/restarts Docker Compose server
 - builds the agent
-- copies the agent to the example host via Ansible
+- deploys the agent to hosts via Ansible (from `./hosts`)
 - restarts the agent service
 
-It expects local environment variables for tokens if you use the “local agent” portion.
+To use it:
+```bash
+cp hosts.example hosts
+# edit hosts
+SERVER_URL=http://<SERVER_IP>:8000 AGENT_TOKEN=<AGENT_SHARED_TOKEN> TERM_TOKEN=<AGENT_TERMINAL_TOKEN> TARGETS=all ./script.sh
+```
 
 ---

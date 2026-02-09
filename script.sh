@@ -27,7 +27,7 @@ go build -o fleet-agent ./cmd/fleet-agent
 
 # Deploy the freshly built agent binary to the remote host(s)
 # Targets default to "all" hosts from $ROOT_DIR/hosts. Override with:
-#   TARGETS=192.168.100.228 ./script.sh
+#   TARGETS=192.168.1.10 ./script.sh
 TARGETS="${TARGETS:-all}"
 
 # SSH auth helpers (optional)

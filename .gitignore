@@ -2,6 +2,9 @@
 .env
 .env.*
 
+# Local deploy targets (do not commit real lab IPs)
+hosts
+
 # Allow example env files to be tracked
 !.env.example
 !deploy/docker/.env.example
