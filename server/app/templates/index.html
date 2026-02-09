@@ -2269,7 +2269,8 @@
             lastCveUnionPackages = Array.from(union).sort();
             selectedCvePackages = new Set(lastCveUnionPackages);
 
-            vulnFilteredAgentIds = new Set(affectedIds);
+            // If nothing is affected, don't apply a filter that hides everything.
+            vulnFilteredAgentIds = affectedIds.length ? new Set(affectedIds) : null;
             if (statusEl) statusEl.textContent = `CVE ${cve}: ${affectedIds.length} host(s) affected (online). Affected packages: ${lastCveUnionPackages.length}.`;
           } else {
             const params = new URLSearchParams({ name });
@@ -2493,6 +2494,13 @@
             if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. Verifying installed version of ${chosenPkg}…`;
             await verifyPackageVersions(targets, chosenPkg, vulnVersion, upgradeStatusEl);
           } else {
+            // We do NOT auto-clear the CVE finding until we re-run the CVE check.
+            // However, after a remediation action, keeping the old checklist selected is confusing.
+            // Hide it and disable Upgrade until the user re-runs the CVE check.
+            lastCveUnionPackages = [];
+            selectedCvePackages = new Set();
+            updateUpgradeControlsFn();
+
             if (upgradeStatusEl) {
               const rerunId = `rerun-cve-${jobId}`;
               upgradeStatusEl.innerHTML =
