@@ -115,6 +115,13 @@
                     <input type="checkbox" id="select-visible-hosts" />
                     Select all visible hosts
                   </label>
+
+                  <div id="cve-packages-panel" style="display:none;margin:0.5rem 0 0.25rem 0;">
+                    <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:0.25rem;">Affected packages (CVE)</div>
+                    <div id="cve-packages-list" style="display:flex;flex-direction:column;gap:0.25rem;max-height:220px;overflow:auto;padding:0.25rem 0.25rem;border:1px solid #2d3748;border-radius:8px;"></div>
+                    <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem;">We’ll upgrade the selected packages on each selected host, but only if that host reported the package as affected.</div>
+                  </div>
+
                   <button class="btn btn-primary" id="upgrade-selected" disabled>Upgrade selected</button>
                   <div class="vuln-status" id="upgrade-status"></div>
                 </div>
@@ -1266,6 +1273,8 @@
     let lastPkgVerification = null; // { packageName, vulnVersion, resultsByAgentId: { [aid]: { ok, found, version, status } } }
     let lastCveCheck = null; // { cve, resultsByAgentId: { [aid]: { affected, packages?: string[] } } }
     let lastCveAffectedAgentIds = []; // string[] for last CVE run (online hosts only)
+    let lastCveUnionPackages = []; // string[] union of affected packages across affected hosts
+    let selectedCvePackages = new Set(); // Set<string> selected in CVE package list
     let ansiblePlaybooks = [];
 
     function normalize(s) {
@@ -2109,6 +2118,8 @@
       const selectVisibleEl = document.getElementById('select-visible-hosts');
       const upgradeBtn = document.getElementById('upgrade-selected');
       const upgradeStatusEl = document.getElementById('upgrade-status');
+      const cvePackagesPanel = document.getElementById('cve-packages-panel');
+      const cvePackagesList = document.getElementById('cve-packages-list');
       const vulnSection = document.getElementById('vuln-filter-section');
       const vulnToggle = document.getElementById('vuln-filter-toggle');
       const vulnToggleBtn = document.getElementById('vuln-toggle-btn');
@@ -2247,8 +2258,19 @@
 
             lastCveCheck = { cve, resultsByAgentId };
             lastCveAffectedAgentIds = affectedIds;
+
+            // Build union of affected packages across affected hosts
+            const union = new Set();
+            for (const aid of affectedIds) {
+              const r = resultsByAgentId[aid];
+              const pk = Array.isArray(r?.packages) ? r.packages : [];
+              pk.forEach(p => { if (p) union.add(p); });
+            }
+            lastCveUnionPackages = Array.from(union).sort();
+            selectedCvePackages = new Set(lastCveUnionPackages);
+
             vulnFilteredAgentIds = new Set(affectedIds);
-            if (statusEl) statusEl.textContent = `CVE ${cve}: ${affectedIds.length} host(s) affected (online).`;
+            if (statusEl) statusEl.textContent = `CVE ${cve}: ${affectedIds.length} host(s) affected (online). Affected packages: ${lastCveUnionPackages.length}.`;
           } else {
             const params = new URLSearchParams({ name });
             if (version) params.set('version', version);
@@ -2273,24 +2295,8 @@
           applyHostFilters();
           setVulnOpen(true);
 
-          // UX: if CVE search found affected hosts, jump straight to Packages for the first one.
-          // UX: jump into Packages view for the first affected host.
-          // Use a small timeout so the host list has finished re-rendering before we switch views.
-          if (cve && Array.isArray(lastCveAffectedAgentIds) && lastCveAffectedAgentIds.length > 0) {
-            const first = lastCveAffectedAgentIds[0];
-            const hostObj = (allHosts || []).find(h => h.agent_id === first);
-            const hostname = hostObj?.hostname || first;
-            if (statusEl) statusEl.textContent = `CVE ${cve}: opening Packages for ${hostname}…`;
-            setTimeout(() => {
-              try {
-                selectHost(first, hostname);
-                showPackages();
-              } catch (e2) {
-                console.warn('Failed to auto-open Packages after CVE search:', e2);
-                if (statusEl) statusEl.textContent = `CVE ${cve}: failed to open Packages (${e2?.message || e2}).`;
-              }
-            }, 50);
-          }
+          // New UX: stay on the Hosts view. Show affected packages + allow targeted upgrade from here.
+          updateUpgradeControlsFn();
 
         } catch (e) {
           vulnFilteredAgentIds = null;
@@ -2316,7 +2322,10 @@
         lastPkgVerification = null;
         lastCveCheck = null;
         lastCveAffectedAgentIds = [];
+        lastCveUnionPackages = [];
+        selectedCvePackages = new Set();
         applyHostFilters();
+        updateUpgradeControlsFn();
       }
 
       applyBtn?.addEventListener('click', (e) => {
@@ -2328,58 +2337,67 @@
         clearVulnFilter();
       });
 
+      function renderCvePackagesPanel(cve) {
+        if (!cvePackagesPanel || !cvePackagesList) return;
+        if (!cve || !lastCveCheck || lastCveCheck.cve !== cve || !Array.isArray(lastCveUnionPackages) || lastCveUnionPackages.length === 0) {
+          cvePackagesPanel.style.display = 'none';
+          cvePackagesList.innerHTML = '';
+          selectedCvePackages = new Set();
+          return;
+        }
+
+        cvePackagesPanel.style.display = 'block';
+        // Default select all on first render
+        if (!selectedCvePackages || selectedCvePackages.size === 0) {
+          selectedCvePackages = new Set(lastCveUnionPackages);
+        }
+
+        cvePackagesList.innerHTML = lastCveUnionPackages.map(p => {
+          const checked = selectedCvePackages.has(p);
+          return `
+            <label style="display:flex;gap:0.5rem;align-items:center;">
+              <input type="checkbox" class="cve-pkg-cb" data-pkg="${escapeHtml(p)}" ${checked ? 'checked' : ''} />
+              <span style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:0.9rem;">${escapeHtml(p)}</span>
+            </label>
+          `;
+        }).join('');
+
+        cvePackagesList.querySelectorAll('input.cve-pkg-cb[data-pkg]').forEach(cb => {
+          cb.addEventListener('change', () => {
+            const p = cb.getAttribute('data-pkg');
+            if (!p) return;
+            if (cb.checked) selectedCvePackages.add(p);
+            else selectedCvePackages.delete(p);
+            updateUpgradeControlsFn();
+          });
+        });
+      }
+
       updateUpgradeControlsFn = function updateUpgradeControls() {
         const pkgName = (pkgEl?.value || '').trim();
         const cve = (cveEl?.value || '').trim().toUpperCase();
         const totalSelected = selectedAgentIds.size;
         const visibleSelected = lastRenderedAgentIds.filter(aid => selectedAgentIds.has(aid)).length;
 
-        // If user selected hosts via CVE, suggest a package to upgrade by intersecting affected package lists.
-        // This keeps blast radius low vs. dist-upgrade.
-        let suggestedPkgs = [];
-        try {
-          if (!pkgName && cve && lastCveCheck && lastCveCheck.cve === cve && totalSelected > 0) {
-            const selected = Array.from(selectedAgentIds);
-            const lists = selected.map(aid => {
-              const r = lastCveCheck?.resultsByAgentId?.[aid];
-              const pkgs = Array.isArray(r?.packages) ? r.packages : [];
-              // Only consider packages from hosts that were actually affected
-              return (r?.affected === true) ? pkgs : [];
-            }).filter(arr => Array.isArray(arr) && arr.length > 0);
+        // CVE mode: show package checklist and enable upgrade when hosts+packages selected.
+        const isCveMode = !!cve && lastCveCheck && lastCveCheck.cve === cve && Array.isArray(lastCveUnionPackages) && lastCveUnionPackages.length > 0;
+        renderCvePackagesPanel(isCveMode ? cve : '');
 
-            if (lists.length > 0) {
-              const set0 = new Set(lists[0]);
-              for (let i = 1; i < lists.length; i++) {
-                const s = new Set(lists[i]);
-                for (const p of Array.from(set0)) {
-                  if (!s.has(p)) set0.delete(p);
-                }
-              }
-              suggestedPkgs = Array.from(set0).slice(0, 5);
-              // Auto-fill if there's a single clear choice
-              if (suggestedPkgs.length === 1 && pkgEl && !pkgEl.value) {
-                pkgEl.value = suggestedPkgs[0];
-              }
-            }
-          }
-        } catch { }
+        const canRun = isCveMode
+          ? (totalSelected > 0 && selectedCvePackages && selectedCvePackages.size > 0)
+          : (totalSelected > 0 && !!pkgName);
 
-        const finalPkgName = (pkgEl?.value || '').trim();
-
-        // Enable ONLY for safe package upgrade (not dist-upgrade implicitly)
-        const canRun = totalSelected > 0 && !!finalPkgName;
         if (upgradeBtn) upgradeBtn.disabled = !canRun;
 
         if (upgradeStatusEl) {
-          if (finalPkgName) {
-            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Package: ${finalPkgName}`;
+          if (isCveMode) {
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}. Packages selected: ${selectedCvePackages.size}.`;
+          } else if (pkgName) {
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Package: ${pkgName}`;
           } else if (cve) {
-            const hint = suggestedPkgs.length
-              ? ` Suggested package(s): ${suggestedPkgs.join(', ')}. Choose one in “Package name”.`
-              : ' Enter the affected package name to enable upgrade.';
-            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}.${hint}`;
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}. (Run CVE check to see affected packages.)`;
           } else {
-            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Enter a CVE and package name to enable upgrade.`;
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Enter a CVE or package name.`;
           }
         }
       };
@@ -2393,25 +2411,7 @@
           selectedAgentIds = new Set();
         }
         applyHostFilters(); // re-render to update checkbox states + status text
-
-        // If user is doing a CVE workflow and just selected visible hosts, jump into Packages for convenience.
-        try {
-          const cve = (cveEl?.value || '').trim().toUpperCase();
-          if (selectVisibleEl.checked && cve && Array.isArray(lastCveAffectedAgentIds) && lastCveAffectedAgentIds.length > 0) {
-            const first = Array.from(selectedAgentIds)[0] || lastCveAffectedAgentIds[0];
-            const hostObj = (allHosts || []).find(h => h.agent_id === first);
-            const hostname = hostObj?.hostname || first;
-            if (statusEl) statusEl.textContent = `Selected hosts for ${cve}. Opening Packages for ${hostname}…`;
-            setTimeout(() => {
-              try {
-                selectHost(first, hostname);
-                showPackages();
-              } catch (e2) {
-                console.warn('Failed to auto-open Packages after select-all:', e2);
-              }
-            }, 50);
-          }
-        } catch { }
+        updateUpgradeControlsFn();
       });
 
       async function upgradeSelected() {
@@ -2426,27 +2426,48 @@
           return;
         }
 
-        // We only do targeted package upgrade here to minimize blast radius.
-        const mode = 'pkg-upgrade';
-        const chosenPkg = (pkgEl?.value || '').trim();
-        if (!chosenPkg) {
-          if (upgradeStatusEl) upgradeStatusEl.textContent = cve
-            ? 'Choose an affected package name first (CVE selected).'
-            : 'Enter a package name first.';
+        const isCveMode = !!cve && lastCveCheck && lastCveCheck.cve === cve && selectedCvePackages && selectedCvePackages.size > 0;
+
+        // Build per-agent package list (host-specific), filtered by the selected package checklist.
+        let packagesByAgent = null;
+        if (isCveMode) {
+          packagesByAgent = {};
+          for (const aid of agentIds) {
+            const r = lastCveCheck?.resultsByAgentId?.[aid];
+            const pk = Array.isArray(r?.packages) ? r.packages : [];
+            const filtered = pk.filter(p => selectedCvePackages.has(p));
+            if (filtered.length) packagesByAgent[aid] = filtered;
+          }
+          if (Object.keys(packagesByAgent).length === 0) {
+            if (upgradeStatusEl) upgradeStatusEl.textContent = 'No selected packages apply to the selected hosts.';
+            return;
+          }
+        }
+
+        // Fallback: manual package name (non-CVE mode)
+        const chosenPkg = pkgName;
+        if (!isCveMode && !chosenPkg) {
+          if (upgradeStatusEl) upgradeStatusEl.textContent = 'Enter a package name (or run a CVE check to populate affected packages).';
           setVulnOpen(true);
           return;
         }
 
         if (upgradeStatusEl) {
-          upgradeStatusEl.textContent = `Starting upgrade of ${chosenPkg} on ${agentIds.length} host(s)…`;
+          upgradeStatusEl.textContent = isCveMode
+            ? `Starting CVE upgrade on ${agentIds.length} host(s)…`
+            : `Starting upgrade of ${chosenPkg} on ${agentIds.length} host(s)…`;
         }
         if (upgradeBtn) upgradeBtn.disabled = true;
 
         try {
+          const body = isCveMode
+            ? { agent_ids: agentIds, packages_by_agent: packagesByAgent }
+            : { agent_ids: agentIds, packages: [chosenPkg] };
+
           const resp = await fetch('/jobs/pkg-upgrade', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds, packages: [chosenPkg] })
+            body: JSON.stringify(body)
           });
           if (!resp.ok) {
             let msg = resp.statusText;
@@ -2459,56 +2480,20 @@
           const out = await resp.json();
           const jobId = out.job_id;
           const targets = out.targets || agentIds;
-          if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade job started (job_id: ${jobId}). Waiting for completion…`;
-          await pollUpgradeJob(jobId, targets, chosenPkg, upgradeStatusEl);
 
-          // Verify installed version after upgrade (real check, not just job success)
-          if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. Verifying installed version of ${chosenPkg}…`;
-          await verifyPackageVersions(targets, chosenPkg, vulnVersion, upgradeStatusEl);
+          if (upgradeStatusEl) {
+            const logsUrl = `/jobs/${encodeURIComponent(jobId)}/logs.zip`;
+            upgradeStatusEl.innerHTML = `Upgrade job started (job_id: <code>${escapeHtml(jobId)}</code>). <a href="${logsUrl}" target="_blank" rel="noopener noreferrer">Download logs.zip</a>. Waiting…`;
+          }
 
-          // Refresh "updates available" cache so Packages -> Updates only reflects reality immediately
-          try {
-            if (upgradeStatusEl) upgradeStatusEl.textContent = `Refreshing update availability…`;
+          await pollUpgradeJob(jobId, targets, isCveMode ? 'cve' : chosenPkg, upgradeStatusEl);
 
-            async function startUpdateCheck(aid) {
-              const r = await fetch(`/hosts/${encodeURIComponent(aid)}/packages/check-updates?refresh=false&wait=false`, { method: 'POST' });
-              if (!r.ok) return null;
-              const o = await r.json();
-              return o.job_id || null;
-            }
-
-            async function pollDone(jobId, maxMs = 120000) {
-              const started = Date.now();
-              let interval = 600;
-              while (Date.now() - started < maxMs) {
-                const resp = await fetch(`/jobs/${jobId}`);
-                if (!resp.ok) throw new Error(resp.statusText);
-                const data = await resp.json();
-                const done = (data && data.done === true) || (Array.isArray(data?.runs) && data.runs.length > 0 && data.runs.every(r => r.status === 'success' || r.status === 'failed'));
-                if (done) return data;
-                await new Promise(r => setTimeout(r, interval));
-                if (interval < 1500) interval += 150;
-              }
-              throw new Error('Timed out waiting for update cache refresh');
-            }
-
-            // Fire refresh for all targets; only await for the currently viewed host (if applicable)
-            let currentJobId = null;
-            for (const aid of targets) {
-              const jid = await startUpdateCheck(aid);
-              if (aid === currentAgentId) currentJobId = jid;
-            }
-
-            if (currentJobId) {
-              await pollDone(currentJobId, 120000);
-              if (document.getElementById('packages-tab')?.classList.contains('active')) {
-                await loadPackages(currentAgentId);
-              }
-            }
-            if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished and update availability refreshed.`;
-          } catch (e3) {
-            console.warn('Failed to refresh update availability after vuln upgrade:', e3);
-            if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. (Update availability refresh failed; use “Check updates” in Packages if needed)`;
+          if (!isCveMode) {
+            // Verify installed version after upgrade (real check, not just job success)
+            if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. Verifying installed version of ${chosenPkg}…`;
+            await verifyPackageVersions(targets, chosenPkg, vulnVersion, upgradeStatusEl);
+          } else {
+            if (upgradeStatusEl) upgradeStatusEl.innerHTML = `Upgrade finished. <a href="/jobs/${encodeURIComponent(jobId)}/logs.zip" target="_blank" rel="noopener noreferrer">Download logs.zip</a>. Re-run CVE check to confirm remediation.`;
           }
         } catch (e) {
           if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade failed: ${e.message || e}`;
