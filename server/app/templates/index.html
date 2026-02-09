@@ -2545,13 +2545,43 @@
             if (c.success) parts.push(`success: ${c.success}`);
             if (c.failed) parts.push(`failed: ${c.failed}`);
 
+            const logsUrl = `/jobs/${encodeURIComponent(jobId)}/logs.zip`;
+
             if (statusEl) {
-              statusEl.textContent = `Upgrading ${pkgName} — ${summary.done}/${summary.total} finished (${parts.join(', ')})`;
+              statusEl.innerHTML = `Upgrading ${escapeHtml(String(pkgName))} — ${summary.done}/${summary.total} finished (${escapeHtml(parts.join(', '))}) (job_id: <code>${escapeHtml(jobId)}</code>) ` +
+                `<a href="${logsUrl}" target="_blank" rel="noopener noreferrer">logs.zip</a>`;
             }
 
             if (summary.allDone) {
               if (statusEl) {
-                statusEl.textContent = `Upgrade finished for ${pkgName}. success: ${c.success || 0}, failed: ${c.failed || 0}. (job_id: ${jobId})`;
+                const byAgent = new Map();
+                (runs || []).forEach(r => byAgent.set(r.agent_id, r));
+
+                const rowsHtml = targets.map(aid => {
+                  const r = byAgent.get(aid) || { status: 'queued' };
+                  const st = r.status || 'queued';
+                  const stdoutUrl = `/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(aid)}/stdout.txt`;
+                  const stderrUrl = `/jobs/${encodeURIComponent(jobId)}/runs/${encodeURIComponent(aid)}/stderr.txt`;
+                  return `<tr>` +
+                    `<td><code>${escapeHtml(aid)}</code></td>` +
+                    `<td>${escapeHtml(st)}</td>` +
+                    `<td><a href="${stdoutUrl}" target="_blank" rel="noopener noreferrer">stdout</a></td>` +
+                    `<td><a href="${stderrUrl}" target="_blank" rel="noopener noreferrer">stderr</a></td>` +
+                    `</tr>`;
+                }).join('');
+
+                statusEl.innerHTML =
+                  `Upgrade finished for ${escapeHtml(String(pkgName))}. success: ${c.success || 0}, failed: ${c.failed || 0}. ` +
+                  `(job_id: <code>${escapeHtml(jobId)}</code>) ` +
+                  `<a href="${logsUrl}" target="_blank" rel="noopener noreferrer">logs.zip</a>` +
+                  `<details style="margin-top:6px"><summary>Per-host logs</summary>` +
+                  `<div style="overflow:auto; max-height:220px; border:1px solid #333; padding:6px; margin-top:6px">` +
+                  `<table style="width:100%; border-collapse:collapse">` +
+                  `<thead><tr><th align="left">Host</th><th align="left">Status</th><th align="left">stdout</th><th align="left">stderr</th></tr></thead>` +
+                  `<tbody>${rowsHtml}</tbody>` +
+                  `</table>` +
+                  `</div>` +
+                  `</details>`;
               }
               return;
             }
