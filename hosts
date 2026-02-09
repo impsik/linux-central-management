@@ -1,5 +1,2 @@
 # Hosts to where ansible can copy fleet-agent if using script.sh
-192.168.100.184
-192.168.100.190
-192.168.100.216
 192.168.100.228
