@@ -242,25 +242,53 @@ func parseUbuntuComCVETable(html string) []ubuntuComRow {
 
 func extractAptPackagesFromProDryRun(out string) []string {
 	out = strings.ReplaceAll(out, "\r\n", "\n")
-	// Heuristic parsing: pro fix --dry-run typically embeds an apt simulation/plan.
-	// Common patterns:
-	//  - "Inst <pkg> (.."
-	//  - "Upgrade <pkg> (.."
-	re := regexp.MustCompile(`(?m)^\s*(?:Inst|Upgrade)\s+([a-z0-9][a-z0-9+\-\.]+)\b`)
-	m := re.FindAllStringSubmatch(out, -1)
+	out = strings.ReplaceAll(out, "\\\n", " ") // line continuations
+
 	seen := map[string]bool{}
 	pkgs := make([]string, 0, 8)
-	for _, mm := range m {
-		if len(mm) < 2 {
-			continue
-		}
-		p := strings.TrimSpace(mm[1])
+
+	add := func(p string) {
+		p = strings.TrimSpace(p)
 		if p == "" || seen[p] {
-			continue
+			return
 		}
 		seen[p] = true
 		pkgs = append(pkgs, p)
 	}
+
+	// Heuristic parsing: pro fix --dry-run can embed an apt simulation/plan.
+	// Common patterns:
+	//  - "Inst <pkg> (.."
+	//  - "Upgrade <pkg> (.."
+	rePlan := regexp.MustCompile(`(?m)^\s*(?:Inst|Upgrade)\s+([a-z0-9][a-z0-9+\-\.]+)\b`)
+	for _, mm := range rePlan.FindAllStringSubmatch(out, -1) {
+		if len(mm) >= 2 {
+			add(mm[1])
+		}
+	}
+
+	// Also handle the newer "command suggestion" format:
+	//   { apt update && apt install --only-upgrade -y pkg1 pkg2 ... }
+	reCmd := regexp.MustCompile(`(?is)\bapt\s+install\b([^\n\}]+)`)
+	if m := reCmd.FindStringSubmatch(out); len(m) == 2 {
+		rest := strings.TrimSpace(m[1])
+		// strip common options
+		toks := strings.Fields(rest)
+		for _, t := range toks {
+			if t == "&&" || t == "{" || t == "}" {
+				continue
+			}
+			if strings.HasPrefix(t, "-") {
+				continue
+			}
+			// stop if we hit another command boundary
+			if t == "apt" || t == "update" || t == "install" {
+				continue
+			}
+			add(t)
+		}
+	}
+
 	return pkgs
 }
 

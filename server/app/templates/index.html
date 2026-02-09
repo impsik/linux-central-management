@@ -2248,7 +2248,10 @@
           try {
             if (cve && affectedIds && affectedIds.length > 0) {
               const first = affectedIds[0];
-              connect(first);
+              const hostObj = (allHosts || []).find(h => h.agent_id === first);
+              const hostname = hostObj?.hostname || first;
+              // Use the same selection path as clicking a host in the UI.
+              selectHost(first, hostname);
               showPackages();
             }
           } catch { }
