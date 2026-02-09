@@ -2243,6 +2243,16 @@
 
           applyHostFilters();
           setVulnOpen(true);
+
+          // UX: if CVE search found affected hosts, jump straight to Packages for the first one.
+          try {
+            if (cve && affectedIds && affectedIds.length > 0) {
+              const first = affectedIds[0];
+              connect(first);
+              showPackages();
+            }
+          } catch { }
+
         } catch (e) {
           vulnFilteredAgentIds = null;
           if (statusEl) statusEl.textContent = `Error searching: ${e.message || e}`;
@@ -3397,6 +3407,52 @@
 
       async function runPkgAction(action) {
         if (!currentAgentId) return;
+
+        // CVE workflow: upgrade per-host affected packages across the selected affected hosts.
+        // This keeps blast radius low and avoids forcing a global dist-upgrade.
+        const cve = (document.getElementById('vuln-cve')?.value || '').trim().toUpperCase();
+        const isCveMode = action === 'upgrade' && !!cve && !!lastCveCheck && lastCveCheck.cve === cve && selectedAgentIds && selectedAgentIds.size > 0;
+        if (isCveMode) {
+          const targets = Array.from(selectedAgentIds);
+          const packagesByAgent = {};
+          for (const aid of targets) {
+            const r = lastCveCheck?.resultsByAgentId?.[aid];
+            const pk = Array.isArray(r?.packages) ? r.packages.filter(Boolean) : [];
+            if (pk.length) packagesByAgent[aid] = pk;
+          }
+          if (Object.keys(packagesByAgent).length === 0) {
+            if (statusEl) statusEl.textContent = 'No affected packages found for selected hosts. Re-run CVE check.';
+            return;
+          }
+
+          try {
+            if (statusEl) statusEl.textContent = `Starting CVE-targeted upgrade on ${targets.length} host(s)…`;
+            if (upgradeBtn) upgradeBtn.disabled = true;
+            if (reinstallBtn) reinstallBtn.disabled = true;
+            if (removeBtn) removeBtn.disabled = true;
+
+            const resp = await fetch('/jobs/pkg-upgrade', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ agent_ids: targets, packages_by_agent: packagesByAgent })
+            });
+            if (!resp.ok) {
+              let msg = resp.statusText;
+              try { const err = await resp.json(); msg = err.detail || err.message || msg; } catch { }
+              throw new Error(msg);
+            }
+            const out = await resp.json();
+            const jobId = out.job_id;
+            if (statusEl) statusEl.textContent = `Upgrade started (job_id: ${jobId}). Waiting…`;
+            await pollJob(jobId, statusEl, 10 * 60 * 1000);
+            if (statusEl) statusEl.textContent = `Upgrade finished. Re-run CVE check to confirm remediation.`;
+            return;
+          } catch (e) {
+            if (statusEl) statusEl.textContent = `Error: ${e.message || e}`;
+            return;
+          }
+        }
+
         const pkgs = Array.from(selectedPackages);
         if (!pkgs.length) return;
 
@@ -3534,6 +3590,19 @@
         const collectedAt = data.collected_at;
         const updatesCheckedAt = data.updates_checked_at;
         window.__lastPackagesList = pkgs;
+
+        // If we're in CVE mode, pre-select affected packages for this host.
+        try {
+          const cve = (document.getElementById('vuln-cve')?.value || '').trim().toUpperCase();
+          if (cve && lastCveCheck && lastCveCheck.cve === cve) {
+            const r = lastCveCheck?.resultsByAgentId?.[agentId];
+            const pkgs2 = Array.isArray(r?.packages) ? r.packages : [];
+            // Only auto-apply if user hasn't manually selected anything yet.
+            if (pkgs2.length && selectedPackages.size === 0) {
+              selectedPackages = new Set(pkgs2);
+            }
+          }
+        } catch { }
 
         metaEl.textContent = `Showing ${pkgs.length} of ${total}${collectedAt ? ` (inventory: ${new Date(collectedAt).toLocaleString()})` : ''}${updatesCheckedAt ? ` • updates checked: ${new Date(updatesCheckedAt).toLocaleString()}` : ''}.`;
 

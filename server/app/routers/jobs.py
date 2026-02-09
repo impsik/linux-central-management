@@ -87,18 +87,32 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
 
+    packages = payload.packages or []
+    packages_by_agent = payload.packages_by_agent or {}
+
+    if not packages and not packages_by_agent:
+        raise HTTPException(400, "packages or packages_by_agent is required")
+
     with transaction(db):
         created = create_job_with_runs(
             db=db,
             job_type="pkg-upgrade",
-            payload={"packages": payload.packages},
+            payload={
+                "packages": packages,
+                "packages_by_agent": packages_by_agent,
+            },
             agent_ids=targets,
             commit=False,
         )
 
+    async def build(aid: str):
+        # Prefer per-agent packages if provided; fall back to global packages.
+        pkgs = (packages_by_agent.get(aid) or packages) or []
+        return {"job_id": created.job_key, "type": "pkg-upgrade", "packages": pkgs}
+
     await push_job_to_agents(
         agent_ids=targets,
-        job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "pkg-upgrade", "packages": payload.packages},
+        job_payload_builder=build,
     )
 
     return {"job_id": created.job_key, "targets": targets}

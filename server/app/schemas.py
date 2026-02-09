@@ -30,7 +30,9 @@ class PackageUpdatesInventory(BaseModel):
 class JobCreatePkgUpgrade(BaseModel):
     agent_ids: Optional[List[str]] = None
     labels: Optional[Dict[str,str]] = None
-    packages: List[str]
+    # Either provide a global package list (applies to all targets), or a per-agent mapping.
+    packages: Optional[List[str]] = None
+    packages_by_agent: Optional[Dict[str, List[str]]] = None
 
 class JobCreatePkgQuery(BaseModel):
     agent_ids: Optional[List[str]] = None

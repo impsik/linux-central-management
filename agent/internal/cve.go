@@ -164,6 +164,7 @@ func checkCVEViaUbuntuCom(ctx context.Context, cve string) (string, string, int,
 		"affected": affected,
 		"summary":  summary,
 		"source":   "ubuntu.com",
+		"packages": affectedPkgs,
 		"details": map[string]any{
 			"version_id":      versionID,
 			"codename":        codename,
