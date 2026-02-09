@@ -1265,6 +1265,7 @@
     let updateUpgradeControlsFn = () => { };
     let lastPkgVerification = null; // { packageName, vulnVersion, resultsByAgentId: { [aid]: { ok, found, version, status } } }
     let lastCveCheck = null; // { cve, resultsByAgentId: { [aid]: { affected, packages?: string[] } } }
+    let lastCveAffectedAgentIds = []; // string[] for last CVE run (online hosts only)
     let ansiblePlaybooks = [];
 
     function normalize(s) {
@@ -2218,6 +2219,7 @@
             }
 
             lastCveCheck = { cve, resultsByAgentId };
+            lastCveAffectedAgentIds = affectedIds;
             vulnFilteredAgentIds = new Set(affectedIds);
             if (statusEl) statusEl.textContent = `CVE ${cve}: ${affectedIds.length} host(s) affected (online).`;
           } else {
@@ -2246,8 +2248,8 @@
 
           // UX: if CVE search found affected hosts, jump straight to Packages for the first one.
           try {
-            if (cve && affectedIds && affectedIds.length > 0) {
-              const first = affectedIds[0];
+            if (cve && Array.isArray(lastCveAffectedAgentIds) && lastCveAffectedAgentIds.length > 0) {
+              const first = lastCveAffectedAgentIds[0];
               const hostObj = (allHosts || []).find(h => h.agent_id === first);
               const hostname = hostObj?.hostname || first;
               // Use the same selection path as clicking a host in the UI.
@@ -2278,6 +2280,8 @@
         if (selectVisibleEl) selectVisibleEl.checked = false;
         // Reset verification
         lastPkgVerification = null;
+        lastCveCheck = null;
+        lastCveAffectedAgentIds = [];
         applyHostFilters();
       }
 
