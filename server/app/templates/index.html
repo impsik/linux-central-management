@@ -1264,6 +1264,7 @@
     // Will be initialized in initHostFilters(); renderHosts() calls this.
     let updateUpgradeControlsFn = () => { };
     let lastPkgVerification = null; // { packageName, vulnVersion, resultsByAgentId: { [aid]: { ok, found, version, status } } }
+    let lastCveCheck = null; // { cve, resultsByAgentId: { [aid]: { affected, packages?: string[] } } }
     let ansiblePlaybooks = [];
 
     function normalize(s) {
@@ -2203,14 +2204,20 @@
 
             const data = await pollJob(jobId, statusEl, 180000);
             const affectedIds = [];
+            const resultsByAgentId = {};
+
             for (const r of (data?.runs || [])) {
               if (r.status !== 'success' || !r.stdout) continue;
               try {
                 const j = JSON.parse(r.stdout);
-                if (j && j.affected === true) affectedIds.push(r.agent_id);
+                const affected = !!(j && j.affected === true);
+                const pkgs = Array.isArray(j?.packages) ? j.packages.filter(Boolean) : [];
+                resultsByAgentId[r.agent_id] = { affected, packages: pkgs };
+                if (affected) affectedIds.push(r.agent_id);
               } catch { }
             }
 
+            lastCveCheck = { cve, resultsByAgentId };
             vulnFilteredAgentIds = new Set(affectedIds);
             if (statusEl) statusEl.textContent = `CVE ${cve}: ${affectedIds.length} host(s) affected (online).`;
           } else {
@@ -2220,6 +2227,7 @@
             if (!resp.ok) throw new Error(resp.statusText);
             const rows = await resp.json();
             vulnFilteredAgentIds = new Set((rows || []).map(r => r.agent_id));
+            lastCveCheck = null; // switching modes
             if (statusEl) statusEl.textContent = `Package ${name}: ${vulnFilteredAgentIds.size} host(s) matched.`;
           }
 
@@ -2229,6 +2237,9 @@
           if (selectVisibleEl) selectVisibleEl.checked = false;
           // Reset last verification (different host set now)
           lastPkgVerification = null;
+
+          // CVE results are only meaningful for the current CVE run; keep them.
+          // (If user later switches to package search, we'll clear it there.)
 
           applyHostFilters();
           setVulnOpen(true);
@@ -2272,19 +2283,52 @@
         const totalSelected = selectedAgentIds.size;
         const visibleSelected = lastRenderedAgentIds.filter(aid => selectedAgentIds.has(aid)).length;
 
-        // Enable when:
-        // - package name is provided (package upgrade), OR
-        // - CVE is provided (fallback to dist-upgrade / security upgrades)
-        const canRun = totalSelected > 0 && (!!pkgName || !!cve);
+        // If user selected hosts via CVE, suggest a package to upgrade by intersecting affected package lists.
+        // This keeps blast radius low vs. dist-upgrade.
+        let suggestedPkgs = [];
+        try {
+          if (!pkgName && cve && lastCveCheck && lastCveCheck.cve === cve && totalSelected > 0) {
+            const selected = Array.from(selectedAgentIds);
+            const lists = selected.map(aid => {
+              const r = lastCveCheck?.resultsByAgentId?.[aid];
+              const pkgs = Array.isArray(r?.packages) ? r.packages : [];
+              // Only consider packages from hosts that were actually affected
+              return (r?.affected === true) ? pkgs : [];
+            }).filter(arr => Array.isArray(arr) && arr.length > 0);
+
+            if (lists.length > 0) {
+              const set0 = new Set(lists[0]);
+              for (let i = 1; i < lists.length; i++) {
+                const s = new Set(lists[i]);
+                for (const p of Array.from(set0)) {
+                  if (!s.has(p)) set0.delete(p);
+                }
+              }
+              suggestedPkgs = Array.from(set0).slice(0, 5);
+              // Auto-fill if there's a single clear choice
+              if (suggestedPkgs.length === 1 && pkgEl && !pkgEl.value) {
+                pkgEl.value = suggestedPkgs[0];
+              }
+            }
+          }
+        } catch { }
+
+        const finalPkgName = (pkgEl?.value || '').trim();
+
+        // Enable ONLY for safe package upgrade (not dist-upgrade implicitly)
+        const canRun = totalSelected > 0 && !!finalPkgName;
         if (upgradeBtn) upgradeBtn.disabled = !canRun;
 
         if (upgradeStatusEl) {
-          if (pkgName) {
-            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Package: ${pkgName}`;
+          if (finalPkgName) {
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Package: ${finalPkgName}`;
           } else if (cve) {
-            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}. Action: apply available upgrades (dist-upgrade).`;
+            const hint = suggestedPkgs.length
+              ? ` Suggested package(s): ${suggestedPkgs.join(', ')}. Choose one in “Package name”.`
+              : ' Enter the affected package name to enable upgrade.';
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). CVE: ${cve}.${hint}`;
           } else {
-            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Enter a CVE or a package name to enable upgrade.`;
+            upgradeStatusEl.textContent = `Selected: ${visibleSelected} visible / ${totalSelected} total host(s). Enter a CVE and package name to enable upgrade.`;
           }
         }
       };
@@ -2312,29 +2356,27 @@
           return;
         }
 
-        // If user searched by CVE but didn't specify a package, we still want a sane "do something" action.
-        // We can't reliably map CVE -> exact package from Ubuntu Pro output in this MVP, so fall back to dist-upgrade.
-        const mode = pkgName ? 'pkg-upgrade' : (cve ? 'dist-upgrade' : 'none');
-        if (mode === 'none') {
-          if (upgradeStatusEl) upgradeStatusEl.textContent = 'Enter a CVE or a package name first.';
+        // We only do targeted package upgrade here to minimize blast radius.
+        const mode = 'pkg-upgrade';
+        const chosenPkg = (pkgEl?.value || '').trim();
+        if (!chosenPkg) {
+          if (upgradeStatusEl) upgradeStatusEl.textContent = cve
+            ? 'Choose an affected package name first (CVE selected).'
+            : 'Enter a package name first.';
           setVulnOpen(true);
           return;
         }
 
         if (upgradeStatusEl) {
-          upgradeStatusEl.textContent = (mode === 'pkg-upgrade')
-            ? `Starting upgrade of ${pkgName} on ${agentIds.length} host(s)…`
-            : `Applying available upgrades (dist-upgrade) on ${agentIds.length} host(s)…`;
+          upgradeStatusEl.textContent = `Starting upgrade of ${chosenPkg} on ${agentIds.length} host(s)…`;
         }
         if (upgradeBtn) upgradeBtn.disabled = true;
 
         try {
-          const resp = await fetch(mode === 'pkg-upgrade' ? '/jobs/pkg-upgrade' : '/jobs/dist-upgrade', {
+          const resp = await fetch('/jobs/pkg-upgrade', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: mode === 'pkg-upgrade'
-              ? JSON.stringify({ agent_ids: agentIds, packages: [pkgName] })
-              : JSON.stringify({ agent_ids: agentIds })
+            body: JSON.stringify({ agent_ids: agentIds, packages: [chosenPkg] })
           });
           if (!resp.ok) {
             let msg = resp.statusText;
@@ -2348,18 +2390,11 @@
           const jobId = out.job_id;
           const targets = out.targets || agentIds;
           if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade job started (job_id: ${jobId}). Waiting for completion…`;
-          await pollUpgradeJob(jobId, targets, mode === 'pkg-upgrade' ? pkgName : 'dist-upgrade', upgradeStatusEl);
-
-          if (mode !== 'pkg-upgrade') {
-            // For dist-upgrade, we don't have a reliable CVE→package mapping to verify here.
-            // The user can re-run CVE check or look at Packages -> Updates.
-            if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished (dist-upgrade). Re-run the CVE check to confirm remediation.`;
-            return;
-          }
+          await pollUpgradeJob(jobId, targets, chosenPkg, upgradeStatusEl);
 
           // Verify installed version after upgrade (real check, not just job success)
-          if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. Verifying installed version of ${pkgName}…`;
-          await verifyPackageVersions(targets, pkgName, vulnVersion, upgradeStatusEl);
+          if (upgradeStatusEl) upgradeStatusEl.textContent = `Upgrade finished. Verifying installed version of ${chosenPkg}…`;
+          await verifyPackageVersions(targets, chosenPkg, vulnVersion, upgradeStatusEl);
 
           // Refresh "updates available" cache so Packages -> Updates only reflects reality immediately
           try {

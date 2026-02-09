@@ -61,6 +61,7 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 			trimmed = trimmed[:12000] + "\n…(truncated)"
 		}
 
+		pkgs := extractAptPackagesFromProDryRun(out)
 		payload := map[string]any{
 			"cve":       cve,
 			"affected":  affected,
@@ -68,6 +69,7 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 			"source":    "pro",
 			"raw":       trimmed,
 			"exit_code": code,
+			"packages":  pkgs,
 		}
 		j, jerr := json.Marshal(payload)
 		if jerr != nil {
@@ -235,6 +237,30 @@ func parseUbuntuComCVETable(html string) []ubuntuComRow {
 	}
 
 	return rows
+}
+
+func extractAptPackagesFromProDryRun(out string) []string {
+	out = strings.ReplaceAll(out, "\r\n", "\n")
+	// Heuristic parsing: pro fix --dry-run typically embeds an apt simulation/plan.
+	// Common patterns:
+	//  - "Inst <pkg> (.."
+	//  - "Upgrade <pkg> (.."
+	re := regexp.MustCompile(`(?m)^\s*(?:Inst|Upgrade)\s+([a-z0-9][a-z0-9+\-\.]+)\b`)
+	m := re.FindAllStringSubmatch(out, -1)
+	seen := map[string]bool{}
+	pkgs := make([]string, 0, 8)
+	for _, mm := range m {
+		if len(mm) < 2 {
+			continue
+		}
+		p := strings.TrimSpace(mm[1])
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		pkgs = append(pkgs, p)
+	}
+	return pkgs
 }
 
 // helper for tests/other packages
