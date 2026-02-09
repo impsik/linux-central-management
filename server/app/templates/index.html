@@ -426,6 +426,7 @@
               <option value="desc">Desc</option>
             </select>
             <button class="btn" id="hosts-reload" type="button">Reload</button>
+            <button class="btn" id="hosts-cleanup-offline" type="button" title="Delete hosts that have been offline for a while">Clean offline…</button>
           </div>
         </div>
 
@@ -4572,6 +4573,56 @@
         const ids = getSelectedHostAgentIds();
         if (!ids.length) return showToast('Select hosts first', 'error');
         await bulkPost('/jobs/dist-upgrade', { agent_ids: ids }, `dist-upgrade queued for ${ids.length} hosts`);
+      });
+
+      // Cleanup offline hosts
+      document.getElementById('hosts-cleanup-offline')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const minsStr = prompt('Delete hosts that have been offline for how many minutes?', '60');
+        if (minsStr === null) return;
+        const mins = parseInt((minsStr || '').trim(), 10);
+        if (!Number.isFinite(mins) || mins < 1) {
+          showToast('Enter a valid number of minutes (>= 1)', 'error');
+          return;
+        }
+
+        // Dry run preview
+        try {
+          const previewResp = await fetch(`/hosts/cleanup-offline?older_than_minutes=${encodeURIComponent(mins)}&dry_run=true`, {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (!previewResp.ok) throw new Error(`preview failed (${previewResp.status})`);
+          const preview = await previewResp.json();
+          const n = preview?.count || 0;
+          const agentIds = (preview?.agent_ids || []).slice(0, 12);
+          const more = (preview?.agent_ids || []).length > 12 ? `\n… and ${(preview.agent_ids.length - 12)} more` : '';
+
+          const msg = n
+            ? `This will DELETE ${n} host(s) last seen before ${preview.cutoff}.\n\n${agentIds.join('\n')}${more}\n\nProceed?`
+            : `No hosts are older than ${mins} minutes. (cutoff: ${preview.cutoff})`;
+
+          if (!n) {
+            showToast('No offline hosts to delete', 'success');
+            return;
+          }
+
+          if (!confirm(msg)) return;
+
+          const resp = await fetch(`/hosts/cleanup-offline?older_than_minutes=${encodeURIComponent(mins)}`, {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (!resp.ok) throw new Error(`cleanup failed (${resp.status})`);
+          const out = await resp.json();
+          showToast(`Deleted ${out?.deleted?.length || 0} host(s)`, 'success');
+
+          // Reload lists
+          await loadHosts();
+          await loadHostsTable();
+        } catch (err) {
+          showToast(err.message || String(err), 'error');
+        }
       });
 
       // Click-sort headers

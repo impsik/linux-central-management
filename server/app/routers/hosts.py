@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
+from ..models import HostCVEStatus, HostUser, PatchCampaignHost
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
@@ -39,6 +40,92 @@ def list_hosts(online_only: bool = False, db: Session = Depends(get_db)):
         for h in rows
         if (not online_only or is_host_online(h, now))
     ]
+
+
+@router.post("/cleanup-offline")
+def cleanup_offline_hosts(
+    older_than_minutes: int = 60,
+    include_local: bool = False,
+    dry_run: bool = False,
+    db: Session = Depends(get_db),
+    _user=Depends(require_ui_user),
+):
+    """Delete hosts that have not been seen recently.
+
+    This is meant as an admin/ops cleanup tool for labs where hosts are
+    ephemeral and won't come back.
+
+    Parameters:
+      - older_than_minutes: hosts with last_seen < now - older_than_minutes are removed
+      - include_local: whether to allow deleting the local dev agent (srv-001)
+      - dry_run: if true, only report what would be deleted
+    """
+
+    if older_than_minutes < 1:
+        raise HTTPException(400, "older_than_minutes must be >= 1")
+    if older_than_minutes > 60 * 24 * 30:
+        raise HTTPException(400, "older_than_minutes too large")
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=older_than_minutes)
+
+    q = select(Host).where(Host.last_seen < cutoff)
+    if not include_local:
+        q = q.where(Host.agent_id != "srv-001")
+
+    doomed_hosts = db.execute(q).scalars().all()
+    doomed_agent_ids = [h.agent_id for h in doomed_hosts]
+    doomed_host_ids = [h.id for h in doomed_hosts]
+
+    if dry_run:
+        return {
+            "cutoff": cutoff.isoformat(),
+            "older_than_minutes": older_than_minutes,
+            "count": len(doomed_agent_ids),
+            "agent_ids": doomed_agent_ids,
+        }
+
+    if not doomed_agent_ids:
+        return {
+            "cutoff": cutoff.isoformat(),
+            "older_than_minutes": older_than_minutes,
+            "deleted": [],
+            "counts": {},
+        }
+
+    counts: dict[str, int] = {}
+
+    with transaction(db):
+        counts["host_packages"] = db.execute(delete(HostPackage).where(HostPackage.host_id.in_(doomed_host_ids))).rowcount or 0
+        counts["host_package_updates"] = (
+            db.execute(delete(HostPackageUpdate).where(HostPackageUpdate.host_id.in_(doomed_host_ids))).rowcount or 0
+        )
+        counts["host_cve_status"] = (
+            db.execute(delete(HostCVEStatus).where(HostCVEStatus.host_id.in_(doomed_host_ids))).rowcount or 0
+        )
+        counts["host_users"] = db.execute(delete(HostUser).where(HostUser.host_id.in_(doomed_host_ids))).rowcount or 0
+
+        # Patch campaign host rows keyed by agent_id
+        counts["patch_campaign_hosts"] = (
+            db.execute(delete(PatchCampaignHost).where(PatchCampaignHost.agent_id.in_(doomed_agent_ids))).rowcount or 0
+        )
+
+        # Metrics keyed by agent_id
+        counts["host_load_metrics"] = (
+            db.execute(delete(HostLoadMetric).where(HostLoadMetric.agent_id.in_(doomed_agent_ids))).rowcount or 0
+        )
+        counts["host_metrics_snapshots"] = (
+            db.execute(delete(HostMetricsSnapshot).where(HostMetricsSnapshot.agent_id.in_(doomed_agent_ids))).rowcount
+            or 0
+        )
+
+        counts["hosts"] = db.execute(delete(Host).where(Host.id.in_(doomed_host_ids))).rowcount or 0
+
+    return {
+        "cutoff": cutoff.isoformat(),
+        "older_than_minutes": older_than_minutes,
+        "deleted": doomed_agent_ids,
+        "counts": counts,
+    }
 
 
 @router.get("/{agent_id}/packages")
