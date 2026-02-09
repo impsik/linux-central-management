@@ -48,12 +48,25 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 		affected := false
 		summary := "unknown"
 
+		// pro output varies by version. Prefer explicit "not affected" signals, otherwise
+		// treat "affected source package is installed" as affected.
 		if strings.Contains(low, "does not affect your system") || strings.Contains(low, "no affected source packages are installed") {
 			affected = false
 			summary = "not affected"
 		} else if strings.Contains(low, "affects your system") {
 			affected = true
 			summary = "affected"
+		} else if strings.Contains(low, "affected source package") && strings.Contains(low, "installed") {
+			// Example:
+			//   "1 affected source package is installed: bind9 (1/1)"
+			affected = true
+			summary = "affected"
+		}
+
+		// Some pro versions print "✔ CVE-... is resolved." even in --dry-run output.
+		// If we already detected affected packages, keep affected=true; otherwise leave as-is.
+		if affected && strings.Contains(low, "is resolved") {
+			summary = "fix available"
 		}
 
 		trimmed := strings.TrimSpace(out)
