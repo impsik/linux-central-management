@@ -56,17 +56,29 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 		affected := false
 		summary := "unknown"
 
-		// Detect "resolved" early; this must override other heuristics.
-		resolved := strings.Contains(low, " is resolved") || strings.Contains(low, "the update is already installed")
+		resolvedLine := strings.Contains(low, " is resolved")
+		alreadyInstalled := strings.Contains(low, "the update is already installed")
 
-		// pro output varies by version. Prefer explicit "not affected" signals, otherwise
-		// treat "affected source package is installed" as affected.
+		// Extract packages first; in --dry-run output this represents the planned fix.
+		pkgs := extractAptPackagesFromProDryRun(noAnsi)
+
+		// pro output varies by version.
+		// Priority rules:
+		//  - explicit "not affected" → not affected
+		//  - "update is already installed" → resolved/not affected
+		//  - if dry-run contains an apt --only-upgrade plan → affected (fix available)
+		//  - otherwise fall back to text heuristics
 		if strings.Contains(low, "does not affect your system") || strings.Contains(low, "no affected source packages are installed") {
 			affected = false
 			summary = "not affected"
-		} else if resolved {
+			pkgs = []string{}
+		} else if alreadyInstalled {
 			affected = false
 			summary = "resolved"
+			pkgs = []string{}
+		} else if len(pkgs) > 0 {
+			affected = true
+			summary = "fix available"
 		} else if strings.Contains(low, "affects your system") {
 			affected = true
 			summary = "affected"
@@ -75,6 +87,10 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 			//   "1 affected source package is installed: bind9 (1/1)"
 			affected = true
 			summary = "affected"
+		} else if resolvedLine {
+			// Some pro versions print a resolved line even when no useful details are present.
+			affected = false
+			summary = "resolved"
 		}
 
 		trimmed := strings.TrimSpace(noAnsi)
@@ -82,12 +98,6 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 			trimmed = trimmed[:12000] + "\n…(truncated)"
 		}
 
-		pkgs := extractAptPackagesFromProDryRun(noAnsi)
-		// If pro indicates the CVE is already resolved, do not suggest upgrading unrelated packages
-		// (e.g. ubuntu-pro-client self-update notices).
-		if summary == "resolved" {
-			pkgs = []string{}
-		}
 		payload := map[string]any{
 			"cve":       cve,
 			"affected":  affected,
