@@ -162,8 +162,57 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
     host.last_seen = datetime.now(timezone.utc)
     db.commit()
 
+    # Primary: in-memory dispatcher queue (fast path)
     job = await dispatcher.pop_job(agent_id, timeout=settings.agent_poll_timeout_seconds)
-    return {"job": job}
+    if job is not None:
+        return {"job": job}
+
+    # Fallback: DB-backed dispatch for queued jobs.
+    # This avoids jobs getting stuck in "queued" forever after server restarts
+    # (in-memory queues are lost on restart).
+    now = datetime.now(timezone.utc)
+
+    def build_agent_payload(job_row: Job, agent_id: str) -> dict:
+        t = job_row.job_type
+        payload = job_row.payload or {}
+
+        if t == "cve-check":
+            return {"job_id": job_row.job_key, "type": "cve-check", "cve": payload.get("cve")}
+        if t == "dist-upgrade":
+            return {"job_id": job_row.job_key, "type": "dist-upgrade"}
+        if t == "inventory-now":
+            return {"job_id": job_row.job_key, "type": "inventory-now"}
+        if t == "query-pkg-version":
+            return {"job_id": job_row.job_key, "type": "query-pkg-version", "packages": payload.get("packages") or []}
+        if t == "pkg-upgrade":
+            packages = payload.get("packages") or []
+            by = payload.get("packages_by_agent") or {}
+            pkgs = by.get(agent_id) or packages
+            return {"job_id": job_row.job_key, "type": "pkg-upgrade", "packages": pkgs or []}
+
+        # Unknown job type: return minimal shape; agent will report failure.
+        return {"job_id": job_row.job_key, "type": t}
+
+    with transaction(db):
+        row = (
+            db.execute(
+                select(JobRun, Job)
+                .join(Job, Job.id == JobRun.job_id)
+                .where(JobRun.agent_id == agent_id, JobRun.status == "queued")
+                .order_by(Job.created_at.asc())
+                .limit(1)
+            )
+            .first()
+        )
+
+        if not row:
+            return {"job": None}
+
+        run, job_row = row
+        run.status = "running"
+        run.started_at = run.started_at or now
+
+        return {"job": build_agent_payload(job_row, agent_id)}
 
 
 @router.post("/job-event")
