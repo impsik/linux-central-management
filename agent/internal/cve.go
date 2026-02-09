@@ -14,6 +14,12 @@ import (
 	"time"
 )
 
+var reANSI = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSICodes(s string) string {
+	return reANSI.ReplaceAllString(s, "")
+}
+
 // CheckCVE inspects whether this host is affected by a CVE.
 //
 // Preferred path (Ubuntu-native): `pro fix <CVE> --dry-run`.
@@ -41,18 +47,26 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 		}
 	}
 
-	low := strings.ToLower(out)
+	// pro output contains ANSI color codes; strip them before parsing.
+	noAnsi := stripANSICodes(out)
+	low := strings.ToLower(noAnsi)
 	proMissing := strings.Contains(low, "command not found") || strings.Contains(low, "no such file")
 
 	if !proMissing {
 		affected := false
 		summary := "unknown"
 
+		// Detect "resolved" early; this must override other heuristics.
+		resolved := strings.Contains(low, " is resolved") || strings.Contains(low, "the update is already installed")
+
 		// pro output varies by version. Prefer explicit "not affected" signals, otherwise
 		// treat "affected source package is installed" as affected.
 		if strings.Contains(low, "does not affect your system") || strings.Contains(low, "no affected source packages are installed") {
 			affected = false
 			summary = "not affected"
+		} else if resolved {
+			affected = false
+			summary = "resolved"
 		} else if strings.Contains(low, "affects your system") {
 			affected = true
 			summary = "affected"
@@ -63,18 +77,17 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 			summary = "affected"
 		}
 
-		// Some pro versions print "✔ CVE-... is resolved." even in --dry-run output.
-		// If we already detected affected packages, keep affected=true; otherwise leave as-is.
-		if affected && strings.Contains(low, "is resolved") {
-			summary = "fix available"
-		}
-
-		trimmed := strings.TrimSpace(out)
+		trimmed := strings.TrimSpace(noAnsi)
 		if len(trimmed) > 12000 {
 			trimmed = trimmed[:12000] + "\n…(truncated)"
 		}
 
-		pkgs := extractAptPackagesFromProDryRun(out)
+		pkgs := extractAptPackagesFromProDryRun(noAnsi)
+		// If pro indicates the CVE is already resolved, do not suggest upgrading unrelated packages
+		// (e.g. ubuntu-pro-client self-update notices).
+		if summary == "resolved" {
+			pkgs = []string{}
+		}
 		payload := map[string]any{
 			"cve":       cve,
 			"affected":  affected,
@@ -282,7 +295,8 @@ func extractAptPackagesFromProDryRun(out string) []string {
 
 	// Also handle the newer "command suggestion" format:
 	//   { apt update && apt install --only-upgrade -y pkg1 pkg2 ... }
-	reCmd := regexp.MustCompile(`(?is)\bapt\s+install\b([^\n\}]+)`)
+	// NOTE: do NOT match generic "apt install" suggestions (e.g. ubuntu-pro-client self-update).
+	reCmd := regexp.MustCompile(`(?is)\bapt\s+install\b[^\n\}]*\s--only-upgrade\b([^\n\}]+)`)
 	if m := reCmd.FindStringSubmatch(out); len(m) == 2 {
 		rest := strings.TrimSpace(m[1])
 		// strip common options
