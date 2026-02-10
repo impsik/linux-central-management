@@ -62,7 +62,7 @@ Login with the bootstrap user you set in `deploy/docker/.env`.
 
 ---
 
-## Agent setup (on each Ubuntu host)
+## Agent setup (for each Ubuntu host)
 
 ### 1) Build (or copy the binary)
 ```bash
