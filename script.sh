@@ -3,6 +3,25 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Load local env defaults if present.
+# NOTE: This script relies on environment variables (SERVER_URL, AGENT_TOKEN, TERM_TOKEN).
+# The repository contains a "$ROOT_DIR/.env" for convenience, but bash won't load it automatically.
+if [ -f "$ROOT_DIR/.env" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ROOT_DIR/.env"
+  set +a
+fi
+
+# Back-compat / convenience mapping:
+# docker/.env uses AGENT_SHARED_TOKEN + AGENT_TERMINAL_TOKEN; the agent deploy expects AGENT_TOKEN + TERM_TOKEN.
+if [ -z "${AGENT_TOKEN:-}" ] && [ -n "${AGENT_SHARED_TOKEN:-}" ]; then
+  AGENT_TOKEN="$AGENT_SHARED_TOKEN"
+fi
+if [ -z "${TERM_TOKEN:-}" ] && [ -n "${AGENT_TERMINAL_TOKEN:-}" ]; then
+  TERM_TOKEN="$AGENT_TERMINAL_TOKEN"
+fi
+
 RUN_SERVER="${RUN_SERVER:-1}"
 
 if [ "$RUN_SERVER" = "1" ]; then
