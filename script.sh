@@ -22,6 +22,9 @@ if [ -z "${TERM_TOKEN:-}" ] && [ -n "${AGENT_TERMINAL_TOKEN:-}" ]; then
   TERM_TOKEN="$AGENT_TERMINAL_TOKEN"
 fi
 
+# Default server URL for this environment (override by exporting SERVER_URL or setting it in .env).
+SERVER_URL="${SERVER_URL:-http://192.168.100.215:8000}"
+
 RUN_SERVER="${RUN_SERVER:-1}"
 
 if [ "$RUN_SERVER" = "1" ]; then
