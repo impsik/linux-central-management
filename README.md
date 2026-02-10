@@ -1,4 +1,4 @@
-# Fleet Ubuntu MVP
+# Fleet Ubuntu Central Management
 
 A working MVP for centralized Ubuntu host management:
 
