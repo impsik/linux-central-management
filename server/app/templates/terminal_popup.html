@@ -29,7 +29,12 @@
     document.getElementById('hint').textContent = cmd ? 'Auto-running command…' : '';
 
     const term = new Terminal({ convertEol: true });
-    term.open(document.getElementById("terminal"));
+    const termEl = document.getElementById("terminal");
+    term.open(termEl);
+    // Ensure focus + allow typing
+    try { term.focus(); } catch { }
+    termEl.addEventListener('mousedown', () => { try { term.focus(); } catch { } });
+    termEl.addEventListener('touchstart', () => { try { term.focus(); } catch { } }, { passive: true });
 
     if (!agentId) {
       term.write("Missing agent_id\\r\\n");
@@ -40,8 +45,16 @@
     const ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${encodeURIComponent(agentId)}`);
     ws.binaryType = "arraybuffer";
 
+    // Send keystrokes to the backend
+    term.onData(data => {
+      if (ws && ws.readyState === 1) {
+        ws.send(new TextEncoder().encode(data));
+      }
+    });
+
     ws.onopen = () => {
       term.write(`Connected to ${agentId}\\r\\n`);
+      try { term.focus(); } catch { }
       if (cmd) {
         // Send the command + newline
         ws.send(new TextEncoder().encode(cmd + "\\n"));
