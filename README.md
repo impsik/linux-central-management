@@ -73,6 +73,7 @@ scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
 ```
 ### For quick testing
 ```bash
+cd ../
 cp hosts.example hosts
 # edit hosts
 SERVER_URL=http://<SERVER_IP>:8000 AGENT_TOKEN=<AGENT_SHARED_TOKEN> TERM_TOKEN=<AGENT_TERMINAL_TOKEN> TARGETS=all ./script.sh
