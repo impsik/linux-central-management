@@ -18,6 +18,8 @@
   <div class="bar">
     <div>Terminal:</div>
     <div class="tag" id="aid">-</div>
+    <button id="run" style="margin-left:auto; padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#111827; color:#e5e7eb; cursor:pointer;" disabled>Run</button>
+    <button id="copy" style="padding:6px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#111827; color:#e5e7eb; cursor:pointer;" disabled>Copy</button>
     <div class="hint" id="hint"></div>
   </div>
   <div id="terminal"></div>
@@ -26,7 +28,7 @@
     const agentId = params.get('agent_id') || '';
     const cmd = params.get('cmd') || '';
     document.getElementById('aid').textContent = agentId || '-';
-    document.getElementById('hint').textContent = cmd ? 'Auto-running command…' : '';
+    document.getElementById('hint').textContent = cmd ? 'Command ready (click Run after login)' : '';
 
     const term = new Terminal({ convertEol: true });
     const termEl = document.getElementById("terminal");
@@ -52,14 +54,36 @@
       }
     });
 
+    function sendCommand() {
+      if (!cmd) return;
+      if (!ws || ws.readyState !== 1) return;
+      ws.send(new TextEncoder().encode(cmd + "\n"));
+      term.write(`\r\n[INFO] Sent: ${cmd}\r\n`);
+      try { term.focus(); } catch { }
+    }
+
     ws.onopen = () => {
       term.write(`Connected to ${agentId}\\r\\n`);
       try { term.focus(); } catch { }
-      if (cmd) {
-        // Send the command + newline
-        ws.send(new TextEncoder().encode(cmd + "\\n"));
-      }
     };
+    const runBtn = document.getElementById('run');
+    const copyBtn = document.getElementById('copy');
+    if (cmd) {
+      runBtn.disabled = false;
+      copyBtn.disabled = false;
+      runBtn.addEventListener('click', () => sendCommand());
+      copyBtn.addEventListener('click', async () => {
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(cmd);
+            term.write(`\r\n[INFO] Copied command to clipboard.\r\n`);
+            return;
+          }
+        } catch { }
+        term.write(`\r\n[INFO] Copy not available. Command:\r\n${cmd}\r\n`);
+      });
+    }
+
     ws.onmessage = (e) => {
       if (e.data instanceof ArrayBuffer) {
         term.write(new TextDecoder().decode(e.data));
