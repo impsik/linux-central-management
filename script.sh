@@ -100,7 +100,17 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+
+# Keep an EnvironmentFile for easy inspection/editing on the host...
 EnvironmentFile=/etc/fleet-agent.env
+# ...but also include explicit Environment= lines so it's obvious what variables the agent uses.
+# Values are resolved on the host via systemd's %H (hostname) specifier.
+Environment=FLEET_SERVER_URL=$SERVER_URL
+Environment=FLEET_AGENT_ID=%H
+Environment=FLEET_LABELS=$REMOTE_LABELS
+Environment=FLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN
+Environment=FLEET_TERMINAL_TOKEN=$REMOTE_TERMINAL_TOKEN
+
 ExecStart=/opt/fleet-agent/fleet-agent
 Restart=always
 RestartSec=2
