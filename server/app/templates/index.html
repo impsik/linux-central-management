@@ -918,6 +918,10 @@
         }
       });
       term.open(termEl);
+      // Ensure keystrokes go to xterm immediately (otherwise onData won't fire until focused).
+      try { term.focus(); } catch { }
+      termEl.addEventListener('mousedown', () => { try { term.focus(); } catch { } });
+      termEl.addEventListener('touchstart', () => { try { term.focus(); } catch { } }, { passive: true });
     }
 
     let ws = null;
@@ -2051,6 +2055,7 @@
         // Only write if this is still the active socket
         if (ws !== thisWs) return;
         term.write(`\r\nConnected to ${agentId}\r\n`);
+        try { term.focus(); } catch { }
       };
 
       thisWs.onmessage = (e) => {
