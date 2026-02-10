@@ -71,6 +71,12 @@ sudo apt  install golang-go
 go build -o fleet-agent ./cmd/fleet-agent
 scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
 ```
+### For quick testing
+```bash
+cp hosts.example hosts
+# edit hosts
+SERVER_URL=http://<SERVER_IP>:8000 AGENT_TOKEN=<AGENT_SHARED_TOKEN> TERM_TOKEN=<AGENT_TERMINAL_TOKEN> TARGETS=all ./script.sh
+```
 
 ### 2) Run (foreground)
 ```bash
