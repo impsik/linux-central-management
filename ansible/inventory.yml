@@ -2,5 +2,10 @@
 #
 # Inventory file used by the server container for Ansible-based actions.
 # Replace with your own hosts/groups as needed.
+#
+# Note: this is real YAML inventory (despite the .yml extension).
 
-127.0.0.1
+all:
+  hosts:
+    127.0.0.1:
+      ansible_connection: local

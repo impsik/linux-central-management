@@ -3,29 +3,39 @@
   hosts: "{{ server }}"
   remote_user: ubuntu
   become: true
-  become_method: ansible.builtin.sudo
 
+  # Prefer non-interactive usage (CI / automation):
+  #   ansible-playbook -i inventory.yml user_access.yml -e server=... -e username=... -e sudo=true -e generate_password=true
+  # Prompts are only used if variables are not provided.
   vars_prompt:
-    - name: "username"
+    - name: username
       prompt: "Sisesta kasutajanimi: "
       private: false
-    - name: "server"
+    - name: server
       prompt: "Sisesta serveri FQDN nimi, grupp, 'all' või serverite nimed eraldatud tühikutega"
       private: false
-    - name: "sudo"
+    - name: sudo
       prompt: "Kas tekitame koos sudo õigustega? (yes/no)"
       private: false
-    - name: "generate_password"
+    - name: generate_password
       prompt: "Kas genereerime uue tugeva parooli? (yes/no)"
       private: false
 
+  pre_tasks:
+    - name: Kontrolli sisendeid
+      ansible.builtin.assert:
+        that:
+          - username is defined
+          - username | length > 0
+        fail_msg: "Puudub username (anna -e username=<nimi> või kasuta prompti)."
+
   tasks:
-    - name: "Genereerime tugeva parooli kasutajale {{ username }}"
+    - name: Genereerime tugeva parooli kasutajale {{ username }}
       ansible.builtin.set_fact:
         user_password_plain: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
       when: generate_password | bool
 
-    - name: "Hashime kasutaja parooli"
+    - name: Hashime kasutaja parooli
       ansible.builtin.command: "openssl passwd -6 {{ user_password_plain }}"
       register: user_password_hash_cmd
       delegate_to: localhost
@@ -33,68 +43,68 @@
       no_log: true
       when: generate_password | bool
 
-    - name: "Salvestame parooli räsi"
+    - name: Salvestame parooli räsi
       ansible.builtin.set_fact:
         user_password_hash: "{{ user_password_hash_cmd.stdout }}"
       no_log: true
       when: generate_password | bool
 
-    - name: "Tekitame  wheel õigustega kasutaja {{ username }}"
+    - name: Tekitame wheel õigustega kasutaja {{ username }}
       ansible.builtin.user:
         name: "{{ username }}"
-        groups: "wheel"
+        groups: wheel
         append: true
         shell: /bin/bash
         password: "{{ user_password_hash | default(omit) }}"
       when:
-        - ansible_os_family == "RedHat"
+        - ansible_os_family == 'RedHat'
         - sudo | bool
       register: user_create_redhat
 
-    - name: "Tekitame sudo õigustega kasutaja {{ username }}"
+    - name: Tekitame sudo õigustega kasutaja {{ username }}
       ansible.builtin.user:
         name: "{{ username }}"
-        groups: "sudo"
+        groups: sudo
         append: true
         shell: /bin/bash
         password: "{{ user_password_hash | default(omit) }}"
       when:
-        - ansible_os_family == "Debian"
+        - ansible_os_family == 'Debian'
         - sudo | bool
       register: user_create_debian
 
-    - name: "Tekitame kasutaja {{ username }} ilma sudo/wheel õigusteta (RedHat)"
+    - name: Tekitame kasutaja {{ username }} ilma sudo/wheel õigusteta (RedHat)
       ansible.builtin.user:
         name: "{{ username }}"
         shell: /bin/bash
         password: "{{ user_password_hash | default(omit) }}"
       when:
-        - ansible_os_family == "RedHat"
+        - ansible_os_family == 'RedHat'
         - not (sudo | bool)
       register: user_create_redhat_nosudo
 
-    - name: "Tekitame kasutaja {{ username }} ilma sudo/wheel õigusteta (Debian)"
+    - name: Tekitame kasutaja {{ username }} ilma sudo/wheel õigusteta (Debian)
       ansible.builtin.user:
         name: "{{ username }}"
         shell: /bin/bash
         password: "{{ user_password_hash | default(omit) }}"
       when:
-        - ansible_os_family == "Debian"
+        - ansible_os_family == 'Debian'
         - not (sudo | bool)
       register: user_create_debian_nosudo
 
-    - name: "Näita genereeritud parool (näita ainult uue kasutaja loomisel)"
+    - name: Näita genereeritud parool (näita ainult uue kasutaja loomisel)
       ansible.builtin.debug:
         msg: "Kasutaja {{ username }} parool: {{ user_password_plain }}"
       when:
         - generate_password | bool
         - (user_create_redhat is changed) or (user_create_debian is changed) or (user_create_redhat_nosudo is changed) or (user_create_debian_nosudo is changed)
 
-    - name: "Anname kasutajale õiguse sudo/wheel jaoks ilma paroolita ja verifitseerime sudoers faili"
+    - name: Anname kasutajale õiguse sudo/wheel jaoks ilma paroolita ja verifitseerime sudoers faili
       ansible.builtin.lineinfile:
         backup: true
         path: /etc/sudoers
         state: present
-        line: '{{ username }} ALL=(ALL) NOPASSWD: ALL'
+        line: "{{ username }} ALL=(ALL) NOPASSWD: ALL"
         validate: /usr/sbin/visudo -cf %s
       when: sudo | bool

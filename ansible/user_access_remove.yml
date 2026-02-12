@@ -3,24 +3,28 @@
   hosts: "{{ server }}"
   remote_user: ubuntu
   become: true
-  become_method: ansible.builtin.sudo
 
+  # Prefer non-interactive usage:
+  #   ansible-playbook -i inventory.yml user_access_remove.yml -e target_hosts=... -e username=...
   vars_prompt:
-    - name: "username"
-      prompt: "Enter username "
+    - name: username
+      prompt: "Sisesta kasutajanimi: "
       private: false
-    - name: "server"
-      prompt: "Enter server FQDN name, group name or allservers:vod"
+    - name: target_hosts
+      prompt: "Sisesta serveri FQDN nimi, grupp, 'all' või serverite nimed eraldatud tühikutega"
       private: false
+
+  pre_tasks:
+    - name: Kontrolli sisendeid
+      ansible.builtin.assert:
+        that:
+          - username is defined
+          - username | length > 0
+        fail_msg: "Puudub username (anna -e username=<nimi> või kasuta prompti)."
 
   tasks:
-    - name: Remove the user {{ username }}
+    - name: Eemalda kasutaja {{ username }}
       ansible.builtin.user:
         name: "{{ username }}"
         state: absent
         remove: true
-
-    - name: "Restart sshd service"
-      ansible.builtin.service:
-        name: ssh
-        state: restarted
