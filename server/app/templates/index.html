@@ -3704,7 +3704,13 @@
             console.warn('Post-action update check failed:', e3);
           }
           if (statusEl) statusEl.textContent = `Refreshing package list…`;
-          await loadPackages(currentAgentId);
+          // When using "Updates only" view, the backend filter is based on cached inventory/update flags.
+          // After an upgrade, refresh inventory so upgraded packages disappear from the updates-only list.
+          if (action === 'upgrade' && packagesUpdatesOnly) {
+            await refreshPackagesNow(currentAgentId);
+          } else {
+            await loadPackages(currentAgentId);
+          }
         } catch (e) {
           if (statusEl) statusEl.textContent = `Error: ${e.message || e}`;
         }
