@@ -1,6 +1,6 @@
 #!/usr/bin/env ansible-playbook
 - name: Kasutaja eemaldamine
-  hosts: "{{ server }}"
+  hosts: "{{ target_hosts | default('all') }}"
   remote_user: ubuntu
   become: true
 
