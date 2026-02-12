@@ -73,7 +73,7 @@
         - sudo | bool
       register: user_create_debian
 
-    - name: Tekitame kasutaja {{ username }} ilma sudo/wheel õigusteta (RedHat)
+    - name: "Tekitame kasutaja ilma sudo/wheel õigusteta (RedHat): {{ username }}"
       ansible.builtin.user:
         name: "{{ username }}"
         shell: /bin/bash
@@ -83,7 +83,7 @@
         - not (sudo | bool)
       register: user_create_redhat_nosudo
 
-    - name: Tekitame kasutaja {{ username }} ilma sudo/wheel õigusteta (Debian)
+    - name: "Tekitame kasutaja ilma sudo/wheel õigusteta (Debian): {{ username }}"
       ansible.builtin.user:
         name: "{{ username }}"
         shell: /bin/bash
