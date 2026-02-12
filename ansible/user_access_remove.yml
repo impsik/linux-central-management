@@ -1,5 +1,5 @@
 #!/usr/bin/env ansible-playbook
-- name: Kasutaja eemaldamine
+- name: Remove user
   hosts: "{{ target_hosts | default('all') }}"
   remote_user: ubuntu
   become: true
@@ -8,22 +8,22 @@
   #   ansible-playbook -i inventory.yml user_access_remove.yml -e target_hosts=... -e username=...
   vars_prompt:
     - name: username
-      prompt: "Sisesta kasutajanimi: "
+      prompt: "Enter username: "
       private: false
     - name: target_hosts
-      prompt: "Sisesta serveri FQDN nimi, grupp, 'all' või serverite nimed eraldatud tühikutega"
+      prompt: "Enter target hosts (FQDN, group, 'all', or space-separated hosts):"
       private: false
 
   pre_tasks:
-    - name: Kontrolli sisendeid
+    - name: Validate inputs
       ansible.builtin.assert:
         that:
           - username is defined
           - username | length > 0
-        fail_msg: "Puudub username (anna -e username=<nimi> või kasuta prompti)."
+        fail_msg: "Missing username (pass -e username=<name> or use the prompt)."
 
   tasks:
-    - name: Eemalda kasutaja {{ username }}
+    - name: Remove user {{ username }}
       ansible.builtin.user:
         name: "{{ username }}"
         state: absent

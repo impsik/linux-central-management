@@ -1,41 +1,41 @@
 #!/usr/bin/env ansible-playbook
-- name: Kasutaja lisamine serverisse
-  hosts: "{{ server }}"
+- name: Add user to server
+  hosts: "{{ target_hosts | default('all') }}"
   remote_user: ubuntu
   become: true
 
   # Prefer non-interactive usage (CI / automation):
-  #   ansible-playbook -i inventory.yml user_access.yml -e server=... -e username=... -e sudo=true -e generate_password=true
+  #   ansible-playbook -i inventory.yml user_access.yml -e target_hosts=... -e username=... -e sudo=true -e generate_password=true
   # Prompts are only used if variables are not provided.
   vars_prompt:
     - name: username
-      prompt: "Sisesta kasutajanimi: "
+      prompt: "Enter username: "
       private: false
-    - name: server
-      prompt: "Sisesta serveri FQDN nimi, grupp, 'all' või serverite nimed eraldatud tühikutega"
+    - name: target_hosts
+      prompt: "Enter target hosts (FQDN, group, 'all', or space-separated hosts):"
       private: false
     - name: sudo
-      prompt: "Kas tekitame koos sudo õigustega? (yes/no)"
+      prompt: "Grant sudo access? (yes/no)"
       private: false
     - name: generate_password
-      prompt: "Kas genereerime uue tugeva parooli? (yes/no)"
+      prompt: "Generate a new strong password? (yes/no)"
       private: false
 
   pre_tasks:
-    - name: Kontrolli sisendeid
+    - name: Validate inputs
       ansible.builtin.assert:
         that:
           - username is defined
           - username | length > 0
-        fail_msg: "Puudub username (anna -e username=<nimi> või kasuta prompti)."
+        fail_msg: "Missing username (pass -e username=<name> or use the prompt)."
 
   tasks:
-    - name: Genereerime tugeva parooli kasutajale {{ username }}
+    - name: Generate a strong password for user {{ username }}
       ansible.builtin.set_fact:
         user_password_plain: "{{ lookup('password', '/dev/null length=20 chars=ascii_letters,digits') }}"
       when: generate_password | bool
 
-    - name: Hashime kasutaja parooli
+    - name: Hash user password
       ansible.builtin.command: "openssl passwd -6 {{ user_password_plain }}"
       register: user_password_hash_cmd
       delegate_to: localhost
@@ -43,13 +43,13 @@
       no_log: true
       when: generate_password | bool
 
-    - name: Salvestame parooli räsi
+    - name: Store password hash
       ansible.builtin.set_fact:
         user_password_hash: "{{ user_password_hash_cmd.stdout }}"
       no_log: true
       when: generate_password | bool
 
-    - name: Tekitame wheel õigustega kasutaja {{ username }}
+    - name: "Create wheel user (RedHat): {{ username }}"
       ansible.builtin.user:
         name: "{{ username }}"
         groups: wheel
@@ -61,7 +61,7 @@
         - sudo | bool
       register: user_create_redhat
 
-    - name: Tekitame sudo õigustega kasutaja {{ username }}
+    - name: "Create sudo user (Debian): {{ username }}"
       ansible.builtin.user:
         name: "{{ username }}"
         groups: sudo
@@ -73,7 +73,7 @@
         - sudo | bool
       register: user_create_debian
 
-    - name: "Tekitame kasutaja ilma sudo/wheel õigusteta (RedHat): {{ username }}"
+    - name: "Create user without sudo/wheel (RedHat): {{ username }}"
       ansible.builtin.user:
         name: "{{ username }}"
         shell: /bin/bash
@@ -83,7 +83,7 @@
         - not (sudo | bool)
       register: user_create_redhat_nosudo
 
-    - name: "Tekitame kasutaja ilma sudo/wheel õigusteta (Debian): {{ username }}"
+    - name: "Create user without sudo/wheel (Debian): {{ username }}"
       ansible.builtin.user:
         name: "{{ username }}"
         shell: /bin/bash
@@ -93,14 +93,14 @@
         - not (sudo | bool)
       register: user_create_debian_nosudo
 
-    - name: Näita genereeritud parool (näita ainult uue kasutaja loomisel)
+    - name: Show generated password (only when user is created)
       ansible.builtin.debug:
-        msg: "Kasutaja {{ username }} parool: {{ user_password_plain }}"
+        msg: "User {{ username }} password: {{ user_password_plain }}"
       when:
         - generate_password | bool
         - (user_create_redhat is changed) or (user_create_debian is changed) or (user_create_redhat_nosudo is changed) or (user_create_debian_nosudo is changed)
 
-    - name: Anname kasutajale õiguse sudo/wheel jaoks ilma paroolita ja verifitseerime sudoers faili
+    - name: Grant passwordless sudo and validate sudoers
       ansible.builtin.lineinfile:
         backup: true
         path: /etc/sudoers
