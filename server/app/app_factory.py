@@ -202,6 +202,40 @@ def create_app() -> FastAPI:
 
         return await call_next(request)
 
+    @app.middleware("http")
+    async def security_headers_middleware(request: Request, call_next):
+        """Set basic security headers.
+
+        Kept intentionally conservative to avoid breaking the single-page UI.
+        """
+
+        from .config import settings
+
+        resp = await call_next(request)
+
+        if not bool(getattr(settings, "security_headers_enabled", True)):
+            return resp
+
+        # Basic hardening headers
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "same-origin")
+        resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        # Prevent clickjacking by default.
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+
+        # HSTS only when behind HTTPS (or proxy indicates HTTPS) and cookie_secure is enabled.
+        # Avoid setting this on HTTP dev deployments.
+        xfp = (request.headers.get("x-forwarded-proto") or "").lower()
+        is_https = (request.url.scheme == "https") or (xfp == "https")
+        if is_https and bool(getattr(settings, "ui_cookie_secure", False)):
+            resp.headers.setdefault("Strict-Transport-Security", "max-age=15552000")
+
+        csp = getattr(settings, "content_security_policy", None)
+        if csp:
+            resp.headers.setdefault("Content-Security-Policy", str(csp))
+
+        return resp
+
     # Routers
     app.include_router(ui.router)
     app.include_router(auth.router)

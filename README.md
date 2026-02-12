@@ -131,13 +131,26 @@ The server **does not** ship with a safe default password. You must set:
 - `BOOTSTRAP_PASSWORD` in `deploy/docker/.env`
 
 ### Agent authentication
-All agent endpoints require a shared token:
+All agent endpoints require a shared token (required by default):
 - Server: `AGENT_SHARED_TOKEN`
 - Agent: `FLEET_AGENT_TOKEN`
+
+For local development only, you can bypass this requirement by setting:
+- `ALLOW_INSECURE_NO_AGENT_TOKEN=true`
+
+Do **not** use that on anything exposed beyond a trusted LAN.
 
 ### Terminal feature (high risk)
 The agent has an optional websocket PTY feature.
 Enable only on trusted networks and only with explicit tokens.
+
+### HTTP security headers
+The server sets basic security headers by default (e.g. `X-Frame-Options`, `X-Content-Type-Options`).
+For internet exposure, run behind HTTPS and set:
+- `UI_COOKIE_SECURE=true`
+
+Optional (advanced): you can set a custom `CONTENT_SECURITY_POLICY` env var, but the built-in UI uses inline scripts,
+so a strict CSP may require additional work.
 
 Token wiring (must match):
 - **Server** env: `AGENT_TERMINAL_TOKEN`

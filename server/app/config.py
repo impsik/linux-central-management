@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     agent_terminal_port: int = 18080
     agent_terminal_token: str | None = None  # must match agent-side token
 
+    # Security headers (recommended if exposed beyond LAN)
+    security_headers_enabled: bool = True
+    # Optional Content-Security-Policy. Leave unset by default because the UI uses inline scripts.
+    content_security_policy: str | None = None
+
     # Background metrics refresh (for fast Overview/Attention updates)
     metrics_background_refresh_seconds: int = 60  # set 0 to disable
     metrics_background_batch_limit: int = 50
