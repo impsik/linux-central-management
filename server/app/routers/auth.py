@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
-from ..deps import SESSION_COOKIE, require_admin_user, require_ui_user, sha256_hex
+from ..deps import CSRF_COOKIE, SESSION_COOKIE, require_admin_user, require_ui_user, sha256_hex
 from ..models import AppSession, AppUser
 from ..services.rbac import permissions_for
 
@@ -43,6 +43,21 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     if not username or not password:
         raise HTTPException(400, "username and password are required")
 
+    # Basic brute-force guard (single-process in-memory). Good enough for LAN MVP.
+    from ..services.rate_limit import FixedWindowRateLimiter
+
+    global _LOGIN_LIMITER  # noqa: PLW0603
+    try:
+        _LOGIN_LIMITER
+    except NameError:
+        _LOGIN_LIMITER = FixedWindowRateLimiter(limit=10, window_seconds=60)
+
+    ip = (getattr(request.client, "host", None) or "unknown").strip()
+    rl = _LOGIN_LIMITER.check(f"login:{ip}:{username.lower()}")
+    _LOGIN_LIMITER.cleanup()
+    if not rl.allowed:
+        raise HTTPException(429, f"Too many login attempts. Try again in {rl.retry_after_seconds}s")
+
     user = db.execute(
         select(AppUser).where(AppUser.username == username, AppUser.is_active == True)  # noqa: E712
     ).scalar_one_or_none()
@@ -64,6 +79,7 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     db.commit()
 
     resp = JSONResponse({"ok": True, "username": user.username})
+
     resp.set_cookie(
         key=SESSION_COOKIE,
         value=token,
@@ -73,6 +89,20 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
         expires=int(expires.timestamp()),
         path="/",
     )
+
+    # CSRF protection: double-submit cookie.
+    # Frontend must echo this value in X-CSRF-Token for state-changing requests.
+    csrf = secrets.token_urlsafe(32)
+    resp.set_cookie(
+        key=CSRF_COOKIE,
+        value=csrf,
+        httponly=False,
+        samesite="lax",
+        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        expires=int(expires.timestamp()),
+        path="/",
+    )
+
     return resp
 
 
@@ -134,6 +164,20 @@ def auth_logout(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def auth_me(user: AppUser = Depends(require_ui_user)):
+def auth_me(request: Request, user: AppUser = Depends(require_ui_user)):
     perms = permissions_for(user)
-    return {"ok": True, "username": user.username, "role": perms.get("role"), "permissions": perms}
+    resp = JSONResponse({"ok": True, "username": user.username, "role": perms.get("role"), "permissions": perms})
+
+    # Ensure CSRF cookie exists for older sessions / upgraded deployments.
+    if not request.cookies.get(CSRF_COOKIE):
+        csrf = secrets.token_urlsafe(32)
+        resp.set_cookie(
+            key=CSRF_COOKIE,
+            value=csrf,
+            httponly=False,
+            samesite="lax",
+            secure=bool(getattr(settings, "ui_cookie_secure", False)),
+            path="/",
+        )
+
+    return resp

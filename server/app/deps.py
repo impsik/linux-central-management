@@ -12,6 +12,7 @@ from .db import get_db
 from .models import AppSession, AppUser
 
 SESSION_COOKIE = "fleet_session"
+CSRF_COOKIE = "fleet_csrf"
 
 
 def sha256_hex(s: str) -> str:

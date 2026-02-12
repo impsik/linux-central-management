@@ -19,6 +19,13 @@ logger = logging.getLogger(__name__)
 def _startup() -> None:
     from .config import settings
 
+    # Security guardrail: require AGENT_SHARED_TOKEN unless explicitly running insecure dev mode.
+    if not getattr(settings, "agent_shared_token", None) and not bool(getattr(settings, "allow_insecure_no_agent_token", False)):
+        raise RuntimeError(
+            "AGENT_SHARED_TOKEN is required to start the server (agent endpoints would be unauthenticated). "
+            "Set AGENT_SHARED_TOKEN or set ALLOW_INSECURE_NO_AGENT_TOKEN=true for local dev only."
+        )
+
     if bool(getattr(settings, "db_auto_create_tables", True)):
         Base.metadata.create_all(bind=engine)
         logger.info("DB auto-create enabled: ensured database tables exist")
@@ -161,6 +168,39 @@ def create_app() -> FastAPI:
             return await call_next(request)
         finally:
             db.close()
+
+    @app.middleware("http")
+    async def csrf_middleware(request: Request, call_next):
+        """CSRF protection for cookie-authenticated requests.
+
+        Double-submit cookie: require X-CSRF-Token to match fleet_csrf cookie
+        on state-changing requests.
+        """
+
+        from .deps import CSRF_COOKIE, SESSION_COOKIE
+
+        path = request.url.path or ""
+        method = (request.method or "GET").upper()
+
+        # Exemptions:
+        # - agent endpoints use header token auth
+        # - health check
+        # - websockets
+        # - login (no session yet)
+        if path.startswith("/agent/") or path == "/health" or path.startswith("/ws/") or path == "/auth/login":
+            return await call_next(request)
+
+        if method in ("GET", "HEAD", "OPTIONS"):
+            return await call_next(request)
+
+        # Only enforce if a session cookie is present (UI auth uses cookies).
+        if request.cookies.get(SESSION_COOKIE):
+            csrf_cookie = request.cookies.get(CSRF_COOKIE)
+            csrf_header = request.headers.get("X-CSRF-Token")
+            if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+                return JSONResponse(status_code=403, content={"detail": "CSRF token missing or invalid"})
+
+        return await call_next(request)
 
     # Routers
     app.include_router(ui.router)

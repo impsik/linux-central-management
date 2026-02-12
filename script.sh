@@ -66,10 +66,12 @@ fi
 ANSIBLE_COMMON_ARGS+=("--ssh-common-args=-o StrictHostKeyChecking=no")
 
 # Ensure install dir exists
-ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m file -a "path=/opt/fleet-agent state=directory mode=0755"
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m file -a "path=/opt/fleet-agent state=directory mode=0755" \
+  || echo "[WARN] Agent deploy: could not reach some hosts (dir create step)"
 
 # Copy agent binary
-ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755"
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" \
+  || echo "[WARN] Agent deploy: could not reach some hosts (copy step)"
 
 # Optional: bootstrap a systemd service on targets.
 # Provide at least SERVER_URL + AGENT_TOKEN for a working agent:
@@ -89,7 +91,7 @@ FLEET_AGENT_ID=\$HOSTID
 FLEET_LABELS=\$LABELS
 FLEET_AGENT_TOKEN=\$TOKEN
 FLEET_TERMINAL_TOKEN=\$TERM_TOKEN
-EOF"
+EOF" || echo "[WARN] Agent deploy: could not reach some hosts (env file step)"
 
   # Write systemd unit (use shell heredoc; ad-hoc copy module is awkward with spaces/newlines)
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "cat > /etc/systemd/system/fleet-agent.service <<'EOF'
@@ -118,16 +120,19 @@ RestartSec=2
 [Install]
 WantedBy=multi-user.target
 EOF
-chmod 0644 /etc/systemd/system/fleet-agent.service"
+chmod 0644 /etc/systemd/system/fleet-agent.service" \
+    || echo "[WARN] Agent deploy: could not reach some hosts (systemd unit step)"
 
-  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl is-active fleet-agent"
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl is-active fleet-agent" \
+    || echo "[WARN] Agent deploy: could not reach some hosts (systemd enable/restart step)"
 else
   echo "[WARN] SERVER_URL and/or AGENT_TOKEN not set; skipping systemd service setup. Binary copied only."
 fi
 
 # Kill any stray user-run agent instances (to avoid duplicate heartbeats / confusion)
 # (Don't use pkill -f with a pattern that appears in our own command line.)
-ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "pkill -x fleet-agent || true"
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "pkill -x fleet-agent || true" \
+  || echo "[WARN] Agent deploy: could not reach some hosts (pkill step)"
 
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 TERM_TOKEN="${TERM_TOKEN:-}"

@@ -17,8 +17,10 @@ class Settings(BaseSettings):
     agent_online_grace_seconds: int = 10
 
     # Agent authentication (shared secret MVP)
-    # If set, all /agent/* endpoints require header: X-Fleet-Agent-Token: <token>
+    # By default, the server requires a shared token for all /agent/* endpoints.
+    # Set AGENT_SHARED_TOKEN (recommended) or explicitly allow insecure dev mode.
     agent_shared_token: str | None = None
+    allow_insecure_no_agent_token: bool = False
 
     # Ansible integration
     ansible_dir: str = "ansible"
