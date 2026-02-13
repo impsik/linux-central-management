@@ -1441,6 +1441,27 @@ func readKernel() string {
 	return strings.TrimSpace(string(out))
 }
 
+func parsePasswdStatusAll(output string) map[string]string {
+	m := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Typical: "username P 2026-02-13 0 99999 7 -1" or "username NP ..." or "username L ..."
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		user := fields[0]
+		status := fields[1]
+		if user != "" && status != "" {
+			m[user] = status
+		}
+	}
+	return m
+}
+
 func queryUsers(ctx context.Context) (string, string, int, string) {
 	// Create a context with timeout to prevent hanging
 	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -1479,6 +1500,18 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		}
 	}
 
+	// Determine lock status semantics:
+	// We only treat accounts as "locked" if they are explicitly locked via passwd/usermod.
+	// Use `passwd -S -a` (single call) when available, because shadow heuristics can confuse
+	// "no password set" with "locked".
+	passwdStatusMap := map[string]string{}
+	passwdStatusOK := false
+	passwdAllCmd := exec.CommandContext(queryCtx, "sudo", "-n", "passwd", "-S", "-a")
+	if outAll, err := passwdAllCmd.CombinedOutput(); err == nil {
+		passwdStatusMap = parsePasswdStatusAll(string(outAll))
+		passwdStatusOK = true
+	}
+
 	// Also check wheel and admin groups
 	for _, groupName := range []string{"wheel", "admin"} {
 		groupCmd := exec.CommandContext(queryCtx, "getent", "group", groupName)
@@ -1511,66 +1544,22 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		// Check if user has sudo access (check our pre-built map)
 		hasSudo := sudoGroupUsers[username]
 
-		// Check if account is locked by examining multiple factors:
-		// 1. Password locked (shadow file has ! prefix)
-		// 2. Account expired (expire date in shadow file)
-		// 3. Shell set to nologin/false
+		// Locked semantics: ONLY explicit passwd lock (passwd -l / usermod -L).
+		// Do NOT treat "no password set" or shell=nologin as locked.
 		isLocked := false
-		shadowCmd := exec.CommandContext(queryCtx, "sudo", "-n", "getent", "shadow", username)
-		if shadowOut, err := shadowCmd.Output(); err == nil {
-			shadowLine := strings.TrimSpace(string(shadowOut))
-			parts := strings.Split(shadowLine, ":")
-			if len(parts) >= 2 {
-				passwordField := parts[1]
-				// Check password lock: locked accounts have password field:
-				// - "!" or "*" (completely disabled)
-				// - "!$6$..." (locked password hash - passwd -l prepends !)
-				passwordLocked := passwordField == "!" || passwordField == "*" || strings.HasPrefix(passwordField, "!")
-
-				// Check account expiration (8th field in shadow file)
-				// Empty or -1 means never expires, otherwise it's days since epoch
-				accountExpired := false
-				if len(parts) >= 9 {
-					expireField := parts[8]
-					if expireField != "" && expireField != "-1" {
-						// If expire date is set and in the past, account is expired
-						// For our locking, we set it to "1" (1970-01-02), so any small number means expired
-						var expireDays int64
-						n, err := fmt.Sscanf(expireField, "%d", &expireDays)
-						if err == nil && n == 1 {
-							// Calculate current days since epoch
-							now := time.Now()
-							epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
-							currentDays := int64(now.Sub(epoch).Hours() / 24)
-							if expireDays > 0 && expireDays < currentDays {
-								accountExpired = true
-							}
-						}
-					}
-				}
-
-				isLocked = passwordLocked || accountExpired
+		if passwdStatusOK {
+			if st, ok := passwdStatusMap[username]; ok {
+				isLocked = (st == "L")
 			}
-		}
-
-		// Also check if shell is nologin/false (indicates account is disabled)
-		if shell == "/usr/sbin/nologin" || shell == "/bin/false" || shell == "/sbin/nologin" {
-			isLocked = true
-		}
-
-		// Fallback to passwd -S if shadow check failed
-		if !isLocked {
-			passwdStatusCmd := exec.CommandContext(queryCtx, "sudo", "-n", "passwd", "-S", username)
-			if statusOut, err := passwdStatusCmd.Output(); err == nil {
-				// Output format: "username P 01/01/2024 0 99999 7 -1"
-				// P = password set, L = locked, NP = no password
-				statusLine := strings.TrimSpace(string(statusOut))
-				statusFields := strings.Fields(statusLine)
-				if len(statusFields) >= 2 {
-					statusChar := statusFields[1]
-					if statusChar == "L" {
-						isLocked = true
-					}
+		} else {
+			// Best-effort fallback if passwd status isn't available.
+			shadowCmd := exec.CommandContext(queryCtx, "sudo", "-n", "getent", "shadow", username)
+			if shadowOut, err := shadowCmd.Output(); err == nil {
+				shadowLine := strings.TrimSpace(string(shadowOut))
+				parts := strings.Split(shadowLine, ":")
+				if len(parts) >= 2 {
+					passwordField := parts[1]
+					isLocked = strings.HasPrefix(passwordField, "!")
 				}
 			}
 		}
