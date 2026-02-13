@@ -60,7 +60,7 @@ curl -s http://localhost:8000/health
 ```
 
 Open UI:
-- http://<IP_ADDRESS>:8000/
+- http://localhost:8000/
 
 Login with the bootstrap user you set in `deploy/docker/.env`.
 
