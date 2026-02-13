@@ -19,7 +19,7 @@ def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
-def get_current_user_from_request(request: Request, db: Session) -> AppUser | None:
+def get_current_session_from_request(request: Request, db: Session) -> tuple[AppSession, AppUser] | None:
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
         return None
@@ -33,6 +33,16 @@ def get_current_user_from_request(request: Request, db: Session) -> AppUser | No
     user = db.execute(
         select(AppUser).where(AppUser.id == sess.user_id, AppUser.is_active == True)  # noqa: E712
     ).scalar_one_or_none()
+    if not user:
+        return None
+    return sess, user
+
+
+def get_current_user_from_request(request: Request, db: Session) -> AppUser | None:
+    res = get_current_session_from_request(request, db)
+    if not res:
+        return None
+    _, user = res
     return user
 
 

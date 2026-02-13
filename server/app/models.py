@@ -142,6 +142,16 @@ class AppUser(Base):
     password_hash = Column(String, nullable=False)
     role = Column(String, nullable=False, default="operator", index=True)  # admin|operator|readonly
     is_active = Column(Boolean, nullable=False, default=True)
+
+    # MFA (TOTP)
+    mfa_enabled = Column(Boolean, nullable=False, default=False)
+    totp_secret_enc = Column(Text)  # Fernet-encrypted base32 secret
+    totp_secret_pending_enc = Column(Text)  # pending enrollment secret
+    mfa_enrolled_at = Column(DateTime(timezone=True))
+    mfa_pending_at = Column(DateTime(timezone=True))
+    # JSON list of hashed recovery codes (sha256)
+    recovery_codes = Column(JSON, nullable=False, default=list)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 class AppSession(Base):
@@ -151,6 +161,9 @@ class AppSession(Base):
     token_sha256 = Column(String, unique=True, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False, index=True)
+
+    # MFA gating: set once the user completes MFA for this session.
+    mfa_verified_at = Column(DateTime(timezone=True))
 
 
 class AnsibleRun(Base):

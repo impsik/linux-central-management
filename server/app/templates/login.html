@@ -126,7 +126,13 @@
           try { const j = await resp.json(); msg = j.detail || j.message || msg; } catch {}
           throw new Error(msg);
         }
-        showToast('Signed in.', 'success');
+        let data = null;
+        try { data = await resp.json(); } catch { data = null; }
+        if (data && (data.mfa_required || data.mfa_setup_required)) {
+          showToast('Signed in. MFA required—complete setup/verification.', 'info', 3500);
+        } else {
+          showToast('Signed in.', 'success');
+        }
         setTimeout(() => { window.location.href = '/'; }, 400);
       } catch (e) {
         const msg = e.message || String(e);

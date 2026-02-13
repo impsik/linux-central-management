@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from .db import Base, SessionLocal, engine
 from .deps import get_current_user_from_request
-from .routers import agent, ansible, auth, cronjobs, dashboard, hosts, jobs, migrations, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
+from .routers import agent, ansible, auth, cronjobs, dashboard, hosts, jobs, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +165,25 @@ def create_app() -> FastAPI:
                 if path == "/":
                     return RedirectResponse(url="/login", status_code=302)
                 return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+
+            # MFA enforcement (required for admin/operator unless readonly).
+            # Allow the UI shell (/) so the user can complete enrollment/verification flows.
+            role = (getattr(user, "role", "operator") or "operator").lower()
+            require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+            if require_mfa:
+                # Session is needed to check per-session verification.
+                from .deps import get_current_session_from_request
+
+                sess_res = get_current_session_from_request(request, db)
+                mfa_enabled = bool(getattr(user, "mfa_enabled", False))
+                mfa_verified = bool(sess_res and getattr(sess_res[0], "mfa_verified_at", None))
+
+                allowed_paths = {"/", "/terminal"}
+                if not mfa_enabled and path not in allowed_paths:
+                    return JSONResponse(status_code=403, content={"detail": "MFA enrollment required"})
+                if mfa_enabled and not mfa_verified and path not in allowed_paths:
+                    return JSONResponse(status_code=403, content={"detail": "MFA verification required"})
+
             return await call_next(request)
         finally:
             db.close()
@@ -239,6 +258,7 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(ui.router)
     app.include_router(auth.router)
+    app.include_router(mfa.router)
     app.include_router(agent.router)
     app.include_router(dashboard.router)
     app.include_router(cronjobs.router)

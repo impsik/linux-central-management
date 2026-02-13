@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
-from ..deps import CSRF_COOKIE, SESSION_COOKIE, require_admin_user, require_ui_user, sha256_hex
+from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, require_admin_user, require_ui_user, sha256_hex
 from ..models import AppSession, AppUser
 from ..services.rbac import permissions_for
 
@@ -75,10 +75,22 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     except Exception:
         pass
 
-    db.add(AppSession(user_id=user.id, token_sha256=token_hash, expires_at=expires))
+    # MFA gating: for admin/operator, require MFA enrollment and per-session verification.
+    role = (getattr(user, "role", "operator") or "operator").lower()
+    require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+
+    sess = AppSession(user_id=user.id, token_sha256=token_hash, expires_at=expires)
+    if not require_mfa:
+        sess.mfa_verified_at = now
+    db.add(sess)
     db.commit()
 
-    resp = JSONResponse({"ok": True, "username": user.username})
+    body: dict = {"ok": True, "username": user.username}
+    if require_mfa:
+        body["mfa_setup_required"] = not bool(getattr(user, "mfa_enabled", False))
+        body["mfa_required"] = bool(getattr(user, "mfa_enabled", False))
+
+    resp = JSONResponse(body)
 
     resp.set_cookie(
         key=SESSION_COOKIE,
@@ -164,9 +176,34 @@ def auth_logout(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/me")
-def auth_me(request: Request, user: AppUser = Depends(require_ui_user)):
+def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
     perms = permissions_for(user)
-    resp = JSONResponse({"ok": True, "username": user.username, "role": perms.get("role"), "permissions": perms})
+
+    role = (perms.get("role") or "operator").lower()
+    require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+    mfa_enabled = bool(getattr(user, "mfa_enabled", False))
+
+    sess_res = get_current_session_from_request(request, db)
+    mfa_verified = False
+    if sess_res:
+        sess, _u = sess_res
+        mfa_verified = bool(getattr(sess, "mfa_verified_at", None))
+
+    resp = JSONResponse(
+        {
+            "ok": True,
+            "username": user.username,
+            "role": role,
+            "permissions": perms,
+            "mfa": {
+                "required": require_mfa,
+                "enabled": mfa_enabled,
+                "verified": mfa_verified,
+                "setup_required": bool(require_mfa and not mfa_enabled),
+                "verify_required": bool(require_mfa and mfa_enabled and not mfa_verified),
+            },
+        }
+    )
 
     # Ensure CSRF cookie exists for older sessions / upgraded deployments.
     if not request.cookies.get(CSRF_COOKIE):

@@ -908,6 +908,19 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="mfa-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="mfa-modal-title" style="width:min(720px,96vw);max-width:96vw;">
+      <div class="modal-header">
+        <div class="modal-title" id="mfa-modal-title">MFA</div>
+        <!-- No close button: MFA is required for privileged roles -->
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta" id="mfa-modal-status" style="color:var(--muted-2);"></div>
+        <div id="mfa-modal-body"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <script>
@@ -1062,6 +1075,128 @@
       titleEl.textContent = isAdmin ? 'SSH Keys' : 'My keys';
     }
 
+    function openMfaModal(mode, otpauthUri = '') {
+      const modal = document.getElementById('mfa-modal');
+      const titleEl = document.getElementById('mfa-modal-title');
+      const bodyEl = document.getElementById('mfa-modal-body');
+      const statusEl = document.getElementById('mfa-modal-status');
+      if (!modal || !titleEl || !bodyEl || !statusEl) return;
+
+      statusEl.textContent = '';
+      statusEl.classList.remove('error', 'success');
+
+      if (mode === 'setup') {
+        titleEl.textContent = 'Set up MFA (required)';
+        bodyEl.innerHTML = `
+          <div style="color:var(--muted-2);margin-bottom:0.5rem;">Scan this QR in Microsoft Authenticator / Google Authenticator, then enter the 6-digit code.</div>
+          <div id="mfa-qr" style="background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:12px;display:inline-block;"></div>
+          <div style="margin-top:0.75rem;">
+            <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Code</label>
+            <input id="mfa-code" class="host-search" type="text" placeholder="123456" />
+          </div>
+          <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-primary" id="mfa-confirm" type="button">Confirm</button>
+            <button class="btn" id="mfa-start" type="button">Regenerate QR</button>
+          </div>
+          <div style="margin-top:0.75rem;color:var(--muted-2);font-size:0.85rem;">After confirmation, you will receive recovery codes (save them somewhere safe).</div>
+        `;
+
+        // Render QR using a tiny inline SVG (no external libs): use a simple link if QR generation isn't available.
+        const qr = document.getElementById('mfa-qr');
+        if (qr) {
+          const safe = escapeHtml(otpauthUri || '');
+          qr.innerHTML = safe ? `<div style="font-size:0.9rem;"><div><b>otpauth URI</b></div><code style="display:block;max-width:520px;white-space:pre-wrap;word-break:break-all;">${safe}</code></div>` : '<div style="color:var(--muted-2);">(loading…)</div>';
+        }
+
+        document.getElementById('mfa-start')?.addEventListener('click', async () => {
+          await mfaEnrollStart();
+        });
+        document.getElementById('mfa-confirm')?.addEventListener('click', async () => {
+          const code = document.getElementById('mfa-code')?.value || '';
+          await mfaEnrollConfirm(code);
+        });
+      } else {
+        titleEl.textContent = 'MFA verification required';
+        bodyEl.innerHTML = `
+          <div style="color:var(--muted-2);margin-bottom:0.5rem;">Enter the 6-digit code from your authenticator (or a recovery code).</div>
+          <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Code</label>
+          <input id="mfa-verify-code" class="host-search" type="text" placeholder="123456" />
+          <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+            <button class="btn btn-primary" id="mfa-verify" type="button">Verify</button>
+          </div>
+        `;
+        document.getElementById('mfa-verify')?.addEventListener('click', async () => {
+          const code = document.getElementById('mfa-verify-code')?.value || '';
+          await mfaVerify(code);
+        });
+      }
+
+      modal.hidden = false;
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeMfaModal() {
+      const modal = document.getElementById('mfa-modal');
+      if (!modal) return;
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      modal.hidden = true;
+    }
+
+    async function mfaEnrollStart() {
+      const statusEl = document.getElementById('mfa-modal-status');
+      try {
+        if (statusEl) statusEl.textContent = 'Generating…';
+        const r = await fetch('/auth/mfa/enroll/start', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf')||'') }, body: '{}' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail||d.error)) || raw || 'MFA start failed');
+        openMfaModal('setup', d.otpauth_uri || '');
+      } catch (e) {
+        if (statusEl) statusEl.textContent = e.message;
+      }
+    }
+
+    async function mfaEnrollConfirm(code) {
+      const statusEl = document.getElementById('mfa-modal-status');
+      try {
+        if (statusEl) statusEl.textContent = 'Confirming…';
+        const r = await fetch('/auth/mfa/enroll/confirm', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf')||'') }, body: JSON.stringify({ code }) });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail||d.error)) || raw || 'MFA confirm failed');
+        const codes = (d.recovery_codes || []).join('\n');
+        alert('MFA enabled. Save these recovery codes:\n\n' + (codes || '(none)'));
+        if (statusEl) statusEl.textContent = 'MFA enabled.';
+        await loadAuthInfo();
+        closeMfaModal();
+      } catch (e) {
+        if (statusEl) statusEl.textContent = e.message;
+      }
+    }
+
+    async function mfaVerify(code) {
+      const statusEl = document.getElementById('mfa-modal-status');
+      try {
+        if (statusEl) statusEl.textContent = 'Verifying…';
+        const r = await fetch('/auth/mfa/verify', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf')||'') }, body: JSON.stringify({ code }) });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail||d.error)) || raw || 'MFA verify failed');
+        if (statusEl) statusEl.textContent = 'Verified.';
+        await loadAuthInfo();
+        closeMfaModal();
+      } catch (e) {
+        if (statusEl) statusEl.textContent = e.message;
+      }
+    }
+
+    function getCookie(name) {
+      const m = document.cookie.match('(?:^|; )' + name.replace(/([.$?*|{}()\[\]\\\/\+^])/g, '\\$1') + '=([^;]*)');
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+
     async function loadAuthInfo() {
       const userEl = document.getElementById('current-user');
       const logoutBtn = document.getElementById('logout-btn');
@@ -1078,6 +1213,7 @@
           const data = await resp.json();
           meUser = data.username || null;
           mePermissions = data.permissions || {};
+          window.__mfa = data.mfa || null;
         }
       } catch { }
 
@@ -1096,6 +1232,17 @@
       currentPermissions = mePermissions || {};
       adminUsername = admin;
       const isAdmin = (currentPermissions && String(currentPermissions.role||'').toLowerCase() === 'admin') || !!currentPermissions.can_manage_users || !!(meUser && admin && meUser === admin);
+
+      // Forced MFA flow (for admin/operator).
+      try {
+        const mfa = window.__mfa || null;
+        if (mfa && mfa.setup_required) {
+          // Start enrollment (QR) and force modal open.
+          await mfaEnrollStart();
+        } else if (mfa && mfa.verify_required) {
+          openMfaModal('verify');
+        }
+      } catch {}
       if (adminMenuItem) {
         adminMenuItem.style.display = isAdmin ? 'flex' : 'none';
       }

@@ -52,6 +52,19 @@ async def ws_terminal(ws: WebSocket, agent_id: str) -> None:
             await ws.close(code=1008, reason="Host not found")
             return
 
+        # Enforce MFA for privileged roles before allowing terminal.
+        role = (getattr(user, "role", "operator") or "operator").lower()
+        require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+        if require_mfa:
+            if not bool(getattr(user, "mfa_enabled", False)):
+                await ws.send_text("\r\n[ERROR] MFA enrollment required before using terminal.\r\n")
+                await ws.close(code=4403, reason="MFA enrollment required")
+                return
+            if not bool(getattr(sess, "mfa_verified_at", None)):
+                await ws.send_text("\r\n[ERROR] MFA verification required before using terminal.\r\n")
+                await ws.close(code=4403, reason="MFA verification required")
+                return
+
         # Terminal is a high-risk feature.
         # Policy (team "console" model):
         # - admin: full terminal
