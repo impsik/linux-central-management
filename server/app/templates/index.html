@@ -738,29 +738,59 @@
     <div class="tab-content-custom" id="admin-tab">
       <div class="admin-content">
         <div class="section-title">Admin</div>
-        <div class="admin-panels">
-          <div class="admin-card">
-            <div class="admin-card-title">Create user</div>
-            <div class="admin-card-body">
-              <input id="register-username" class="admin-input" type="text" placeholder="New username" />
-              <input id="register-password" class="admin-input" type="password" placeholder="Temporary password" />
-              <button class="btn btn-primary" id="register-user-btn">Create user</button>
-              <div class="admin-status" id="register-status"></div>
+        <div class="admin-panels" style="display:grid;grid-template-columns:1fr 1.2fr;gap:1rem;align-items:start;">
+          <div>
+            <div class="admin-card">
+              <div class="admin-card-title">Create user</div>
+              <div class="admin-card-body">
+                <input id="register-username" class="admin-input" type="text" placeholder="New username" />
+                <input id="register-password" class="admin-input" type="password" placeholder="Temporary password" />
+                <button class="btn btn-primary" id="register-user-btn">Create user</button>
+                <div class="admin-status" id="register-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" style="margin-top:1rem;">
+              <div class="admin-card-title">Reset password</div>
+              <div class="admin-card-body">
+                <input id="reset-username" class="admin-input" type="text" placeholder="Username to reset" />
+                <input id="reset-password" class="admin-input" type="password" placeholder="New password" />
+                <button class="btn btn-primary" id="reset-password-btn">Reset password</button>
+                <div class="admin-status" id="reset-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-access-note" style="margin-top:1rem;">
+              <div class="admin-card-title">Access</div>
+              <div class="admin-card-body">
+                <div class="admin-note">Admin access required to manage app users.</div>
+              </div>
             </div>
           </div>
-          <div class="admin-card">
-            <div class="admin-card-title">Reset password</div>
-            <div class="admin-card-body">
-              <input id="reset-username" class="admin-input" type="text" placeholder="Username to reset" />
-              <input id="reset-password" class="admin-input" type="password" placeholder="New password" />
-              <button class="btn btn-primary" id="reset-password-btn">Reset password</button>
-              <div class="admin-status" id="reset-status"></div>
+
+          <div class="admin-card" id="admin-users-card">
+            <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+              <span>Users</span>
+              <button class="btn" id="admin-users-refresh" type="button">Reload</button>
             </div>
-          </div>
-          <div class="admin-card" id="admin-access-note">
-            <div class="admin-card-title">Access</div>
             <div class="admin-card-body">
-              <div class="admin-note">Admin access required to manage app users.</div>
+              <div style="overflow-x:auto;">
+                <table class="process-table" style="min-width:720px;">
+                  <thead>
+                    <tr>
+                      <th>Username</th>
+                      <th>Role</th>
+                      <th>Active</th>
+                      <th>MFA</th>
+                      <th>Created</th>
+                    </tr>
+                  </thead>
+                  <tbody id="admin-users-table">
+                    <tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="admin-status" id="admin-users-status"></div>
             </div>
           </div>
         </div>
@@ -2247,6 +2277,49 @@
       selectHost(currentAgentId, hostname);
     }
 
+    async function loadAdminUsers(showToastOnManual = false) {
+      const tbody = document.getElementById('admin-users-table');
+      const statusEl = document.getElementById('admin-users-status');
+      if (!tbody) return;
+
+      try {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        if (statusEl) statusEl.textContent = '';
+        const r = await fetch('/auth/admin/users', { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `users list failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">No users</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const u of items) {
+          const tr = document.createElement('tr');
+          const role = String(u.role || 'operator');
+          const active = (u.active === false) ? 'no' : 'yes';
+          const mfa = u.mfa_enabled ? 'enabled' : 'off';
+          const created = formatShortTime(u.created_at || '');
+          tr.innerHTML = `
+            <td><code>${escapeHtml(u.username || '')}</code></td>
+            <td>${escapeHtml(role)}</td>
+            <td>${escapeHtml(active)}</td>
+            <td>${escapeHtml(mfa)}</td>
+            <td style="color:#94a3b8;">${escapeHtml(created)}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        if (showToastOnManual) showToast('Users refreshed', 'success');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        if (statusEl) statusEl.textContent = e.message;
+        if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
     function showAdminPage() {
       // Stop metrics updates when leaving server info view
       if (metricsUpdateInterval) {
@@ -2259,6 +2332,7 @@
       }
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('admin-tab').classList.add('active');
+      loadAdminUsers();
     }
 
     function setHostActionActive(action) {
@@ -5804,6 +5878,8 @@
       document.getElementById('sshkey-hosts-search-clear')?.addEventListener('click', (e) => { e.preventDefault(); const el=document.getElementById('sshkey-hosts-search'); if (el) el.value=''; renderSshHostsList(); });
       document.getElementById('sshkey-hosts-select-all')?.addEventListener('click', (e) => { e.preventDefault(); (allHosts||[]).forEach(h=>{ if(h.agent_id) sshSelectedAgentIds.add(h.agent_id); }); renderSshHostsList(); });
       document.getElementById('sshkey-hosts-select-none')?.addEventListener('click', (e) => { e.preventDefault(); sshSelectedAgentIds = new Set(); renderSshHostsList(); });
+
+      document.getElementById('admin-users-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminUsers(true); });
 
       document.getElementById('sshkey-request-deploy')?.addEventListener('click', async (e) => {
         e.preventDefault();

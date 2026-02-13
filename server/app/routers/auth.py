@@ -123,6 +123,26 @@ def auth_admin_info():
     return {"admin_username": getattr(settings, "bootstrap_username", "admin")}
 
 
+@router.get("/admin/users")
+def auth_admin_users(request: Request, db: Session = Depends(get_db)):
+    require_admin_user(request, db)
+
+    rows = db.execute(select(AppUser).order_by(AppUser.created_at.asc())).scalars().all()
+    items = []
+    for u in rows:
+        items.append(
+            {
+                "id": str(u.id),
+                "username": u.username,
+                "role": (getattr(u, "role", "operator") or "operator"),
+                "active": bool(getattr(u, "is_active", True)),
+                "mfa_enabled": bool(getattr(u, "mfa_enabled", False)),
+                "created_at": u.created_at.isoformat() if getattr(u, "created_at", None) else None,
+            }
+        )
+    return {"items": items}
+
+
 @router.post("/register")
 def auth_register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     require_admin_user(request, db)
