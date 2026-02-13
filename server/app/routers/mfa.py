@@ -62,7 +62,7 @@ def enroll_start(request: Request, db: Session = Depends(get_db), user: AppUser 
 
 
 @router.post("/enroll/confirm")
-def enroll_confirm(payload: CodePayload, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+def enroll_confirm(payload: CodePayload, request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
     if not getattr(user, "totp_secret_pending_enc", None):
         raise HTTPException(400, "No pending MFA enrollment")
 
@@ -81,7 +81,14 @@ def enroll_confirm(payload: CodePayload, db: Session = Depends(get_db), user: Ap
         user.mfa_pending_at = None
         user.recovery_codes = recovery_hashes
 
-    return {"ok": True, "recovery_codes": recovery_plain}
+        # If the user is currently logged in, completing enrollment should also satisfy
+        # the per-session MFA verification requirement.
+        sess_res = get_current_session_from_request(request, db)
+        if sess_res:
+            sess, _u = sess_res
+            sess.mfa_verified_at = now_utc()
+
+    return {"ok": True, "recovery_codes": recovery_plain, "verified": True}
 
 
 @router.post("/verify")

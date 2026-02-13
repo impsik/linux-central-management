@@ -1198,8 +1198,8 @@
 
           document.getElementById('mfa-recovery-done')?.addEventListener('click', async () => {
             if (statusEl) statusEl.textContent = 'MFA enabled.';
-            await loadAuthInfo();
-            closeMfaModal();
+            // Force a full reload so all gated API calls start working immediately.
+            window.location.reload();
           });
         } else {
           // Fallback
@@ -1222,8 +1222,8 @@
         let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
         if (!r.ok) throw new Error((d && (d.detail||d.error)) || raw || 'MFA verify failed');
         if (statusEl) statusEl.textContent = 'Verified.';
-        await loadAuthInfo();
-        closeMfaModal();
+        // Force a full reload so previously blocked API calls work immediately.
+        window.location.reload();
       } catch (e) {
         if (statusEl) statusEl.textContent = e.message;
       }
