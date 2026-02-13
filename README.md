@@ -32,8 +32,11 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 
 ### 1) Prereqs
 - Docker + Docker Compose
-- If needed: sudo apt install docker.io docker-compose-v2 ansible-core -y
-- If needed: sudo usermod $USER -a -G docker # log out and log in again.
+- If needed:
+```bash
+sudo apt install docker.io docker-compose-v2 ansible-core -y
+sudo usermod $USER -a -G docker # log out and log in again.
+```
 
 ### 2) Clone the code and configure secrets
 ```bash
