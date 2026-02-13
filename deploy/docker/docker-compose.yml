@@ -32,9 +32,16 @@ services:
       UI_COOKIE_SECURE: ${UI_COOKIE_SECURE:-false}
 
       # Once Alembic is in use, disable auto-create in production deployments:
-      DB_AUTO_CREATE_TABLES: "true"
+      DB_AUTO_CREATE_TABLES: ${DB_AUTO_CREATE_TABLES:-true}
+      # In production, keep this true so the server fails fast if migrations are not applied.
+      DB_REQUIRE_MIGRATIONS_UP_TO_DATE: ${DB_REQUIRE_MIGRATIONS_UP_TO_DATE:-true}
       # Admin migration endpoint should remain disabled in production:
-      ADMIN_ENABLE_MIGRATIONS_ENDPOINT: "false"
+      ADMIN_ENABLE_MIGRATIONS_ENDPOINT: ${ADMIN_ENABLE_MIGRATIONS_ENDPOINT:-false}
+
+      # MFA (TOTP) for privileged users (admin/operator)
+      MFA_REQUIRE_FOR_PRIVILEGED: ${MFA_REQUIRE_FOR_PRIVILEGED:-true}
+      MFA_TOTP_ISSUER: ${MFA_TOTP_ISSUER:-linux-central-management}
+      MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:-}
 
       # Agent auth tokens (set in .env; do NOT commit real values)
       AGENT_SHARED_TOKEN: ${AGENT_SHARED_TOKEN:-}

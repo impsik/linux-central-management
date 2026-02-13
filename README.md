@@ -138,6 +138,8 @@ sudo systemctl status fleet-agent
 
 ## Security notes
 
+See also: `docs/security-baseline.md`.
+
 ### Bootstrap UI password
 The server **does not** ship with a safe default password. You must set:
 - `BOOTSTRAP_PASSWORD` in `deploy/docker/.env`
