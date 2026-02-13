@@ -1173,10 +1173,41 @@
         let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
         if (!r.ok) throw new Error((d && (d.detail||d.error)) || raw || 'MFA confirm failed');
         const codes = (d.recovery_codes || []).join('\n');
-        alert('MFA enabled. Save these recovery codes:\n\n' + (codes || '(none)'));
-        if (statusEl) statusEl.textContent = 'MFA enabled.';
-        await loadAuthInfo();
-        closeMfaModal();
+
+        // Show recovery codes in a selectable, copyable field.
+        const bodyEl = document.getElementById('mfa-modal-body');
+        if (bodyEl) {
+          bodyEl.innerHTML = `
+            <div style="color:var(--muted-2);margin-bottom:0.5rem;">MFA enabled. Save these recovery codes now (you won’t be shown them again).</div>
+            <textarea id="mfa-recovery-codes" readonly style="width:100%;min-height:160px;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;">${escapeHtml(codes || '')}</textarea>
+            <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;">
+              <button class="btn" id="mfa-recovery-copy" type="button">Copy</button>
+              <button class="btn btn-primary" id="mfa-recovery-done" type="button">I saved them</button>
+            </div>
+          `;
+
+          document.getElementById('mfa-recovery-copy')?.addEventListener('click', async () => {
+            try {
+              const text = (codes || '');
+              await navigator.clipboard.writeText(text);
+              showToast('Recovery codes copied', 'success');
+            } catch (e) {
+              showToast('Copy failed (browser blocked clipboard). Select and copy manually.', 'error', 4500);
+            }
+          });
+
+          document.getElementById('mfa-recovery-done')?.addEventListener('click', async () => {
+            if (statusEl) statusEl.textContent = 'MFA enabled.';
+            await loadAuthInfo();
+            closeMfaModal();
+          });
+        } else {
+          // Fallback
+          alert('MFA enabled. Save these recovery codes:\n\n' + (codes || '(none)'));
+          if (statusEl) statusEl.textContent = 'MFA enabled.';
+          await loadAuthInfo();
+          closeMfaModal();
+        }
       } catch (e) {
         if (statusEl) statusEl.textContent = e.message;
       }
