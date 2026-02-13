@@ -12,6 +12,11 @@ This project started as a LAN MVP. This document describes the **minimum securit
 - Set `UI_COOKIE_SECURE=true` (otherwise session cookies can be sent over HTTP).
 - Recommended: reverse proxy (Caddy/Nginx/Traefik) that terminates TLS and forwards to `server:8000`.
 
+### Caddy example
+See:
+- `deploy/docker/Caddyfile.example`
+- `deploy/docker/caddy-compose.example.yml`
+
 ## 2) Authentication hardening
 - MFA (TOTP) is required for `admin` and `operator` by default.
 - Set `MFA_ENCRYPTION_KEY` (Fernet key) via environment (do not commit it).

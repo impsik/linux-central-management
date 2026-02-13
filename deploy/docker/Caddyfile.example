@@ -1,0 +1,44 @@
+# Example Caddy reverse proxy for linux-central-management
+#
+# Goals:
+# - HTTPS termination
+# - secure headers
+# - basic rate limiting at the edge
+#
+# Usage:
+# 1) Set your domain and email.
+# 2) Run Caddy on the same host (or in Docker) and proxy to the server container.
+#
+# NOTE: If you run Caddy in Docker, ensure it can reach the fleet server.
+# If the server is on the same Docker network, proxy to `server:8000`.
+# If not, proxy to `127.0.0.1:8000` (host networking).
+
+{$FLEET_DOMAIN} {
+  encode zstd gzip
+
+  # Reverse proxy to the app
+  reverse_proxy {$FLEET_UPSTREAM} {
+    # Propagate client IP to the app
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Real-IP {remote_host}
+  }
+
+  # Basic security headers (app also sets some)
+  header {
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "same-origin"
+    Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    X-Frame-Options "DENY"
+  }
+
+  # Simple rate limiting (global) to reduce brute force noise.
+  # Adjust as needed; for per-path limits use multiple handlers.
+  rate_limit {
+    zone default {
+      key {remote_host}
+      events 200
+      window 60s
+    }
+  }
+}
