@@ -1,7 +1,7 @@
 #!/usr/bin/env ansible-playbook
 - name: Remove user
-  hosts: "{{ target_hosts | default('all') }}"
-  remote_user: ubuntu
+  hosts: all
+  remote_user: imre
   become: true
 
   # Prefer non-interactive usage:
@@ -10,9 +10,9 @@
     - name: username
       prompt: "Enter username: "
       private: false
-    - name: target_hosts
-      prompt: "Enter target hosts (FQDN, group, 'all', or space-separated hosts):"
-      private: false
+#    - name: target_hosts
+#      prompt: "Enter target hosts (FQDN, group, 'all', or space-separated hosts):"
+#      private: false
 
   pre_tasks:
     - name: Validate inputs
