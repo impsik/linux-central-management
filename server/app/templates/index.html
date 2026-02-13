@@ -4825,6 +4825,7 @@
         loadSshKeys();
         loadSshKeyRequests();
         maybeLoadSshKeyAdminQueue();
+        loadAdminSshKeys();
       }
 
       navOverview?.addEventListener('click', (e) => { e.preventDefault(); showOverviewTab(); });
@@ -5534,6 +5535,7 @@
             }
 
             maybeLoadSshKeyAdminQueue();
+            loadAdminSshKeys();
           });
         });
         tbody.querySelectorAll('button[data-reject-id]').forEach(btn => {
@@ -5551,6 +5553,7 @@
             }
             showToast('Rejected', 'success');
             maybeLoadSshKeyAdminQueue();
+            loadAdminSshKeys();
           });
         });
       } catch (e) {
