@@ -595,7 +595,7 @@
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-            <span>My keys</span>
+            <span id="sshkeys-list-title">My keys</span>
             <button class="btn" id="sshkey-refresh" type="button">Reload</button>
           </div>
           <div class="admin-card-body">
@@ -1030,6 +1030,13 @@
       setTimeout(remove, timeoutMs);
     }
 
+    function updateSshKeysLabels() {
+      const titleEl = document.getElementById('sshkeys-list-title');
+      if (!titleEl) return;
+      const isAdmin = (currentPermissions && String(currentPermissions.role||'').toLowerCase() === 'admin') || !!currentPermissions.can_manage_users;
+      titleEl.textContent = isAdmin ? 'SSH Keys' : 'My keys';
+    }
+
     async function loadAuthInfo() {
       const userEl = document.getElementById('current-user');
       const logoutBtn = document.getElementById('logout-btn');
@@ -1084,6 +1091,8 @@
       if (usersAccessNote) {
         usersAccessNote.style.display = currentPermissions.can_lock_users ? 'none' : 'block';
       }
+
+      updateSshKeysLabels();
     }
 
     function initAdminPanel() {
@@ -5270,10 +5279,19 @@
             <td style="text-align:right;"><button class="btn" data-revoke-id="${escapeHtml(k.id)}">Delete</button></td>
           `;
           if (isSel) tr.style.background = 'color-mix(in srgb, var(--primary) 12%, var(--panel))';
+          tr.setAttribute('data-key-id', k.id);
           tr.addEventListener('click', (e) => {
             if ((e.target && e.target.tagName || '').toLowerCase() === 'button') return;
             sshSelectedKeyId = k.id;
-            loadSshKeys();
+            // Highlight immediately.
+            Array.from(tbody.querySelectorAll('tr[data-key-id]')).forEach(row => {
+              const rowId = row.getAttribute('data-key-id');
+              if (rowId && rowId === sshSelectedKeyId) {
+                row.style.background = 'color-mix(in srgb, var(--primary) 12%, var(--panel))';
+              } else {
+                row.style.background = '';
+              }
+            });
           });
           tbody.appendChild(tr);
         }
