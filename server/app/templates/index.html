@@ -666,6 +666,31 @@
           </div>
         </div>
 
+        <div class="admin-card" id="sshkey-admin-keys" style="margin-top:1rem;display:none;">
+          <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <span>Admin: all users’ SSH keys</span>
+            <button class="btn" id="sshkey-admin-keys-refresh" type="button">Reload</button>
+          </div>
+          <div class="admin-card-body">
+            <div style="overflow-x:auto;">
+              <table class="process-table" style="min-width:900px;">
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>User</th>
+                    <th>Name</th>
+                    <th>Fingerprint</th>
+                    <th>Public key</th>
+                  </tr>
+                </thead>
+                <tbody id="sshkey-admin-keys-table">
+                  <tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         <div class="admin-card" id="sshkey-admin-approvals" style="margin-top:1rem;display:none;">
           <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
             <span>Admin: pending deployment approvals</span>
@@ -5347,6 +5372,45 @@
       }
     }
 
+    async function loadAdminSshKeys() {
+      const panel = document.getElementById('sshkey-admin-keys');
+      const tbody = document.getElementById('sshkey-admin-keys-table');
+      if (!panel || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role||'').toLowerCase() === 'admin') || !!currentPermissions.can_manage_users;
+      if (!isAdmin) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'block';
+
+      try {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        const r = await fetch('/sshkeys/admin/keys', { credentials: 'include' });
+        if (!r.ok) throw new Error(`admin keys failed (${r.status})`);
+        const d = await r.json();
+        const items = d?.items || [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">No keys</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const k of items) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="color:#94a3b8;">${escapeHtml(formatShortTime(k.created_at))}</td>
+            <td>${escapeHtml(k.user_name || String(k.user_id||'').slice(0,8))}</td>
+            <td>${escapeHtml(k.name || '')}</td>
+            <td><code>${escapeHtml(k.fingerprint || '')}</code></td>
+            <td style="max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><code>${escapeHtml(k.public_key || '')}</code></td>
+          `;
+          tbody.appendChild(tr);
+        }
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+      }
+    }
+
     async function maybeLoadSshKeyAdminQueue() {
       const panel = document.getElementById('sshkey-admin-approvals');
       const tbody = document.getElementById('sshkey-admin-table');
@@ -5499,6 +5563,7 @@
     function initSshKeysControls() {
       document.getElementById('sshkey-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadSshKeys(true); });
       document.getElementById('sshkey-admin-refresh')?.addEventListener('click', (e) => { e.preventDefault(); maybeLoadSshKeyAdminQueue(); });
+      document.getElementById('sshkey-admin-keys-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminSshKeys(); });
       document.getElementById('sshkey-approval-modal-close')?.addEventListener('click', (e) => { e.preventDefault(); closeSshKeyDeployApprovalModal(); });
       document.getElementById('sshkey-approval-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'sshkey-approval-modal') closeSshKeyDeployApprovalModal(); });
 
@@ -5554,6 +5619,7 @@
           if (statusEl) statusEl.textContent='';
           loadSshKeyRequests();
           maybeLoadSshKeyAdminQueue();
+          loadAdminSshKeys();
         } catch (err) {
           showToast(err.message || String(err), 'error');
           if (statusEl) statusEl.textContent='';

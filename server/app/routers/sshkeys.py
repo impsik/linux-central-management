@@ -173,6 +173,36 @@ def list_my_deploy_requests(db: Session = Depends(get_db), user: AppUser = Depen
     }
 
 
+@router.get("/admin/keys")
+def admin_list_all_keys(db: Session = Depends(get_db), admin: AppUser = Depends(require_admin_user)):
+    rows = (
+        db.execute(
+            select(UserSSHKey, AppUser.username)
+            .join(AppUser, AppUser.id == UserSSHKey.user_id)
+            .where(UserSSHKey.revoked_at.is_(None))
+            .order_by(UserSSHKey.created_at.desc())
+            .limit(500)
+        )
+        .all()
+    )
+
+    items = []
+    for k, uname in rows:
+        items.append(
+            {
+                "id": str(k.id),
+                "user_id": str(k.user_id),
+                "user_name": uname,
+                "name": k.name,
+                "fingerprint": k.fingerprint,
+                "public_key": k.public_key,
+                "created_at": k.created_at.isoformat() if k.created_at else None,
+            }
+        )
+
+    return {"items": items}
+
+
 @router.get("/admin/deploy-requests")
 def admin_list_pending(db: Session = Depends(get_db), admin: AppUser = Depends(require_admin_user)):
     rows = (
