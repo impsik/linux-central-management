@@ -53,30 +53,34 @@ async def ws_terminal(ws: WebSocket, agent_id: str) -> None:
             return
 
         # Terminal is a high-risk feature.
-        # Policy:
+        # Policy (team "console" model):
         # - admin: full terminal
-        # - operator: allowed only if host label terminal_access is operator|all; input allowed only if terminal_write=true
+        # - operator: full terminal by default
         # - readonly: no terminal
+        # Hosts can opt-out via host label terminal_access=admin|none.
         admin_username = (getattr(settings, "bootstrap_username", None) or "").strip()
         role = getattr(user, "role", "") or "operator"
         is_admin = (role == "admin") or (admin_username and user.username == admin_username)
 
         host_labels = (host.labels or {}) if hasattr(host, "labels") else {}
-        term_access = str(host_labels.get("terminal_access") or "admin").strip().lower()
-        term_write = str(host_labels.get("terminal_write") or "").strip().lower() in ("1", "true", "yes", "on")
+        term_access = str(host_labels.get("terminal_access") or "all").strip().lower()
 
         allow_input = True
 
         if is_admin:
             allow_input = True
         elif role == "operator":
-            if term_access not in ("operator", "all"):
-                await ws.send_text("\r\n[ERROR] Terminal access denied for this host (requires admin or host label terminal_access=operator|all).\r\n")
+            # Operators can use terminal by default, like a VMware console.
+            # Host label terminal_access can restrict it.
+            if term_access in ("none", "disabled"):
+                await ws.send_text("\r\n[ERROR] Terminal access denied for this host (terminal_access=none).\r\n")
                 await ws.close(code=4403, reason="Terminal not allowed")
                 return
-            allow_input = bool(term_write)
-            if not allow_input:
-                await ws.send_text("\r\n[INFO] Read-only terminal (operator). Set host label terminal_write=true to allow input.\r\n")
+            if term_access == "admin":
+                await ws.send_text("\r\n[ERROR] Terminal access denied for this host (terminal_access=admin).\r\n")
+                await ws.close(code=4403, reason="Terminal not allowed")
+                return
+            allow_input = True
         else:
             await ws.send_text("\r\n[ERROR] Terminal access is restricted.\r\n")
             await ws.close(code=4403, reason="Terminal not allowed")

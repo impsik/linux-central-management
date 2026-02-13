@@ -2145,10 +2145,10 @@
         // Server uses 4403 for policy-based denial.
         if (e.code === 4403) {
           term.write(`\r\n[ERROR] Terminal access denied for this host.\r\n`);
-          term.write(`\r\nHow to enable terminal access for operators:\r\n`);
-          term.write(`  - Set host label terminal_access=operator (or all)\r\n`);
-          term.write(`  - Optional: set terminal_write=true to allow typing (otherwise read-only)\r\n`);
-          term.write(`\r\nIf you don’t have permissions to change host labels, ask an admin.\r\n`);
+          term.write(`\r\nThis environment allows operator terminal by default, but this host is restricted via label:\r\n`);
+          term.write(`  - terminal_access=admin  (admins only)\r\n`);
+          term.write(`  - terminal_access=none   (disabled)\r\n`);
+          term.write(`\r\nAsk an admin to adjust host labels if you need access.\r\n`);
           ws = null;
           return;
         }
