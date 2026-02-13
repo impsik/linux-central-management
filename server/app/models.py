@@ -334,3 +334,30 @@ class SSHKeyDeploymentRequest(Base):
     finished_at = Column(DateTime(timezone=True))
 
     __table_args__ = (Index("ix_ssh_key_deploy_req_status", "status"),)
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    action = Column(String, nullable=False, index=True)
+
+    actor_user_id = Column(UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    actor_username = Column(String, nullable=True, index=True)
+    actor_role = Column(String, nullable=True, index=True)
+
+    ip_address = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+
+    target_type = Column(String, nullable=True, index=True)
+    target_id = Column(String, nullable=True, index=True)
+    target_name = Column(String, nullable=True)
+
+    meta = Column(JSON, nullable=False, default=dict)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_audit_events_actor_created", "actor_user_id", "created_at"),
+        Index("ix_audit_events_action_created", "action", "created_at"),
+    )

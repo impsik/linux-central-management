@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from .db import Base, SessionLocal, engine
 from .deps import get_current_user_from_request
-from .routers import agent, ansible, auth, cronjobs, dashboard, hosts, jobs, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
+from .routers import agent, ansible, audit, auth, cronjobs, dashboard, hosts, jobs, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +264,7 @@ def create_app() -> FastAPI:
     app.include_router(ui.router)
     app.include_router(auth.router)
     app.include_router(mfa.router)
+    app.include_router(audit.router)
     app.include_router(agent.router)
     app.include_router(dashboard.router)
     app.include_router(cronjobs.router)
