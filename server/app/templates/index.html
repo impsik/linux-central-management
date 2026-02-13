@@ -985,6 +985,22 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="audit-detail-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="audit-detail-modal-title" style="width:min(1100px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="audit-detail-modal-title">Audit event</div>
+        <button class="btn modal-close" id="audit-detail-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="audit-detail-modal-meta"></div>
+        <textarea id="audit-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
+        <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
+          <button class="btn" id="audit-detail-modal-copy" type="button">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <script>
@@ -2380,15 +2396,30 @@
               if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'Audit event load failed');
 
               const pretty = JSON.stringify(d2.meta || {}, null, 2);
-              alert(
-                `Audit event\n\n` +
-                `Time: ${d2.created_at || ''}\n` +
-                `Action: ${d2.action || ''}\n` +
-                `Actor: ${d2.actor || ''}\n` +
-                `Target: ${(d2.target_type||'')}:${(d2.target_name||'')}\n` +
-                `IP: ${d2.ip || ''}\n\n` +
-                `Meta:\n${pretty}`
-              );
+
+              // Show in a large, copyable modal instead of alert().
+              const modal = document.getElementById('audit-detail-modal');
+              const titleEl = document.getElementById('audit-detail-modal-title');
+              const outEl = document.getElementById('audit-detail-modal-output');
+              const metaEl = document.getElementById('audit-detail-modal-meta');
+              if (modal && titleEl && outEl && metaEl) {
+                titleEl.textContent = `Audit event: ${d2.action || ''}`;
+                metaEl.textContent = `Time: ${d2.created_at || ''} · Actor: ${d2.actor || ''} · Target: ${(d2.target_type||'')}:${(d2.target_name||'')} · IP: ${d2.ip || ''}`;
+                outEl.value = pretty;
+                modal.hidden = false;
+                modal.classList.add('open');
+                modal.setAttribute('aria-hidden', 'false');
+              } else {
+                alert(
+                  `Audit event\n\n` +
+                  `Time: ${d2.created_at || ''}\n` +
+                  `Action: ${d2.action || ''}\n` +
+                  `Actor: ${d2.actor || ''}\n` +
+                  `Target: ${(d2.target_type||'')}:${(d2.target_name||'')}\n` +
+                  `IP: ${d2.ip || ''}\n\n` +
+                  `Meta:\n${pretty}`
+                );
+              }
             } catch (err) {
               showToast(err.message || String(err), 'error', 5000);
             }
@@ -5989,6 +6020,39 @@
       }
     }
 
+    function initAuditDetailModalControls() {
+      const modal = document.getElementById('audit-detail-modal');
+      const closeBtn = document.getElementById('audit-detail-modal-close');
+      const copyBtn = document.getElementById('audit-detail-modal-copy');
+      const outEl = document.getElementById('audit-detail-modal-output');
+      if (!modal) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'audit-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl ? (outEl.value || '') : '';
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Copied', 'success');
+        } catch {
+          if (outEl) {
+            outEl.focus();
+            outEl.select();
+          }
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+    }
+
     function initSshKeysControls() {
       document.getElementById('sshkey-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadSshKeys(true); });
       document.getElementById('sshkey-admin-refresh')?.addEventListener('click', (e) => { e.preventDefault(); maybeLoadSshKeyAdminQueue(); });
@@ -6069,6 +6133,7 @@
     initAdminPanel();
     initThemeToggle();
     initSettingsMenu();
+    initAuditDetailModalControls();
     initTerminalOnce();
     attachTerminalInputHandlerOnce();
     initAnsibleSection();
