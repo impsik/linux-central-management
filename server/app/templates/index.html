@@ -5493,7 +5493,14 @@
             body: JSON.stringify({ name, public_key }),
           });
           if (!r.ok) throw new Error(await r.text());
-          showToast('Key added', 'success');
+          let resp = null;
+          try { resp = await r.json(); } catch (_) { resp = null; }
+          if (resp && resp.existing) {
+            const nameInfo = resp.existing_name ? ` (existing name: ${resp.existing_name})` : '';
+            showToast(`Key already exists${nameInfo}`, 'info');
+          } else {
+            showToast('Key added', 'success');
+          }
           if (statusEl) statusEl.textContent = '';
           document.getElementById('sshkey-pub').value='';
           loadSshKeys();

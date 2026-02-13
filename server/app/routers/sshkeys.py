@@ -80,12 +80,18 @@ def add_key(payload: SSHKeyAdd, db: Session = Depends(get_db), user: AppUser = D
             select(UserSSHKey).where(UserSSHKey.user_id == user.id, UserSSHKey.fingerprint == fp, UserSSHKey.revoked_at.is_(None))
         ).scalar_one_or_none()
         if existing:
-            return {"id": str(existing.id), "fingerprint": existing.fingerprint}
+            return {
+                "id": str(existing.id),
+                "fingerprint": existing.fingerprint,
+                "created": False,
+                "existing": True,
+                "existing_name": existing.name,
+            }
 
         k = UserSSHKey(user_id=user.id, name=(payload.name or "").strip(), public_key=pub, fingerprint=fp)
         db.add(k)
 
-    return {"id": str(k.id), "fingerprint": fp}
+    return {"id": str(k.id), "fingerprint": fp, "created": True}
 
 
 @router.delete("/{key_id}")
