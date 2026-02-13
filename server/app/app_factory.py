@@ -167,10 +167,16 @@ def create_app() -> FastAPI:
                 return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
 
             # MFA enforcement (required for admin/operator unless readonly).
-            # Allow the UI shell (/) so the user can complete enrollment/verification flows.
+            # Allow the UI shell and static assets so the user can complete MFA enrollment/verification flows.
             role = (getattr(user, "role", "operator") or "operator").lower()
             require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
             if require_mfa:
+                # Always allow static assets and login shell.
+                if path.startswith("/assets/") or path.startswith("/static/") or path in ("/", "/terminal"):
+                    return await call_next(request)
+                if any(path.endswith(ext) for ext in (".css", ".js", ".map", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff", ".woff2", ".ttf")):
+                    return await call_next(request)
+
                 # Session is needed to check per-session verification.
                 from .deps import get_current_session_from_request
 
@@ -178,10 +184,9 @@ def create_app() -> FastAPI:
                 mfa_enabled = bool(getattr(user, "mfa_enabled", False))
                 mfa_verified = bool(sess_res and getattr(sess_res[0], "mfa_verified_at", None))
 
-                allowed_paths = {"/", "/terminal"}
-                if not mfa_enabled and path not in allowed_paths:
+                if not mfa_enabled:
                     return JSONResponse(status_code=403, content={"detail": "MFA enrollment required"})
-                if mfa_enabled and not mfa_verified and path not in allowed_paths:
+                if not mfa_verified:
                     return JSONResponse(status_code=403, content={"detail": "MFA verification required"})
 
             return await call_next(request)
