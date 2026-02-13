@@ -1,7 +1,7 @@
 #!/usr/bin/env ansible-playbook
 - name: Remove user
   hosts: all
-  remote_user: imre
+  remote_user: ubuntu
   become: true
 
   # Prefer non-interactive usage:
