@@ -2359,7 +2359,7 @@
           const meta = safeJsonPreview(ev.meta || {}, 160);
           tr.innerHTML = `
             <td style="color:#94a3b8;">${escapeHtml(when)}</td>
-            <td><code>${escapeHtml(actionName)}</code></td>
+            <td><a href="#" data-audit-id="${escapeHtml(String(ev.id||''))}" style="text-decoration:underline;color:inherit;"><code>${escapeHtml(actionName)}</code></a></td>
             <td>${escapeHtml(who)}</td>
             <td style="color:#94a3b8;">${escapeHtml(target)}</td>
             <td style="color:#94a3b8;"><code>${escapeHtml(ip)}</code></td>
@@ -2367,6 +2367,33 @@
           `;
           tbody.appendChild(tr);
         }
+
+        tbody.querySelectorAll('a[data-audit-id]').forEach(a => {
+          a.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = a.getAttribute('data-audit-id') || '';
+            if (!id) return;
+            try {
+              const r2 = await fetch(`/audit/${encodeURIComponent(id)}`, { credentials: 'include' });
+              const raw2 = await r2.text();
+              let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'Audit event load failed');
+
+              const pretty = JSON.stringify(d2.meta || {}, null, 2);
+              alert(
+                `Audit event\n\n` +
+                `Time: ${d2.created_at || ''}\n` +
+                `Action: ${d2.action || ''}\n` +
+                `Actor: ${d2.actor || ''}\n` +
+                `Target: ${(d2.target_type||'')}:${(d2.target_name||'')}\n` +
+                `IP: ${d2.ip || ''}\n\n` +
+                `Meta:\n${pretty}`
+              );
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
 
         if (showToastOnManual) showToast('Audit refreshed', 'success');
       } catch (e) {
