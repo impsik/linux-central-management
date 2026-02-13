@@ -8,6 +8,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import get_current_session_from_request, require_admin_user, require_ui_user
 from ..models import AppSession, AppUser
+from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.mfa import (
     decrypt_secret,
@@ -88,6 +89,8 @@ def enroll_confirm(payload: CodePayload, request: Request, db: Session = Depends
             sess, _u = sess_res
             sess.mfa_verified_at = now_utc()
 
+        log_event(db, action="mfa.enroll", actor=user, request=request)
+
     return {"ok": True, "recovery_codes": recovery_plain, "verified": True}
 
 
@@ -129,6 +132,7 @@ def verify(payload: CodePayload, request: Request, db: Session = Depends(get_db)
             h = sha256_hex(code)
             user.recovery_codes = [x for x in (user.recovery_codes or []) if x != h]
         sess.mfa_verified_at = now_utc()
+        log_event(db, action="mfa.verify", actor=user, request=request, meta={"used_recovery": used_recovery})
 
     return {"ok": True, "verified": True, "used_recovery": used_recovery}
 
@@ -138,7 +142,7 @@ class AdminResetPayload(BaseModel):
 
 
 @router.post("/admin/reset")
-def admin_reset(payload: AdminResetPayload, request: Request, db: Session = Depends(get_db)):
+def admin_reset(payload: AdminResetPayload, request: Request, db: Session = Depends(get_db), admin: AppUser = Depends(require_ui_user)):
     require_admin_user(request, db)
     uname = (payload.username or "").strip()
     if not uname:
@@ -157,5 +161,6 @@ def admin_reset(payload: AdminResetPayload, request: Request, db: Session = Depe
         u.mfa_enrolled_at = None
         u.mfa_pending_at = None
         u.recovery_codes = []
+        log_event(db, action="mfa.reset", actor=admin, request=request, target_type="app_user", target_name=uname)
 
     return {"ok": True, "username": uname, "mfa_enabled": False}

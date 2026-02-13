@@ -12,8 +12,9 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
-from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, require_admin_user, require_ui_user, sha256_hex
+from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
 from ..models import AppSession, AppUser
+from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.rbac import permissions_for
 
@@ -84,6 +85,8 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     if not require_mfa:
         sess.mfa_verified_at = now
     db.add(sess)
+    # Audit: successful login (no secrets)
+    log_event(db, action="auth.login", actor=user, request=request)
     db.commit()
 
     body: dict = {"ok": True, "username": user.username}
@@ -177,6 +180,7 @@ def delete_user(username: str, request: Request, db: Session = Depends(get_db), 
         target.is_active = False
         # Revoke all sessions for that user
         db.execute(delete(AppSession).where(AppSession.user_id == target.id))
+        log_event(db, action="user.deactivate", actor=user, request=request, target_type="app_user", target_name=uname)
 
     return {"ok": True, "username": uname, "active": False}
 
@@ -197,7 +201,11 @@ def auth_register(payload: RegisterRequest, request: Request, db: Session = Depe
     if existing:
         raise HTTPException(409, "username already exists")
 
-    db.add(AppUser(username=username, password_hash=pwd_context.hash(password), is_active=True))
+    u = AppUser(username=username, password_hash=pwd_context.hash(password), is_active=True)
+    db.add(u)
+    # Audit
+    admin = require_ui_user(request, db)
+    log_event(db, action="user.create", actor=admin, request=request, target_type="app_user", target_name=username)
     db.commit()
     return {"ok": True, "username": username}
 
@@ -217,6 +225,9 @@ def auth_reset_password(payload: ResetPasswordRequest, request: Request, db: Ses
         raise HTTPException(404, "user not found")
 
     user.password_hash = pwd_context.hash(password)
+    # Audit
+    admin = require_ui_user(request, db)
+    log_event(db, action="user.reset_password", actor=admin, request=request, target_type="app_user", target_name=username)
     db.commit()
     return {"ok": True, "username": username}
 
@@ -226,7 +237,14 @@ def auth_logout(request: Request, db: Session = Depends(get_db)):
     token = request.cookies.get(SESSION_COOKIE)
     if token:
         token_hash = sha256_hex(token)
+        # Audit best-effort (actor might be unknown if session already gone)
+        try:
+            u = get_current_user_from_request(request, db)
+        except Exception:
+            u = None
         db.execute(delete(AppSession).where(AppSession.token_sha256 == token_hash))
+        if u:
+            log_event(db, action="auth.logout", actor=u, request=request)
         db.commit()
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(SESSION_COOKIE, path="/")
