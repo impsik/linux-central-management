@@ -143,6 +143,43 @@ def auth_admin_users(request: Request, db: Session = Depends(get_db)):
     return {"items": items}
 
 
+@router.post("/users/{username}/delete")
+def delete_user(username: str, request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+    """Deactivate an app user.
+
+    Policy: allowed for admin and operator, but never for the bootstrap admin user.
+    We deactivate (is_active=false) instead of deleting rows for safety/auditability.
+    """
+
+    perms = permissions_for(user)
+    if not perms.get("can_delete_app_users"):
+        raise HTTPException(403, "Insufficient permissions to delete users")
+
+    uname = (username or "").strip()
+    if not uname:
+        raise HTTPException(400, "username required")
+
+    # Protect bootstrap admin
+    bootstrap = (getattr(settings, "bootstrap_username", None) or "admin").strip()
+    if uname == bootstrap:
+        raise HTTPException(400, "Cannot delete bootstrap admin user")
+
+    # Prevent self-delete to avoid accidental lockout
+    if uname == user.username:
+        raise HTTPException(400, "Cannot delete your own user")
+
+    target = db.execute(select(AppUser).where(AppUser.username == uname)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "user not found")
+
+    with transaction(db):
+        target.is_active = False
+        # Revoke all sessions for that user
+        db.execute(delete(AppSession).where(AppSession.user_id == target.id))
+
+    return {"ok": True, "username": uname, "active": False}
+
+
 @router.post("/register")
 def auth_register(payload: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     require_admin_user(request, db)

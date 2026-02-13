@@ -24,6 +24,8 @@ def permissions_for(user: AppUser) -> dict:
         "can_view": True,
         "can_run_ansible": role in ("admin", "operator"),
         "can_manage_users": role == "admin",
+        # App user lifecycle (dangerous). Kept separate from host user ops.
+        "can_delete_app_users": role in ("admin", "operator"),
         "can_manage_packages": role in ("admin", "operator"),
         "can_remove_packages": role == "admin",
         "can_manage_services": role in ("admin", "operator"),

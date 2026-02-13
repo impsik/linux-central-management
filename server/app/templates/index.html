@@ -783,10 +783,11 @@
                       <th>Active</th>
                       <th>MFA</th>
                       <th>Created</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody id="admin-users-table">
-                    <tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                    <tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -2302,15 +2303,42 @@
           const active = (u.active === false) ? 'no' : 'yes';
           const mfa = u.mfa_enabled ? 'enabled' : 'off';
           const created = formatShortTime(u.created_at || '');
+          const uname = String(u.username || '');
+          const bootstrap = String(adminUsername || 'admin');
+          const canDelete = !!(currentPermissions && currentPermissions.can_delete_app_users) && uname && uname !== bootstrap && uname !== currentUsername;
+
           tr.innerHTML = `
-            <td><code>${escapeHtml(u.username || '')}</code></td>
+            <td><code>${escapeHtml(uname)}</code></td>
             <td>${escapeHtml(role)}</td>
             <td>${escapeHtml(active)}</td>
             <td>${escapeHtml(mfa)}</td>
             <td style="color:#94a3b8;">${escapeHtml(created)}</td>
+            <td style="text-align:right;white-space:nowrap;">
+              <button class="btn" data-user-delete="${escapeHtml(uname)}" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Deactivate user' : 'Cannot delete this user'}">Delete</button>
+            </td>
           `;
           tbody.appendChild(tr);
         }
+
+        tbody.querySelectorAll('button[data-user-delete]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-delete') || '';
+            if (!uname) return;
+            const ok = confirm(`Deactivate user '${uname}'?\n\nThis will disable login and revoke sessions.`);
+            if (!ok) return;
+            try {
+              const r2 = await fetch(`/auth/users/${encodeURIComponent(uname)}/delete`, { method: 'POST', credentials: 'include', headers: { 'X-CSRF-Token': (getCookie('fleet_csrf')||'') } });
+              const raw2 = await r2.text();
+              let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'Delete failed');
+              showToast(`User '${uname}' deactivated`, 'success');
+              loadAdminUsers();
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
 
         if (showToastOnManual) showToast('Users refreshed', 'success');
       } catch (e) {
