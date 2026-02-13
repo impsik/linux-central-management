@@ -14,6 +14,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, require_admin_user, require_ui_user, sha256_hex
 from ..models import AppSession, AppUser
+from ..services.db_utils import transaction
 from ..services.rbac import permissions_for
 
 router = APIRouter(prefix="/auth", tags=["auth"])
