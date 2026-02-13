@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +14,7 @@ from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
 from ..services.job_wait import wait_for_job_run
+from ..services.audit import log_event
 from ..services.rbac import permissions_for
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
@@ -371,7 +372,13 @@ async def refresh_host_packages(agent_id: str, wait: bool = False, db: Session =
 
 
 @router.post("/{agent_id}/packages/action")
-async def host_packages_action(agent_id: str, payload: dict, db: Session = Depends(get_db)):
+async def host_packages_action(
+    agent_id: str,
+    payload: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
         raise HTTPException(404, "Host not found")
@@ -395,6 +402,25 @@ async def host_packages_action(agent_id: str, payload: dict, db: Session = Depen
             payload={"packages": packages},
             agent_ids=[agent_id],
             commit=False,
+        )
+
+        # Audit: log the intent (request) to perform a package action.
+        # Do not log huge payloads; truncate package list.
+        meta = {
+            "action": action,
+            "count": len(packages),
+            "packages": packages[:20],
+            "packages_truncated": len(packages) > 20,
+        }
+        log_event(
+            db,
+            action=f"packages.{action}",
+            actor=user,
+            request=request,
+            target_type="host",
+            target_id=str(agent_id),
+            target_name=str(getattr(host, "hostname", None) or agent_id),
+            meta=meta,
         )
 
     await push_job_to_agents(
