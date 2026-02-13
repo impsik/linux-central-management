@@ -41,7 +41,24 @@ def enroll_start(request: Request, db: Session = Depends(get_db), user: AppUser 
         user.totp_secret_pending_enc = enc
         user.mfa_pending_at = now_utc()
 
-    return {"ok": True, "otpauth_uri": otpauth_uri(user.username, secret)}
+    uri = otpauth_uri(user.username, secret)
+
+    # Optional QR helper (best-effort). Frontend can fall back to showing the URI.
+    qr_data_url = None
+    try:
+        import base64
+        from io import BytesIO
+
+        import qrcode
+
+        img = qrcode.make(uri)
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        qr_data_url = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        qr_data_url = None
+
+    return {"ok": True, "otpauth_uri": uri, "qr_data_url": qr_data_url}
 
 
 @router.post("/enroll/confirm")

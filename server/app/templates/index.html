@@ -1105,7 +1105,12 @@
         const qr = document.getElementById('mfa-qr');
         if (qr) {
           const safe = escapeHtml(otpauthUri || '');
-          qr.innerHTML = safe ? `<div style="font-size:0.9rem;"><div><b>otpauth URI</b></div><code style="display:block;max-width:520px;white-space:pre-wrap;word-break:break-all;">${safe}</code></div>` : '<div style="color:var(--muted-2);">(loading…)</div>';
+          const imgUrl = (window.__mfa_qr_data_url || '');
+          if (imgUrl) {
+            qr.innerHTML = `<img src="${escapeHtml(imgUrl)}" alt="MFA QR" style="display:block;max-width:260px;max-height:260px;" />`;
+          } else {
+            qr.innerHTML = safe ? `<div style="font-size:0.9rem;"><div><b>otpauth URI</b></div><code style="display:block;max-width:520px;white-space:pre-wrap;word-break:break-all;">${safe}</code></div>` : '<div style="color:var(--muted-2);">(loading…)</div>';
+          }
         }
 
         document.getElementById('mfa-start')?.addEventListener('click', async () => {
@@ -1152,6 +1157,7 @@
         const raw = await r.text();
         let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
         if (!r.ok) throw new Error((d && (d.detail||d.error)) || raw || 'MFA start failed');
+        window.__mfa_qr_data_url = d.qr_data_url || '';
         openMfaModal('setup', d.otpauth_uri || '');
       } catch (e) {
         if (statusEl) statusEl.textContent = e.message;
