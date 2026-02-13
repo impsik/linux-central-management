@@ -203,9 +203,16 @@ def admin_list_pending(db: Session = Depends(get_db), admin: AppUser = Depends(r
         for aid, hostname in db.execute(select(Host.agent_id, Host.hostname).where(Host.agent_id.in_(agent_ids))).all():
             host_map[str(aid)] = hostname
 
+    key_ids = {r.key_id for r in rows if getattr(r, "key_id", None)}
+    key_map: dict[str, dict[str, str]] = {}
+    if key_ids:
+        for kid, kname, kfp in db.execute(select(UserSSHKey.id, UserSSHKey.name, UserSSHKey.fingerprint).where(UserSSHKey.id.in_(key_ids))).all():
+            key_map[str(kid)] = {"name": kname or "", "fingerprint": kfp or ""}
+
     items = []
     for r in rows:
         uid = str(r.user_id)
+        kid = str(r.key_id)
         targets = []
         for aid in (r.agent_ids or []):
             if not aid:
@@ -218,7 +225,9 @@ def admin_list_pending(db: Session = Depends(get_db), admin: AppUser = Depends(r
                 "id": str(r.id),
                 "user_id": uid,
                 "user_name": user_map.get(uid) or uid,
-                "key_id": str(r.key_id),
+                "key_id": kid,
+                "key_name": (key_map.get(kid) or {}).get("name", ""),
+                "key_fingerprint": (key_map.get(kid) or {}).get("fingerprint", ""),
                 "agent_ids": r.agent_ids,
                 "targets": targets,
                 "status": r.status,

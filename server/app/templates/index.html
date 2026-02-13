@@ -3032,7 +3032,10 @@
       const targets = it.targets || (it.agent_ids || []).map(aid => ({ agent_id: String(aid), hostname: String(aid) }));
       const names = targets.map(t => t.hostname || t.agent_id).filter(Boolean);
 
-      let meta = `Requested by: ${it.user_name || it.user_id} · Key: ${(String(it.key_id||'')).slice(0,8)} · Created: ${formatShortTime(it.created_at)}`;
+      const keyShort = (String(it.key_id||'')).slice(0,8);
+      const keyName = String(it.key_name || '').trim();
+      const keyLabel = keyName ? `${keyName} (${keyShort})` : keyShort;
+      let meta = `Requested by: ${it.user_name || it.user_id} · Key: ${keyLabel} · Created: ${formatShortTime(it.created_at)}`;
       if (it.job_id || it.jobId) meta += ` · Job: ${String(it.job_id || it.jobId).slice(0,8)}`;
       metaEl.textContent = meta;
 
@@ -5389,7 +5392,7 @@
           tr.innerHTML = `
             <td style="color:#94a3b8;">${escapeHtml(formatShortTime(it.created_at))}</td>
             <td>${escapeHtml(it.user_name || String(it.user_id||'').slice(0,8))}</td>
-            <td><code>${escapeHtml(String(it.key_id||'')).slice(0,8)}</code></td>
+            <td><code>${escapeHtml(String(it.key_name||'') || String(it.key_id||'').slice(0,8))}</code></td>
             <td title="${escapeHtml(t.title)}">${escapeHtml(t.text || String((it.agent_ids||[]).length))}</td>
             <td style="text-align:right;white-space:nowrap;">
               <button class="btn" data-view-id="${escapeHtml(it.id)}">Details</button>
@@ -5419,7 +5422,9 @@
             const it = itemsById.get(String(id));
             if (it) {
               const t = targetsLabel(it);
-              const ok = confirm(`Approve deployment request?\n\nRequested by: ${it.user_name || it.user_id}\nKey: ${(String(it.key_id||'')).slice(0,8)}\nTargets:\n${t.title}`);
+              const keyShort = (String(it.key_id||'')).slice(0,8);
+              const keyLabel = (String(it.key_name||'').trim()) ? `${it.key_name} (${keyShort})` : keyShort;
+              const ok = confirm(`Approve deployment request?\n\nRequested by: ${it.user_name || it.user_id}\nKey: ${keyLabel}\nTargets:\n${t.title}`);
               if (!ok) return;
             }
 
