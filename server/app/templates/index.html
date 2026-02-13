@@ -768,30 +768,63 @@
             </div>
           </div>
 
-          <div class="admin-card" id="admin-users-card">
-            <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-              <span>Users</span>
-              <button class="btn" id="admin-users-refresh" type="button">Reload</button>
-            </div>
-            <div class="admin-card-body">
-              <div style="overflow-x:auto;">
-                <table class="process-table" style="min-width:720px;">
-                  <thead>
-                    <tr>
-                      <th>Username</th>
-                      <th>Role</th>
-                      <th>Active</th>
-                      <th>MFA</th>
-                      <th>Created</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody id="admin-users-table">
-                    <tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
-                  </tbody>
-                </table>
+          <div>
+            <div class="admin-card" id="admin-users-card">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Users</span>
+                <button class="btn" id="admin-users-refresh" type="button">Reload</button>
               </div>
-              <div class="admin-status" id="admin-users-status"></div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:720px;">
+                    <thead>
+                      <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Active</th>
+                        <th>MFA</th>
+                        <th>Created</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-users-table">
+                      <tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-users-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-audit-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Audit log</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <input id="audit-filter-action" class="host-search" style="max-width:220px;" type="text" placeholder="Action (e.g. auth.login)" />
+                  <input id="audit-filter-actor" class="host-search" style="max-width:200px;" type="text" placeholder="Actor (username)" />
+                  <button class="btn" id="admin-audit-refresh" type="button">Reload</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:900px;">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Action</th>
+                        <th>Actor</th>
+                        <th>Target</th>
+                        <th>IP</th>
+                        <th>Meta</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-audit-table">
+                      <tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-audit-status"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -2278,13 +2311,78 @@
       selectHost(currentAgentId, hostname);
     }
 
+    function safeJsonPreview(obj, max = 140) {
+      try {
+        const s = JSON.stringify(obj || {});
+        if (s.length > max) return s.slice(0, max - 3) + '...';
+        return s;
+      } catch {
+        return '';
+      }
+    }
+
+    async function loadAdminAudit(showToastOnManual = false) {
+      const tbody = document.getElementById('admin-audit-table');
+      const statusEl = document.getElementById('admin-audit-status');
+      if (!tbody) return;
+
+      const action = (document.getElementById('audit-filter-action')?.value || '').trim();
+      const actor = (document.getElementById('audit-filter-actor')?.value || '').trim();
+
+      try {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        if (statusEl) statusEl.textContent = '';
+
+        const qs = new URLSearchParams();
+        if (action) qs.set('action', action);
+        if (actor) qs.set('actor', actor);
+        qs.set('limit', '200');
+
+        const r = await fetch(`/audit?${qs.toString()}`, { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `audit fetch failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">No events</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const ev of items) {
+          const tr = document.createElement('tr');
+          const when = formatShortTime(ev.created_at || '');
+          const who = String(ev.actor || '');
+          const actionName = String(ev.action || '');
+          const target = (ev.target_type || ev.target_name) ? `${String(ev.target_type||'')}:${String(ev.target_name||'')}` : '';
+          const ip = String(ev.ip || '');
+          const meta = safeJsonPreview(ev.meta || {}, 160);
+          tr.innerHTML = `
+            <td style="color:#94a3b8;">${escapeHtml(when)}</td>
+            <td><code>${escapeHtml(actionName)}</code></td>
+            <td>${escapeHtml(who)}</td>
+            <td style="color:#94a3b8;">${escapeHtml(target)}</td>
+            <td style="color:#94a3b8;"><code>${escapeHtml(ip)}</code></td>
+            <td style="color:#94a3b8;"><code>${escapeHtml(meta)}</code></td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        if (showToastOnManual) showToast('Audit refreshed', 'success');
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        if (statusEl) statusEl.textContent = e.message;
+        if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
     async function loadAdminUsers(showToastOnManual = false) {
       const tbody = document.getElementById('admin-users-table');
       const statusEl = document.getElementById('admin-users-status');
       if (!tbody) return;
 
       try {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
         if (statusEl) statusEl.textContent = '';
         const r = await fetch('/auth/admin/users', { credentials: 'include' });
         const raw = await r.text();
@@ -2293,7 +2391,7 @@
 
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">No users</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">No users</td></tr>';
           return;
         }
         tbody.innerHTML = '';
@@ -2334,6 +2432,7 @@
               if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'Delete failed');
               showToast(`User '${uname}' deactivated`, 'success');
               loadAdminUsers();
+              loadAdminAudit();
             } catch (err) {
               showToast(err.message || String(err), 'error', 5000);
             }
@@ -2342,7 +2441,7 @@
 
         if (showToastOnManual) showToast('Users refreshed', 'success');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
       }
@@ -2361,6 +2460,7 @@
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('admin-tab').classList.add('active');
       loadAdminUsers();
+      loadAdminAudit();
     }
 
     function setHostActionActive(action) {
@@ -5908,6 +6008,7 @@
       document.getElementById('sshkey-hosts-select-none')?.addEventListener('click', (e) => { e.preventDefault(); sshSelectedAgentIds = new Set(); renderSshHostsList(); });
 
       document.getElementById('admin-users-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminUsers(true); });
+      document.getElementById('admin-audit-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminAudit(true); });
 
       document.getElementById('sshkey-request-deploy')?.addEventListener('click', async (e) => {
         e.preventDefault();
