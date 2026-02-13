@@ -42,7 +42,7 @@ cd linux-central-management
 
 # Configure server env
 cd deploy/docker
-cp .env.example .env
+cp env.example .env
 # edit .env and set at least:
 #   BOOTSTRAP_PASSWORD
 #   AGENT_SHARED_TOKEN
