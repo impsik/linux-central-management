@@ -20,6 +20,9 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
   - system services (click a service → details)
   - system users (click a user → details)
   - SSH keys: add keys and request deployments with admin approval
+- Admin:
+  - users list + create/reset/deactivate users
+  - audit log (who did what: auth, user lifecycle, MFA, package actions, etc.)
 
 ### API
 - `/health` for health checks
@@ -49,6 +52,7 @@ cp env.example .env
 # edit .env and set at least:
 #   BOOTSTRAP_PASSWORD
 #   AGENT_SHARED_TOKEN
+#   MFA_ENCRYPTION_KEY   (required when MFA is enabled; see below)
 # optionally:
 #   AGENT_TERMINAL_TOKEN (only if you enable terminal)
 ```
@@ -56,6 +60,10 @@ cp env.example .env
 ### 3) Start
 ```bash
 docker compose up -d --build
+
+# Apply DB migrations (recommended for any deployment with existing DB volume)
+docker compose exec server alembic upgrade head
+
 curl -s http://localhost:8000/health
 ```
 
@@ -133,6 +141,24 @@ sudo systemctl status fleet-agent
 ### Bootstrap UI password
 The server **does not** ship with a safe default password. You must set:
 - `BOOTSTRAP_PASSWORD` in `deploy/docker/.env`
+
+### MFA (TOTP) for privileged users
+By default, MFA is **required** for `admin` and `operator` users.
+Readonly users can be password-only.
+
+Set an encryption key (Fernet) in `deploy/docker/.env`:
+- `MFA_ENCRYPTION_KEY`
+
+Generate one:
+```bash
+python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+When you log in as a privileged user, the UI will force MFA enrollment and show recovery codes.
+
+You can control MFA behavior via env (server):
+- `MFA_REQUIRE_FOR_PRIVILEGED=true|false`
+- `MFA_TOTP_ISSUER` (default: `linux-central-management`)
 
 ### Agent authentication
 All agent endpoints require a shared token (required by default):
