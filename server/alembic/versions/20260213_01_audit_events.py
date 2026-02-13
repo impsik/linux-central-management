@@ -17,6 +17,13 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # In dev-style deployments DB_AUTO_CREATE_TABLES=true, Base.metadata.create_all()
+    # may have already created this table. Make the migration idempotent.
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if insp.has_table("audit_events"):
+        return
+
     op.create_table(
         "audit_events",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
@@ -45,6 +52,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if not insp.has_table("audit_events"):
+        return
+
     op.drop_index("ix_audit_events_created_at", table_name="audit_events")
     op.drop_index("ix_audit_events_target_id", table_name="audit_events")
     op.drop_index("ix_audit_events_target_type", table_name="audit_events")
