@@ -144,9 +144,13 @@ def run_playbook(playbook: str, agent_ids: list[str], extra_vars: dict[str, Any]
     prompt_names = {p.get("name") for p in playbooks[playbook].get("prompts", []) if p.get("name")}
     private_names = {p.get("name") for p in playbooks[playbook].get("prompts", []) if p.get("private")}
 
-    # For legacy playbooks that use vars_prompt name "server", fill it.
-    if "server" in prompt_names or "server" in extra_vars:
+    # Auto-fill common target variables based on the selected agents.
+    # Legacy playbooks use vars_prompt name "server"; newer ones use "target_hosts".
+    if ("server" in prompt_names) or ("server" in extra_vars):
         extra_vars["server"] = " ".join(agent_ids)
+
+    if ("target_hosts" in prompt_names) and (not str(extra_vars.get("target_hosts", "")).strip()):
+        extra_vars["target_hosts"] = " ".join(agent_ids)
 
     inventory = ",".join(agent_ids) + ","
 

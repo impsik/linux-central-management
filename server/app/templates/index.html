@@ -2961,9 +2961,12 @@
         const input = document.createElement('input');
         input.type = p.private ? 'password' : 'text';
         input.setAttribute('data-var-name', p.name);
-        if (p.name === 'server') {
+        // Auto-fill common target variables so the user doesn't have to type hosts manually.
+        // Historically some playbooks used vars_prompt name "server"; newer ones use "target_hosts".
+        if (p.name === 'server' || p.name === 'target_hosts') {
           input.value = targets.join(' ');
-          input.readOnly = true;
+          // Keep it editable for target_hosts (power users may want to override with a group/all).
+          if (p.name === 'server') input.readOnly = true;
         }
         field.appendChild(label);
         field.appendChild(input);
