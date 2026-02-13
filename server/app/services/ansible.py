@@ -128,7 +128,13 @@ def redact_extra_vars(playbook: str, extra_vars: dict[str, Any] | None) -> dict[
     return redacted
 
 
-def run_playbook(playbook: str, agent_ids: list[str], extra_vars: dict[str, Any] | None) -> dict[str, Any]:
+def run_playbook(
+    playbook: str,
+    agent_ids: list[str],
+    extra_vars: dict[str, Any] | None,
+    *,
+    inventory_hosts: list[str] | None = None,
+) -> dict[str, Any]:
     playbooks = {p["name"]: p for p in list_playbooks()}
     if playbook not in playbooks:
         raise HTTPException(404, "Playbook not found")
@@ -146,13 +152,20 @@ def run_playbook(playbook: str, agent_ids: list[str], extra_vars: dict[str, Any]
 
     # Auto-fill common target variables based on the selected agents.
     # Legacy playbooks use vars_prompt name "server"; newer ones use "target_hosts".
+    # Use resolved targets (inventory hosts) for defaults presented to playbooks.
+    inv_hosts = inventory_hosts or agent_ids
+
     if ("server" in prompt_names) or ("server" in extra_vars):
-        extra_vars["server"] = " ".join(agent_ids)
+        extra_vars["server"] = " ".join(inv_hosts)
 
+    # Only set target_hosts if it exists as a prompt and the user didn't provide anything.
+    # (If they typed a group like "all" or "web", respect that.)
     if ("target_hosts" in prompt_names) and (not str(extra_vars.get("target_hosts", "")).strip()):
-        extra_vars["target_hosts"] = " ".join(agent_ids)
+        extra_vars["target_hosts"] = " ".join(inv_hosts)
 
-    inventory = ",".join(agent_ids) + ","
+    # Use resolved connection targets (IP/FQDN) if provided; fall back to agent ids.
+    inv_hosts = inventory_hosts or agent_ids
+    inventory = ",".join([h for h in inv_hosts if str(h).strip()]) + ","
 
     def _sanitize_log_value(key: str, value: Any) -> Any:
         if key in private_names:

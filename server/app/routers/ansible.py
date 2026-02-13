@@ -141,7 +141,24 @@ async def ansible_run(
         run_id = run.run_key
 
     try:
-        result = await asyncio.to_thread(run_playbook, payload.playbook, payload.agent_ids, payload.extra_vars)
+        # Resolve selected agent ids to connection targets (prefer IP, then FQDN, then hostname).
+        from ..models import Host
+        from ..services.hosts import resolve_host_target
+
+        hosts = db.execute(select(Host).where(Host.agent_id.in_(payload.agent_ids))).scalars().all()
+        by_id = {h.agent_id: h for h in hosts}
+        inventory_hosts: list[str] = []
+        for aid in payload.agent_ids:
+            h = by_id.get(aid)
+            inventory_hosts.append(resolve_host_target(h) if h is not None else aid)
+
+        result = await asyncio.to_thread(
+            run_playbook,
+            payload.playbook,
+            payload.agent_ids,
+            payload.extra_vars,
+            inventory_hosts=inventory_hosts,
+        )
         from ..config import settings
         from ..services.text_utils import truncate
 
