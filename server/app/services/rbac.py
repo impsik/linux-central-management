@@ -28,6 +28,8 @@ def permissions_for(user: AppUser) -> dict:
         "can_remove_packages": role == "admin",
         "can_manage_services": role in ("admin", "operator"),
         "can_lock_users": role == "admin",
-        "can_use_terminal": role == "admin",
+        # Terminal access is enforced server-side per-host in /ws/terminal/{agent_id}.
+        # UI permission controls whether the Terminal tab is shown at all.
+        "can_use_terminal": role in ("admin", "operator"),
     }
     return perms
