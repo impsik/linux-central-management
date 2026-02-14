@@ -4152,7 +4152,7 @@
           const cand = p.candidate_version ? escapeHtml(p.candidate_version) : '';
           const checked = selectedPackages.has(p.name);
           return `
-            <div class="package-card ${isActive ? 'active' : ''} ${up ? 'upgradable' : ''}" data-pkg="${name}" onclick="selectPackage('${escapeJs(p.name)}')">
+            <div class="package-card ${isActive ? 'active' : ''} ${up ? 'upgradable' : ''}" data-pkg="${name}">
               <div class="package-select-wrap">
                 <input class="package-checkbox" type="checkbox" data-pkg="${name}" ${checked ? 'checked' : ''} />
                 <div style="min-width:0;">
@@ -4163,6 +4163,15 @@
             </div>
           `;
         }).join('');
+
+        document.querySelectorAll('.package-card[data-pkg]').forEach(card => {
+          card.addEventListener('click', (e) => {
+            e.preventDefault();
+            const pkgName = card.getAttribute('data-pkg');
+            if (!pkgName) return;
+            void selectPackage(pkgName);
+          });
+        });
 
         // Checkbox wiring (prevent card click)
         document.querySelectorAll('.package-checkbox[data-pkg]').forEach(cb => {
