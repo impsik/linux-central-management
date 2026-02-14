@@ -130,6 +130,20 @@
       const items = d?.items || [];
       if (!items.length) return w.setTableState(tbody, 9, 'empty', 'No hosts');
 
+      // Keep sidebar host metadata hydrated even if sidebar fetch path fails.
+      if (ctx && typeof ctx.setAllHosts === 'function') {
+        ctx.setAllHosts(items.map((it) => ({
+          agent_id: it.agent_id,
+          hostname: it.hostname || it.agent_id,
+          ip_address: it.ip_address || '',
+          os_id: it.os_id || '',
+          os_version: it.os_version || '',
+          labels: (it.labels && typeof it.labels === 'object') ? it.labels : {},
+          is_online: !!it.is_online,
+          last_seen: it.last_seen || null,
+        })));
+      }
+
       tbody.innerHTML = '';
       for (const it of items) {
         const hostName = it.hostname || it.agent_id;

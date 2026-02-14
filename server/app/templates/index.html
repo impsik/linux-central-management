@@ -1834,6 +1834,7 @@
         loadFailedRuns,
         loadHosts,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
+        setAllHosts: (hosts) => { allHosts = syncHostFilterSelectionState('allHosts', Array.isArray(hosts) ? hosts : []); return allHosts; },
       };
     }
 
