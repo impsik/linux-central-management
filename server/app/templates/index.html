@@ -5276,9 +5276,12 @@
 
     // Cronjobs host picker (separate from Hosts tab selection)
     const cronUiState = createUiStateAccess('cronHostPicker', { selectedAgentIds: new Set() });
+    const cronUiDefaults = (typeof window.initCronHostPickerState === 'function')
+      ? window.initCronHostPickerState(cronUiState)
+      : { selectedAgentIds: (cronUiState.get('selectedAgentIds') instanceof Set) ? cronUiState.get('selectedAgentIds') : new Set() };
 
     function getCronSelectedAgentIds() {
-      return cronUiState.get('selectedAgentIds', new Set());
+      return cronUiState.get('selectedAgentIds', cronUiDefaults.selectedAgentIds);
     }
 
     function setCronSelectedAgentIds(next) {
@@ -5401,9 +5404,16 @@
       selectedKeyId: null,
       selectedAgentIds: new Set(),
     });
+    const sshUiDefaults = (typeof window.initSshKeysUiState === 'function')
+      ? window.initSshKeysUiState(sshUiState)
+      : {
+        keysCache: Array.isArray(sshUiState.get('keysCache')) ? sshUiState.get('keysCache') : [],
+        selectedKeyId: sshUiState.get('selectedKeyId', null) || null,
+        selectedAgentIds: (sshUiState.get('selectedAgentIds') instanceof Set) ? sshUiState.get('selectedAgentIds') : new Set(),
+      };
 
     function getSshSelectedAgentIds() {
-      return sshUiState.get('selectedAgentIds', new Set());
+      return sshUiState.get('selectedAgentIds', sshUiDefaults.selectedAgentIds);
     }
 
     function setSshSelectedAgentIds(next) {
@@ -5411,7 +5421,7 @@
     }
 
     function getSshSelectedKeyId() {
-      return sshUiState.get('selectedKeyId', null);
+      return sshUiState.get('selectedKeyId', sshUiDefaults.selectedKeyId);
     }
 
     function setSshSelectedKeyId(next) {
@@ -5419,7 +5429,7 @@
     }
 
     function getSshKeysCache() {
-      return sshUiState.get('keysCache', []);
+      return sshUiState.get('keysCache', sshUiDefaults.keysCache);
     }
 
     function setSshKeysCache(next) {

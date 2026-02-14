@@ -796,6 +796,40 @@
     return normalized;
   }
 
+  function initCronHostPickerState(stateAccess) {
+    if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') {
+      return { selectedAgentIds: new Set() };
+    }
+
+    const selectedAgentIds = (stateAccess.get('selectedAgentIds') instanceof Set)
+      ? stateAccess.get('selectedAgentIds')
+      : new Set();
+    stateAccess.set('selectedAgentIds', selectedAgentIds);
+    return { selectedAgentIds: selectedAgentIds };
+  }
+
+  function initSshKeysUiState(stateAccess) {
+    if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') {
+      return {
+        keysCache: [],
+        selectedKeyId: null,
+        selectedAgentIds: new Set()
+      };
+    }
+
+    const normalized = {
+      keysCache: Array.isArray(stateAccess.get('keysCache')) ? stateAccess.get('keysCache') : [],
+      selectedKeyId: stateAccess.get('selectedKeyId', null) || null,
+      selectedAgentIds: (stateAccess.get('selectedAgentIds') instanceof Set) ? stateAccess.get('selectedAgentIds') : new Set()
+    };
+
+    Object.keys(normalized).forEach(function (key) {
+      stateAccess.set(key, normalized[key]);
+    });
+
+    return normalized;
+  }
+
   w.escapeHtml = w.escapeHtml || escapeHtml;
   w.formatRelativeTime = w.formatRelativeTime || formatRelativeTime;
   w.safeJsonPreview = w.safeJsonPreview || safeJsonPreview;
@@ -830,4 +864,6 @@
   w.createUiStateAccess = createUiStateAccess;
   w.stopMetricsPollingLifecycle = stopMetricsPollingLifecycle;
   w.initHostFilterSelectionState = initHostFilterSelectionState;
+  w.initCronHostPickerState = initCronHostPickerState;
+  w.initSshKeysUiState = initSshKeysUiState;
 })(window);
