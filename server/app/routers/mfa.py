@@ -35,12 +35,21 @@ def enroll_start(request: Request, db: Session = Depends(get_db), user: AppUser 
     if not getattr(settings, "mfa_encryption_key", None):
         raise HTTPException(500, "MFA_ENCRYPTION_KEY not configured")
 
-    secret = new_totp_secret()
-    enc = encrypt_secret(secret)
+    # Reuse existing pending secret so repeated UI calls don't rotate QR unexpectedly.
+    # (The frontend may call enroll/start more than once during init/retry flows.)
+    secret = None
+    if getattr(user, "totp_secret_pending_enc", None):
+        try:
+            secret = decrypt_secret(user.totp_secret_pending_enc)
+        except Exception:
+            secret = None
 
-    with transaction(db):
-        user.totp_secret_pending_enc = enc
-        user.mfa_pending_at = now_utc()
+    if not secret:
+        secret = new_totp_secret()
+        enc = encrypt_secret(secret)
+        with transaction(db):
+            user.totp_secret_pending_enc = enc
+            user.mfa_pending_at = now_utc()
 
     uri = otpauth_uri(user.username, secret)
 
