@@ -4293,8 +4293,6 @@
         servicesList.innerHTML = data.services.map(service => {
           const statusClass = service.status === 'active' ? 'active' :
             service.status === 'failed' ? 'failed' : 'inactive';
-          // Escape service name for use in onclick attribute
-          const serviceNameEscaped = service.name.replace(/'/g, "\\'");
           const enabledBadge = service.enabled ? '<span class="sudo-badge yes" style="margin-left: 0.5rem;">✓ Enabled</span>' : '<span class="sudo-badge no" style="margin-left: 0.5rem;">✗ Disabled</span>';
           return `
             <div class="service-card" data-service-name="${escapeHtml(service.name)}">
@@ -4307,12 +4305,12 @@
                 </div>
               </div>
               <div class="service-actions">
-                <button class="btn btn-success" onclick="controlService('${agentId}', '${serviceNameEscaped}', 'start')" 
+                <button class="btn btn-success" data-service-action="start" data-service-name="${escapeHtml(service.name)}"
                   ${service.status === 'active' ? 'disabled' : ''}>Start</button>
-                <button class="btn btn-warning" onclick="controlService('${agentId}', '${serviceNameEscaped}', 'restart')">Restart</button>
-                <button class="btn btn-danger" onclick="controlService('${agentId}', '${serviceNameEscaped}', 'stop')"
+                <button class="btn btn-warning" data-service-action="restart" data-service-name="${escapeHtml(service.name)}">Restart</button>
+                <button class="btn btn-danger" data-service-action="stop" data-service-name="${escapeHtml(service.name)}"
                   ${service.status !== 'active' ? 'disabled' : ''}>Stop</button>
-                <button class="btn ${service.enabled ? 'btn-danger' : 'btn-success'}" onclick="controlService('${agentId}', '${serviceNameEscaped}', '${service.enabled ? 'disable' : 'enable'}')">
+                <button class="btn ${service.enabled ? 'btn-danger' : 'btn-success'}" data-service-action="${service.enabled ? 'disable' : 'enable'}" data-service-name="${escapeHtml(service.name)}">
                   ${service.enabled ? 'Disable' : 'Enable'}
                 </button>
               </div>
@@ -4327,6 +4325,16 @@
             const name = a.getAttribute('data-service') || '';
             if (!name) return;
             openServiceModal(agentId, name);
+          });
+        });
+
+        servicesList.querySelectorAll('button[data-service-action][data-service-name]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const action = btn.getAttribute('data-service-action') || '';
+            const serviceName = btn.getAttribute('data-service-name') || '';
+            if (!action || !serviceName) return;
+            controlService(agentId, serviceName, action);
           });
         });
       } catch (error) {
