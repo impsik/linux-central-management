@@ -103,7 +103,7 @@
 
     canvas.width = canvas.offsetWidth;
     canvas.height = canvas.offsetHeight;
-    redrawLoadGraph(canvas.getContext('2d'), ctx);
+    redrawLoadGraph(ctx);
   }
 
   async function loadHistoricalLoadData(ctx, agentId) {
@@ -121,7 +121,7 @@
         if (canvas) {
           canvas.width = canvas.offsetWidth;
           canvas.height = canvas.offsetHeight;
-          redrawLoadGraph(canvas.getContext('2d'), ctx);
+          redrawLoadGraph(ctx);
         }
       }
     } catch (error) {
