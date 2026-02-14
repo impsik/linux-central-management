@@ -32,6 +32,22 @@
     }
   }
 
+  function getLoadHistoryLimitForRange(seconds) {
+    // Keep UI responsive; server returns at most this many points
+    if (seconds <= 3600) return 1200;
+    if (seconds <= 6 * 3600) return 1500;
+    if (seconds <= 24 * 3600) return 2000;
+    return 3000;
+  }
+
+  function formatTimeLabel(d, rangeSeconds) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+    const opts = rangeSeconds <= 3600
+      ? { hour: '2-digit', minute: '2-digit', second: '2-digit' }
+      : { hour: '2-digit', minute: '2-digit' };
+    return d.toLocaleTimeString([], opts);
+  }
+
   function setButtonBusy(button, busy, busyText) {
     if (!button) return;
     const nextText = busyText || 'Working…';
@@ -540,6 +556,8 @@
   w.escapeHtml = w.escapeHtml || escapeHtml;
   w.formatRelativeTime = w.formatRelativeTime || formatRelativeTime;
   w.safeJsonPreview = w.safeJsonPreview || safeJsonPreview;
+  w.getLoadHistoryLimitForRange = w.getLoadHistoryLimitForRange || getLoadHistoryLimitForRange;
+  w.formatTimeLabel = w.formatTimeLabel || formatTimeLabel;
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;

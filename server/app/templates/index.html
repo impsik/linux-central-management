@@ -1560,23 +1560,6 @@
     const METRICS_POLL_MS = 60_000; // 1 minute is enough for disk/mem/ips/top-procs/loadavg
     const TOP_PROCS_POLL_MS = 1_000; // top processes can change quickly
 
-    function getLoadHistoryLimitForRange(seconds) {
-      // Keep UI responsive; server returns at most this many points
-      if (seconds <= 3600) return 1200;        // up to 1h
-      if (seconds <= 6 * 3600) return 1500;    // up to 6h
-      if (seconds <= 24 * 3600) return 2000;   // up to 24h
-      return 3000;                              // up to 7d
-    }
-
-    function formatTimeLabel(d, rangeSeconds) {
-      if (!(d instanceof Date) || isNaN(d.getTime())) return '';
-      // Shorter ranges show HH:MM:SS, longer show HH:MM
-      const opts = rangeSeconds <= 3600
-        ? { hour: '2-digit', minute: '2-digit', second: '2-digit' }
-        : { hour: '2-digit', minute: '2-digit' };
-      return d.toLocaleTimeString([], opts);
-    }
-
     function initLoadTimeframeControls() {
       const sel = document.getElementById('load-timeframe');
       if (!sel) return;
