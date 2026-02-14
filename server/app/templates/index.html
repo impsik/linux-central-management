@@ -32,6 +32,7 @@
   <script src="/assets/fleet-phase3-metrics.js"></script>
   <script src="/assets/fleet-phase3-overview.js"></script>
   <script src="/assets/fleet-phase3-packages.js"></script>
+  <script src="/assets/fleet-phase3-host-actions.js"></script>
   <link rel="stylesheet" href="/assets/index-MnFIflNy.css" />
   <link rel="stylesheet" href="/assets/fleet-ui.css" />
 </head>
@@ -3260,26 +3261,10 @@
     }
 
     function initHostActionControls() {
-      document.getElementById('app-title')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showServerInfo();
-      });
-      document.getElementById('host-action-terminal')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showTerminal();
-      });
-      document.getElementById('host-action-users')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showUsers();
-      });
-      document.getElementById('host-action-services')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showServices();
-      });
-      document.getElementById('host-action-packages')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showPackages();
-      });
+      const mod = window.phase3HostActions;
+      if (mod && typeof mod.initHostActionControls === 'function') {
+        return mod.initHostActionControls({ showServerInfo, showTerminal, showUsers, showServices, showPackages });
+      }
     }
 
     function getSshUiCtx() {
@@ -3324,20 +3309,16 @@
     initAnsibleSection();
     loadAuthInfo();
 
-    // Disk details modal
-    document.getElementById('disk-card')?.addEventListener('click', (e) => {
-      e.preventDefault();
-      if (!metricsLifecycleState.get('currentMetricsAgentId')) return;
-      openDiskModal(metricsLifecycleState.get('currentMetricsAgentId'));
-    });
-    document.getElementById('disk-modal-close')?.addEventListener('click', (e) => { e.preventDefault(); closeDiskModal(); });
-    document.getElementById('disk-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'disk-modal') closeDiskModal(); });
-
-    document.getElementById('service-modal-close')?.addEventListener('click', (e) => { e.preventDefault(); closeServiceModal(); });
-    document.getElementById('service-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'service-modal') closeServiceModal(); });
-
-    document.getElementById('user-modal-close')?.addEventListener('click', (e) => { e.preventDefault(); closeUserModal(); });
-    document.getElementById('user-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'user-modal') closeUserModal(); });
+    const hostActionsMod = window.phase3HostActions;
+    if (hostActionsMod && typeof hostActionsMod.initCommonModalDismissHandlers === 'function') {
+      hostActionsMod.initCommonModalDismissHandlers({
+        getCurrentMetricsAgentId: () => metricsLifecycleState.get('currentMetricsAgentId'),
+        openDiskModal,
+        closeDiskModal,
+        closeServiceModal,
+        closeUserModal,
+      });
+    }
     const HOSTS_REFRESH_MS = 5000;
     let hostsRefreshTimer = null;
 
