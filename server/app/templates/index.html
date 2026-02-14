@@ -1642,15 +1642,37 @@
     }
 
     async function loadHosts() {
-      const mod = window.phase3HostList;
-      if (mod && typeof mod.loadHosts === 'function') {
-        return mod.loadHosts(getHostListCtx());
-      }
-
-      // Fallback path so UI doesn't stay stuck on "Loading hosts..." when module fails to load.
       const hostsEl = document.getElementById('hosts');
-      if (hostsEl) hostsEl.innerHTML = '<div class="error">Host list module failed to load. Please hard refresh.</div>';
-      console.error('[loadHosts] phase3HostList module missing');
+      const mod = window.phase3HostList;
+      try {
+        if (mod && typeof mod.loadHosts === 'function') {
+          await mod.loadHosts(getHostListCtx());
+          return;
+        }
+
+        // Fallback path so UI doesn't stay stuck when module fails to load.
+        console.error('[loadHosts] phase3HostList module missing; using inline fallback');
+        const r = await fetch('/hosts?online_only=true', { credentials: 'include' });
+        if (!r.ok) throw new Error(`hosts failed (${r.status})`);
+        const items = await r.json();
+        const hosts = Array.isArray(items) ? items : [];
+        if (!hostsEl) return;
+        if (!hosts.length) {
+          hostsEl.innerHTML = '<div class="empty-state">No hosts found</div>';
+          return;
+        }
+        hostsEl.innerHTML = hosts.map(h => `
+          <div class="host-item">
+            <div class="host-meta">
+              <div class="host-row-top"><div class="host-name">${escapeHtml(h.hostname || h.agent_id || '')}</div></div>
+              <div class="host-subline"><span class="host-subitem">${escapeHtml(h.agent_id || '')}</span></div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('[loadHosts failed]', e);
+        if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
+      }
     }
 
     function initHostFilters() {
