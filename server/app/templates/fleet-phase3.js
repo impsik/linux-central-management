@@ -32,6 +32,30 @@
     }
   }
 
+  function normalize(s) {
+    return (s || '').toString().toLowerCase();
+  }
+
+  function matchesGlob(text, glob) {
+    if (!glob) return false;
+    if (!glob.includes('*') && !glob.includes('?')) return text === glob;
+    const esc = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+    const reStr = '^' + esc.replaceAll('\\*', '.*').replaceAll('\\?', '.') + '$';
+    try {
+      return new RegExp(reStr).test(text);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function hostLabel(host, key) {
+    try {
+      return (host && host.labels && typeof host.labels === 'object') ? (host.labels[key] || '') : '';
+    } catch (_) {
+      return '';
+    }
+  }
+
   function getLoadHistoryLimitForRange(seconds) {
     // Keep UI responsive; server returns at most this many points
     if (seconds <= 3600) return 1200;
@@ -556,6 +580,9 @@
   w.escapeHtml = w.escapeHtml || escapeHtml;
   w.formatRelativeTime = w.formatRelativeTime || formatRelativeTime;
   w.safeJsonPreview = w.safeJsonPreview || safeJsonPreview;
+  w.normalize = w.normalize || normalize;
+  w.matchesGlob = w.matchesGlob || matchesGlob;
+  w.hostLabel = w.hostLabel || hostLabel;
   w.getLoadHistoryLimitForRange = w.getLoadHistoryLimitForRange || getLoadHistoryLimitForRange;
   w.formatTimeLabel = w.formatTimeLabel || formatTimeLabel;
   w.setButtonBusy = setButtonBusy;

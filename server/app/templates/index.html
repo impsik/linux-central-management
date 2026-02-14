@@ -1593,10 +1593,6 @@
     let selectedCvePackages = new Set(); // Set<string> selected in CVE package list
     let ansiblePlaybooks = [];
 
-    function normalize(s) {
-      return (s || '').toString().toLowerCase();
-    }
-
     function matchesGlob(text, glob) {
       if (!glob) return false;
       // Treat as exact match if no wildcard meta
@@ -1608,14 +1604,6 @@
         return new RegExp(reStr).test(text);
       } catch {
         return false;
-      }
-    }
-
-    function hostLabel(host, key) {
-      try {
-        return (host && host.labels && typeof host.labels === 'object') ? (host.labels[key] || '') : '';
-      } catch {
-        return '';
       }
     }
 
