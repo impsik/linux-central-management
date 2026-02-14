@@ -8,6 +8,8 @@ def test_job_flow_sqlite(monkeypatch):
     monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
     monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
     monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
 
     # Import after env is set
     app_factory = importlib.import_module("app.app_factory")
@@ -18,7 +20,7 @@ def test_job_flow_sqlite(monkeypatch):
 
     with TestClient(app) as client:
         # Monkeypatch ansible runner to avoid calling external ansible-playbook
-        def fake_run_playbook(playbook, agent_ids, extra_vars):
+        def fake_run_playbook(playbook, agent_ids, extra_vars, *args, **kwargs):
             return {"ok": True, "rc": 0, "stdout": "ok", "stderr": "", "log_name": "test.log", "log_path": None}
         # Patch both the service function and the router-imported symbol.
         ansible_mod = importlib.import_module("app.services.ansible")
@@ -44,8 +46,11 @@ def test_job_flow_sqlite(monkeypatch):
         r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
         assert r.status_code == 200, r.text
 
+        csrf = client.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
+
         # Create a query job
-        r = client.post("/jobs/pkg-query", json={"agent_ids": ["srv-001"], "packages": ["bash"]})
+        r = client.post("/jobs/pkg-query", json={"agent_ids": ["srv-001"], "packages": ["bash"]}, headers=headers)
         assert r.status_code == 200, r.text
         job_id = r.json()["job_id"]
 
@@ -92,7 +97,7 @@ def test_job_flow_sqlite(monkeypatch):
         ansible_logs_dir.mkdir(parents=True, exist_ok=True)
         (ansible_logs_dir / "test.log").write_text("hello log", encoding="utf-8")
 
-        r = client.post("/ansible/run", json={"playbook": "noop.yml", "agent_ids": ["srv-001"], "extra_vars": {"secret": "x"}})
+        r = client.post("/ansible/run", json={"playbook": "noop.yml", "agent_ids": ["srv-001"], "extra_vars": {"secret": "x"}}, headers=headers)
         assert r.status_code == 200, r.text
         run_id = r.json()["run_id"]
 

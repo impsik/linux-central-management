@@ -110,20 +110,26 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         stop_event.set()
-        task.cancel()
+        tasks = [task]
         try:
-            task2.cancel()
+            if task2:
+                tasks.append(task2)
         except Exception:
             pass
         try:
             if task3:
-                task3.cancel()
+                tasks.append(task3)
         except Exception:
             pass
-        try:
-            await task
-        except Exception:
-            pass
+
+        for t in tasks:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+
+        import asyncio
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def create_app() -> FastAPI:
