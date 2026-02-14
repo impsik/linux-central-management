@@ -1582,13 +1582,38 @@
     }
 
     // Hosts + filtering state
-    let allHosts = [];
-    let hostSearchQuery = '';
-    let labelEnvFilter = '';
-    let labelRoleFilter = '';
-    let vulnFilteredAgentIds = null; // Set<string> or null
-    let selectedAgentIds = new Set();
-    let lastRenderedAgentIds = []; // string[]
+    const hostFilterSelectionState = createUiStateAccess('hostFilterSelection', {
+      allHosts: [],
+      hostSearchQuery: '',
+      labelEnvFilter: '',
+      labelRoleFilter: '',
+      vulnFilteredAgentIds: null,
+      selectedAgentIds: new Set(),
+      lastRenderedAgentIds: [],
+    });
+    const hostFilterSelectionDefaults = (typeof window.initHostFilterSelectionState === 'function')
+      ? window.initHostFilterSelectionState(hostFilterSelectionState)
+      : {
+        allHosts: [],
+        hostSearchQuery: '',
+        labelEnvFilter: '',
+        labelRoleFilter: '',
+        vulnFilteredAgentIds: null,
+        selectedAgentIds: new Set(),
+        lastRenderedAgentIds: [],
+      };
+    let allHosts = hostFilterSelectionDefaults.allHosts;
+    let hostSearchQuery = hostFilterSelectionDefaults.hostSearchQuery;
+    let labelEnvFilter = hostFilterSelectionDefaults.labelEnvFilter;
+    let labelRoleFilter = hostFilterSelectionDefaults.labelRoleFilter;
+    let vulnFilteredAgentIds = hostFilterSelectionDefaults.vulnFilteredAgentIds; // Set<string> or null
+    let selectedAgentIds = hostFilterSelectionDefaults.selectedAgentIds;
+    let lastRenderedAgentIds = hostFilterSelectionDefaults.lastRenderedAgentIds; // string[]
+
+    function syncHostFilterSelectionState(key, value) {
+      hostFilterSelectionState.set(key, value);
+      return value;
+    }
     // Will be initialized in initHostFilters(); renderHosts() calls this.
     let updateUpgradeControlsFn = () => { };
     let lastPkgVerification = null; // { packageName, vulnVersion, resultsByAgentId: { [aid]: { ok, found, version, status } } }
@@ -1627,8 +1652,8 @@
       if (prevRole && roleList.includes(prevRole)) roleSel.value = prevRole;
       else roleSel.value = '';
 
-      labelEnvFilter = envSel.value || '';
-      labelRoleFilter = roleSel.value || '';
+      labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', envSel.value || '');
+      labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', roleSel.value || '');
     }
 
     function applyHostFilters() {
@@ -1659,7 +1684,7 @@
     function renderHosts(hosts) {
       const hostsDiv = document.getElementById('hosts');
       hostsDiv.innerHTML = '';
-      lastRenderedAgentIds = (hosts || []).map(h => h.agent_id);
+      lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', (hosts || []).map(h => h.agent_id));
 
       if (!hosts || hosts.length === 0) {
         hostsDiv.innerHTML = '<div class="empty-state">No hosts match your filters</div>';
@@ -2429,7 +2454,7 @@
       try {
         const response = await fetch('/hosts?online_only=true');
         const hosts = await response.json();
-        allHosts = hosts || [];
+        allHosts = syncHostFilterSelectionState('allHosts', hosts || []);
 
         // Refresh label filter options from the latest host list
         rebuildLabelFilterOptions(allHosts);
@@ -2474,7 +2499,7 @@
 
       if (searchEl) {
         searchEl.addEventListener('input', () => {
-          hostSearchQuery = searchEl.value || '';
+          hostSearchQuery = syncHostFilterSelectionState('hostSearchQuery', searchEl.value || '');
           applyHostFilters();
         });
       }
@@ -2513,8 +2538,8 @@
       });
 
       function onLabelsChanged() {
-        labelEnvFilter = envSel?.value || '';
-        labelRoleFilter = roleSel?.value || '';
+        labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', envSel?.value || '');
+        labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', roleSel?.value || '');
         applyHostFilters();
       }
       envSel?.addEventListener('change', onLabelsChanged);
@@ -2523,8 +2548,8 @@
         e.preventDefault();
         if (envSel) envSel.value = '';
         if (roleSel) roleSel.value = '';
-        labelEnvFilter = '';
-        labelRoleFilter = '';
+        labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', '');
+        labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', '');
         applyHostFilters();
       });
 
@@ -2615,7 +2640,7 @@
             selectedCvePackages = new Set(lastCveUnionPackages);
 
             // If nothing is affected, don't apply a filter that hides everything.
-            vulnFilteredAgentIds = affectedIds.length ? new Set(affectedIds) : null;
+            vulnFilteredAgentIds = syncHostFilterSelectionState('vulnFilteredAgentIds', affectedIds.length ? new Set(affectedIds) : null);
             if (statusEl) {
               const total = targets.length;
               const scopeMsg = affectedIds.length ? `Showing ${affectedIds.length} affected host(s) in the list.` : `Showing all hosts (none affected).`;
@@ -2627,14 +2652,14 @@
             const resp = await fetch(`/search/packages?${params.toString()}`);
             if (!resp.ok) throw new Error(resp.statusText);
             const rows = await resp.json();
-            vulnFilteredAgentIds = new Set((rows || []).map(r => r.agent_id));
+            vulnFilteredAgentIds = syncHostFilterSelectionState('vulnFilteredAgentIds', new Set((rows || []).map(r => r.agent_id)));
             lastCveCheck = null; // switching modes
             if (statusEl) statusEl.textContent = `Package ${name}: ${vulnFilteredAgentIds.size} host(s) matched.`;
           }
 
           if (clearBtn) clearBtn.disabled = false;
           // Reset selection when changing vuln filter to avoid hidden selections
-          selectedAgentIds = new Set();
+          selectedAgentIds = syncHostFilterSelectionState('selectedAgentIds', new Set());
           if (selectVisibleEl) selectVisibleEl.checked = false;
           // Reset last verification (different host set now)
           lastPkgVerification = null;
@@ -2649,7 +2674,7 @@
           updateUpgradeControlsFn();
 
         } catch (e) {
-          vulnFilteredAgentIds = null;
+          vulnFilteredAgentIds = syncHostFilterSelectionState('vulnFilteredAgentIds', null);
           if (statusEl) statusEl.textContent = `Error searching: ${e.message || e}`;
           applyHostFilters();
           setVulnOpen(true);
@@ -2659,14 +2684,14 @@
       }
 
       function clearVulnFilter() {
-        vulnFilteredAgentIds = null;
+        vulnFilteredAgentIds = syncHostFilterSelectionState('vulnFilteredAgentIds', null);
         if (statusEl) statusEl.textContent = '';
         if (clearBtn) clearBtn.disabled = true;
         if (cveEl) cveEl.value = '';
         if (pkgEl) pkgEl.value = '';
         if (verEl) verEl.value = '';
         // Reset selection when clearing vuln filter
-        selectedAgentIds = new Set();
+        selectedAgentIds = syncHostFilterSelectionState('selectedAgentIds', new Set());
         if (selectVisibleEl) selectVisibleEl.checked = false;
         // Reset verification
         lastPkgVerification = null;
@@ -2807,10 +2832,10 @@
       selectVisibleEl?.addEventListener('change', () => {
         if (selectVisibleEl.checked) {
           // Replace selection with ONLY currently visible hosts (prevents hidden selections)
-          selectedAgentIds = new Set(lastRenderedAgentIds);
+          selectedAgentIds = syncHostFilterSelectionState('selectedAgentIds', new Set(lastRenderedAgentIds));
         } else {
           // Clear selection (simpler + less confusing than keeping hidden selections)
-          selectedAgentIds = new Set();
+          selectedAgentIds = syncHostFilterSelectionState('selectedAgentIds', new Set());
         }
         applyHostFilters(); // re-render to update checkbox states + status text
         updateUpgradeControlsFn();

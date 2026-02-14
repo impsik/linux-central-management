@@ -766,6 +766,36 @@
     }
   }
 
+  function initHostFilterSelectionState(stateAccess) {
+    if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') {
+      return {
+        allHosts: [],
+        hostSearchQuery: '',
+        labelEnvFilter: '',
+        labelRoleFilter: '',
+        vulnFilteredAgentIds: null,
+        selectedAgentIds: new Set(),
+        lastRenderedAgentIds: []
+      };
+    }
+
+    const normalized = {
+      allHosts: Array.isArray(stateAccess.get('allHosts')) ? stateAccess.get('allHosts') : [],
+      hostSearchQuery: stateAccess.get('hostSearchQuery', '') || '',
+      labelEnvFilter: stateAccess.get('labelEnvFilter', '') || '',
+      labelRoleFilter: stateAccess.get('labelRoleFilter', '') || '',
+      vulnFilteredAgentIds: (stateAccess.get('vulnFilteredAgentIds') instanceof Set) ? stateAccess.get('vulnFilteredAgentIds') : null,
+      selectedAgentIds: (stateAccess.get('selectedAgentIds') instanceof Set) ? stateAccess.get('selectedAgentIds') : new Set(),
+      lastRenderedAgentIds: Array.isArray(stateAccess.get('lastRenderedAgentIds')) ? stateAccess.get('lastRenderedAgentIds') : []
+    };
+
+    Object.keys(normalized).forEach(function (key) {
+      stateAccess.set(key, normalized[key]);
+    });
+
+    return normalized;
+  }
+
   w.escapeHtml = w.escapeHtml || escapeHtml;
   w.formatRelativeTime = w.formatRelativeTime || formatRelativeTime;
   w.safeJsonPreview = w.safeJsonPreview || safeJsonPreview;
@@ -799,4 +829,5 @@
   w.connectTerminalSession = connectTerminalSession;
   w.createUiStateAccess = createUiStateAccess;
   w.stopMetricsPollingLifecycle = stopMetricsPollingLifecycle;
+  w.initHostFilterSelectionState = initHostFilterSelectionState;
 })(window);
