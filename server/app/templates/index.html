@@ -5369,67 +5369,8 @@
       document.getElementById('report-sort')?.addEventListener('change', loadPendingUpdatesReport);
       document.getElementById('report-order')?.addEventListener('change', loadPendingUpdatesReport);
 
-      // Click-to-sort (table headers)
-      window.__setReportSort = function (sortKey) {
-        const sortSel = document.getElementById('report-sort');
-        const orderSel = document.getElementById('report-order');
-        if (!sortSel || !orderSel) return;
-
-        const currentSort = sortSel.value;
-        const currentOrder = orderSel.value;
-
-        if (currentSort === sortKey) {
-          // toggle order
-          orderSel.value = (currentOrder === 'asc') ? 'desc' : 'asc';
-        } else {
-          sortSel.value = sortKey;
-          orderSel.value = 'desc';
-        }
-        updateReportSortIndicators(sortSel.value, orderSel.value);
-        loadPendingUpdatesReport(true);
-      }
-
-      bindSortableHeader('th-host', () => window.__setReportSort('hostname'));
-      bindSortableHeader('th-os', () => window.__setReportSort('os_version'));
-      bindSortableHeader('th-updates', () => window.__setReportSort('updates'));
-
-      // KPI tile click behaviors
-      function jumpToHostsSorted(sortKey, order = 'desc') {
-        const sortSel = document.getElementById('hosts-sort');
-        const orderSel = document.getElementById('hosts-order');
-        if (sortSel) sortSel.value = sortKey;
-        if (orderSel) orderSel.value = order;
-        // showHostsTab() will call loadHostsTable()
-        showHostsTab();
-        // best-effort: scroll table into view
-        setTimeout(() => {
-          document.getElementById('hosts-table-tab')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 50);
-      }
-
-      document.getElementById('kpi-hosts-online')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        jumpToHostsSorted('last_seen', 'desc');
-      });
-
-      document.getElementById('kpi-security')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        jumpToHostsSorted('security_updates', 'desc');
-      });
-
-      document.getElementById('kpi-updates')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        jumpToHostsSorted('updates', 'desc');
-      });
-
-      document.getElementById('kpi-failures')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        showOverviewTab();
-        setTimeout(async () => {
-          document.getElementById('failed-runs-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          await loadFailedRuns(24, true);
-        }, 50);
-      });
+      setupReportSortHandlers(loadPendingUpdatesReport);
+      setupKpiHandlers(showHostsTab, showOverviewTab, loadFailedRuns);
     }
 
     
