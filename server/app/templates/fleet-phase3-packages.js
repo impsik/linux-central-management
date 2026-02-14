@@ -165,6 +165,14 @@
         const sel = document.getElementById('select-visible-packages');
         if (sel) sel.checked = false;
         await loadPackages(ctx, st.currentAgentId);
+
+        // One delayed refresh to absorb any late-arriving inventory/update events.
+        setTimeout(() => {
+          const st3 = getState(ctx);
+          if (st3.currentAgentId === st.currentAgentId && document.getElementById('packages-tab')?.classList.contains('active')) {
+            void loadPackages(ctx, st.currentAgentId);
+          }
+        }, 1500);
       } catch (err) {
         if (statusEl) statusEl.textContent = `${action} failed: ${err.message || err}`;
       }
@@ -198,7 +206,15 @@
       if (!resp.ok) throw new Error(resp.statusText);
 
       const data = await resp.json();
-      const pkgs = data.packages || [];
+      let pkgs = data.packages || [];
+      // Defensive client-side filter: in "Updates only", hide rows where installed==candidate.
+      if (st.packagesUpdatesOnly) {
+        pkgs = pkgs.filter((p) => {
+          const cand = (p && p.candidate_version != null) ? String(p.candidate_version).trim() : '';
+          const inst = (p && p.version != null) ? String(p.version).trim() : '';
+          return !!cand && cand !== inst;
+        });
+      }
       const total = data.total ?? pkgs.length;
       const collectedAt = data.collected_at;
       const updatesCheckedAt = data.updates_checked_at;
