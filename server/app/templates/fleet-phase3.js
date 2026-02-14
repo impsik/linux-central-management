@@ -72,9 +72,29 @@
     ], sort, order);
   }
 
+  async function withBusyButton(button, busyText, action) {
+    if (typeof action !== 'function') return;
+    setButtonBusy(button, true, busyText || 'Working…');
+    try {
+      return await action();
+    } finally {
+      setButtonBusy(button, false);
+    }
+  }
+
+  function wireBusyClick(button, busyText, handler) {
+    if (!button || typeof handler !== 'function') return;
+    button.addEventListener('click', function (e) {
+      e.preventDefault();
+      void withBusyButton(button, busyText, function () { return handler(e); });
+    });
+  }
+
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;
   w.updateReportSortIndicators = updateReportSortIndicators;
   w.updateHostsSortIndicators = updateHostsSortIndicators;
+  w.withBusyButton = withBusyButton;
+  w.wireBusyClick = wireBusyClick;
 })(window);

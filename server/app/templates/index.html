@@ -5301,49 +5301,30 @@
       const distBtn = document.getElementById('overview-dist-upgrade');
 
       const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
-      failedRunsRefreshBtn?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        setButtonBusy(failedRunsRefreshBtn, true, 'Refreshing…');
-        try {
-          await loadFailedRuns(24, true);
-        } finally {
-          setButtonBusy(failedRunsRefreshBtn, false);
-        }
+      wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => {
+        await loadFailedRuns(24, true);
       });
 
-      refreshBtn?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        setButtonBusy(refreshBtn, true, 'Refreshing…');
-        try {
-          // Force live refresh so disk/CPU alerts clear quickly after you fix them.
-          await Promise.allSettled([loadFleetOverview(true), loadPendingUpdatesReport(), loadHosts()]);
-        } finally {
-          setButtonBusy(refreshBtn, false);
-        }
+      wireBusyClick(refreshBtn, 'Refreshing…', async () => {
+        // Force live refresh so disk/CPU alerts clear quickly after you fix them.
+        await Promise.allSettled([loadFleetOverview(true), loadPendingUpdatesReport(), loadHosts()]);
       });
 
-      invBtn?.addEventListener('click', async (e) => {
-        e.preventDefault();
+      wireBusyClick(invBtn, 'Queueing…', async () => {
         const agentIds = (lastRenderedAgentIds || []).slice();
         if (!agentIds.length) return showToast('No visible hosts to inventory', 'error');
-        setButtonBusy(invBtn, true, 'Queueing…');
-        try {
-          const r = await fetch('/jobs/inventory-now', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds }),
-          });
-          if (!r.ok) return showToast('Inventory-now failed', 'error');
-          showToast(`Triggered inventory for ${agentIds.length} hosts`, 'success');
-          setTimeout(loadPendingUpdatesReport, 1500);
-        } finally {
-          setButtonBusy(invBtn, false);
-        }
+        const r = await fetch('/jobs/inventory-now', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: agentIds }),
+        });
+        if (!r.ok) return showToast('Inventory-now failed', 'error');
+        showToast(`Triggered inventory for ${agentIds.length} hosts`, 'success');
+        setTimeout(loadPendingUpdatesReport, 1500);
       });
 
-      secBtn?.addEventListener('click', async (e) => {
-        e.preventDefault();
+      wireBusyClick(secBtn, 'Scheduling…', async () => {
         const agentIds = (lastRenderedAgentIds || []).slice();
         if (!agentIds.length) return showToast('No visible hosts selected', 'error');
         const now = new Date();
@@ -5356,51 +5337,34 @@
           reboot_if_needed: true,
           include_kernel: false,
         };
-        setButtonBusy(secBtn, true, 'Scheduling…');
-        try {
-          const r = await fetch('/patching/campaigns/security-updates', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          if (!r.ok) return showToast('Campaign creation failed', 'error');
-          const d = await r.json();
-          showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
-        } finally {
-          setButtonBusy(secBtn, false);
-        }
+        const r = await fetch('/patching/campaigns/security-updates', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!r.ok) return showToast('Campaign creation failed', 'error');
+        const d = await r.json();
+        showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
       });
 
-      distBtn?.addEventListener('click', async (e) => {
-        e.preventDefault();
+      wireBusyClick(distBtn, 'Queueing…', async () => {
         const agentIds = (lastRenderedAgentIds || []).slice();
         if (!agentIds.length) return showToast('No visible hosts selected', 'error');
-        setButtonBusy(distBtn, true, 'Queueing…');
-        try {
-          const r = await fetch('/jobs/dist-upgrade', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds }),
-          });
-          if (!r.ok) return showToast('dist-upgrade job creation failed', 'error');
-          const d = await r.json();
-          showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
-        } finally {
-          setButtonBusy(distBtn, false);
-        }
+        const r = await fetch('/jobs/dist-upgrade', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: agentIds }),
+        });
+        if (!r.ok) return showToast('dist-upgrade job creation failed', 'error');
+        const d = await r.json();
+        showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
       });
 
       const reportRefresh = document.getElementById('report-refresh');
-      reportRefresh?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        setButtonBusy(reportRefresh, true, 'Refreshing…');
-        try {
-          await loadPendingUpdatesReport(true);
-        } finally {
-          setButtonBusy(reportRefresh, false);
-        }
+      wireBusyClick(reportRefresh, 'Refreshing…', async () => {
+        await loadPendingUpdatesReport(true);
       });
       document.getElementById('report-sort')?.addEventListener('change', loadPendingUpdatesReport);
       document.getElementById('report-order')?.addEventListener('change', loadPendingUpdatesReport);
@@ -5657,14 +5621,8 @@
       });
 
       const cronRefreshBtn = document.getElementById('cron-refresh');
-      cronRefreshBtn?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        setButtonBusy(cronRefreshBtn, true, 'Refreshing…');
-        try {
-          await loadCronjobs(true);
-        } finally {
-          setButtonBusy(cronRefreshBtn, false);
-        }
+      wireBusyClick(cronRefreshBtn, 'Refreshing…', async () => {
+        await loadCronjobs(true);
       });
 
       const cronCreateBtn = document.getElementById('cron-create');
@@ -5696,30 +5654,29 @@
 
         try {
           if (statusEl) statusEl.textContent = 'Creating…';
-          setButtonBusy(cronCreateBtn, true, 'Creating…');
-          const timezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
-          const time_hhmm = document.getElementById('cron-time')?.value || null;
-          const weekday = (document.getElementById('cron-weekday')?.value !== undefined && document.getElementById('cron-weekday')?.value !== '') ? Number(document.getElementById('cron-weekday')?.value) : null;
-          const day_of_month = (document.getElementById('cron-day-of-month')?.value) ? Number(document.getElementById('cron-day-of-month')?.value) : null;
+          await withBusyButton(cronCreateBtn, 'Creating…', async () => {
+            const timezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+            const time_hhmm = document.getElementById('cron-time')?.value || null;
+            const weekday = (document.getElementById('cron-weekday')?.value !== undefined && document.getElementById('cron-weekday')?.value !== '') ? Number(document.getElementById('cron-weekday')?.value) : null;
+            const day_of_month = (document.getElementById('cron-day-of-month')?.value) ? Number(document.getElementById('cron-day-of-month')?.value) : null;
 
-          const r = await fetch('/cronjobs', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name, run_at, action, agent_ids, schedule_kind, timezone, time_hhmm, weekday, day_of_month }),
+            const r = await fetch('/cronjobs', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ name, run_at, action, agent_ids, schedule_kind, timezone, time_hhmm, weekday, day_of_month }),
+            });
+            if (!r.ok) {
+              const t = await r.text();
+              throw new Error(`create failed (${r.status}): ${t}`);
+            }
+            showToast(`Cronjob scheduled for ${agent_ids.length} hosts`, 'success');
+            if (statusEl) statusEl.textContent = '';
+            await loadCronjobs();
           });
-          if (!r.ok) {
-            const t = await r.text();
-            throw new Error(`create failed (${r.status}): ${t}`);
-          }
-          showToast(`Cronjob scheduled for ${agent_ids.length} hosts`, 'success');
-          if (statusEl) statusEl.textContent = '';
-          await loadCronjobs();
         } catch (err) {
           showToast(err.message || String(err), 'error');
           if (statusEl) statusEl.textContent = '';
-        } finally {
-          setButtonBusy(cronCreateBtn, false);
         }
       });
     }
