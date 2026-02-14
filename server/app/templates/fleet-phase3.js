@@ -358,6 +358,93 @@
     }
   }
 
+  async function handleSshKeyAdd(opts) {
+    const api = opts || {};
+    const statusEl = api.statusEl || document.getElementById('sshkey-add-status');
+    const loadSshKeys = api.loadSshKeys;
+
+    const name = document.getElementById('sshkey-name')?.value || '';
+    const public_key = document.getElementById('sshkey-pub')?.value || '';
+
+    try {
+      if (statusEl) statusEl.textContent = 'Adding…';
+      const r = await fetch('/sshkeys', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name, public_key }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      let resp = null;
+      try { resp = await r.json(); } catch (_) { resp = null; }
+      if (resp && resp.existing) {
+        const nameInfo = resp.existing_name ? ' (existing name: ' + resp.existing_name + ')' : '';
+        if (typeof w.showToast === 'function') w.showToast('Key already exists' + nameInfo, 'info');
+      } else {
+        if (typeof w.showToast === 'function') w.showToast('Key added', 'success');
+      }
+      if (statusEl) statusEl.textContent = '';
+      const pubEl = document.getElementById('sshkey-pub');
+      if (pubEl) pubEl.value = '';
+      if (typeof loadSshKeys === 'function') await loadSshKeys();
+    } catch (err) {
+      if (typeof w.showToast === 'function') w.showToast((err && err.message) ? err.message : String(err), 'error');
+      if (statusEl) statusEl.textContent = '';
+    }
+  }
+
+  async function handleSshRequestDeploy(opts) {
+    const api = opts || {};
+    const statusEl = api.statusEl || document.getElementById('sshkey-request-status');
+    const selectedKeyId = api.selectedKeyId;
+    const getSelectedAgentIds = api.getSelectedAgentIds;
+
+    if (!selectedKeyId) {
+      if (typeof w.showToast === 'function') w.showToast('Select a key (click a row)', 'error');
+      return;
+    }
+    const agent_ids = Array.from((typeof getSelectedAgentIds === 'function' ? getSelectedAgentIds() : []) || []);
+    if (!agent_ids.length) {
+      if (typeof w.showToast === 'function') w.showToast('Select hosts first', 'error');
+      if (typeof api.setPanelVisible === 'function') api.setPanelVisible(true);
+      if (typeof api.renderList === 'function') api.renderList();
+      return;
+    }
+
+    try {
+      if (statusEl) statusEl.textContent = 'Requesting…';
+      const r = await fetch('/sshkeys/deploy-requests', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key_id: selectedKeyId, agent_ids }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      if (typeof w.showToast === 'function') w.showToast('Deployment requested (awaiting admin approval)', 'success');
+      if (statusEl) statusEl.textContent = '';
+      if (typeof api.loadSshKeyRequests === 'function') await api.loadSshKeyRequests();
+      if (typeof api.maybeLoadSshKeyAdminQueue === 'function') await api.maybeLoadSshKeyAdminQueue();
+      if (typeof api.loadAdminSshKeys === 'function') await api.loadAdminSshKeys();
+    } catch (err) {
+      if (typeof w.showToast === 'function') w.showToast((err && err.message) ? err.message : String(err), 'error');
+      if (statusEl) statusEl.textContent = '';
+    }
+  }
+
+  function setupSshRefreshHandlers(opts) {
+    const api = opts || {};
+    const refresh = document.getElementById('sshkey-refresh');
+    if (refresh) refresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadSshKeys === 'function') api.loadSshKeys(true); });
+    const adminRefresh = document.getElementById('sshkey-admin-refresh');
+    if (adminRefresh) adminRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.maybeLoadSshKeyAdminQueue === 'function') api.maybeLoadSshKeyAdminQueue(); });
+    const adminKeysRefresh = document.getElementById('sshkey-admin-keys-refresh');
+    if (adminKeysRefresh) adminKeysRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminSshKeys === 'function') api.loadAdminSshKeys(); });
+    const usersRefresh = document.getElementById('admin-users-refresh');
+    if (usersRefresh) usersRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminUsers === 'function') api.loadAdminUsers(true); });
+    const auditRefresh = document.getElementById('admin-audit-refresh');
+    if (auditRefresh) auditRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminAudit === 'function') api.loadAdminAudit(true); });
+  }
+
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;
@@ -371,4 +458,7 @@
   w.setupCronHostPickerControls = setupCronHostPickerControls;
   w.handleCronCreate = handleCronCreate;
   w.setupSshHostPickerControls = setupSshHostPickerControls;
+  w.setupSshRefreshHandlers = setupSshRefreshHandlers;
+  w.handleSshKeyAdd = handleSshKeyAdd;
+  w.handleSshRequestDeploy = handleSshRequestDeploy;
 })(window);

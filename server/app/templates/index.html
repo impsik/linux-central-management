@@ -5915,41 +5915,22 @@
     }
 
     function initSshKeysControls() {
-      document.getElementById('sshkey-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadSshKeys(true); });
-      document.getElementById('sshkey-admin-refresh')?.addEventListener('click', (e) => { e.preventDefault(); maybeLoadSshKeyAdminQueue(); });
-      document.getElementById('sshkey-admin-keys-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminSshKeys(); });
+      setupSshRefreshHandlers({
+        loadSshKeys,
+        maybeLoadSshKeyAdminQueue,
+        loadAdminSshKeys,
+        loadAdminUsers,
+        loadAdminAudit,
+      });
       document.getElementById('sshkey-approval-modal-close')?.addEventListener('click', (e) => { e.preventDefault(); closeSshKeyDeployApprovalModal(); });
       document.getElementById('sshkey-approval-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'sshkey-approval-modal') closeSshKeyDeployApprovalModal(); });
 
       document.getElementById('sshkey-add')?.addEventListener('click', async (e) => {
         e.preventDefault();
-        const statusEl = document.getElementById('sshkey-add-status');
-        const name = document.getElementById('sshkey-name')?.value || '';
-        const public_key = document.getElementById('sshkey-pub')?.value || '';
-        try {
-          if (statusEl) statusEl.textContent = 'Adding…';
-          const r = await fetch('/sshkeys', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name, public_key }),
-          });
-          if (!r.ok) throw new Error(await r.text());
-          let resp = null;
-          try { resp = await r.json(); } catch (_) { resp = null; }
-          if (resp && resp.existing) {
-            const nameInfo = resp.existing_name ? ` (existing name: ${resp.existing_name})` : '';
-            showToast(`Key already exists${nameInfo}`, 'info');
-          } else {
-            showToast('Key added', 'success');
-          }
-          if (statusEl) statusEl.textContent = '';
-          document.getElementById('sshkey-pub').value='';
-          loadSshKeys();
-        } catch (err) {
-          showToast(err.message || String(err), 'error');
-          if (statusEl) statusEl.textContent = '';
-        }
+        await handleSshKeyAdd({
+          statusEl: document.getElementById('sshkey-add-status'),
+          loadSshKeys,
+        });
       });
 
       setupSshHostPickerControls({
@@ -5963,28 +5944,18 @@
         },
       });
 
-      document.getElementById('admin-users-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminUsers(true); });
-      document.getElementById('admin-audit-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminAudit(true); });
-
       document.getElementById('sshkey-request-deploy')?.addEventListener('click', async (e) => {
         e.preventDefault();
-        const statusEl = document.getElementById('sshkey-request-status');
-        if (!sshSelectedKeyId) return showToast('Select a key (click a row)', 'error');
-        const agent_ids = Array.from(sshSelectedAgentIds || []);
-        if (!agent_ids.length) { showToast('Select hosts first', 'error'); setSshHostsPanelVisible(true); renderSshHostsList(); return; }
-        try {
-          if (statusEl) statusEl.textContent = 'Requesting…';
-          const r = await fetch('/sshkeys/deploy-requests', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key_id: sshSelectedKeyId, agent_ids }) });
-          if (!r.ok) throw new Error(await r.text());
-          showToast('Deployment requested (awaiting admin approval)', 'success');
-          if (statusEl) statusEl.textContent='';
-          loadSshKeyRequests();
-          maybeLoadSshKeyAdminQueue();
-          loadAdminSshKeys();
-        } catch (err) {
-          showToast(err.message || String(err), 'error');
-          if (statusEl) statusEl.textContent='';
-        }
+        await handleSshRequestDeploy({
+          statusEl: document.getElementById('sshkey-request-status'),
+          selectedKeyId: sshSelectedKeyId,
+          getSelectedAgentIds: () => Array.from(sshSelectedAgentIds || []),
+          setPanelVisible: setSshHostsPanelVisible,
+          renderList: renderSshHostsList,
+          loadSshKeyRequests,
+          maybeLoadSshKeyAdminQueue,
+          loadAdminSshKeys,
+        });
       });
     }
 // Load hosts on page load
