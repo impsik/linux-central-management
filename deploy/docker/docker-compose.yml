@@ -5,8 +5,10 @@ services:
       POSTGRES_DB: fleet
       POSTGRES_USER: fleet
       POSTGRES_PASSWORD: fleet
-    ports:
-      - "5432:5432"
+    # Do not publish Postgres by default; keep it internal to the compose network.
+    # If you need local DB access for debugging, add a compose override with:
+    #   ports:
+    #     - "127.0.0.1:5432:5432"
     volumes:
       - fleet_postgres_data:/var/lib/postgresql/data
     healthcheck:
