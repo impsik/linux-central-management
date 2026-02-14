@@ -140,8 +140,16 @@
         if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `${action} failed (${r.status})`);
         await w.pollJob((d && d.job_id) || '', statusEl, 180000);
 
-        // Refresh update metadata so "Updates only" view drops newly upgraded packages.
+        // Refresh installed package inventory first (HostPackage.version), then update metadata.
         try {
+          if (statusEl) statusEl.textContent = 'Refreshing package inventory…';
+          const inv = await fetch(`/hosts/${encodeURIComponent(st.currentAgentId)}/packages/refresh?wait=false`, { method: 'POST', credentials: 'include' });
+          const invRaw = await inv.text();
+          let invData = null; try { invData = invRaw ? JSON.parse(invRaw) : null; } catch {}
+          if (inv.ok && invData && invData.job_id) {
+            await w.pollJob(invData.job_id, statusEl, 180000);
+          }
+
           if (statusEl) statusEl.textContent = 'Refreshing package update state…';
           const r2 = await fetch(`/hosts/${encodeURIComponent(st.currentAgentId)}/packages/check-updates?refresh=true&wait=false`, { method: 'POST', credentials: 'include' });
           const raw2 = await r2.text();
