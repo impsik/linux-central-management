@@ -164,25 +164,46 @@
       const data = await response.json();
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
 
+      const toNum = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
       const disk = data.disk_usage || {};
-      if (disk.percent_used !== undefined) {
-        document.getElementById('disk-usage').textContent = `${disk.percent_used.toFixed(1)}%`;
-        document.getElementById('disk-details').textContent = `${disk.used_gb.toFixed(1)} GB / ${disk.total_gb.toFixed(1)} GB used`;
-        const pct = Number(disk.percent_used);
-        document.getElementById('disk-bar').style.width = `${pct}%`;
-        const hue = 120 - (120 * (Math.max(0, Math.min(100, pct)) / 100));
+      const diskUsed = toNum(disk.used_gb);
+      const diskTotal = toNum(disk.total_gb);
+      let diskPct = toNum(disk.percent_used);
+      if (diskPct === null && diskUsed !== null && diskTotal && diskTotal > 0) {
+        diskPct = (diskUsed / diskTotal) * 100;
+      }
+      if (diskPct !== null) {
+        document.getElementById('disk-usage').textContent = `${diskPct.toFixed(1)}%`;
+        if (diskUsed !== null && diskTotal !== null) {
+          document.getElementById('disk-details').textContent = `${diskUsed.toFixed(1)} GB / ${diskTotal.toFixed(1)} GB used`;
+        }
+        document.getElementById('disk-bar').style.width = `${Math.max(0, Math.min(100, diskPct))}%`;
+        const hue = 120 - (120 * (Math.max(0, Math.min(100, diskPct)) / 100));
         document.getElementById('disk-bar').style.background = `hsl(${hue} 85% 45%)`;
       }
 
       const memory = data.memory || {};
-      if (memory.percent_used !== undefined) {
-        document.getElementById('memory-usage').textContent = `${memory.percent_used.toFixed(1)}%`;
-        document.getElementById('memory-details').textContent = `${memory.used_gb.toFixed(2)} GB / ${memory.total_gb.toFixed(2)} GB used`;
-        document.getElementById('memory-bar').style.width = `${memory.percent_used}%`;
+      const memUsed = toNum(memory.used_gb);
+      const memTotal = toNum(memory.total_gb);
+      let memPct = toNum(memory.percent_used);
+      if (memPct === null && memUsed !== null && memTotal && memTotal > 0) {
+        memPct = (memUsed / memTotal) * 100;
+      }
+      if (memPct !== null) {
+        document.getElementById('memory-usage').textContent = `${memPct.toFixed(1)}%`;
+        if (memUsed !== null && memTotal !== null) {
+          document.getElementById('memory-details').textContent = `${memUsed.toFixed(2)} GB / ${memTotal.toFixed(2)} GB used`;
+        }
+        document.getElementById('memory-bar').style.width = `${Math.max(0, Math.min(100, memPct))}%`;
       }
 
       const cpu = data.cpu || {};
-      if (cpu.vcpus !== undefined) document.getElementById('vcpus').textContent = cpu.vcpus;
+      const vcpus = toNum(cpu.vcpus ?? cpu.cores);
+      if (vcpus !== null) document.getElementById('vcpus').textContent = String(vcpus);
 
       const ips = data.ip_addresses || [];
       if (ips.length > 0) {
