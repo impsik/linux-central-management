@@ -12,6 +12,13 @@
   - Current suites cover:
     - shared Phase 3 state helpers (`createUiStateAccess`, `stopMetricsPollingLifecycle`)
     - host-filter orchestrator module composition/contract
+    - host-filter behavioral flows:
+      - CVE upgrade status transitions (pre-check → checked/eligible)
+      - select-visible-hosts selection propagation
+      - label filter clear/reset interactions
+
+- **CI wiring**:
+  - `.github/workflows/ci.yml` runs `npm run test:frontend` on push/PR.
 
 ## Remaining gap
 
