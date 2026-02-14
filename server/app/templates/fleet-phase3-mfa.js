@@ -157,3 +157,11 @@ function openMfaModal(mode, otpauthUri = '') {
       return m ? decodeURIComponent(m[1]) : '';
     }
 
+    // Explicit exports for cross-file calls (auth-state/login flows).
+    window.openMfaModal = openMfaModal;
+    window.closeMfaModal = closeMfaModal;
+    window.mfaEnrollStart = mfaEnrollStart;
+    window.mfaEnrollConfirm = mfaEnrollConfirm;
+    window.mfaVerify = mfaVerify;
+    window.getCookie = getCookie;
+
