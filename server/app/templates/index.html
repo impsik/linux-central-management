@@ -5533,56 +5533,15 @@
       const cronCreateBtn = document.getElementById('cron-create');
       cronCreateBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
-        const statusEl = document.getElementById('cron-create-status');
-        const name = document.getElementById('cron-name')?.value || '';
-        const action = document.getElementById('cron-action')?.value || 'dist-upgrade';        const schedule_kind = document.getElementById('cron-schedule-kind')?.value || 'once';
-
-        let run_at = null;
-        if (schedule_kind === 'once') {
-          // datetime-local returns a local-time value without timezone.
-          // Interpret it as the user's local time and convert to UTC ISO for the server.
-          const runAtLocal = document.getElementById('cron-run-at')?.value;
-          if (!runAtLocal) return showToast('Select a date/time', 'error');
-          const dt = new Date(runAtLocal);
-          if (Number.isNaN(dt.getTime())) return showToast('Invalid date/time', 'error');
-          run_at = dt.toISOString();
-        }
-
-
-        const agent_ids = Array.from(cronSelectedAgentIds || []);
-        if (!agent_ids.length) {
-          showToast('Select hosts first', 'error');
-          setCronHostsPanelVisible(true);
-          renderCronHostsList();
-          return;
-        }
-
-        try {
-          if (statusEl) statusEl.textContent = 'Creating…';
-          await withBusyButton(cronCreateBtn, 'Creating…', async () => {
-            const timezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
-            const time_hhmm = document.getElementById('cron-time')?.value || null;
-            const weekday = (document.getElementById('cron-weekday')?.value !== undefined && document.getElementById('cron-weekday')?.value !== '') ? Number(document.getElementById('cron-weekday')?.value) : null;
-            const day_of_month = (document.getElementById('cron-day-of-month')?.value) ? Number(document.getElementById('cron-day-of-month')?.value) : null;
-
-            const r = await fetch('/cronjobs', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ name, run_at, action, agent_ids, schedule_kind, timezone, time_hhmm, weekday, day_of_month }),
-            });
-            if (!r.ok) {
-              const t = await r.text();
-              throw new Error(`create failed (${r.status}): ${t}`);
-            }
-            showToast(`Cronjob scheduled for ${agent_ids.length} hosts`, 'success');
-            if (statusEl) statusEl.textContent = '';
-            await loadCronjobs();
-          });
-        } catch (err) {
-          showToast(err.message || String(err), 'error');
-          if (statusEl) statusEl.textContent = '';
-        }
+        await handleCronCreate({
+          createBtn: cronCreateBtn,
+          statusEl: document.getElementById('cron-create-status'),
+          getSelectedAgentIds: () => Array.from(cronSelectedAgentIds || []),
+          setPanelVisible: setCronHostsPanelVisible,
+          renderList: renderCronHostsList,
+          loadCronjobs: loadCronjobs,
+          withBusyButton: withBusyButton,
+        });
       });
     }
 

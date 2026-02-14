@@ -234,6 +234,72 @@
     }
   }
 
+  async function handleCronCreate(opts) {
+    const api = opts || {};
+    const getSelectedAgentIds = api.getSelectedAgentIds;
+    const setPanelVisible = api.setPanelVisible;
+    const renderList = api.renderList;
+    const withBusy = api.withBusyButton || withBusyButton;
+    const createBtn = api.createBtn || document.getElementById('cron-create');
+    const statusEl = api.statusEl || document.getElementById('cron-create-status');
+
+    const name = document.getElementById('cron-name')?.value || '';
+    const action = document.getElementById('cron-action')?.value || 'dist-upgrade';
+    const schedule_kind = document.getElementById('cron-schedule-kind')?.value || 'once';
+
+    let run_at = null;
+    if (schedule_kind === 'once') {
+      const runAtLocal = document.getElementById('cron-run-at')?.value;
+      if (!runAtLocal) {
+        if (typeof w.showToast === 'function') w.showToast('Select a date/time', 'error');
+        return;
+      }
+      const dt = new Date(runAtLocal);
+      if (Number.isNaN(dt.getTime())) {
+        if (typeof w.showToast === 'function') w.showToast('Invalid date/time', 'error');
+        return;
+      }
+      run_at = dt.toISOString();
+    }
+
+    const agent_ids = Array.from((typeof getSelectedAgentIds === 'function' ? getSelectedAgentIds() : []) || []);
+    if (!agent_ids.length) {
+      if (typeof w.showToast === 'function') w.showToast('Select hosts first', 'error');
+      if (typeof setPanelVisible === 'function') setPanelVisible(true);
+      if (typeof renderList === 'function') renderList();
+      return;
+    }
+
+    try {
+      if (statusEl) statusEl.textContent = 'Creating…';
+      await withBusy(createBtn, 'Creating…', async function () {
+        const timezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+        const time_hhmm = document.getElementById('cron-time')?.value || null;
+        const weekdayRaw = document.getElementById('cron-weekday')?.value;
+        const dayRaw = document.getElementById('cron-day-of-month')?.value;
+        const weekday = (weekdayRaw !== undefined && weekdayRaw !== '') ? Number(weekdayRaw) : null;
+        const day_of_month = dayRaw ? Number(dayRaw) : null;
+
+        const r = await fetch('/cronjobs', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ name, run_at, action, agent_ids, schedule_kind, timezone, time_hhmm, weekday, day_of_month }),
+        });
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error('create failed (' + String(r.status) + '): ' + t);
+        }
+        if (typeof w.showToast === 'function') w.showToast('Cronjob scheduled for ' + String(agent_ids.length) + ' hosts', 'success');
+        if (statusEl) statusEl.textContent = '';
+        if (typeof api.loadCronjobs === 'function') await api.loadCronjobs();
+      });
+    } catch (err) {
+      if (typeof w.showToast === 'function') w.showToast((err && err.message) ? err.message : String(err), 'error');
+      if (statusEl) statusEl.textContent = '';
+    }
+  }
+
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;
@@ -245,4 +311,5 @@
   w.setupKpiHandlers = setupKpiHandlers;
   w.setupCronScheduleUi = setupCronScheduleUi;
   w.setupCronHostPickerControls = setupCronHostPickerControls;
+  w.handleCronCreate = handleCronCreate;
 })(window);
