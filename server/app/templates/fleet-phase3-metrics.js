@@ -165,6 +165,11 @@
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
 
       const toNum = (v) => {
+        if (v === null || v === undefined) return null;
+        if (typeof v === 'string') {
+          const n = parseFloat(v.replace(',', '.'));
+          return Number.isFinite(n) ? n : null;
+        }
         const n = Number(v);
         return Number.isFinite(n) ? n : null;
       };
@@ -202,7 +207,7 @@
       }
 
       const cpu = data.cpu || {};
-      const vcpus = toNum(cpu.vcpus ?? cpu.cores);
+      const vcpus = toNum(cpu.vcpus ?? cpu.cores ?? data.vcpus ?? data.cpu_cores ?? data.cpu_count);
       if (vcpus !== null) document.getElementById('vcpus').textContent = String(vcpus);
 
       const ips = data.ip_addresses || [];
@@ -219,10 +224,15 @@
     } catch (error) {
       console.error('Error loading metrics:', error);
       if (metricsLifecycleState.get('currentMetricsAgentId') === agentId && !silent) {
-        document.getElementById('disk-usage').textContent = 'Error';
-        document.getElementById('memory-usage').textContent = 'Error';
-        document.getElementById('vcpus').textContent = 'Error';
-        document.getElementById('ip-addresses').textContent = 'Error';
+        // Keep previous values if any; only show hard error when nothing has been rendered yet.
+        const diskEl = document.getElementById('disk-usage');
+        const memEl = document.getElementById('memory-usage');
+        const vcpuEl = document.getElementById('vcpus');
+        const ipEl = document.getElementById('ip-addresses');
+        if (diskEl && (!diskEl.textContent || diskEl.textContent === '-' || diskEl.textContent === 'Loading...')) diskEl.textContent = 'Error';
+        if (memEl && (!memEl.textContent || memEl.textContent === '-' || memEl.textContent === 'Loading...')) memEl.textContent = 'Error';
+        if (vcpuEl && (!vcpuEl.textContent || vcpuEl.textContent === '-' || vcpuEl.textContent === 'Loading...')) vcpuEl.textContent = 'Error';
+        if (ipEl && (!ipEl.textContent || ipEl.textContent === '-' || ipEl.textContent === 'Loading...')) ipEl.textContent = 'Error';
       }
     }
   }
