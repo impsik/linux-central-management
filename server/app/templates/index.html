@@ -2694,6 +2694,15 @@
         openDiskModal(currentAgentId);
       });
     });
+    safeInit('bindDiskModalClose', () => {
+      document.getElementById('disk-modal-close')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (typeof closeDiskModal === 'function') closeDiskModal();
+      });
+      document.getElementById('disk-modal')?.addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'disk-modal' && typeof closeDiskModal === 'function') closeDiskModal();
+      });
+    });
     safeInit('initTerminalOnce', initTerminalOnce);
     safeInit('attachTerminalInputHandlerOnce', attachTerminalInputHandlerOnce);
     safeInit('initAnsibleSection', initAnsibleSection);
