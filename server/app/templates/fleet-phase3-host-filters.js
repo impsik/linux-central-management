@@ -182,8 +182,17 @@
         if (isCveMode) {
           const selectedPkgs = Array.from(state.selectedCvePackages || []).sort();
           const selectedHosts = Array.from(selectedIds || []);
-          cvePlanSummaryEl.innerHTML = '<div><b>Plan:</b> ' + selectedHosts.length + ' host(s), ' + selectedPkgs.length + ' package(s) selected.</div>' +
+          const rows = selectedHosts.map(function (aid) {
+            const r = state.lastCveCheck?.resultsByAgentId?.[aid];
+            const pk = Array.isArray(r?.packages) ? r.packages : [];
+            const eff = pk.filter(function (p) { return state.selectedCvePackages.has(p); });
+            return '<div style="display:flex;justify-content:space-between;gap:8px;"><span><code>' + escapeHtml(aid) + '</code></span><span>' + eff.length + ' pkg(s)</span></div>';
+          }).join('');
+          let html = '<div><b>Plan:</b> ' + selectedHosts.length + ' host(s), ' + selectedPkgs.length + ' package(s) selected.</div>' +
             '<div><b>Effective upgrades:</b> ' + effectiveHostsWithPkgs + '/' + selectedHosts.length + ' host(s), ' + effectiveTotalPkgs + ' package upgrade(s) total.</div>';
+          if (selectedHosts.length > 0) html += '<details style="margin-top:4px"><summary>Per-host package counts</summary><div style="margin-top:4px">' + rows + '</div></details>';
+          if (effectiveTotalPkgs === 0) html += '<div style="margin-top:4px;color:#fbbf24">No selected packages apply to the selected host(s).</div>';
+          cvePlanSummaryEl.innerHTML = html;
         } else cvePlanSummaryEl.innerHTML = '';
       }
 
@@ -382,8 +391,25 @@
           if (upgradeStatusEl) upgradeStatusEl.textContent = 'Upgrade finished. Verifying installed version of ' + pkgName + '…';
           await verifyPackageVersions(targets, pkgName, vulnVersion, upgradeStatusEl);
         } else {
+          const prevCve = state.lastCveCheck?.cve || cve;
           setPatch({ lastCveUnionPackages: [], selectedCvePackages: new Set() });
           updateUpgradeControls();
+          if (upgradeStatusEl) {
+            const rerunId = 'rerun-cve-' + jobId;
+            upgradeStatusEl.innerHTML = 'Upgrade finished. <a href="/jobs/' + encodeURIComponent(jobId) + '/logs.zip" target="_blank" rel="noopener noreferrer">Download logs.zip</a>. <button id="' + rerunId + '" class="btn btn-sm" type="button" style="margin-left:6px">Re-run CVE check</button>';
+            setTimeout(function () {
+              const btn = document.getElementById(rerunId);
+              if (!btn) return;
+              btn.onclick = async function () {
+                try {
+                  if (cveEl && prevCve) cveEl.value = prevCve;
+                  await applyVulnFilter();
+                } catch (e2) {
+                  upgradeStatusEl.textContent = 'Re-run failed: ' + (e2.message || e2);
+                }
+              };
+            }, 0);
+          }
         }
       } catch (e) {
         if (upgradeStatusEl) upgradeStatusEl.textContent = 'Upgrade failed: ' + (e.message || e);
@@ -417,15 +443,32 @@
           const resp = await fetch('/jobs/' + encodeURIComponent(jobId));
           if (!resp.ok) throw new Error(resp.statusText);
           const data = await resp.json();
-          const summary = summarizeRuns(data.runs || [], targets);
+          const runs = data.runs || [];
+          const summary = summarizeRuns(runs, targets);
           const c = summary.counts;
           const parts = [];
           if (c.queued) parts.push('queued: ' + c.queued);
           if (c.running) parts.push('running: ' + c.running);
           if (c.success) parts.push('success: ' + c.success);
           if (c.failed) parts.push('failed: ' + c.failed);
-          if (statusNode) statusNode.innerHTML = 'Upgrading ' + escapeHtml(String(pkgName)) + ' — ' + summary.done + '/' + summary.total + ' finished (' + escapeHtml(parts.join(', ')) + ') (job_id: <code>' + escapeHtml(jobId) + '</code>)';
-          if (summary.allDone) return;
+          const logsUrl = '/jobs/' + encodeURIComponent(jobId) + '/logs.zip';
+          if (statusNode) statusNode.innerHTML = 'Upgrading ' + escapeHtml(String(pkgName)) + ' — ' + summary.done + '/' + summary.total + ' finished (' + escapeHtml(parts.join(', ')) + ') (job_id: <code>' + escapeHtml(jobId) + '</code>) <a href="' + logsUrl + '" target="_blank" rel="noopener noreferrer">logs.zip</a>';
+          if (summary.allDone) {
+            if (statusNode) {
+              const byAgent = new Map();
+              runs.forEach(function (r) { byAgent.set(r.agent_id, r); });
+              const rowsHtml = targets.map(function (aid) {
+                const r = byAgent.get(aid) || { status: 'queued' };
+                const st = r.status || 'queued';
+                const stdoutUrl = '/jobs/' + encodeURIComponent(jobId) + '/runs/' + encodeURIComponent(aid) + '/stdout.txt';
+                const stderrUrl = '/jobs/' + encodeURIComponent(jobId) + '/runs/' + encodeURIComponent(aid) + '/stderr.txt';
+                return '<tr><td><code>' + escapeHtml(aid) + '</code></td><td>' + escapeHtml(st) + '</td><td><a href="' + stdoutUrl + '" target="_blank" rel="noopener noreferrer">stdout</a></td><td><a href="' + stderrUrl + '" target="_blank" rel="noopener noreferrer">stderr</a></td></tr>';
+              }).join('');
+              statusNode.innerHTML = 'Upgrade finished for ' + escapeHtml(String(pkgName)) + '. success: ' + (c.success || 0) + ', failed: ' + (c.failed || 0) + '. (job_id: <code>' + escapeHtml(jobId) + '</code>) <a href="' + logsUrl + '" target="_blank" rel="noopener noreferrer">logs.zip</a>' +
+                '<details style="margin-top:6px"><summary>Per-host logs</summary><div style="overflow:auto; max-height:220px; border:1px solid #333; padding:6px; margin-top:6px"><table style="width:100%; border-collapse:collapse"><thead><tr><th align="left">Host</th><th align="left">Status</th><th align="left">stdout</th><th align="left">stderr</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div></details>';
+            }
+            return;
+          }
           if (Date.now() - startedAt > 15000) intervalMs = 2000;
         } catch (e) {
           if (statusNode) statusNode.textContent = 'Checking job status failed: ' + (e.message || e) + ' (job_id: ' + jobId + ')';
@@ -483,7 +526,16 @@
             });
             setPatch({ lastPkgVerification: { packageName: pkgName, vulnVersion: vulnVersion || '', resultsByAgentId: resultsByAgentId } });
             applyHostFilters();
-            if (statusNode) statusNode.textContent = 'Verified ' + pkgName + ' installed versions for ' + rows.length + ' host(s).';
+            const stillVuln = vulnVersion
+              ? rows.filter(function (x) { return x.ok && x.version && matchesGlob(x.version, vulnVersion); }).map(function (x) { return x.aid; })
+              : [];
+            const upgraded = vulnVersion
+              ? rows.filter(function (x) { return x.ok && x.version && !matchesGlob(x.version, vulnVersion); }).map(function (x) { return x.aid; })
+              : rows.filter(function (x) { return x.ok; }).map(function (x) { return x.aid; });
+            if (statusNode) {
+              if (vulnVersion) statusNode.textContent = 'Verified ' + pkgName + '. Upgraded: ' + upgraded.length + '/' + rows.length + '. Still vulnerable (= ' + vulnVersion + '): ' + stillVuln.length + '.';
+              else statusNode.textContent = 'Verified ' + pkgName + ' installed versions for ' + rows.length + ' host(s). (Provide vulnerable version to auto-classify).';
+            }
             return;
           }
 
