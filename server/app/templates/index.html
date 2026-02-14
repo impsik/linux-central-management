@@ -31,6 +31,7 @@
   <script src="/assets/fleet-phase3-ssh-ui.js"></script>
   <script src="/assets/fleet-phase3-metrics.js"></script>
   <script src="/assets/fleet-phase3-overview.js"></script>
+  <script src="/assets/fleet-phase3-packages.js"></script>
   <link rel="stylesheet" href="/assets/index-MnFIflNy.css" />
   <link rel="stylesheet" href="/assets/fleet-ui.css" />
 </head>
@@ -1152,6 +1153,14 @@
     let lastCveUnionPackages = []; // string[] union of affected packages across affected hosts
     let selectedCvePackages = new Set(); // Set<string> selected in CVE package list
     let ansiblePlaybooks = [];
+
+    // Packages workflow state
+    let packagesSearchQuery = '';
+    let packagesSearchTimer = null;
+    let packagesUpdatesOnly = false;
+    let pkgInteractiveTerminal = false;
+    let selectedPackages = new Set();
+    let currentPackageName = null;
 
     function getHostListCtx() {
       return {
@@ -2387,6 +2396,50 @@
 
     window.controlUser = controlUser;
 
+
+    function getPackagesCtx() {
+      return {
+        getState: () => ({
+          currentAgentId,
+          packagesSearchQuery,
+          packagesSearchTimer,
+          packagesUpdatesOnly,
+          pkgInteractiveTerminal,
+          selectedPackages,
+          currentPackageName,
+        }),
+        setState: (patch) => {
+          if (!patch || typeof patch !== 'object') return;
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesSearchQuery')) packagesSearchQuery = patch.packagesSearchQuery || '';
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesSearchTimer')) packagesSearchTimer = patch.packagesSearchTimer || null;
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesUpdatesOnly')) packagesUpdatesOnly = !!patch.packagesUpdatesOnly;
+          if (Object.prototype.hasOwnProperty.call(patch, 'pkgInteractiveTerminal')) pkgInteractiveTerminal = !!patch.pkgInteractiveTerminal;
+          if (Object.prototype.hasOwnProperty.call(patch, 'selectedPackages')) selectedPackages = (patch.selectedPackages instanceof Set) ? patch.selectedPackages : new Set();
+          if (Object.prototype.hasOwnProperty.call(patch, 'currentPackageName')) currentPackageName = patch.currentPackageName || null;
+        },
+      };
+    }
+
+    function initPackagesSearch() {
+      const mod = window.phase3Packages;
+      if (mod && typeof mod.initPackagesSearch === 'function') {
+        return mod.initPackagesSearch(getPackagesCtx());
+      }
+    }
+
+    async function loadPackages(agentId) {
+      const mod = window.phase3Packages;
+      if (mod && typeof mod.loadPackages === 'function') {
+        return mod.loadPackages(getPackagesCtx(), agentId);
+      }
+    }
+
+    async function refreshPackagesNow(agentId) {
+      const mod = window.phase3Packages;
+      if (mod && typeof mod.refreshPackagesNow === 'function') {
+        return mod.refreshPackagesNow(getPackagesCtx(), agentId);
+      }
+    }
 
     function getOverviewCtx() {
       return {
