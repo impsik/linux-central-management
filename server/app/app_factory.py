@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
+from sqlalchemy import inspect, text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 # NOTE: DB schema should be managed by Alembic in production.
@@ -30,6 +31,41 @@ def _startup() -> None:
     if bool(getattr(settings, "db_auto_create_tables", True)):
         Base.metadata.create_all(bind=engine)
         logger.info("DB auto-create enabled: ensured database tables exist")
+
+        # Lightweight schema backfill for older MVP databases when Alembic wasn't applied.
+        # Keeps live instances bootable during upgrades; no destructive changes.
+        try:
+            insp = inspect(engine)
+            app_user_cols = {c.get("name") for c in insp.get_columns("app_users")}
+            app_session_cols = {c.get("name") for c in insp.get_columns("app_sessions")}
+
+            dialect = engine.dialect.name
+            stmts: list[str] = []
+            if "mfa_enabled" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN mfa_enabled BOOLEAN NOT NULL DEFAULT false")
+            if "totp_secret_enc" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN totp_secret_enc TEXT")
+            if "totp_secret_pending_enc" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN totp_secret_pending_enc TEXT")
+            if "mfa_enrolled_at" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN mfa_enrolled_at TIMESTAMP WITH TIME ZONE")
+            if "mfa_pending_at" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN mfa_pending_at TIMESTAMP WITH TIME ZONE")
+            if "recovery_codes" not in app_user_cols:
+                if dialect == "postgresql":
+                    stmts.append("ALTER TABLE app_users ADD COLUMN recovery_codes JSONB NOT NULL DEFAULT '[]'::jsonb")
+                else:
+                    stmts.append("ALTER TABLE app_users ADD COLUMN recovery_codes JSON NOT NULL DEFAULT '[]'")
+            if "mfa_verified_at" not in app_session_cols:
+                stmts.append("ALTER TABLE app_sessions ADD COLUMN mfa_verified_at TIMESTAMP WITH TIME ZONE")
+
+            if stmts:
+                with engine.begin() as conn:
+                    for sql in stmts:
+                        conn.execute(text(sql))
+                logger.warning("Applied legacy MFA schema backfill (%s statements)", len(stmts))
+        except Exception:
+            logger.exception("Legacy MFA schema backfill failed")
 
         # NOTE: legacy runtime migrations removed; use Alembic.
     else:
