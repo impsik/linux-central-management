@@ -25,6 +25,9 @@
   <script src="/assets/fleet-phase3-core-ui.js"></script>
   <script src="/assets/fleet-phase3-auth-state.js"></script>
   <script src="/assets/fleet-phase3-modals.js"></script>
+  <script src="/assets/fleet-phase3-host-list.js"></script>
+  <script src="/assets/fleet-phase3-metrics.js"></script>
+  <script src="/assets/fleet-phase3-overview.js"></script>
   <link rel="stylesheet" href="/assets/index-MnFIflNy.css" />
   <link rel="stylesheet" href="/assets/fleet-ui.css" />
 </head>
@@ -1138,157 +1141,46 @@
     let selectedCvePackages = new Set(); // Set<string> selected in CVE package list
     let ansiblePlaybooks = [];
 
+    function getHostListCtx() {
+      return {
+        getAllHosts: () => allHosts,
+        setAllHosts: (v) => { allHosts = syncHostFilterSelectionState('allHosts', v); return allHosts; },
+        getHostSearchQuery: () => hostSearchQuery,
+        getLabelEnvFilter: () => labelEnvFilter,
+        setLabelEnvFilter: (v) => { labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', v); return labelEnvFilter; },
+        getLabelRoleFilter: () => labelRoleFilter,
+        setLabelRoleFilter: (v) => { labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', v); return labelRoleFilter; },
+        getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
+        getSelectedAgentIds: () => selectedAgentIds,
+        setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', v); return lastRenderedAgentIds; },
+        getCurrentAgentId: () => currentAgentId,
+        getLastPkgVerification: () => lastPkgVerification,
+        selectHost,
+        updateUpgradeControls: () => updateUpgradeControlsFn(),
+        renderHosts: (hosts) => renderHosts(hosts),
+      };
+    }
+
     function rebuildLabelFilterOptions(hosts) {
-      const envSel = document.getElementById('label-env');
-      const roleSel = document.getElementById('label-role');
-      if (!envSel || !roleSel) return;
-
-      const envVals = new Set();
-      const roleVals = new Set();
-      (hosts || []).forEach(h => {
-        const env = (hostLabel(h, 'env') || '').trim();
-        const role = (hostLabel(h, 'role') || '').trim();
-        if (env) envVals.add(env);
-        if (role) roleVals.add(role);
-      });
-
-      const envList = Array.from(envVals).sort((a, b) => a.localeCompare(b));
-      const roleList = Array.from(roleVals).sort((a, b) => a.localeCompare(b));
-
-      const prevEnv = envSel.value || '';
-      const prevRole = roleSel.value || '';
-
-      envSel.innerHTML = `<option value="">Env: Any</option>` + envList.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
-      roleSel.innerHTML = `<option value="">Role: Any</option>` + roleList.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
-
-      // Restore selections if still valid
-      if (prevEnv && envList.includes(prevEnv)) envSel.value = prevEnv;
-      else envSel.value = '';
-      if (prevRole && roleList.includes(prevRole)) roleSel.value = prevRole;
-      else roleSel.value = '';
-
-      labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', envSel.value || '');
-      labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', roleSel.value || '');
+      const mod = window.phase3HostList;
+      if (mod && typeof mod.rebuildLabelFilterOptions === 'function') {
+        if (Array.isArray(hosts)) getHostListCtx().setAllHosts(hosts);
+        return mod.rebuildLabelFilterOptions(getHostListCtx());
+      }
     }
 
     function applyHostFilters() {
-      const q = normalize(hostSearchQuery).trim();
-      let filtered = allHosts.slice();
-
-      if (vulnFilteredAgentIds) {
-        filtered = filtered.filter(h => vulnFilteredAgentIds.has(h.agent_id));
+      const mod = window.phase3HostList;
+      if (mod && typeof mod.applyHostFilters === 'function') {
+        return mod.applyHostFilters(getHostListCtx());
       }
-
-      if (labelEnvFilter) {
-        filtered = filtered.filter(h => (hostLabel(h, 'env') || '') === labelEnvFilter);
-      }
-      if (labelRoleFilter) {
-        filtered = filtered.filter(h => (hostLabel(h, 'role') || '') === labelRoleFilter);
-      }
-
-      if (q) {
-        filtered = filtered.filter(h => {
-          const hay = `${h.hostname || ''} ${h.agent_id || ''} ${h.ip_address || ''} ${h.fqdn || ''} ${h.os_id || ''} ${h.os_version || ''}`.toLowerCase();
-          return hay.includes(q);
-        });
-      }
-
-      renderHosts(filtered);
     }
 
     function renderHosts(hosts) {
-      const hostsDiv = document.getElementById('hosts');
-      hostsDiv.innerHTML = '';
-      lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', (hosts || []).map(h => h.agent_id));
-
-      if (!hosts || hosts.length === 0) {
-        hostsDiv.innerHTML = '<div class="empty-state">No hosts match your filters</div>';
-        updateUpgradeControlsFn();
-        return;
+      const mod = window.phase3HostList;
+      if (mod && typeof mod.renderHosts === 'function') {
+        return mod.renderHosts(getHostListCtx(), hosts);
       }
-
-      hosts.forEach(host => {
-        const div = document.createElement('div');
-        div.className = 'host-item';
-        div.dataset.agentId = host.agent_id;
-        div.onclick = () => { selectHost(host.agent_id, host.hostname); };
-
-        let pkgLine = '';
-        const pkgNameInput = (document.getElementById('vuln-package')?.value || '').trim();
-        const vulnVersionInput = (document.getElementById('vuln-version')?.value || '').trim();
-        if (pkgNameInput && lastPkgVerification && lastPkgVerification.packageName === pkgNameInput) {
-          const r = (lastPkgVerification.resultsByAgentId || {})[host.agent_id];
-          if (r) {
-            const v = r.version ? `<code>${escapeHtml(r.version)}</code>` : '<code>n/a</code>';
-            if (r.status === 'upgraded') {
-              pkgLine = `<div class="pkg-status-line"><span class="pkg-badge good">Upgraded</span> ${v}</div>`;
-            } else if (r.status === 'vulnerable') {
-              const vv = vulnVersionInput ? `<code>${escapeHtml(vulnVersionInput)}</code>` : '';
-              pkgLine = `<div class="pkg-status-line"><span class="pkg-badge bad">Still vulnerable</span> ${v} ${vv ? `<span style="color:#a0aec0;">(vuln = ${vv})</span>` : ''}</div>`;
-            } else if (r.status === 'installed') {
-              pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Installed</span> ${v}</div>`;
-            } else if (r.status === 'not-installed') {
-              pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Not installed</span></div>`;
-            } else {
-              pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Unknown</span></div>`;
-            }
-          }
-        }
-
-        const isOnline = !!host.is_online;
-        const lastSeen = host.last_seen ? new Date(host.last_seen) : null;
-        const lastSeenText = lastSeen ? formatRelativeTime(lastSeen) : 'never';
-        const ip = host.ip_address || '';
-        const fqdn = host.fqdn || '';
-        const env = hostLabel(host, 'env') || '';
-        const role = hostLabel(host, 'role') || '';
-
-        div.innerHTML = `
-          <div class="host-select-wrap">
-            <input class="host-select" type="checkbox" data-agent-id="${host.agent_id}" ${selectedAgentIds.has(host.agent_id) ? 'checked' : ''} />
-          </div>
-          <div class="host-meta">
-            <div class="host-row-top">
-              <div class="host-name">${escapeHtml(host.hostname || host.agent_id)}</div>
-              <span class="status-dot ${isOnline ? 'online' : 'offline'}" title="${isOnline ? 'online' : 'offline'}"></span>
-            </div>
-            <div class="host-subline">
-              <span class="host-subitem">${ip ? escapeHtml(ip) : (fqdn ? escapeHtml(fqdn) : '')}</span>
-              <span class="host-subsep">•</span>
-              <span class="host-subitem">seen ${escapeHtml(lastSeenText)}</span>
-            </div>
-            <div class="host-tags">
-              ${env ? `<span class="tag">env: <code>${escapeHtml(env)}</code></span>` : ''}
-              ${role ? `<span class="tag">role: <code>${escapeHtml(role)}</code></span>` : ''}
-            </div>
-            ${pkgLine}
-          </div>
-        `;
-        hostsDiv.appendChild(div);
-
-        // Checkbox: stop click bubbling so it doesn't open the host details
-        const cb = div.querySelector('.host-select');
-        if (cb) {
-          cb.addEventListener('click', (e) => e.stopPropagation());
-          cb.addEventListener('change', (e) => {
-            e.stopPropagation();
-            const aid = cb.getAttribute('data-agent-id');
-            if (!aid) return;
-            if (cb.checked) selectedAgentIds.add(aid);
-            else selectedAgentIds.delete(aid);
-            updateUpgradeControlsFn();
-          });
-        }
-      });
-
-      // Re-apply active highlight
-      if (currentAgentId) {
-        document.querySelectorAll('.host-item').forEach(item => {
-          if (item.dataset.agentId === currentAgentId) item.classList.add('active');
-        });
-      }
-
-      updateUpgradeControlsFn();
     }
 
     function clearCurrentHostSelection() {
@@ -1966,22 +1858,9 @@
     }
 
     async function loadHosts() {
-      try {
-        const response = await fetch('/hosts?online_only=true');
-        const hosts = await response.json();
-        allHosts = syncHostFilterSelectionState('allHosts', hosts || []);
-
-        // Refresh label filter options from the latest host list
-        rebuildLabelFilterOptions(allHosts);
-
-        if (allHosts.length === 0) {
-          document.getElementById('hosts').innerHTML = '<div class="empty-state">No hosts found</div>';
-          return;
-        }
-
-        applyHostFilters();
-      } catch (error) {
-        document.getElementById('hosts').innerHTML = `<div class="error">Error loading hosts: ${error.message}</div>`;
+      const mod = window.phase3HostList;
+      if (mod && typeof mod.loadHosts === 'function') {
+        return mod.loadHosts(getHostListCtx());
       }
     }
 
