@@ -2666,16 +2666,18 @@
     safeInit('attachTerminalInputHandlerOnce', attachTerminalInputHandlerOnce);
     safeInit('initAnsibleSection', initAnsibleSection);
 
-    const hostActionsMod = window.phase3HostActions;
-    if (hostActionsMod && typeof hostActionsMod.initCommonModalDismissHandlers === 'function') {
-      hostActionsMod.initCommonModalDismissHandlers({
-        getCurrentMetricsAgentId: () => metricsLifecycleState.get('currentMetricsAgentId'),
-        openDiskModal,
-        closeDiskModal,
-        closeServiceModal,
-        closeUserModal,
-      });
-    }
+    safeInit('initCommonModalDismissHandlers', () => {
+      const hostActionsMod = window.phase3HostActions;
+      if (hostActionsMod && typeof hostActionsMod.initCommonModalDismissHandlers === 'function') {
+        hostActionsMod.initCommonModalDismissHandlers({
+          getCurrentMetricsAgentId: () => metricsLifecycleState.get('currentMetricsAgentId'),
+          openDiskModal,
+          closeDiskModal,
+          closeServiceModal,
+          closeUserModal,
+        });
+      }
+    });
     const HOSTS_REFRESH_MS = 5000;
     let hostsRefreshTimer = null;
 
@@ -2684,10 +2686,14 @@
       hostsRefreshTimer = setInterval(loadHosts, HOSTS_REFRESH_MS);
     }
 
-    loadHosts();
-    loadFleetOverview();
+    void loadHosts().catch((e) => {
+      console.error('[loadHosts failed]', e);
+      const hostsEl = document.getElementById('hosts');
+      if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
+    });
+    void loadFleetOverview();
     startHostRefresh();
-    setInterval(loadFleetOverview, 15000);
+    setInterval(() => { void loadFleetOverview(); }, 15000);
   </script>
 </body>
 
