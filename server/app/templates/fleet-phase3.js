@@ -157,6 +157,83 @@
     }
   }
 
+  function setupCronScheduleUi() {
+    const kindEl = document.getElementById('cron-schedule-kind');
+    const wrapWeekday = document.getElementById('cron-weekday-wrap');
+    const wrapDom = document.getElementById('cron-dom-wrap');
+    const wrapTime = document.getElementById('cron-time-wrap');
+    const runAtWrap = document.getElementById('cron-run-at')?.parentElement;
+
+    function apply() {
+      const kind = kindEl?.value || 'once';
+      if (wrapWeekday) wrapWeekday.style.display = (kind === 'weekly') ? 'block' : 'none';
+      if (wrapDom) wrapDom.style.display = (kind === 'monthly') ? 'block' : 'none';
+      if (wrapTime) wrapTime.style.display = (kind === 'daily' || kind === 'weekly' || kind === 'monthly') ? 'block' : 'none';
+      if (runAtWrap) runAtWrap.style.display = (kind === 'once') ? 'block' : 'none';
+    }
+
+    if (kindEl) kindEl.addEventListener('change', apply);
+    apply();
+  }
+
+  function setupCronHostPickerControls(opts) {
+    const api = opts || {};
+    const setPanelVisible = api.setPanelVisible;
+    const renderList = api.renderList;
+    const selectAll = api.selectAll;
+    const clearSelection = api.clearSelection;
+
+    const openBtn = document.getElementById('cron-hosts-open');
+    if (openBtn) {
+      openBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof setPanelVisible === 'function') setPanelVisible(true);
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+
+    const closeBtn = document.getElementById('cron-hosts-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof setPanelVisible === 'function') setPanelVisible(false);
+      });
+    }
+
+    const searchInput = document.getElementById('cron-hosts-search');
+    if (searchInput && typeof renderList === 'function') {
+      searchInput.addEventListener('input', function () { renderList(); });
+    }
+
+    const clearBtn = document.getElementById('cron-hosts-search-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        const el = document.getElementById('cron-hosts-search');
+        if (el) el.value = '';
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+
+    const selectAllBtn = document.getElementById('cron-hosts-select-all');
+    if (selectAllBtn) {
+      selectAllBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof selectAll === 'function') selectAll();
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+
+    const selectNoneBtn = document.getElementById('cron-hosts-select-none');
+    if (selectNoneBtn) {
+      selectNoneBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof clearSelection === 'function') clearSelection();
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+  }
+
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;
@@ -166,4 +243,6 @@
   w.wireBusyClick = wireBusyClick;
   w.setupReportSortHandlers = setupReportSortHandlers;
   w.setupKpiHandlers = setupKpiHandlers;
+  w.setupCronScheduleUi = setupCronScheduleUi;
+  w.setupCronHostPickerControls = setupCronHostPickerControls;
 })(window);

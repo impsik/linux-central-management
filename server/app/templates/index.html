@@ -5512,53 +5512,17 @@
     }
     function initCronjobsControls() {
 
-      function initCronScheduleUi() {
-        const kindEl = document.getElementById('cron-schedule-kind');
-        const wrapWeekday = document.getElementById('cron-weekday-wrap');
-        const wrapDom = document.getElementById('cron-dom-wrap');
-        const wrapTime = document.getElementById('cron-time-wrap');
-        const runAtWrap = document.getElementById('cron-run-at')?.parentElement;
+      setupCronScheduleUi();
 
-        function apply() {
-          const kind = kindEl?.value || 'once';
-          if (wrapWeekday) wrapWeekday.style.display = (kind === 'weekly') ? 'block' : 'none';
-          if (wrapDom) wrapDom.style.display = (kind === 'monthly') ? 'block' : 'none';
-          if (wrapTime) wrapTime.style.display = (kind === 'daily' || kind === 'weekly' || kind === 'monthly') ? 'block' : 'none';
-          // For recurring schedules we don't require a specific date; backend computes next occurrence.
-          if (runAtWrap) runAtWrap.style.display = (kind === 'once') ? 'block' : 'none';
-        }
-
-        kindEl?.addEventListener('change', apply);
-        apply();
-      }
-
-      initCronScheduleUi();
-
-      // Host picker controls
-      document.getElementById('cron-hosts-open')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        setCronHostsPanelVisible(true);
-        renderCronHostsList();
-      });
-      document.getElementById('cron-hosts-close')?.addEventListener('click', (e) => { e.preventDefault(); setCronHostsPanelVisible(false); });
-      document.getElementById('cron-hosts-search')?.addEventListener('input', () => renderCronHostsList());
-      document.getElementById('cron-hosts-search-clear')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        const el = document.getElementById('cron-hosts-search');
-        if (el) el.value = '';
-        renderCronHostsList();
-      });
-
-      document.getElementById('cron-hosts-select-all')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        (allHosts || []).forEach(h => { if (h.agent_id) cronSelectedAgentIds.add(h.agent_id); });
-        renderCronHostsList();
-      });
-
-      document.getElementById('cron-hosts-select-none')?.addEventListener('click', (e) => {
-        e.preventDefault();
-        cronSelectedAgentIds = new Set();
-        renderCronHostsList();
+      setupCronHostPickerControls({
+        setPanelVisible: setCronHostsPanelVisible,
+        renderList: renderCronHostsList,
+        selectAll: () => {
+          (allHosts || []).forEach(h => { if (h.agent_id) cronSelectedAgentIds.add(h.agent_id); });
+        },
+        clearSelection: () => {
+          cronSelectedAgentIds = new Set();
+        },
       });
 
       const cronRefreshBtn = document.getElementById('cron-refresh');
