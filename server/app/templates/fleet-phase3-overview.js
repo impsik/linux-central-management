@@ -155,6 +155,31 @@
         `;
         tbody.appendChild(tr);
       }
+
+      // Sidebar fallback: if host list panel is still stuck in loading state, render from report rows.
+      const hostsEl = document.getElementById('hosts');
+      const hostText = (hostsEl?.textContent || '').toLowerCase();
+      if (hostsEl && hostText.includes('loading hosts')) {
+        hostsEl.innerHTML = items.map((it) => `
+          <div class="host-item" data-agent-id="${w.escapeHtml(it.agent_id || '')}">
+            <div class="host-meta">
+              <div class="host-row-top">
+                <div class="host-name">${w.escapeHtml(it.hostname || it.agent_id || '')}</div>
+                <span class="status-dot ${it.is_online ? 'online' : 'offline'}"></span>
+              </div>
+              <div class="host-subline"><span class="host-subitem">${w.escapeHtml(it.agent_id || '')}</span></div>
+            </div>
+          </div>
+        `).join('');
+        hostsEl.querySelectorAll('.host-item').forEach((el) => {
+          el.addEventListener('click', () => {
+            const aid = el.getAttribute('data-agent-id') || '';
+            if (!aid) return;
+            const row = items.find((x) => (x.agent_id || '') === aid) || {};
+            ctx.selectHost(aid, row.hostname || aid);
+          });
+        });
+      }
     } catch (e) {
       w.setTableState(tbody, 9, 'error', `Hosts table error: ${e.message || String(e)}`);
     }
