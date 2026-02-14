@@ -181,8 +181,8 @@ The server sets basic security headers by default (e.g. `X-Frame-Options`, `X-Co
 For internet exposure, run behind HTTPS and set:
 - `UI_COOKIE_SECURE=true`
 
-Optional (advanced): set `CONTENT_SECURITY_POLICY` env var (baseline example in `deploy/docker/env.example`).
-Note: the built-in UI still uses inline scripts, so fully strict CSP requires frontend refactoring.
+Optional (advanced): set `CONTENT_SECURITY_POLICY` env var to override the default nonce-based CSP.
+By default the server emits a restrictive CSP with per-request script nonces and no `unsafe-inline` for scripts.
 
 Token wiring (must match):
 - **Server** env: `AGENT_TERMINAL_TOKEN`

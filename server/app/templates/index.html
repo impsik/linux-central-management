@@ -4,19 +4,7 @@
 <head>
   <meta charset="utf-8">
   <title>Fleet Management</title>
-  <script>
-    // Theme bootstrap: set before paint
-    (function () {
-      try {
-        const saved = localStorage.getItem('fleet_theme');
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const theme = saved || (prefersDark ? 'dark' : 'light');
-        document.documentElement.dataset.theme = theme;
-      } catch (e) {
-        document.documentElement.dataset.theme = 'dark';
-      }
-    })();
-  </script>
+  <script src="/assets/fleet-theme-bootstrap.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
   <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
   <script src="/assets/fleet-phase3.js"></script>
@@ -1009,7 +997,7 @@
 
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
-  <script>
+  <script nonce="__CSP_NONCE__">
     // Init xterm only when the container exists. If this throws early, it can break other UI JS (e.g. theme toggle).
     let term = null;
     function initTerminalOnce() {

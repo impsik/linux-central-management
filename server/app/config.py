@@ -62,7 +62,7 @@ class Settings(BaseSettings):
 
     # Security headers (recommended if exposed beyond LAN)
     security_headers_enabled: bool = True
-    # Optional Content-Security-Policy. Leave unset by default because the UI uses inline scripts.
+    # Optional Content-Security-Policy override. If unset, app_factory applies a nonce-based default policy.
     content_security_policy: str | None = None
 
     # Background metrics refresh (for fast Overview/Attention updates)

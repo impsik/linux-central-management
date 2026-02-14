@@ -23,9 +23,17 @@ def _read_template(name: str) -> str:
     return path.read_text(encoding="utf-8", errors="ignore")
 
 
+def _render_template_with_nonce(name: str, request: Request) -> str:
+    html = _read_template(name)
+    nonce = getattr(getattr(request, "state", None), "csp_nonce", None)
+    if nonce:
+        return html.replace("__CSP_NONCE__", str(nonce))
+    return html.replace(' nonce="__CSP_NONCE__"', "")
+
+
 @router.get("/login", response_class=HTMLResponse)
-def login_page():
-    return _read_template("login.html")
+def login_page(request: Request):
+    return _render_template_with_nonce("login.html", request)
 
 
 @router.get("/assets/index-MnFIflNy.css")
@@ -38,6 +46,11 @@ def ui_custom_css():
     return FileResponse(str(TEMPLATES_DIR / "fleet-ui.css"), media_type="text/css")
 
 
+@router.get("/assets/fleet-theme-bootstrap.js")
+def ui_theme_bootstrap_js():
+    return FileResponse(str(TEMPLATES_DIR / "fleet-theme-bootstrap.js"), media_type="application/javascript")
+
+
 @router.get("/assets/fleet-phase3.js")
 def ui_phase3_js():
     return FileResponse(str(TEMPLATES_DIR / "fleet-phase3.js"), media_type="application/javascript")
@@ -45,7 +58,7 @@ def ui_phase3_js():
 
 @router.get("/terminal", response_class=HTMLResponse)
 def terminal_popup_page(request: Request, user: AppUser = Depends(require_ui_user)):
-    return _read_template("terminal_popup.html")
+    return _render_template_with_nonce("terminal_popup.html", request)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -56,6 +69,6 @@ def ui(request: Request, db: Session = Depends(get_db)):
 
     # Avoid caching during rapid UI iteration; otherwise browsers may keep old JS.
     return HTMLResponse(
-        content=_read_template("index.html"),
+        content=_render_template_with_nonce("index.html", request),
         headers={"Cache-Control": "no-store"},
     )

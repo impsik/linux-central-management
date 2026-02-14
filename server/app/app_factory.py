@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -235,6 +236,7 @@ def create_app() -> FastAPI:
 
         from .config import settings
 
+        request.state.csp_nonce = secrets.token_urlsafe(16)
         resp = await call_next(request)
 
         if not bool(getattr(settings, "security_headers_enabled", True)):
@@ -257,6 +259,18 @@ def create_app() -> FastAPI:
         csp = getattr(settings, "content_security_policy", None)
         if csp:
             resp.headers.setdefault("Content-Security-Policy", str(csp))
+        else:
+            nonce = getattr(getattr(request, "state", None), "csp_nonce", "")
+            resp.headers.setdefault(
+                "Content-Security-Policy",
+                "default-src 'self'; "
+                "script-src 'self' https://cdn.jsdelivr.net 'nonce-" + str(nonce) + "'; "
+                "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+                "img-src 'self' data:; "
+                "font-src 'self' https://cdn.jsdelivr.net data:; "
+                "connect-src 'self' ws: wss:; "
+                "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+            )
 
         return resp
 

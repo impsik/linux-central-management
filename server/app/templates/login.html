@@ -3,18 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Fleet UI Login</title>
-  <script>
-    (function(){
-      try {
-        const saved = localStorage.getItem('fleet_theme');
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        const theme = saved || (prefersDark ? 'dark' : 'light');
-        document.documentElement.dataset.theme = theme;
-      } catch (e) {
-        document.documentElement.dataset.theme = 'dark';
-      }
-    })();
-  </script>
+  <script src="/assets/fleet-theme-bootstrap.js"></script>
   <style>
     :root {
       --bg: #f8fafc;
@@ -74,7 +63,7 @@
     <div class="hint">Your session is stored in a secure cookie (HttpOnly). Passwords are stored hashed in DB.</div>
   </div>
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
-  <script>
+  <script nonce="__CSP_NONCE__">
     const themeBtn = document.getElementById('theme-btn');
     function getTheme() { return document.documentElement.dataset.theme || 'dark'; }
     function setTheme(t) { document.documentElement.dataset.theme = t; try { localStorage.setItem('fleet_theme', t); } catch {} }
