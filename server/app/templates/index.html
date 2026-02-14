@@ -2685,6 +2685,15 @@
     safeInit('initSettingsMenu', initSettingsMenu);
     safeInit('initHostActionControls', initHostActionControls);
     safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
+    safeInit('bindDiskCardClick', () => {
+      const diskCard = document.getElementById('disk-card');
+      if (!diskCard) return;
+      diskCard.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!currentAgentId) return;
+        openDiskModal(currentAgentId);
+      });
+    });
     safeInit('initTerminalOnce', initTerminalOnce);
     safeInit('attachTerminalInputHandlerOnce', attachTerminalInputHandlerOnce);
     safeInit('initAnsibleSection', initAnsibleSection);
