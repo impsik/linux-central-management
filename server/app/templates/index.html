@@ -1679,13 +1679,13 @@
         }),
         setState: (patch) => {
           if (!patch || typeof patch !== 'object') return;
-          if (Object.prototype.hasOwnProperty.call(patch, 'allHosts')) allHosts = patch.allHosts || [];
-          if (Object.prototype.hasOwnProperty.call(patch, 'hostSearchQuery')) hostSearchQuery = patch.hostSearchQuery || '';
-          if (Object.prototype.hasOwnProperty.call(patch, 'labelEnvFilter')) labelEnvFilter = patch.labelEnvFilter || '';
-          if (Object.prototype.hasOwnProperty.call(patch, 'labelRoleFilter')) labelRoleFilter = patch.labelRoleFilter || '';
-          if (Object.prototype.hasOwnProperty.call(patch, 'vulnFilteredAgentIds')) vulnFilteredAgentIds = patch.vulnFilteredAgentIds;
-          if (Object.prototype.hasOwnProperty.call(patch, 'selectedAgentIds')) selectedAgentIds = (patch.selectedAgentIds instanceof Set) ? patch.selectedAgentIds : new Set();
-          if (Object.prototype.hasOwnProperty.call(patch, 'lastRenderedAgentIds')) lastRenderedAgentIds = Array.isArray(patch.lastRenderedAgentIds) ? patch.lastRenderedAgentIds : [];
+          if (Object.prototype.hasOwnProperty.call(patch, 'allHosts')) allHosts = syncHostFilterSelectionState('allHosts', patch.allHosts || []);
+          if (Object.prototype.hasOwnProperty.call(patch, 'hostSearchQuery')) hostSearchQuery = syncHostFilterSelectionState('hostSearchQuery', patch.hostSearchQuery || '');
+          if (Object.prototype.hasOwnProperty.call(patch, 'labelEnvFilter')) labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', patch.labelEnvFilter || '');
+          if (Object.prototype.hasOwnProperty.call(patch, 'labelRoleFilter')) labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', patch.labelRoleFilter || '');
+          if (Object.prototype.hasOwnProperty.call(patch, 'vulnFilteredAgentIds')) vulnFilteredAgentIds = syncHostFilterSelectionState('vulnFilteredAgentIds', patch.vulnFilteredAgentIds);
+          if (Object.prototype.hasOwnProperty.call(patch, 'selectedAgentIds')) selectedAgentIds = syncHostFilterSelectionState('selectedAgentIds', (patch.selectedAgentIds instanceof Set) ? patch.selectedAgentIds : new Set());
+          if (Object.prototype.hasOwnProperty.call(patch, 'lastRenderedAgentIds')) lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(patch.lastRenderedAgentIds) ? patch.lastRenderedAgentIds : []);
           if (Object.prototype.hasOwnProperty.call(patch, 'lastPkgVerification')) lastPkgVerification = patch.lastPkgVerification;
           if (Object.prototype.hasOwnProperty.call(patch, 'lastCveCheck')) lastCveCheck = patch.lastCveCheck;
           if (Object.prototype.hasOwnProperty.call(patch, 'lastCveAffectedAgentIds')) lastCveAffectedAgentIds = Array.isArray(patch.lastCveAffectedAgentIds) ? patch.lastCveAffectedAgentIds : [];
