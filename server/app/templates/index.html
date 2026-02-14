@@ -2368,7 +2368,7 @@
       const actor = (document.getElementById('audit-filter-actor')?.value || '').trim();
 
       try {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        setTableState(tbody, 6, 'loading', 'Loading…');
         if (statusEl) statusEl.textContent = '';
 
         const qs = new URLSearchParams();
@@ -2383,7 +2383,7 @@
 
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">No events</td></tr>';
+          setTableState(tbody, 6, 'empty', 'No events');
           return;
         }
         tbody.innerHTML = '';
@@ -2450,7 +2450,7 @@
 
         if (showToastOnManual) showToast('Audit refreshed', 'success');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 6, 'error', e.message || String(e));
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
       }
@@ -2462,7 +2462,7 @@
       if (!tbody) return;
 
       try {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        setTableState(tbody, 6, 'loading', 'Loading…');
         if (statusEl) statusEl.textContent = '';
         const r = await fetch('/auth/admin/users', { credentials: 'include' });
         const raw = await r.text();
@@ -2471,7 +2471,7 @@
 
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">No users</td></tr>';
+          setTableState(tbody, 6, 'empty', 'No users');
           return;
         }
         tbody.innerHTML = '';
@@ -2521,7 +2521,7 @@
 
         if (showToastOnManual) showToast('Users refreshed', 'success');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 6, 'error', e.message || String(e));
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
       }
@@ -4946,13 +4946,13 @@
       const tbody = document.getElementById('overview-failed-runs');
       if (!tbody) return;
       try {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        setTableState(tbody, 5, 'loading', 'Loading…');
         const r = await fetch(`/dashboard/failed-runs?hours=${encodeURIComponent(hours)}&limit=200`, { credentials: 'include' });
         if (!r.ok) throw new Error(`failed-runs fetch failed (${r.status})`);
         const d = await r.json();
         const items = d?.items || [];
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#86efac;">No failed runs 🎯</td></tr>';
+          setTableState(tbody, 5, 'empty', 'No failed runs 🎯');
           return;
         }
         tbody.innerHTML = '';
@@ -4996,7 +4996,7 @@
         }
         if (showToastOnManual) showToast('Failed runs refreshed', 'success');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 5, 'error', e.message || String(e));
         if (showToastOnManual) showToast(e.message, 'error');
       }
     }
@@ -5020,7 +5020,7 @@
       const order = orderSel?.value || 'asc';
 
       try {
-        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        setTableState(tbody, 9, 'loading', 'Loading…');
         const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=500`;
         const r = await fetch(url, { credentials: 'include' });
         if (!r.ok) throw new Error(`hosts report failed (${r.status})`);
@@ -5028,7 +5028,7 @@
         const items = d?.items || [];
 
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#a0aec0;">No hosts</td></tr>';
+          setTableState(tbody, 9, 'empty', 'No hosts');
           return;
         }
 
@@ -5058,7 +5058,7 @@
           tbody.appendChild(tr);
         }
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#fca5a5;">Hosts table error: ${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 9, 'error', `Hosts table error: ${e.message || String(e)}`);
       }
     }
 
@@ -5856,13 +5856,13 @@
       const tbody = document.getElementById('sshkeys-table');
       if (!tbody) return;
       try {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        setTableState(tbody, 4, 'loading', 'Loading…');
         const r = await fetch('/sshkeys', { credentials: 'include' });
         if (!r.ok) throw new Error(`sshkeys failed (${r.status})`);
         const d = await r.json();
         sshKeysCache = d?.items || [];
         if (!sshKeysCache.length) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#a0aec0;">No keys yet</td></tr>';
+          setTableState(tbody, 4, 'empty', 'No keys yet');
           return;
         }
         tbody.innerHTML = '';
@@ -5907,7 +5907,7 @@
         });
         if (showToastOnManual) showToast('SSH keys refreshed', 'success');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 4, 'error', e.message || String(e));
         if (showToastOnManual) showToast(e.message, 'error');
       }
     }
@@ -5916,12 +5916,13 @@
       const tbody = document.getElementById('sshkey-requests-table');
       if (!tbody) return;
       try {
+        setTableState(tbody, 6, 'loading', 'Loading…');
         const r = await fetch('/sshkeys/deploy-requests', { credentials: 'include' });
         if (!r.ok) throw new Error(`requests failed (${r.status})`);
         const d = await r.json();
         const items = d?.items || [];
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">No requests</td></tr>';
+          setTableState(tbody, 6, 'empty', 'No requests');
           return;
         }
         tbody.innerHTML = '';
@@ -5938,7 +5939,7 @@
           tbody.appendChild(tr);
         }
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 6, 'error', e.message || String(e));
       }
     }
 
@@ -5955,13 +5956,13 @@
       panel.style.display = 'block';
 
       try {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        setTableState(tbody, 5, 'loading', 'Loading…');
         const r = await fetch('/sshkeys/admin/keys', { credentials: 'include' });
         if (!r.ok) throw new Error(`admin keys failed (${r.status})`);
         const d = await r.json();
         const items = d?.items || [];
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">No keys</td></tr>';
+          setTableState(tbody, 5, 'empty', 'No keys');
           return;
         }
         tbody.innerHTML = '';
@@ -5977,7 +5978,7 @@
           tbody.appendChild(tr);
         }
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 5, 'error', e.message || String(e));
       }
     }
 
