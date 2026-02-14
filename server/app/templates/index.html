@@ -5464,22 +5464,50 @@
 
 
     // SSH Keys UI
-    let sshKeysCache = [];
-    let sshSelectedKeyId = null;
-    let sshSelectedAgentIds = new Set();
+    const sshUiState = createUiStateAccess('sshKeys', {
+      keysCache: [],
+      selectedKeyId: null,
+      selectedAgentIds: new Set(),
+    });
+
+    function getSshSelectedAgentIds() {
+      return sshUiState.get('selectedAgentIds', new Set());
+    }
+
+    function setSshSelectedAgentIds(next) {
+      return sshUiState.set('selectedAgentIds', (next instanceof Set) ? next : new Set());
+    }
+
+    function getSshSelectedKeyId() {
+      return sshUiState.get('selectedKeyId', null);
+    }
+
+    function setSshSelectedKeyId(next) {
+      return sshUiState.set('selectedKeyId', next || null);
+    }
+
+    function getSshKeysCache() {
+      return sshUiState.get('keysCache', []);
+    }
+
+    function setSshKeysCache(next) {
+      return sshUiState.set('keysCache', Array.isArray(next) ? next : []);
+    }
 
     function setSshHostsPanelVisible(v) {
       setPanelVisibleById('sshkey-hosts-panel', v);
     }
 
     function renderSshHostsList() {
-      sshSelectedAgentIds = renderSshHostsListView({
+      const selectedAgentIds = getSshSelectedAgentIds();
+      const nextSelected = renderSshHostsListView({
         hosts: (allHosts || []),
-        selectedAgentIds: sshSelectedAgentIds,
+        selectedAgentIds: selectedAgentIds,
         listId: 'sshkey-hosts-list',
         countId: 'sshkey-hosts-count',
         searchId: 'sshkey-hosts-search',
-      }) || sshSelectedAgentIds;
+      }) || selectedAgentIds;
+      setSshSelectedAgentIds(nextSelected);
     }
 
     async function loadSshKeys(showToastOnManual = false) {
@@ -5490,16 +5518,17 @@
         const r = await fetch('/sshkeys', { credentials: 'include' });
         if (!r.ok) throw new Error(`sshkeys failed (${r.status})`);
         const d = await r.json();
-        sshKeysCache = d?.items || [];
-        if (!sshKeysCache.length) {
+        setSshKeysCache(d?.items || []);
+        if (!getSshKeysCache().length) {
           setTableState(tbody, 4, 'empty', 'No keys yet');
           return;
         }
         tbody.innerHTML = '';
-        for (const k of sshKeysCache) {
+        for (const k of getSshKeysCache()) {
           const tr = document.createElement('tr');
           tr.style.cursor = 'pointer';
-          const isSel = (sshSelectedKeyId && sshSelectedKeyId === k.id);
+          const selectedKeyId = getSshSelectedKeyId();
+          const isSel = (selectedKeyId && selectedKeyId === k.id);
           tr.innerHTML = `
             <td>${escapeHtml(k.name || '')}</td>
             <td><code>${escapeHtml(k.fingerprint || '')}</code></td>
@@ -5510,11 +5539,11 @@
           tr.setAttribute('data-key-id', k.id);
           tr.addEventListener('click', (e) => {
             if ((e.target && e.target.tagName || '').toLowerCase() === 'button') return;
-            sshSelectedKeyId = k.id;
+            setSshSelectedKeyId(k.id);
             // Highlight immediately.
             Array.from(tbody.querySelectorAll('tr[data-key-id]')).forEach(row => {
               const rowId = row.getAttribute('data-key-id');
-              if (rowId && rowId === sshSelectedKeyId) {
+              if (rowId && rowId === getSshSelectedKeyId()) {
                 row.style.background = 'color-mix(in srgb, var(--primary) 12%, var(--panel))';
               } else {
                 row.style.background = '';
@@ -5530,7 +5559,7 @@
             if (!id) return;
             const r2 = await fetch(`/sshkeys/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
             if (!r2.ok) return showToast('Delete failed', 'error');
-            if (sshSelectedKeyId === id) sshSelectedKeyId = null;
+            if (getSshSelectedKeyId() === id) setSshSelectedKeyId(null);
             showToast('Key deleted', 'success');
             loadSshKeys();
           });
@@ -5819,10 +5848,11 @@
         setPanelVisible: setSshHostsPanelVisible,
         renderList: renderSshHostsList,
         selectAll: () => {
-          (allHosts || []).forEach(h => { if (h.agent_id) sshSelectedAgentIds.add(h.agent_id); });
+          const selectedAgentIds = getSshSelectedAgentIds();
+          (allHosts || []).forEach(h => { if (h.agent_id) selectedAgentIds.add(h.agent_id); });
         },
         clearSelection: () => {
-          sshSelectedAgentIds = new Set();
+          setSshSelectedAgentIds(new Set());
         },
       });
 
@@ -5830,8 +5860,8 @@
         e.preventDefault();
         await handleSshRequestDeploy({
           statusEl: document.getElementById('sshkey-request-status'),
-          selectedKeyId: sshSelectedKeyId,
-          getSelectedAgentIds: () => Array.from(sshSelectedAgentIds || []),
+          selectedKeyId: getSshSelectedKeyId(),
+          getSelectedAgentIds: () => Array.from(getSshSelectedAgentIds() || []),
           setPanelVisible: setSshHostsPanelVisible,
           renderList: renderSshHostsList,
           loadSshKeyRequests,
