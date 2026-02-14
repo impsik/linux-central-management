@@ -161,6 +161,10 @@ def create_app() -> FastAPI:
         if path.startswith("/agent/") or path == "/health" or path.startswith("/auth/") or path == "/login":
             return await call_next(request)
 
+        # Allow unauthenticated UI shell assets and websocket upgrade endpoints.
+        if path.startswith("/assets/") or path.startswith("/static/"):
+            return await call_next(request)
+
         # Allow unauthenticated access to websocket upgrade endpoints via their own handlers
         if path.startswith("/ws/"):
             return await call_next(request)
