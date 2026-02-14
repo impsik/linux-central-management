@@ -5552,52 +5552,17 @@
     let sshSelectedAgentIds = new Set();
 
     function setSshHostsPanelVisible(v) {
-      const panel = document.getElementById('sshkey-hosts-panel');
-      if (panel) panel.style.display = v ? 'block' : 'none';
+      setPanelVisibleById('sshkey-hosts-panel', v);
     }
 
     function renderSshHostsList() {
-      const listEl = document.getElementById('sshkey-hosts-list');
-      const countEl = document.getElementById('sshkey-hosts-count');
-      if (!listEl) return;
-      const q = (document.getElementById('sshkey-hosts-search')?.value || '').trim().toLowerCase();
-      listEl.innerHTML = '';
-      for (const h of (allHosts || [])) {
-        const aid = h.agent_id || '';
-        const name = h.hostname || aid;
-        const ip = h.ip_address || '';
-        const os = `${h.os_id || ''} ${h.os_version || ''}`.trim();
-        const hay = `${name} ${aid} ${ip} ${os}`.toLowerCase();
-        if (q && !hay.includes(q)) continue;
-
-        const row = document.createElement('label');
-        row.style.display = 'flex';
-        row.style.alignItems = 'center';
-        row.style.justifyContent = 'space-between';
-        row.style.gap = '0.75rem';
-        row.style.padding = '0.5rem 0.6rem';
-        row.style.borderRadius = '8px';
-        row.style.cursor = 'pointer';
-
-        const left = document.createElement('div');
-        left.style.display = 'flex';
-        left.style.flexDirection = 'column';
-        left.innerHTML = `<b>${escapeHtml(name)}</b><span style="color:#94a3b8;font-size:0.85rem;">${escapeHtml(aid)} ${os ? '• ' + escapeHtml(os) : ''}</span>`;
-
-        const cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.checked = sshSelectedAgentIds.has(aid);
-        cb.addEventListener('change', () => {
-          if (cb.checked) sshSelectedAgentIds.add(aid);
-          else sshSelectedAgentIds.delete(aid);
-          if (countEl) countEl.textContent = String(sshSelectedAgentIds.size);
-        });
-
-        row.appendChild(left);
-        row.appendChild(cb);
-        listEl.appendChild(row);
-      }
-      if (countEl) countEl.textContent = String(sshSelectedAgentIds.size);
+      sshSelectedAgentIds = renderSshHostsListView({
+        hosts: (allHosts || []),
+        selectedAgentIds: sshSelectedAgentIds,
+        listId: 'sshkey-hosts-list',
+        countId: 'sshkey-hosts-count',
+        searchId: 'sshkey-hosts-search',
+      }) || sshSelectedAgentIds;
     }
 
     async function loadSshKeys(showToastOnManual = false) {

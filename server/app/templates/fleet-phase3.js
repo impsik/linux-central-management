@@ -300,6 +300,65 @@
     }
   }
 
+  function setPanelVisibleById(panelId, visible) {
+    const panel = document.getElementById(panelId);
+    if (panel) panel.style.display = visible ? 'block' : 'none';
+  }
+
+  function renderSshHostsListView(opts) {
+    const api = opts || {};
+    const listEl = document.getElementById(api.listId || 'sshkey-hosts-list');
+    const countEl = document.getElementById(api.countId || 'sshkey-hosts-count');
+    const searchEl = document.getElementById(api.searchId || 'sshkey-hosts-search');
+    const hosts = api.hosts || [];
+    const selected = api.selectedAgentIds || new Set();
+    const esc = typeof w.escapeHtml === 'function' ? w.escapeHtml : function (s) { return String(s ?? ''); };
+
+    if (!listEl) return selected;
+
+    const q = ((searchEl && searchEl.value) ? searchEl.value : '').trim().toLowerCase();
+    listEl.innerHTML = '';
+
+    for (const h of hosts) {
+      const aid = h.agent_id || '';
+      const name = h.hostname || aid;
+      const ip = h.ip_address || '';
+      const os = ((h.os_id || '') + ' ' + (h.os_version || '')).trim();
+      const hay = (name + ' ' + aid + ' ' + ip + ' ' + os).toLowerCase();
+      if (q && !hay.includes(q)) continue;
+
+      const row = document.createElement('label');
+      row.style.display = 'flex';
+      row.style.alignItems = 'center';
+      row.style.justifyContent = 'space-between';
+      row.style.gap = '0.75rem';
+      row.style.padding = '0.5rem 0.6rem';
+      row.style.borderRadius = '8px';
+      row.style.cursor = 'pointer';
+
+      const left = document.createElement('div');
+      left.style.display = 'flex';
+      left.style.flexDirection = 'column';
+      left.innerHTML = '<b>' + esc(name) + '</b><span style="color:#94a3b8;font-size:0.85rem;">' + esc(aid) + (os ? ' • ' + esc(os) : '') + '</span>';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = selected.has(aid);
+      cb.addEventListener('change', function () {
+        if (cb.checked) selected.add(aid);
+        else selected.delete(aid);
+        if (countEl) countEl.textContent = String(selected.size);
+      });
+
+      row.appendChild(left);
+      row.appendChild(cb);
+      listEl.appendChild(row);
+    }
+
+    if (countEl) countEl.textContent = String(selected.size);
+    return selected;
+  }
+
   function setupSshHostPickerControls(opts) {
     const api = opts || {};
     const setPanelVisible = api.setPanelVisible;
@@ -461,4 +520,6 @@
   w.setupSshRefreshHandlers = setupSshRefreshHandlers;
   w.handleSshKeyAdd = handleSshKeyAdd;
   w.handleSshRequestDeploy = handleSshRequestDeploy;
+  w.setPanelVisibleById = setPanelVisibleById;
+  w.renderSshHostsListView = renderSshHostsListView;
 })(window);
