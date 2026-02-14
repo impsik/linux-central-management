@@ -139,6 +139,20 @@
         let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
         if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `${action} failed (${r.status})`);
         await w.pollJob((d && d.job_id) || '', statusEl, 180000);
+
+        // Refresh update metadata so "Updates only" view drops newly upgraded packages.
+        try {
+          if (statusEl) statusEl.textContent = 'Refreshing package update state…';
+          const r2 = await fetch(`/hosts/${encodeURIComponent(st.currentAgentId)}/packages/check-updates?refresh=true&wait=false`, { method: 'POST', credentials: 'include' });
+          const raw2 = await r2.text();
+          let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+          if (r2.ok && d2 && d2.job_id) {
+            await w.pollJob(d2.job_id, statusEl, 180000);
+          }
+        } catch (_) {
+          // Best-effort only; package action already succeeded.
+        }
+
         setState(ctx, { selectedPackages: new Set() });
         const sel = document.getElementById('select-visible-packages');
         if (sel) sel.checked = false;
