@@ -146,12 +146,19 @@
 
   async function loadHosts(ctx) {
     try {
-      const response = await fetch('/hosts?online_only=true');
+      const response = await fetch('/hosts?online_only=true', { credentials: 'include' });
+      if (!response.ok) {
+        if (response.status === 403 && typeof w.loadAuthInfo === 'function') {
+          try { await w.loadAuthInfo(); } catch (_) {}
+        }
+        throw new Error(`hosts failed (${response.status})`);
+      }
       const hosts = await response.json();
-      ctx.setAllHosts(hosts || []);
+      const list = Array.isArray(hosts) ? hosts : [];
+      ctx.setAllHosts(list);
       rebuildLabelFilterOptions(ctx);
 
-      if ((ctx.getAllHosts() || []).length === 0) {
+      if (list.length === 0) {
         document.getElementById('hosts').innerHTML = '<div class="empty-state">No hosts found</div>';
         return;
       }

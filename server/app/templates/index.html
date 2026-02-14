@@ -2637,22 +2637,29 @@
     }
 
 // Load hosts on page load
-    initHostFilters();
-    initFleetOverviewControls();
-    initHostsTableControls();
-    initCronjobsControls();
-    initSshKeysControls();
-    initLoadTimeframeControls();
-    initPackagesSearch();
-    initAdminPanel();
-    initThemeToggle();
-    initSettingsMenu();
-    initHostActionControls();
-    initAuditDetailModalControls();
-    initTerminalOnce();
-    attachTerminalInputHandlerOnce();
-    initAnsibleSection();
-    loadAuthInfo();
+    function safeInit(name, fn) {
+      try { if (typeof fn === 'function') fn(); }
+      catch (e) { console.error('[init failed]', name, e); }
+    }
+
+    // Load auth state first so header + MFA flow are not blocked by later init errors.
+    loadAuthInfo().catch((e) => console.error('[loadAuthInfo failed]', e));
+
+    safeInit('initHostFilters', initHostFilters);
+    safeInit('initFleetOverviewControls', initFleetOverviewControls);
+    safeInit('initHostsTableControls', initHostsTableControls);
+    safeInit('initCronjobsControls', initCronjobsControls);
+    safeInit('initSshKeysControls', initSshKeysControls);
+    safeInit('initLoadTimeframeControls', initLoadTimeframeControls);
+    safeInit('initPackagesSearch', initPackagesSearch);
+    safeInit('initAdminPanel', initAdminPanel);
+    safeInit('initThemeToggle', initThemeToggle);
+    safeInit('initSettingsMenu', initSettingsMenu);
+    safeInit('initHostActionControls', initHostActionControls);
+    safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
+    safeInit('initTerminalOnce', initTerminalOnce);
+    safeInit('attachTerminalInputHandlerOnce', attachTerminalInputHandlerOnce);
+    safeInit('initAnsibleSection', initAnsibleSection);
 
     const hostActionsMod = window.phase3HostActions;
     if (hostActionsMod && typeof hostActionsMod.initCommonModalDismissHandlers === 'function') {
