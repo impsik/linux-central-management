@@ -160,7 +160,12 @@ def list_host_packages(
             select(func.count())
             .select_from(HostPackage)
             .join(HostPackageUpdate, join_on)
-            .where(*base_filter, HostPackageUpdate.update_available == True)  # noqa: E712
+            .where(
+                *base_filter,
+                HostPackageUpdate.update_available == True,  # noqa: E712
+                HostPackageUpdate.candidate_version.is_not(None),
+                HostPackageUpdate.candidate_version != HostPackage.version,
+            )
         ).scalar_one()
     else:
         total = db.execute(select(func.count()).select_from(HostPackage).where(*base_filter)).scalar_one()
@@ -172,7 +177,12 @@ def list_host_packages(
         rows = db.execute(
             select(HostPackage)
             .join(HostPackageUpdate, join_on)
-            .where(*base_filter, HostPackageUpdate.update_available == True)  # noqa: E712
+            .where(
+                *base_filter,
+                HostPackageUpdate.update_available == True,  # noqa: E712
+                HostPackageUpdate.candidate_version.is_not(None),
+                HostPackageUpdate.candidate_version != HostPackage.version,
+            )
             .order_by(HostPackage.name.asc())
             .limit(limit)
             .offset(offset)
@@ -204,7 +214,12 @@ def list_host_packages(
                 "name": r.name,
                 "version": r.version,
                 "arch": r.arch,
-                "update_available": bool(updates_map.get(r.name).update_available) if updates_map.get(r.name) else False,
+                "update_available": bool(
+                    updates_map.get(r.name)
+                    and updates_map.get(r.name).update_available
+                    and updates_map.get(r.name).candidate_version
+                    and updates_map.get(r.name).candidate_version != r.version
+                ),
                 "candidate_version": updates_map.get(r.name).candidate_version if updates_map.get(r.name) else None,
             }
             for r in rows
