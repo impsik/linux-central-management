@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import mimetypes
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
@@ -54,6 +55,19 @@ def ui_theme_bootstrap_js():
 @router.get("/assets/fleet-phase3.js")
 def ui_phase3_js():
     return FileResponse(str(TEMPLATES_DIR / "fleet-phase3.js"), media_type="application/javascript")
+
+
+@router.get("/assets/{asset_path:path}")
+def ui_asset_file(asset_path: str):
+    # Serve additional UI assets from templates/ without adding one route per file.
+    requested = (TEMPLATES_DIR / asset_path).resolve()
+    if TEMPLATES_DIR not in requested.parents:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    if not requested.is_file():
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    media_type, _ = mimetypes.guess_type(str(requested))
+    return FileResponse(str(requested), media_type=media_type)
 
 
 @router.get("/terminal", response_class=HTMLResponse)
