@@ -108,3 +108,7 @@ function setAdminStatus(message, state) {
       updateSshKeysLabels();
     }
 
+    // Explicit exports for cross-file calls.
+    window.loadAuthInfo = loadAuthInfo;
+    window.showToast = showToast;
+

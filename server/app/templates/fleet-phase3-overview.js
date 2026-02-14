@@ -12,7 +12,15 @@
 
     try {
       const r = await fetch('/dashboard/summary', { credentials: 'include' });
-      if (!r.ok) throw new Error(`dashboard summary failed (${r.status})`);
+      if (!r.ok) {
+        if (r.status === 403 && typeof w.loadAuthInfo === 'function') {
+          try { await w.loadAuthInfo(); } catch (_) {}
+          if (typeof w.showToast === 'function') {
+            w.showToast('MFA required — complete setup/verification to continue.', 'info', 4000);
+          }
+        }
+        throw new Error(`dashboard summary failed (${r.status})`);
+      }
       const d = await r.json();
 
       const hostsTotal = d?.hosts?.total ?? 0;
