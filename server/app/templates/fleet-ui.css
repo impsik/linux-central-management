@@ -1155,6 +1155,11 @@ body {
   cursor: not-allowed;
 }
 
+.btn.is-loading {
+  position: relative;
+  opacity: 0.8;
+}
+
 .btn-primary {
   background: var(--primary);
   color: #fff;

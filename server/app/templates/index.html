@@ -1145,6 +1145,31 @@
       setTimeout(remove, timeoutMs);
     }
 
+    function setButtonBusy(button, busy, busyText = 'Working…') {
+      if (!button) return;
+      if (busy) {
+        if (!button.dataset.prevText) button.dataset.prevText = button.textContent || '';
+        button.disabled = true;
+        button.classList.add('is-loading');
+        button.setAttribute('aria-busy', 'true');
+        button.textContent = busyText;
+      } else {
+        button.disabled = false;
+        button.classList.remove('is-loading');
+        button.removeAttribute('aria-busy');
+        if (button.dataset.prevText) {
+          button.textContent = button.dataset.prevText;
+          delete button.dataset.prevText;
+        }
+      }
+    }
+
+    function setTableState(tbody, colspan, kind, message) {
+      if (!tbody) return;
+      const color = kind === 'error' ? '#fca5a5' : '#a0aec0';
+      tbody.innerHTML = `<tr><td colspan="${colspan}" style="text-align:center;color:${color};">${escapeHtml(message)}</td></tr>`;
+    }
+
     function updateSshKeysLabels() {
       const titleEl = document.getElementById('sshkeys-list-title');
       if (!titleEl) return;
@@ -5239,6 +5264,7 @@
       const sort = sortSel?.value || 'security_updates';
       const order = orderSel?.value || 'desc';
       updateReportSortIndicators(sort, order);
+      setTableState(tbody, 7, 'loading', 'Loading…');
 
       try {
         const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
@@ -5249,7 +5275,7 @@
         if (showToastOnManual) showToast('Report refreshed', 'success');
 
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;">No pending updates 🎯</td></tr>';
+          setTableState(tbody, 7, 'empty', 'No pending updates 🎯');
           return;
         }
 
@@ -5277,7 +5303,7 @@
         }
       } catch (e) {
         if (showToastOnManual) showToast(`Report refresh failed: ${e.message}`, 'error');
-        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#fca5a5;">Report error: ${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 7, 'error', `Report error: ${e.message}`);
       }
     }
 
@@ -5348,32 +5374,45 @@
       const distBtn = document.getElementById('overview-dist-upgrade');
 
       const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
-      failedRunsRefreshBtn?.addEventListener('click', (e) => {
+      failedRunsRefreshBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
-        loadFailedRuns(24, true);
+        setButtonBusy(failedRunsRefreshBtn, true, 'Refreshing…');
+        try {
+          await loadFailedRuns(24, true);
+        } finally {
+          setButtonBusy(failedRunsRefreshBtn, false);
+        }
       });
 
-      refreshBtn?.addEventListener('click', (e) => {
+      refreshBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
-        // Force live refresh so disk/CPU alerts clear quickly after you fix them.
-        loadFleetOverview(true);
-        loadPendingUpdatesReport();
-        loadHosts();
+        setButtonBusy(refreshBtn, true, 'Refreshing…');
+        try {
+          // Force live refresh so disk/CPU alerts clear quickly after you fix them.
+          await Promise.allSettled([loadFleetOverview(true), loadPendingUpdatesReport(), loadHosts()]);
+        } finally {
+          setButtonBusy(refreshBtn, false);
+        }
       });
 
       invBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
         const agentIds = (lastRenderedAgentIds || []).slice();
         if (!agentIds.length) return showToast('No visible hosts to inventory', 'error');
-        const r = await fetch('/jobs/inventory-now', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ agent_ids: agentIds }),
-        });
-        if (!r.ok) return showToast('Inventory-now failed', 'error');
-        showToast(`Triggered inventory for ${agentIds.length} hosts`, 'success');
-        setTimeout(loadPendingUpdatesReport, 1500);
+        setButtonBusy(invBtn, true, 'Queueing…');
+        try {
+          const r = await fetch('/jobs/inventory-now', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ agent_ids: agentIds }),
+          });
+          if (!r.ok) return showToast('Inventory-now failed', 'error');
+          showToast(`Triggered inventory for ${agentIds.length} hosts`, 'success');
+          setTimeout(loadPendingUpdatesReport, 1500);
+        } finally {
+          setButtonBusy(invBtn, false);
+        }
       });
 
       secBtn?.addEventListener('click', async (e) => {
@@ -5390,40 +5429,51 @@
           reboot_if_needed: true,
           include_kernel: false,
         };
-        const r = await fetch('/patching/campaigns/security-updates', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!r.ok) return showToast('Campaign creation failed', 'error');
-        const d = await r.json();
-        showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
+        setButtonBusy(secBtn, true, 'Scheduling…');
+        try {
+          const r = await fetch('/patching/campaigns/security-updates', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!r.ok) return showToast('Campaign creation failed', 'error');
+          const d = await r.json();
+          showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
+        } finally {
+          setButtonBusy(secBtn, false);
+        }
       });
 
       distBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
         const agentIds = (lastRenderedAgentIds || []).slice();
         if (!agentIds.length) return showToast('No visible hosts selected', 'error');
-        const r = await fetch('/jobs/dist-upgrade', {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ agent_ids: agentIds }),
-        });
-        if (!r.ok) return showToast('dist-upgrade job creation failed', 'error');
-        const d = await r.json();
-        showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
+        setButtonBusy(distBtn, true, 'Queueing…');
+        try {
+          const r = await fetch('/jobs/dist-upgrade', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ agent_ids: agentIds }),
+          });
+          if (!r.ok) return showToast('dist-upgrade job creation failed', 'error');
+          const d = await r.json();
+          showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
+        } finally {
+          setButtonBusy(distBtn, false);
+        }
       });
 
       const reportRefresh = document.getElementById('report-refresh');
-      reportRefresh?.addEventListener('click', (e) => {
+      reportRefresh?.addEventListener('click', async (e) => {
         e.preventDefault();
+        setButtonBusy(reportRefresh, true, 'Refreshing…');
         try {
-          const tbody = document.getElementById('overview-updates-report');
-          if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
-        } catch { }
-        loadPendingUpdatesReport(true);
+          await loadPendingUpdatesReport(true);
+        } finally {
+          setButtonBusy(reportRefresh, false);
+        }
       });
       document.getElementById('report-sort')?.addEventListener('change', loadPendingUpdatesReport);
       document.getElementById('report-order')?.addEventListener('change', loadPendingUpdatesReport);
@@ -5497,13 +5547,13 @@
       const tbody = document.getElementById('cronjobs-table');
       if (!tbody) return;
       try {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>';
+        setTableState(tbody, 6, 'loading', 'Loading…');
         const r = await fetch('/cronjobs', { credentials: 'include' });
         if (!r.ok) throw new Error(`cronjobs failed (${r.status})`);
         const d = await r.json();
         const items = d?.items || [];
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#a0aec0;">No cronjobs yet</td></tr>';
+          setTableState(tbody, 6, 'empty', 'No cronjobs yet');
           return;
         }
         tbody.innerHTML = '';
@@ -5545,7 +5595,7 @@
         });
         if (showToastOnManual) showToast('Cronjobs refreshed', 'success');
       } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#fca5a5;">${escapeHtml(e.message)}</td></tr>`;
+        setTableState(tbody, 6, 'error', e.message || String(e));
         if (showToastOnManual) showToast(e.message, 'error');
       }
     }
@@ -5679,9 +5729,19 @@
         renderCronHostsList();
       });
 
-      document.getElementById('cron-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadCronjobs(true); });
+      const cronRefreshBtn = document.getElementById('cron-refresh');
+      cronRefreshBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        setButtonBusy(cronRefreshBtn, true, 'Refreshing…');
+        try {
+          await loadCronjobs(true);
+        } finally {
+          setButtonBusy(cronRefreshBtn, false);
+        }
+      });
 
-      document.getElementById('cron-create')?.addEventListener('click', async (e) => {
+      const cronCreateBtn = document.getElementById('cron-create');
+      cronCreateBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
         const statusEl = document.getElementById('cron-create-status');
         const name = document.getElementById('cron-name')?.value || '';
@@ -5709,6 +5769,7 @@
 
         try {
           if (statusEl) statusEl.textContent = 'Creating…';
+          setButtonBusy(cronCreateBtn, true, 'Creating…');
           const timezone = (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
           const time_hhmm = document.getElementById('cron-time')?.value || null;
           const weekday = (document.getElementById('cron-weekday')?.value !== undefined && document.getElementById('cron-weekday')?.value !== '') ? Number(document.getElementById('cron-weekday')?.value) : null;
@@ -5726,10 +5787,12 @@
           }
           showToast(`Cronjob scheduled for ${agent_ids.length} hosts`, 'success');
           if (statusEl) statusEl.textContent = '';
-          loadCronjobs();
+          await loadCronjobs();
         } catch (err) {
           showToast(err.message || String(err), 'error');
           if (statusEl) statusEl.textContent = '';
+        } finally {
+          setButtonBusy(cronCreateBtn, false);
         }
       });
     }
