@@ -5182,55 +5182,6 @@
       bindSortableHeader('hosts-th-last', () => setSort('last_seen'));
     }
 
-    function bindSortableHeader(id, handler) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener('click', handler);
-      el.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handler(e);
-        }
-      });
-    }
-
-    function updateReportSortIndicators(sort, order) {
-      const defs = [
-        ['th-host', 'hostname'],
-        ['th-os', 'os_version'],
-        ['th-updates', 'updates'],
-      ];
-      for (const [id, key] of defs) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        const icon = el.querySelector('.sort-indicator');
-        if (key === sort) {
-          el.setAttribute('aria-sort', order === 'asc' ? 'ascending' : 'descending');
-          if (icon) icon.textContent = order === 'asc' ? '↑' : '↓';
-        } else {
-          el.setAttribute('aria-sort', 'none');
-          if (icon) icon.textContent = '↕';
-        }
-      }
-    }
-
-    function updateHostsSortIndicators(sort, order) {
-      const defs = [
-        ['hosts-th-host', 'hostname'],
-        ['hosts-th-os', 'os_version'],
-        ['hosts-th-upd', 'updates'],
-        ['hosts-th-sec', 'security_updates'],
-        ['hosts-th-last', 'last_seen'],
-      ];
-      for (const [id, key] of defs) {
-        const el = document.getElementById(id);
-        if (!el) continue;
-        el.setAttribute('aria-sort', key === sort ? (order === 'asc' ? 'ascending' : 'descending') : 'none');
-        const icon = el.querySelector('.sort-indicator');
-        if (icon) icon.textContent = (key === sort) ? (order === 'asc' ? '↑' : '↓') : '↕';
-      }
-    }
-
     async function loadPendingUpdatesReport(showToastOnManual = false) {
       const tbody = document.getElementById('overview-updates-report');
       if (!tbody) return;
