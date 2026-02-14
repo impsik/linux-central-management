@@ -751,6 +751,21 @@
     return { get: get, set: set, update: update };
   }
 
+  function stopMetricsPollingLifecycle(stateAccess) {
+    if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') return;
+    const metricsTimer = stateAccess.get('metricsUpdateInterval');
+    const topProcessesTimer = stateAccess.get('topProcessesUpdateInterval');
+
+    if (metricsTimer) {
+      try { clearInterval(metricsTimer); } catch (_) { }
+      stateAccess.set('metricsUpdateInterval', null);
+    }
+    if (topProcessesTimer) {
+      try { clearInterval(topProcessesTimer); } catch (_) { }
+      stateAccess.set('topProcessesUpdateInterval', null);
+    }
+  }
+
   w.escapeHtml = w.escapeHtml || escapeHtml;
   w.formatRelativeTime = w.formatRelativeTime || formatRelativeTime;
   w.safeJsonPreview = w.safeJsonPreview || safeJsonPreview;
@@ -783,4 +798,5 @@
   w.updateActiveHostSidebar = updateActiveHostSidebar;
   w.connectTerminalSession = connectTerminalSession;
   w.createUiStateAccess = createUiStateAccess;
+  w.stopMetricsPollingLifecycle = stopMetricsPollingLifecycle;
 })(window);

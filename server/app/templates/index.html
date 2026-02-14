@@ -179,7 +179,6 @@
 
 
 
-
       <!-- Server Info / Overview View -->
       <div class="tab-content-custom active" id="server-info-tab">
         <div class="server-info-content">
@@ -324,7 +323,6 @@
             </div>
 
 
-
             <div class="admin-card" id="failed-runs-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>Failed runs (24h)</span>
@@ -461,7 +459,6 @@
     </div>
 
 
-
     <div class="tab-content-custom" id="cronjobs-tab">
       <div class="admin-content">
         <div class="section-title">Cronjobs</div>
@@ -566,7 +563,6 @@
         </div>
       </div>
     </div>
-
 
     <div class="tab-content-custom" id="sshkeys-tab">
       <div class="admin-content">
@@ -1552,10 +1548,19 @@
 
     let loadGraphChart = null;
     let loadGraphData = [];
-    let metricsUpdateInterval = null;
-    let topProcessesUpdateInterval = null;
-    let topProcessesInFlight = false;
-    let currentMetricsAgentId = null; // Track which agent's metrics we're displaying
+    const metricsLifecycleState = createUiStateAccess('hostMetricsLifecycle', {
+      metricsUpdateInterval: null,
+      topProcessesUpdateInterval: null,
+      topProcessesInFlight: false,
+      currentMetricsAgentId: null,
+    });
+    const stopMetricsPolling = window.stopMetricsPollingLifecycle || function (stateAccess) {
+      if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') return;
+      const metricsTimer = stateAccess.get('metricsUpdateInterval');
+      const topTimer = stateAccess.get('topProcessesUpdateInterval');
+      if (metricsTimer) { clearInterval(metricsTimer); stateAccess.set('metricsUpdateInterval', null); }
+      if (topTimer) { clearInterval(topTimer); stateAccess.set('topProcessesUpdateInterval', null); }
+    };
     let loadTimeframeSeconds = 3600;
     const METRICS_POLL_MS = 60_000; // 1 minute is enough for disk/mem/ips/top-procs/loadavg
     const TOP_PROCS_POLL_MS = 1_000; // top processes can change quickly
@@ -1566,9 +1571,9 @@
       sel.addEventListener('change', async () => {
         const v = parseInt(sel.value, 10);
         if (!isNaN(v)) loadTimeframeSeconds = v;
-        if (currentMetricsAgentId) {
+        if (metricsLifecycleState.get('currentMetricsAgentId')) {
           loadGraphData = [];
-          await loadHistoricalLoadData(currentMetricsAgentId);
+          await loadHistoricalLoadData(metricsLifecycleState.get('currentMetricsAgentId'));
         }
       });
       // Ensure it matches initial value
@@ -1748,11 +1753,11 @@
 
     function clearCurrentHostSelection() {
       currentAgentId = null;
-      currentMetricsAgentId = null;
+      metricsLifecycleState.set('currentMetricsAgentId', null);
 
       // Stop any existing metrics updates
-      if (metricsUpdateInterval) { clearInterval(metricsUpdateInterval); metricsUpdateInterval = null; }
-      if (topProcessesUpdateInterval) { clearInterval(topProcessesUpdateInterval); topProcessesUpdateInterval = null; }
+      stopMetricsPolling(metricsLifecycleState);
+      
 
       // Clear sidebar highlight
       document.querySelectorAll('.host-item').forEach(item => item.classList.remove('active'));
@@ -1791,14 +1796,7 @@
       if (hostActions) hostActions.style.display = 'flex';
 
       // Stop any existing metrics updates
-      if (metricsUpdateInterval) {
-        clearInterval(metricsUpdateInterval);
-        metricsUpdateInterval = null;
-      }
-      if (topProcessesUpdateInterval) {
-        clearInterval(topProcessesUpdateInterval);
-        topProcessesUpdateInterval = null;
-      }
+      stopMetricsPolling(metricsLifecycleState);
 
       // Clear load graph data when switching hosts
       loadGraphData = [];
@@ -1870,53 +1868,51 @@
         refreshPackagesNow(currentAgentId);
       } else {
         // Host overview: start metrics polling
-        currentMetricsAgentId = agentId;
+        metricsLifecycleState.set('currentMetricsAgentId', agentId);
         loadHistoricalLoadData(agentId);
         loadMetrics(agentId);
         loadTopProcesses(agentId, true);
 
-        metricsUpdateInterval = setInterval(() => {
-          if (currentMetricsAgentId === agentId &&
+        metricsLifecycleState.set('metricsUpdateInterval', setInterval(() => {
+          if (metricsLifecycleState.get('currentMetricsAgentId') === agentId &&
             document.getElementById('server-info-tab').classList.contains('active')) {
             loadMetrics(agentId, true);
           } else {
-            clearInterval(metricsUpdateInterval);
-            metricsUpdateInterval = null;
+            stopMetricsPolling(metricsLifecycleState);
           }
-        }, METRICS_POLL_MS);
+        }, METRICS_POLL_MS));
 
-        topProcessesUpdateInterval = setInterval(() => {
-          if (currentMetricsAgentId === agentId &&
+        metricsLifecycleState.set('topProcessesUpdateInterval', setInterval(() => {
+          if (metricsLifecycleState.get('currentMetricsAgentId') === agentId &&
             document.getElementById('server-info-tab').classList.contains('active')) {
             loadTopProcesses(agentId, true);
           } else {
-            clearInterval(topProcessesUpdateInterval);
-            topProcessesUpdateInterval = null;
+            stopMetricsPolling(metricsLifecycleState);
           }
-        }, TOP_PROCS_POLL_MS);
+        }, TOP_PROCS_POLL_MS));
       }
     }
 
     async function loadTopProcesses(agentId, silent = true) {
-      if (currentMetricsAgentId !== agentId) return;
-      if (topProcessesInFlight) return; // avoid queueing jobs if server/agent is slow
-      topProcessesInFlight = true;
+      if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
+      if (metricsLifecycleState.get('topProcessesInFlight')) return; // avoid queueing jobs if server/agent is slow
+      metricsLifecycleState.set('topProcessesInFlight', true);
       try {
         const resp = await fetch(`/hosts/${agentId}/top-processes`);
         if (!resp.ok) throw new Error(resp.statusText);
         const data = await resp.json();
-        if (currentMetricsAgentId !== agentId) return;
+        if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
         updateTopProcessesTable(data.top_processes || []);
       } catch (e) {
         if (!silent) console.error('Error loading top processes:', e);
       } finally {
-        topProcessesInFlight = false;
+        metricsLifecycleState.set('topProcessesInFlight', false);
       }
     }
 
     async function loadMetrics(agentId, silent = false) {
       // Only update if this is still the current agent we're viewing
-      if (currentMetricsAgentId !== agentId) {
+      if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) {
         return; // Ignore updates for other agents
       }
 
@@ -1935,7 +1931,7 @@
         const data = await response.json();
 
         // Double-check we're still viewing this agent before updating UI
-        if (currentMetricsAgentId !== agentId) {
+        if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) {
           return; // User switched to a different agent, ignore this response
         }
 
@@ -1991,7 +1987,7 @@
       } catch (error) {
         console.error('Error loading metrics:', error);
         // Only show error if we're still viewing this agent
-        if (currentMetricsAgentId === agentId && !silent) {
+        if (metricsLifecycleState.get('currentMetricsAgentId') === agentId && !silent) {
           document.getElementById('disk-usage').textContent = 'Error';
           document.getElementById('memory-usage').textContent = 'Error';
           document.getElementById('vcpus').textContent = 'Error';
@@ -2172,14 +2168,7 @@
       if (!currentAgentId) return;
       setHostActionActive('terminal');
       // Stop metrics updates when leaving server info view
-      if (metricsUpdateInterval) {
-        clearInterval(metricsUpdateInterval);
-        metricsUpdateInterval = null;
-      }
-      if (topProcessesUpdateInterval) {
-        clearInterval(topProcessesUpdateInterval);
-        topProcessesUpdateInterval = null;
-      }
+      stopMetricsPolling(metricsLifecycleState);
       connect(currentAgentId);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('terminal-tab').classList.add('active');
@@ -2189,14 +2178,7 @@
       if (!currentAgentId) return;
       setHostActionActive('users');
       // Stop metrics updates when leaving server info view
-      if (metricsUpdateInterval) {
-        clearInterval(metricsUpdateInterval);
-        metricsUpdateInterval = null;
-      }
-      if (topProcessesUpdateInterval) {
-        clearInterval(topProcessesUpdateInterval);
-        topProcessesUpdateInterval = null;
-      }
+      stopMetricsPolling(metricsLifecycleState);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('users-tab').classList.add('active');
       loadUsers(currentAgentId);
@@ -2206,14 +2188,7 @@
       if (!currentAgentId) return;
       setHostActionActive('services');
       // Stop metrics updates when leaving server info view
-      if (metricsUpdateInterval) {
-        clearInterval(metricsUpdateInterval);
-        metricsUpdateInterval = null;
-      }
-      if (topProcessesUpdateInterval) {
-        clearInterval(topProcessesUpdateInterval);
-        topProcessesUpdateInterval = null;
-      }
+      stopMetricsPolling(metricsLifecycleState);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('services-tab').classList.add('active');
       loadServices(currentAgentId);
@@ -2223,14 +2198,7 @@
       if (!currentAgentId) return;
       setHostActionActive('packages');
       // Stop metrics updates when leaving server info view
-      if (metricsUpdateInterval) {
-        clearInterval(metricsUpdateInterval);
-        metricsUpdateInterval = null;
-      }
-      if (topProcessesUpdateInterval) {
-        clearInterval(topProcessesUpdateInterval);
-        topProcessesUpdateInterval = null;
-      }
+      stopMetricsPolling(metricsLifecycleState);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('packages-tab').classList.add('active');
       // Load what's in DB immediately, then trigger an on-demand inventory refresh and reload.
@@ -2244,7 +2212,6 @@
       const hostname = hostObj?.hostname || currentAgentId;
       selectHost(currentAgentId, hostname);
     }
-
 
     async function loadAdminAudit(showToastOnManual = false) {
       const tbody = document.getElementById('admin-audit-table');
@@ -2416,14 +2383,7 @@
 
     function showAdminPage() {
       // Stop metrics updates when leaving server info view
-      if (metricsUpdateInterval) {
-        clearInterval(metricsUpdateInterval);
-        metricsUpdateInterval = null;
-      }
-      if (topProcessesUpdateInterval) {
-        clearInterval(topProcessesUpdateInterval);
-        topProcessesUpdateInterval = null;
-      }
+      stopMetricsPolling(metricsLifecycleState);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('admin-tab').classList.add('active');
       loadAdminUsers();
@@ -4774,7 +4734,6 @@
       loadPendingUpdatesReport();
     }
 
-
     async function loadFailedRuns(hours = 24, showToastOnManual = false) {
       const tbody = document.getElementById('overview-failed-runs');
       if (!tbody) return;
@@ -5111,8 +5070,8 @@
 
       function showHostsTab() {
         // Stop metrics updates when leaving server info view
-        if (metricsUpdateInterval) { clearInterval(metricsUpdateInterval); metricsUpdateInterval = null; }
-        if (topProcessesUpdateInterval) { clearInterval(topProcessesUpdateInterval); topProcessesUpdateInterval = null; }
+        stopMetricsPolling(metricsLifecycleState);
+        
 
         // Clicking Fleet "Hosts" should not keep a per-host selection active
         // in the Hosts management pane.
@@ -5290,7 +5249,6 @@
     }
 
 
-
     // Cronjobs host picker (separate from Hosts tab selection)
     const cronUiState = createUiStateAccess('cronHostPicker', { selectedAgentIds: new Set() });
 
@@ -5411,7 +5369,6 @@
         });
       });
     }
-
 
     // SSH Keys UI
     const sshUiState = createUiStateAccess('sshKeys', {
@@ -5840,8 +5797,8 @@
     // Disk details modal
     document.getElementById('disk-card')?.addEventListener('click', (e) => {
       e.preventDefault();
-      if (!currentMetricsAgentId) return;
-      openDiskModal(currentMetricsAgentId);
+      if (!metricsLifecycleState.get('currentMetricsAgentId')) return;
+      openDiskModal(metricsLifecycleState.get('currentMetricsAgentId'));
     });
     document.getElementById('disk-modal-close')?.addEventListener('click', (e) => { e.preventDefault(); closeDiskModal(); });
     document.getElementById('disk-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'disk-modal') closeDiskModal(); });
