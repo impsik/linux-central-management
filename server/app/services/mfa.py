@@ -45,8 +45,9 @@ def verify_totp(secret_b32: str, code: str) -> bool:
     code = (code or "").strip().replace(" ", "")
     if not code.isdigit() or len(code) not in (6, 7, 8):
         return False
-    # allow small clock skew (±1 step)
-    return bool(pyotp.TOTP(secret_b32).verify(code, valid_window=1))
+    # allow modest clock skew (±2 steps = ~60s) to reduce false negatives on phones
+    # with slightly incorrect time sync.
+    return bool(pyotp.TOTP(secret_b32).verify(code, valid_window=2))
 
 
 def sha256_hex(s: str) -> str:
