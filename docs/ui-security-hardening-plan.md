@@ -34,7 +34,7 @@ Improve production readiness with a staged plan that prioritizes high-impact, lo
 
 ## Phase 3 — Deep refactor
 
-1. Split `server/app/templates/index.html` into modular frontend assets/components.
+1. Split `server/app/templates/index.html` into modular frontend assets/components. 🚧 kickoff started: extracted shared UI state helpers to `/assets/fleet-phase3.js`
 2. Remove inline JS handlers and large `innerHTML` template blocks where feasible.
 3. Move to strict CSP with nonce/hash strategy after JS externalization.
 4. Introduce a stricter SSH trust model (managed known_hosts or SSH CA) for production fleets.

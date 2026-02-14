@@ -19,6 +19,7 @@
   </script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
   <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+  <script src="/assets/fleet-phase3.js"></script>
   <link rel="stylesheet" href="/assets/index-MnFIflNy.css" />
   <link rel="stylesheet" href="/assets/fleet-ui.css" />
 </head>
@@ -1143,31 +1144,6 @@
         setTimeout(() => toast.remove(), 200);
       };
       setTimeout(remove, timeoutMs);
-    }
-
-    function setButtonBusy(button, busy, busyText = 'Working…') {
-      if (!button) return;
-      if (busy) {
-        if (!button.dataset.prevText) button.dataset.prevText = button.textContent || '';
-        button.disabled = true;
-        button.classList.add('is-loading');
-        button.setAttribute('aria-busy', 'true');
-        button.textContent = busyText;
-      } else {
-        button.disabled = false;
-        button.classList.remove('is-loading');
-        button.removeAttribute('aria-busy');
-        if (button.dataset.prevText) {
-          button.textContent = button.dataset.prevText;
-          delete button.dataset.prevText;
-        }
-      }
-    }
-
-    function setTableState(tbody, colspan, kind, message) {
-      if (!tbody) return;
-      const color = kind === 'error' ? '#fca5a5' : '#a0aec0';
-      tbody.innerHTML = `<tr><td colspan="${colspan}" style="text-align:center;color:${color};">${escapeHtml(message)}</td></tr>`;
     }
 
     function updateSshKeysLabels() {

@@ -38,6 +38,11 @@ def ui_custom_css():
     return FileResponse(str(TEMPLATES_DIR / "fleet-ui.css"), media_type="text/css")
 
 
+@router.get("/assets/fleet-phase3.js")
+def ui_phase3_js():
+    return FileResponse(str(TEMPLATES_DIR / "fleet-phase3.js"), media_type="application/javascript")
+
+
 @router.get("/terminal", response_class=HTMLResponse)
 def terminal_popup_page(request: Request, user: AppUser = Depends(require_ui_user)):
     return _read_template("terminal_popup.html")
