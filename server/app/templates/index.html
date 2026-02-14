@@ -2002,6 +2002,10 @@
 
     function updateTopProcessesTable(processes) {
       const tbody = document.getElementById('top-processes-body');
+      if (typeof window.renderTopProcessesTable === 'function') {
+        window.renderTopProcessesTable(tbody, processes, escapeHtml);
+        return;
+      }
       if (!tbody) return;
 
       if (!processes || processes.length === 0) {
@@ -2426,7 +2430,7 @@
       loadAdminAudit();
     }
 
-    function setHostActionActive(action) {
+    const setHostActionActive = window.setHostActionActive || function(action) {
       document.querySelectorAll('.host-action-btn').forEach(btn => btn.classList.remove('active'));
       const map = {
         terminal: 'host-action-terminal',
@@ -2437,82 +2441,28 @@
       const id = map[action];
       const target = id ? document.getElementById(id) : null;
       if (target) target.classList.add('active');
-    }
+    };
 
     function connect(agentId) {
-      currentAgentId = agentId;
-
-      // Update active host in sidebar
-      document.querySelectorAll('.host-item').forEach(item => {
-        item.classList.remove('active');
-        if (item.dataset.agentId === agentId) {
-          item.classList.add('active');
-        }
-      });
-
-      // Close existing connection if any
-      if (ws) {
-        // Don't set ws = null here: the old socket's onclose may fire after we create a new one.
-        // We'll only clear ws inside the *current* socket's onclose handler (guarded by identity).
-        try { ws.close(); } catch { }
+      const run = window.connectTerminalSession;
+      if (typeof run === 'function') {
+        run({
+          agentId,
+          term,
+          getWs: () => ws,
+          setWs: (next) => { ws = next; },
+          setCurrentAgentId: (next) => { currentAgentId = next; }
+        });
+        return;
       }
 
+      currentAgentId = agentId;
+      if (ws) { try { ws.close(); } catch { } }
       term.clear();
       term.write(`Connecting to ${agentId}...\r\n`);
-
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const thisWs = new WebSocket(`${protocol}//${location.host}/ws/terminal/${agentId}`);
-      thisWs.binaryType = "arraybuffer";
-      ws = thisWs;
-
-      thisWs.onopen = () => {
-        // Only write if this is still the active socket
-        if (ws !== thisWs) return;
-        term.write(`\r\nConnected to ${agentId}\r\n`);
-        try { term.focus(); } catch { }
-      };
-
-      thisWs.onmessage = (e) => {
-        if (ws !== thisWs) return;
-        if (e.data instanceof ArrayBuffer) {
-          term.write(new TextDecoder().decode(e.data));
-        } else {
-          term.write(e.data);
-        }
-      };
-
-      thisWs.onerror = (e) => {
-        if (ws !== thisWs) return;
-        term.write(`\r\nWebSocket error occurred\r\n`);
-      };
-
-      thisWs.onclose = (e) => {
-        // Ignore close events from stale sockets
-        if (ws !== thisWs) return;
-
-        // Friendly guidance for permission-denied cases.
-        // Server uses 4403 for policy-based denial.
-        if (e.code === 4403) {
-          term.write(`\r\n[ERROR] Terminal access denied for this host.\r\n`);
-          term.write(`\r\nThis environment allows operator terminal by default, but this host is restricted via label:\r\n`);
-          term.write(`  - terminal_access=admin  (admins only)\r\n`);
-          term.write(`  - terminal_access=none   (disabled)\r\n`);
-          term.write(`\r\nAsk an admin to adjust host labels if you need access.\r\n`);
-          ws = null;
-          return;
-        }
-
-        if (e.code === 1006) {
-          term.write(`\r\n[ERROR] Connection closed abnormally. Possible causes:\r\n`);
-          term.write(`  - Agent terminal server not running on port 18080\r\n`);
-          term.write(`  - Network connectivity issue\r\n`);
-          term.write(`  - Firewall blocking connection\r\n`);
-          term.write(`  - Hostname not resolvable from server\r\n`);
-        } else {
-          term.write(`\r\nConnection closed (code: ${e.code}, reason: ${e.reason || 'unknown'})\r\n`);
-        }
-        ws = null;
-      };
+      ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${agentId}`);
+      ws.binaryType = "arraybuffer";
     }
 
     async function loadHosts() {

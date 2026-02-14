@@ -595,6 +595,114 @@
     if (auditRefresh) auditRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminAudit === 'function') api.loadAdminAudit(true); });
   }
 
+  function renderTopProcessesTable(tbody, processes, escaper) {
+    const esc = (typeof escaper === 'function') ? escaper : (typeof w.escapeHtml === 'function' ? w.escapeHtml : function (s) { return String(s ?? ''); });
+    if (!tbody) return;
+
+    if (!processes || processes.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">No process data</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = processes.slice(0, 10).map(function (p) {
+      const pid = p.pid ?? '';
+      const user = esc(p.user ?? '');
+      const cpu = (p.cpu_percent ?? p.cpu ?? 0);
+      const mem = (p.mem_percent ?? p.mem ?? 0);
+      const cmd = esc(p.command ?? '');
+      return '\n          <tr>\n            <td>' + pid + '</td>\n            <td>' + user + '</td>\n            <td>' + Number(cpu).toFixed(1) + '</td>\n            <td>' + Number(mem).toFixed(1) + '</td>\n            <td>' + cmd + '</td>\n          </tr>\n        ';
+    }).join('');
+  }
+
+  function setHostActionActive(action) {
+    document.querySelectorAll('.host-action-btn').forEach(function (btn) { btn.classList.remove('active'); });
+    const map = {
+      terminal: 'host-action-terminal',
+      users: 'host-action-users',
+      services: 'host-action-services',
+      packages: 'host-action-packages'
+    };
+    const id = map[action];
+    const target = id ? document.getElementById(id) : null;
+    if (target) target.classList.add('active');
+  }
+
+  function updateActiveHostSidebar(agentId) {
+    document.querySelectorAll('.host-item').forEach(function (item) {
+      item.classList.remove('active');
+      if (item.dataset.agentId === agentId) item.classList.add('active');
+    });
+  }
+
+  function connectTerminalSession(opts) {
+    const api = opts || {};
+    const agentId = api.agentId;
+    const term = api.term;
+    const getWs = (typeof api.getWs === 'function') ? api.getWs : function () { return null; };
+    const setWs = (typeof api.setWs === 'function') ? api.setWs : function () { };
+    const setCurrentAgentId = (typeof api.setCurrentAgentId === 'function') ? api.setCurrentAgentId : function () { };
+
+    if (!agentId || !term) return;
+
+    setCurrentAgentId(agentId);
+    updateActiveHostSidebar(agentId);
+
+    const existing = getWs();
+    if (existing) {
+      try { existing.close(); } catch (_) { }
+    }
+
+    term.clear();
+    term.write('Connecting to ' + agentId + '...\r\n');
+
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const thisWs = new WebSocket(protocol + '//' + location.host + '/ws/terminal/' + agentId);
+    thisWs.binaryType = 'arraybuffer';
+    setWs(thisWs);
+
+    thisWs.onopen = function () {
+      if (getWs() !== thisWs) return;
+      term.write('\r\nConnected to ' + agentId + '\r\n');
+      try { term.focus(); } catch (_) { }
+    };
+
+    thisWs.onmessage = function (e) {
+      if (getWs() !== thisWs) return;
+      if (e.data instanceof ArrayBuffer) term.write(new TextDecoder().decode(e.data));
+      else term.write(e.data);
+    };
+
+    thisWs.onerror = function () {
+      if (getWs() !== thisWs) return;
+      term.write('\r\nWebSocket error occurred\r\n');
+    };
+
+    thisWs.onclose = function (e) {
+      if (getWs() !== thisWs) return;
+
+      if (e.code === 4403) {
+        term.write('\r\n[ERROR] Terminal access denied for this host.\r\n');
+        term.write('\r\nThis environment allows operator terminal by default, but this host is restricted via label:\r\n');
+        term.write('  - terminal_access=admin  (admins only)\r\n');
+        term.write('  - terminal_access=none   (disabled)\r\n');
+        term.write('\r\nAsk an admin to adjust host labels if you need access.\r\n');
+        setWs(null);
+        return;
+      }
+
+      if (e.code === 1006) {
+        term.write('\r\n[ERROR] Connection closed abnormally. Possible causes:\r\n');
+        term.write('  - Agent terminal server not running on port 18080\r\n');
+        term.write('  - Network connectivity issue\r\n');
+        term.write('  - Firewall blocking connection\r\n');
+        term.write('  - Hostname not resolvable from server\r\n');
+      } else {
+        term.write('\r\nConnection closed (code: ' + e.code + ', reason: ' + (e.reason || 'unknown') + ')\r\n');
+      }
+      setWs(null);
+    };
+  }
+
   function createUiStateAccess(namespace, initialState, adapter) {
     const scope = namespace || 'default';
     const defaults = (initialState && typeof initialState === 'object') ? initialState : {};
@@ -670,5 +778,9 @@
   w.handleSshRequestDeploy = handleSshRequestDeploy;
   w.setPanelVisibleById = setPanelVisibleById;
   w.renderSshHostsListView = renderSshHostsListView;
+  w.renderTopProcessesTable = renderTopProcessesTable;
+  w.setHostActionActive = setHostActionActive;
+  w.updateActiveHostSidebar = updateActiveHostSidebar;
+  w.connectTerminalSession = connectTerminalSession;
   w.createUiStateAccess = createUiStateAccess;
 })(window);
