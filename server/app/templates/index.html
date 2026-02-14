@@ -1646,6 +1646,11 @@
       if (mod && typeof mod.loadHosts === 'function') {
         return mod.loadHosts(getHostListCtx());
       }
+
+      // Fallback path so UI doesn't stay stuck on "Loading hosts..." when module fails to load.
+      const hostsEl = document.getElementById('hosts');
+      if (hostsEl) hostsEl.innerHTML = '<div class="error">Host list module failed to load. Please hard refresh.</div>';
+      console.error('[loadHosts] phase3HostList module missing');
     }
 
     function initHostFilters() {
