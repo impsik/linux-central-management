@@ -300,6 +300,64 @@
     }
   }
 
+  function setupSshHostPickerControls(opts) {
+    const api = opts || {};
+    const setPanelVisible = api.setPanelVisible;
+    const renderList = api.renderList;
+    const selectAll = api.selectAll;
+    const clearSelection = api.clearSelection;
+
+    const openBtn = document.getElementById('sshkey-hosts-open');
+    if (openBtn) {
+      openBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof setPanelVisible === 'function') setPanelVisible(true);
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+
+    const closeBtn = document.getElementById('sshkey-hosts-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof setPanelVisible === 'function') setPanelVisible(false);
+      });
+    }
+
+    const searchInput = document.getElementById('sshkey-hosts-search');
+    if (searchInput && typeof renderList === 'function') {
+      searchInput.addEventListener('input', function () { renderList(); });
+    }
+
+    const clearBtn = document.getElementById('sshkey-hosts-search-clear');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        const el = document.getElementById('sshkey-hosts-search');
+        if (el) el.value = '';
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+
+    const selectAllBtn = document.getElementById('sshkey-hosts-select-all');
+    if (selectAllBtn) {
+      selectAllBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof selectAll === 'function') selectAll();
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+
+    const selectNoneBtn = document.getElementById('sshkey-hosts-select-none');
+    if (selectNoneBtn) {
+      selectNoneBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (typeof clearSelection === 'function') clearSelection();
+        if (typeof renderList === 'function') renderList();
+      });
+    }
+  }
+
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;
@@ -312,4 +370,5 @@
   w.setupCronScheduleUi = setupCronScheduleUi;
   w.setupCronHostPickerControls = setupCronHostPickerControls;
   w.handleCronCreate = handleCronCreate;
+  w.setupSshHostPickerControls = setupSshHostPickerControls;
 })(window);

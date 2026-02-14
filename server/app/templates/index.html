@@ -5952,12 +5952,16 @@
         }
       });
 
-      document.getElementById('sshkey-hosts-open')?.addEventListener('click', (e) => { e.preventDefault(); setSshHostsPanelVisible(true); renderSshHostsList(); });
-      document.getElementById('sshkey-hosts-close')?.addEventListener('click', (e) => { e.preventDefault(); setSshHostsPanelVisible(false); });
-      document.getElementById('sshkey-hosts-search')?.addEventListener('input', () => renderSshHostsList());
-      document.getElementById('sshkey-hosts-search-clear')?.addEventListener('click', (e) => { e.preventDefault(); const el=document.getElementById('sshkey-hosts-search'); if (el) el.value=''; renderSshHostsList(); });
-      document.getElementById('sshkey-hosts-select-all')?.addEventListener('click', (e) => { e.preventDefault(); (allHosts||[]).forEach(h=>{ if(h.agent_id) sshSelectedAgentIds.add(h.agent_id); }); renderSshHostsList(); });
-      document.getElementById('sshkey-hosts-select-none')?.addEventListener('click', (e) => { e.preventDefault(); sshSelectedAgentIds = new Set(); renderSshHostsList(); });
+      setupSshHostPickerControls({
+        setPanelVisible: setSshHostsPanelVisible,
+        renderList: renderSshHostsList,
+        selectAll: () => {
+          (allHosts || []).forEach(h => { if (h.agent_id) sshSelectedAgentIds.add(h.agent_id); });
+        },
+        clearSelection: () => {
+          sshSelectedAgentIds = new Set();
+        },
+      });
 
       document.getElementById('admin-users-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminUsers(true); });
       document.getElementById('admin-audit-refresh')?.addEventListener('click', (e) => { e.preventDefault(); loadAdminAudit(true); });
