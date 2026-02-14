@@ -2028,7 +2028,9 @@
         updateHostsSortIndicators(sortSel.value, orderSel.value);
         loadHostsTable();
       }
-      updateHostsSortIndicators(sort, order);
+      const hostsSortSel = document.getElementById('hosts-sort');
+      const hostsOrderSel = document.getElementById('hosts-order');
+      updateHostsSortIndicators(hostsSortSel?.value || 'hostname', hostsOrderSel?.value || 'asc');
       bindSortableHeader('hosts-th-host', () => setSort('hostname'));
       bindSortableHeader('hosts-th-os', () => setSort('os_version'));
       bindSortableHeader('hosts-th-upd', () => setSort('updates'));
