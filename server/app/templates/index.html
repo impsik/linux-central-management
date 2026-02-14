@@ -28,6 +28,7 @@
   <script src="/assets/fleet-phase3-host-list.js"></script>
   <script src="/assets/fleet-phase3-ansible.js"></script>
   <script src="/assets/fleet-phase3-host-workflows.js"></script>
+  <script src="/assets/fleet-phase3-ssh-ui.js"></script>
   <script src="/assets/fleet-phase3-metrics.js"></script>
   <script src="/assets/fleet-phase3-overview.js"></script>
   <link rel="stylesheet" href="/assets/index-MnFIflNy.css" />
@@ -3228,51 +3229,30 @@
       });
     }
 
-    function initSshKeysControls() {
-      setupSshRefreshHandlers({
+    function getSshUiCtx() {
+      return {
         loadSshKeys,
         maybeLoadSshKeyAdminQueue,
         loadAdminSshKeys,
         loadAdminUsers,
         loadAdminAudit,
-      });
-      document.getElementById('sshkey-approval-modal-close')?.addEventListener('click', (e) => { e.preventDefault(); closeSshKeyDeployApprovalModal(); });
-      document.getElementById('sshkey-approval-modal')?.addEventListener('click', (e) => { if (e.target && e.target.id === 'sshkey-approval-modal') closeSshKeyDeployApprovalModal(); });
-
-      document.getElementById('sshkey-add')?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        await handleSshKeyAdd({
-          statusEl: document.getElementById('sshkey-add-status'),
-          loadSshKeys,
-        });
-      });
-
-      setupSshHostPickerControls({
-        setPanelVisible: setSshHostsPanelVisible,
-        renderList: renderSshHostsList,
-        selectAll: () => {
-          const selectedAgentIds = getSshSelectedAgentIds();
-          (allHosts || []).forEach(h => { if (h.agent_id) selectedAgentIds.add(h.agent_id); });
-        },
-        clearSelection: () => {
-          setSshSelectedAgentIds(new Set());
-        },
-      });
-
-      document.getElementById('sshkey-request-deploy')?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        await handleSshRequestDeploy({
-          statusEl: document.getElementById('sshkey-request-status'),
-          selectedKeyId: getSshSelectedKeyId(),
-          getSelectedAgentIds: () => Array.from(getSshSelectedAgentIds() || []),
-          setPanelVisible: setSshHostsPanelVisible,
-          renderList: renderSshHostsList,
-          loadSshKeyRequests,
-          maybeLoadSshKeyAdminQueue,
-          loadAdminSshKeys,
-        });
-      });
+        setSshHostsPanelVisible,
+        renderSshHostsList,
+        getSshSelectedAgentIds,
+        setSshSelectedAgentIds,
+        getSshSelectedKeyId,
+        loadSshKeyRequests,
+        getAllHosts: () => allHosts,
+      };
     }
+
+    function initSshKeysControls() {
+      const mod = window.phase3SshUi;
+      if (mod && typeof mod.initSshKeysControls === 'function') {
+        return mod.initSshKeysControls(getSshUiCtx());
+      }
+    }
+
 // Load hosts on page load
     initHostFilters();
     initFleetOverviewControls();
