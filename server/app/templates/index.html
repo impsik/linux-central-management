@@ -5342,7 +5342,15 @@
 
 
     // Cronjobs host picker (separate from Hosts tab selection)
-    let cronSelectedAgentIds = new Set();
+    const cronUiState = createUiStateAccess('cronHostPicker', { selectedAgentIds: new Set() });
+
+    function getCronSelectedAgentIds() {
+      return cronUiState.get('selectedAgentIds', new Set());
+    }
+
+    function setCronSelectedAgentIds(next) {
+      return cronUiState.set('selectedAgentIds', (next instanceof Set) ? next : new Set());
+    }
 
     function setCronHostsPanelVisible(visible) {
       const panel = document.getElementById('cron-hosts-panel');
@@ -5355,13 +5363,14 @@
       const countEl = document.getElementById('cron-hosts-count');
       if (!listEl) return;
 
+      const selectedAgentIds = getCronSelectedAgentIds();
       const q = (document.getElementById('cron-hosts-search')?.value || '').trim().toLowerCase();
       const hosts = (allHosts || []).slice();
 
       listEl.innerHTML = '';
       if (!hosts.length) {
         listEl.innerHTML = '<div class="empty-state" style="padding:0.75rem;">No hosts loaded yet.</div>';
-        if (countEl) countEl.textContent = String(cronSelectedAgentIds.size);
+        if (countEl) countEl.textContent = String(selectedAgentIds.size);
         return;
       }
 
@@ -5400,11 +5409,11 @@
 
         const cb = document.createElement('input');
         cb.type = 'checkbox';
-        cb.checked = cronSelectedAgentIds.has(aid);
+        cb.checked = selectedAgentIds.has(aid);
         cb.addEventListener('change', () => {
-          if (cb.checked) cronSelectedAgentIds.add(aid);
-          else cronSelectedAgentIds.delete(aid);
-          if (countEl) countEl.textContent = String(cronSelectedAgentIds.size);
+          if (cb.checked) selectedAgentIds.add(aid);
+          else selectedAgentIds.delete(aid);
+          if (countEl) countEl.textContent = String(selectedAgentIds.size);
         });
 
         row.appendChild(left);
@@ -5415,7 +5424,7 @@
         listEl.appendChild(row);
       }
 
-      if (countEl) countEl.textContent = String(cronSelectedAgentIds.size);
+      if (countEl) countEl.textContent = String(selectedAgentIds.size);
     }
     function initCronjobsControls() {
 
@@ -5425,10 +5434,11 @@
         setPanelVisible: setCronHostsPanelVisible,
         renderList: renderCronHostsList,
         selectAll: () => {
-          (allHosts || []).forEach(h => { if (h.agent_id) cronSelectedAgentIds.add(h.agent_id); });
+          const selectedAgentIds = getCronSelectedAgentIds();
+          (allHosts || []).forEach(h => { if (h.agent_id) selectedAgentIds.add(h.agent_id); });
         },
         clearSelection: () => {
-          cronSelectedAgentIds = new Set();
+          setCronSelectedAgentIds(new Set());
         },
       });
 
@@ -5443,7 +5453,7 @@
         await handleCronCreate({
           createBtn: cronCreateBtn,
           statusEl: document.getElementById('cron-create-status'),
-          getSelectedAgentIds: () => Array.from(cronSelectedAgentIds || []),
+          getSelectedAgentIds: () => Array.from(getCronSelectedAgentIds() || []),
           setPanelVisible: setCronHostsPanelVisible,
           renderList: renderCronHostsList,
           loadCronjobs: loadCronjobs,

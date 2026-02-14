@@ -595,6 +595,54 @@
     if (auditRefresh) auditRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminAudit === 'function') api.loadAdminAudit(true); });
   }
 
+  function createUiStateAccess(namespace, initialState, adapter) {
+    const scope = namespace || 'default';
+    const defaults = (initialState && typeof initialState === 'object') ? initialState : {};
+    const io = (adapter && typeof adapter === 'object') ? adapter : {};
+    const rootKey = '__fleetPhase3UiState';
+
+    function ensureRoot() {
+      if (typeof io.readRoot === 'function' && typeof io.writeRoot === 'function') {
+        const existing = io.readRoot();
+        if (existing && typeof existing === 'object') return existing;
+        const created = {};
+        io.writeRoot(created);
+        return created;
+      }
+      if (!w[rootKey] || typeof w[rootKey] !== 'object') w[rootKey] = {};
+      return w[rootKey];
+    }
+
+    function ensureScope() {
+      const root = ensureRoot();
+      if (!root[scope] || typeof root[scope] !== 'object') {
+        root[scope] = Object.assign({}, defaults);
+      }
+      return root[scope];
+    }
+
+    function get(key, fallback) {
+      const scoped = ensureScope();
+      if (Object.prototype.hasOwnProperty.call(scoped, key)) return scoped[key];
+      if (Object.prototype.hasOwnProperty.call(defaults, key)) return defaults[key];
+      return fallback;
+    }
+
+    function set(key, value) {
+      const scoped = ensureScope();
+      scoped[key] = value;
+      return value;
+    }
+
+    function update(key, mapper) {
+      const current = get(key);
+      if (typeof mapper !== 'function') return current;
+      return set(key, mapper(current));
+    }
+
+    return { get: get, set: set, update: update };
+  }
+
   w.escapeHtml = w.escapeHtml || escapeHtml;
   w.formatRelativeTime = w.formatRelativeTime || formatRelativeTime;
   w.safeJsonPreview = w.safeJsonPreview || safeJsonPreview;
@@ -622,4 +670,5 @@
   w.handleSshRequestDeploy = handleSshRequestDeploy;
   w.setPanelVisibleById = setPanelVisibleById;
   w.renderSshHostsListView = renderSshHostsListView;
+  w.createUiStateAccess = createUiStateAccess;
 })(window);
