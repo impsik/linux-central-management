@@ -27,7 +27,7 @@
 <body>
   <div class="header">
     <div class="header-title">
-      <h1 id="app-title" onclick="showServerInfo()">Fleet Management</h1>
+      <h1 id="app-title">Fleet Management</h1>
     </div>
     <div class="header-actions">
       <div class="header-user">
@@ -160,14 +160,10 @@
 
     <div class="main-content">
       <div class="host-actions" id="host-actions" style="display: none;">
-        <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button"
-          onclick="showTerminal()">Terminal</button>
-        <button class="btn btn-primary host-action-btn" id="host-action-users" type="button"
-          onclick="showUsers()">Users</button>
-        <button class="btn btn-primary host-action-btn" id="host-action-services" type="button"
-          onclick="showServices()">Services</button>
-        <button class="btn btn-primary host-action-btn" id="host-action-packages" type="button"
-          onclick="showPackages()">Packages</button>
+        <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button">Terminal</button>
+        <button class="btn btn-primary host-action-btn" id="host-action-users" type="button">Users</button>
+        <button class="btn btn-primary host-action-btn" id="host-action-services" type="button">Services</button>
+        <button class="btn btn-primary host-action-btn" id="host-action-packages" type="button">Packages</button>
       </div>
 
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
@@ -5770,6 +5766,29 @@
       });
     }
 
+    function initHostActionControls() {
+      document.getElementById('app-title')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        showServerInfo();
+      });
+      document.getElementById('host-action-terminal')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        showTerminal();
+      });
+      document.getElementById('host-action-users')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        showUsers();
+      });
+      document.getElementById('host-action-services')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        showServices();
+      });
+      document.getElementById('host-action-packages')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        showPackages();
+      });
+    }
+
     function initSshKeysControls() {
       setupSshRefreshHandlers({
         loadSshKeys,
@@ -5826,6 +5845,7 @@
     initAdminPanel();
     initThemeToggle();
     initSettingsMenu();
+    initHostActionControls();
     initAuditDetailModalControls();
     initTerminalOnce();
     attachTerminalInputHandlerOnce();
