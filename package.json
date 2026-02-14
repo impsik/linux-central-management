@@ -1,0 +1,11 @@
+{
+  "name": "fleet-ubuntu-mvp-full",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:frontend": "vitest run server/tests/frontend"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}

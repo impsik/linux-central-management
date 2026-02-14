@@ -26,6 +26,9 @@ agent/fleet-agent
 *.log
 ansible_logs/
 
+# Node/frontend
+node_modules/
+
 # OS/editor
 .DS_Store
 .vscode/

@@ -1,14 +1,19 @@
-# Frontend testing notes (Phase 3 host filters cleanup)
+# Frontend testing notes
 
-- There is no dedicated browser/frontend unit-test harness (e.g. Vitest/Jest + jsdom) in this repo right now.
-- To keep cleanup safe, we added a lightweight pytest smoke check at:
+## Current coverage
+
+- **Python smoke checks** (pytest):
   - `server/tests/test_phase3_host_filters_frontend_smoke.py`
-- Scope of the smoke check:
-  - Verifies split scripts are wired in `index.html`
-  - Verifies host-filter orchestrator references both new modules
-  - Verifies key CVE/upgrade status strings remain present after extraction
+  - Verifies split scripts are wired in `index.html`, orchestrator/module references exist, and key CVE/upgrade copy remains present.
+
+- **Frontend unit harness** (Vitest):
+  - `npm run test:frontend`
+  - Tests under `server/tests/frontend/`
+  - Current suites cover:
+    - shared Phase 3 state helpers (`createUiStateAccess`, `stopMetricsPollingLifecycle`)
+    - host-filter orchestrator module composition/contract
 
 ## Remaining gap
 
-- No DOM-behavioral assertions yet (click/input event simulation in-browser).
-- Recommended follow-up: add a small frontend harness (Vitest + jsdom) to assert event wiring and state transitions directly.
+- Still missing rich DOM-behavior assertions (real click/input flows and rendering behavior under jsdom/browser-like fixtures) for larger modules such as packages, host filters, and overview orchestration.
+- Recommended next step: add targeted module-level DOM fixtures for these workflows and run them in CI alongside pytest.
