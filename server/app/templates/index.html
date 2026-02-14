@@ -1554,6 +1554,9 @@
       topProcessesInFlight: false,
       currentMetricsAgentId: null,
     });
+    if (typeof window.initMetricsLifecycleState === 'function') {
+      window.initMetricsLifecycleState(metricsLifecycleState);
+    }
     const stopMetricsPolling = window.stopMetricsPollingLifecycle || function (stateAccess) {
       if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') return;
       const metricsTimer = stateAccess.get('metricsUpdateInterval');

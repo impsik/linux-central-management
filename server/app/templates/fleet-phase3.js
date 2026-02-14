@@ -766,6 +766,30 @@
     }
   }
 
+  function initMetricsLifecycleState(stateAccess) {
+    if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') {
+      return {
+        metricsUpdateInterval: null,
+        topProcessesUpdateInterval: null,
+        topProcessesInFlight: false,
+        currentMetricsAgentId: null
+      };
+    }
+
+    const normalized = {
+      metricsUpdateInterval: stateAccess.get('metricsUpdateInterval', null) || null,
+      topProcessesUpdateInterval: stateAccess.get('topProcessesUpdateInterval', null) || null,
+      topProcessesInFlight: stateAccess.get('topProcessesInFlight', false) === true,
+      currentMetricsAgentId: stateAccess.get('currentMetricsAgentId', null) || null
+    };
+
+    Object.keys(normalized).forEach(function (key) {
+      stateAccess.set(key, normalized[key]);
+    });
+
+    return normalized;
+  }
+
   function initHostFilterSelectionState(stateAccess) {
     if (!stateAccess || typeof stateAccess.get !== 'function' || typeof stateAccess.set !== 'function') {
       return {
@@ -863,6 +887,7 @@
   w.connectTerminalSession = connectTerminalSession;
   w.createUiStateAccess = createUiStateAccess;
   w.stopMetricsPollingLifecycle = stopMetricsPollingLifecycle;
+  w.initMetricsLifecycleState = initMetricsLifecycleState;
   w.initHostFilterSelectionState = initHostFilterSelectionState;
   w.initCronHostPickerState = initCronHostPickerState;
   w.initSshKeysUiState = initSshKeysUiState;
