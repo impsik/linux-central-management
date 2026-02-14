@@ -72,6 +72,24 @@
     return d.toLocaleTimeString([], opts);
   }
 
+  async function pollJob(jobId, statusEl, maxMs) {
+    const timeoutMs = Number.isFinite(maxMs) ? maxMs : 120000;
+    const started = Date.now();
+    let interval = 600;
+    while (Date.now() - started < timeoutMs) {
+      const resp = await fetch('/jobs/' + encodeURIComponent(jobId));
+      if (!resp.ok) throw new Error(resp.statusText);
+      const data = await resp.json();
+      const done = (data && data.done === true) || (Array.isArray(data && data.runs) && data.runs.length > 0 && data.runs.every(function (r) {
+        return r.status === 'success' || r.status === 'failed';
+      }));
+      if (done) return data;
+      await new Promise(function (r) { setTimeout(r, interval); });
+      if (interval < 1500) interval += 150;
+    }
+    throw new Error('Timed out waiting for job completion');
+  }
+
   function setButtonBusy(button, busy, busyText) {
     if (!button) return;
     const nextText = busyText || 'Working…';
@@ -583,6 +601,7 @@
   w.normalize = w.normalize || normalize;
   w.matchesGlob = w.matchesGlob || matchesGlob;
   w.hostLabel = w.hostLabel || hostLabel;
+  w.pollJob = w.pollJob || pollJob;
   w.getLoadHistoryLimitForRange = w.getLoadHistoryLimitForRange || getLoadHistoryLimitForRange;
   w.formatTimeLabel = w.formatTimeLabel || formatTimeLabel;
   w.setButtonBusy = setButtonBusy;

@@ -1607,25 +1607,6 @@
       }
     }
 
-    // Shared job polling helper (used by multiple UI sections)
-    async function pollJob(jobId, statusEl, maxMs = 120000) {
-      const started = Date.now();
-      let interval = 600;
-      while (Date.now() - started < maxMs) {
-        const resp = await fetch(`/jobs/${encodeURIComponent(jobId)}`);
-        if (!resp.ok) throw new Error(resp.statusText);
-        const data = await resp.json();
-        // Backwards-compatible completion detection:
-        // - Prefer server-provided data.done
-        // - Fallback: consider done if all runs are success/failed
-        const done = (data && data.done === true) || (Array.isArray(data?.runs) && data.runs.length > 0 && data.runs.every(r => r.status === 'success' || r.status === 'failed'));
-        if (done) return data;
-        await new Promise(r => setTimeout(r, interval));
-        if (interval < 1500) interval += 150;
-      }
-      throw new Error('Timed out waiting for job completion');
-    }
-
     function rebuildLabelFilterOptions(hosts) {
       const envSel = document.getElementById('label-env');
       const roleSel = document.getElementById('label-role');
