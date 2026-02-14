@@ -1404,6 +1404,24 @@ body {
   background: var(--panel-2);
 }
 
+.process-table th.sortable-col {
+  cursor: pointer;
+  user-select: none;
+}
+
+.process-table th.sortable-col:hover,
+.process-table th.sortable-col:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.sort-indicator {
+  display: inline-block;
+  margin-left: 0.25rem;
+  color: var(--muted-2);
+  font-size: 0.8rem;
+}
+
 .process-table td:last-child {
   white-space: normal;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;

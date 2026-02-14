@@ -49,6 +49,11 @@ services:
       AGENT_SHARED_TOKEN: ${AGENT_SHARED_TOKEN:-}
       # High-risk feature: only enable if agent has FLEET_TERMINAL_TOKEN set too
       AGENT_TERMINAL_TOKEN: ${AGENT_TERMINAL_TOKEN:-}
+      # For production behind HTTPS, set AGENT_TERMINAL_SCHEME=wss
+      AGENT_TERMINAL_SCHEME: ${AGENT_TERMINAL_SCHEME:-ws}
+
+      # Optional CSP baseline (recommended once validated in your environment)
+      CONTENT_SECURITY_POLICY: ${CONTENT_SECURITY_POLICY:-}
 
       # Background metrics refresh
       METRICS_BACKGROUND_REFRESH_SECONDS: ${METRICS_BACKGROUND_REFRESH_SECONDS:-60}

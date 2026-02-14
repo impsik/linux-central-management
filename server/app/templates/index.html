@@ -376,17 +376,14 @@
                   <table class="process-table" style="min-width:900px;">
                     <thead>
                       <tr>
-                        <th id="th-host" style="cursor:pointer;"
-                          onclick="try{showToast('Sorting by host…','success')}catch(e){}; window.__setReportSort && window.__setReportSort('hostname')">
-                          Host</th>
-                        <th id="th-os" style="cursor:pointer;"
-                          onclick="try{showToast('Sorting by OS…','success')}catch(e){}; window.__setReportSort && window.__setReportSort('os_version')">
-                          OS</th>
+                        <th id="th-host" class="sortable-col" title="Sort by host" aria-sort="none" tabindex="0" role="button">
+                          Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                        <th id="th-os" class="sortable-col" title="Sort by OS" aria-sort="none" tabindex="0" role="button">
+                          OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
                         <th>Kernel</th>
                         <th>Security</th>
-                        <th id="th-updates" style="cursor:pointer;"
-                          onclick="try{showToast('Sorting by updates…','success')}catch(e){}; window.__setReportSort && window.__setReportSort('updates')">
-                          All updates</th>
+                        <th id="th-updates" class="sortable-col" title="Sort by all updates" aria-sort="none" tabindex="0" role="button">
+                          All updates <span class="sort-indicator" aria-hidden="true">↕</span></th>
                         <th>Online</th>
                         <th>Last seen</th>
                       </tr>
@@ -442,14 +439,14 @@
             <thead>
               <tr>
                 <th style="width:36px;"><input type="checkbox" id="hosts-select-all" /></th>
-                <th style="cursor:pointer;" id="hosts-th-host">Host</th>
-                <th style="cursor:pointer;" id="hosts-th-os">OS</th>
+                <th class="sortable-col" id="hosts-th-host" title="Sort by host" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col" id="hosts-th-os" title="Sort by OS" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th>Kernel</th>
-                <th style="text-align:right;cursor:pointer;" id="hosts-th-sec">Security</th>
-                <th style="text-align:right;cursor:pointer;" id="hosts-th-upd">All updates</th>
+                <th class="sortable-col" style="text-align:right;" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col" style="text-align:right;" id="hosts-th-upd" title="Sort by all updates" tabindex="0" role="button">All updates <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th>Reboot</th>
                 <th>Online</th>
-                <th style="cursor:pointer;" id="hosts-th-last">Last seen</th>
+                <th class="sortable-col" id="hosts-th-last" title="Sort by last seen" tabindex="0" role="button">Last seen <span class="sort-indicator" aria-hidden="true">↕</span></th>
               </tr>
             </thead>
             <tbody id="hosts-table-body">
@@ -5173,13 +5170,64 @@
         const curOrd = orderSel.value;
         if (cur === key) orderSel.value = (curOrd === 'asc') ? 'desc' : 'asc';
         else { sortSel.value = key; orderSel.value = 'asc'; }
+        updateHostsSortIndicators(sortSel.value, orderSel.value);
         loadHostsTable();
       }
-      document.getElementById('hosts-th-host')?.addEventListener('click', () => setSort('hostname'));
-      document.getElementById('hosts-th-os')?.addEventListener('click', () => setSort('os_version'));
-      document.getElementById('hosts-th-upd')?.addEventListener('click', () => setSort('updates'));
-      document.getElementById('hosts-th-sec')?.addEventListener('click', () => setSort('security_updates'));
-      document.getElementById('hosts-th-last')?.addEventListener('click', () => setSort('last_seen'));
+      updateHostsSortIndicators(sort, order);
+      bindSortableHeader('hosts-th-host', () => setSort('hostname'));
+      bindSortableHeader('hosts-th-os', () => setSort('os_version'));
+      bindSortableHeader('hosts-th-upd', () => setSort('updates'));
+      bindSortableHeader('hosts-th-sec', () => setSort('security_updates'));
+      bindSortableHeader('hosts-th-last', () => setSort('last_seen'));
+    }
+
+    function bindSortableHeader(id, handler) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener('click', handler);
+      el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handler(e);
+        }
+      });
+    }
+
+    function updateReportSortIndicators(sort, order) {
+      const defs = [
+        ['th-host', 'hostname'],
+        ['th-os', 'os_version'],
+        ['th-updates', 'updates'],
+      ];
+      for (const [id, key] of defs) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const icon = el.querySelector('.sort-indicator');
+        if (key === sort) {
+          el.setAttribute('aria-sort', order === 'asc' ? 'ascending' : 'descending');
+          if (icon) icon.textContent = order === 'asc' ? '↑' : '↓';
+        } else {
+          el.setAttribute('aria-sort', 'none');
+          if (icon) icon.textContent = '↕';
+        }
+      }
+    }
+
+    function updateHostsSortIndicators(sort, order) {
+      const defs = [
+        ['hosts-th-host', 'hostname'],
+        ['hosts-th-os', 'os_version'],
+        ['hosts-th-upd', 'updates'],
+        ['hosts-th-sec', 'security_updates'],
+        ['hosts-th-last', 'last_seen'],
+      ];
+      for (const [id, key] of defs) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        el.setAttribute('aria-sort', key === sort ? (order === 'asc' ? 'ascending' : 'descending') : 'none');
+        const icon = el.querySelector('.sort-indicator');
+        if (icon) icon.textContent = (key === sort) ? (order === 'asc' ? '↑' : '↓') : '↕';
+      }
     }
 
     async function loadPendingUpdatesReport(showToastOnManual = false) {
@@ -5190,6 +5238,7 @@
       const orderSel = document.getElementById('report-order');
       const sort = sortSel?.value || 'security_updates';
       const order = orderSel?.value || 'desc';
+      updateReportSortIndicators(sort, order);
 
       try {
         const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
@@ -5395,13 +5444,13 @@
           sortSel.value = sortKey;
           orderSel.value = 'desc';
         }
+        updateReportSortIndicators(sortSel.value, orderSel.value);
         loadPendingUpdatesReport(true);
       }
 
-      // Also attach listeners normally (kept for redundancy)
-      document.getElementById('th-host')?.addEventListener('click', () => window.__setReportSort('hostname'));
-      document.getElementById('th-os')?.addEventListener('click', () => window.__setReportSort('os_version'));
-      document.getElementById('th-updates')?.addEventListener('click', () => window.__setReportSort('updates'));
+      bindSortableHeader('th-host', () => window.__setReportSort('hostname'));
+      bindSortableHeader('th-os', () => window.__setReportSort('os_version'));
+      bindSortableHeader('th-updates', () => window.__setReportSort('updates'));
 
       // KPI tile click behaviors
       function jumpToHostsSorted(sortKey, order = 'desc') {

@@ -181,12 +181,19 @@ The server sets basic security headers by default (e.g. `X-Frame-Options`, `X-Co
 For internet exposure, run behind HTTPS and set:
 - `UI_COOKIE_SECURE=true`
 
-Optional (advanced): you can set a custom `CONTENT_SECURITY_POLICY` env var, but the built-in UI uses inline scripts,
-so a strict CSP may require additional work.
+Optional (advanced): set `CONTENT_SECURITY_POLICY` env var (baseline example in `deploy/docker/env.example`).
+Note: the built-in UI still uses inline scripts, so fully strict CSP requires frontend refactoring.
 
 Token wiring (must match):
 - **Server** env: `AGENT_TERMINAL_TOKEN`
 - **Agent** env: `FLEET_TERMINAL_TOKEN` (agent also accepts legacy `TERM_TOKEN` / `AGENT_TERMINAL_TOKEN`)
+
+For HTTPS deployments, also set:
+- `AGENT_TERMINAL_SCHEME=wss`
+
+### Docker deployment defaults
+- Postgres is internal-only by default in `deploy/docker/docker-compose.yml` (not published to host).
+- If you need host-local debug access, expose `127.0.0.1:5432:5432` via compose override.
 
 ---
 

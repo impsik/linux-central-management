@@ -23,14 +23,14 @@ Improve production readiness with a staged plan that prioritizes high-impact, lo
 ## Phase 2 — Medium effort
 
 ### Security
-1. Add/validate security headers in reverse proxy setup (CSP baseline, frame-ancestors, referrer-policy, x-content-type-options).
-2. Enforce secure cookie defaults in production (`UI_COOKIE_SECURE=true`, SameSite policy review).
-3. Verify terminal websocket deployment over TLS (`wss`) with explicit production docs.
+1. Add/validate security headers in reverse proxy setup (CSP baseline, frame-ancestors, referrer-policy, x-content-type-options). ✅ baseline examples added
+2. Enforce secure cookie defaults in production (`UI_COOKIE_SECURE=true`, SameSite policy review). ✅ docs updated
+3. Verify terminal websocket deployment over TLS (`wss`) with explicit production docs. ✅ docs + env wiring added
 
 ### UI/UX
-1. Improve discoverability of sortable table columns (cursor + hover + sort indicators).
-2. Standardize loading/empty/error states for long-running actions.
-3. Improve button state consistency (`disabled`, `loading`, `success/error`).
+1. Improve discoverability of sortable table columns (cursor + hover + sort indicators). ✅ implemented
+2. Standardize loading/empty/error states for long-running actions. ⏳ pending
+3. Improve button state consistency (`disabled`, `loading`, `success/error`). ⏳ pending
 
 ## Phase 3 — Deep refactor
 
