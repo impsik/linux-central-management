@@ -1,4 +1,37 @@
 (function (w) {
+  function escapeHtml(s) {
+    return String(s)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
+  function formatRelativeTime(d) {
+    if (!(d instanceof Date) || isNaN(d.getTime())) return 'unknown';
+    const sec = Math.floor((Date.now() - d.getTime()) / 1000);
+    if (sec < 5) return 'just now';
+    if (sec < 60) return sec + 's ago';
+    const min = Math.floor(sec / 60);
+    if (min < 60) return min + 'm ago';
+    const hr = Math.floor(min / 60);
+    if (hr < 48) return hr + 'h ago';
+    const day = Math.floor(hr / 24);
+    return day + 'd ago';
+  }
+
+  function safeJsonPreview(obj, max) {
+    const limit = Number.isFinite(max) ? max : 140;
+    try {
+      const s = JSON.stringify(obj || {});
+      if (s.length > limit) return s.slice(0, limit - 3) + '...';
+      return s;
+    } catch (_) {
+      return '';
+    }
+  }
+
   function setButtonBusy(button, busy, busyText) {
     if (!button) return;
     const nextText = busyText || 'Working…';
@@ -504,6 +537,9 @@
     if (auditRefresh) auditRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminAudit === 'function') api.loadAdminAudit(true); });
   }
 
+  w.escapeHtml = w.escapeHtml || escapeHtml;
+  w.formatRelativeTime = w.formatRelativeTime || formatRelativeTime;
+  w.safeJsonPreview = w.safeJsonPreview || safeJsonPreview;
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;

@@ -2062,28 +2062,6 @@
       }
     }
 
-    function formatRelativeTime(d) {
-      if (!(d instanceof Date) || isNaN(d.getTime())) return 'unknown';
-      const sec = Math.floor((Date.now() - d.getTime()) / 1000);
-      if (sec < 5) return 'just now';
-      if (sec < 60) return `${sec}s ago`;
-      const min = Math.floor(sec / 60);
-      if (min < 60) return `${min}m ago`;
-      const hr = Math.floor(min / 60);
-      if (hr < 48) return `${hr}h ago`;
-      const day = Math.floor(hr / 24);
-      return `${day}d ago`;
-    }
-
-    function escapeHtml(s) {
-      return String(s)
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;')
-        .replaceAll('"', '&quot;')
-        .replaceAll("'", '&#039;');
-    }
-
     function updateTopProcessesTable(processes) {
       const tbody = document.getElementById('top-processes-body');
       if (!tbody) return;
@@ -2325,15 +2303,6 @@
       selectHost(currentAgentId, hostname);
     }
 
-    function safeJsonPreview(obj, max = 140) {
-      try {
-        const s = JSON.stringify(obj || {});
-        if (s.length > max) return s.slice(0, max - 3) + '...';
-        return s;
-      } catch {
-        return '';
-      }
-    }
 
     async function loadAdminAudit(showToastOnManual = false) {
       const tbody = document.getElementById('admin-audit-table');
