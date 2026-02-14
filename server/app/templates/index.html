@@ -3189,7 +3189,6 @@
         }
 
         usersList.innerHTML = data.users.map(user => {
-          const usernameEscaped = user.username.replace(/'/g, "\\'");
           const isNew = !!user.is_new;
           const canLockUsers = !!currentPermissions.can_lock_users;
           const isRoot = user.username === 'root';
@@ -3213,8 +3212,9 @@
               </div>
             </div>
             <div class="service-actions">
-              <button class="btn ${user.is_locked ? 'btn-success' : 'btn-warning'}" 
-                onclick="controlUser('${currentAgentId}', '${usernameEscaped}', '${user.is_locked ? 'unlock' : 'lock'}')"
+              <button class="btn ${user.is_locked ? 'btn-success' : 'btn-warning'}"
+                data-user-action="${user.is_locked ? 'unlock' : 'lock'}"
+                data-username="${escapeHtml(user.username)}"
                 ${(isRoot || !canLockUsers) ? `disabled title="${disabledReason}"` : ''}>
                 ${user.is_locked ? 'Unlock' : 'Lock'}
               </button>
@@ -3229,6 +3229,16 @@
             const username = a.getAttribute('data-username') || '';
             if (!username) return;
             openUserModal(agentId, username);
+          });
+        });
+
+        usersList.querySelectorAll('button[data-user-action][data-username]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const action = btn.getAttribute('data-user-action') || '';
+            const username = btn.getAttribute('data-username') || '';
+            if (!action || !username) return;
+            controlUser(currentAgentId, username, action);
           });
         });
       } catch (error) {
