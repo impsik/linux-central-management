@@ -145,10 +145,14 @@
   }
 
   async function loadHosts(ctx) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    let controller = null;
+    let timeout = null;
     try {
-      const response = await fetch('/hosts?online_only=true', { credentials: 'include', signal: controller.signal });
+      if (typeof AbortController !== 'undefined') {
+        controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), 8000);
+      }
+      const response = await fetch('/hosts?online_only=true', { credentials: 'include', ...(controller ? { signal: controller.signal } : {}) });
       if (!response.ok) {
         if (response.status === 403 && typeof w.loadAuthInfo === 'function') {
           try { await w.loadAuthInfo(); } catch (_) {}
@@ -170,7 +174,7 @@
       const msg = (error && error.name === 'AbortError') ? 'hosts request timed out' : (error?.message || String(error));
       document.getElementById('hosts').innerHTML = `<div class="error">Error loading hosts: ${msg}</div>`;
     } finally {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
     }
   }
 

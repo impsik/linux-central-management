@@ -2713,6 +2713,21 @@
       const hostsEl = document.getElementById('hosts');
       if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
     });
+
+    // Watchdog: never let hosts panel stay in perpetual loading state.
+    setTimeout(() => {
+      const hostsEl = document.getElementById('hosts');
+      if (!hostsEl) return;
+      const txt = (hostsEl.textContent || '').trim().toLowerCase();
+      if (txt.includes('loading hosts')) {
+        console.warn('[hosts-watchdog] still loading after 10s; forcing inline fallback');
+        hostsEl.innerHTML = '<div class="error">Hosts view was stuck loading. Retrying…</div>';
+        void loadHosts().catch((e) => {
+          hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
+        });
+      }
+    }, 10000);
+
     void loadFleetOverview();
     startHostRefresh();
     setInterval(() => { void loadFleetOverview(); }, 15000);
