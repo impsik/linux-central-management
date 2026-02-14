@@ -1788,6 +1788,31 @@
           if (Object.prototype.hasOwnProperty.call(patch, 'selectedPackages')) selectedPackages = (patch.selectedPackages instanceof Set) ? patch.selectedPackages : new Set();
           if (Object.prototype.hasOwnProperty.call(patch, 'currentPackageName')) currentPackageName = patch.currentPackageName || null;
         },
+        runInteractivePackageCommand: (action, packages) => {
+          if (!currentAgentId || !Array.isArray(packages) || !packages.length) return false;
+          const esc = (s) => `'${String(s).replace(/'/g, `'"'"'`)}'`;
+          const pkgArgs = packages.map(esc).join(' ');
+          let cmd = '';
+          if (action === 'upgrade') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade ${pkgArgs}`;
+          else if (action === 'reinstall') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall ${pkgArgs}`;
+          else if (action === 'remove') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y ${pkgArgs}`;
+          if (!cmd) return false;
+
+          showTerminal();
+          setTimeout(() => {
+            try {
+              if (ws && ws.readyState === 1) {
+                ws.send(new TextEncoder().encode(cmd + '\n'));
+                showToast(`Sent ${action} command to terminal`, 'success');
+              } else {
+                showToast('Terminal not connected yet, try again in a second.', 'error', 4000);
+              }
+            } catch (e) {
+              showToast(`Interactive command failed: ${e.message || e}`, 'error', 5000);
+            }
+          }, 450);
+          return true;
+        },
       };
     }
 

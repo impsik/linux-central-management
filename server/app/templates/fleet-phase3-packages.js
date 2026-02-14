@@ -110,6 +110,48 @@
       }
     });
 
+    async function runPackageAction(action) {
+      const st = getState(ctx);
+      if (!st.currentAgentId) return;
+      const selected = (st.selectedPackages instanceof Set) ? Array.from(st.selectedPackages) : [];
+      if (!selected.length) {
+        if (statusEl) statusEl.textContent = 'Select at least one package.';
+        return;
+      }
+
+      try {
+        if (st.pkgInteractiveTerminal && ctx && typeof ctx.runInteractivePackageCommand === 'function') {
+          const ok = ctx.runInteractivePackageCommand(action, selected);
+          if (ok) {
+            if (statusEl) statusEl.textContent = `Interactive ${action} command sent to terminal.`;
+            return;
+          }
+        }
+
+        if (statusEl) statusEl.textContent = `${action} in progress…`;
+        const r = await fetch(`/hosts/${encodeURIComponent(st.currentAgentId)}/packages/action`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ action, packages: selected }),
+        });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `${action} failed (${r.status})`);
+        await w.pollJob((d && d.job_id) || '', statusEl, 180000);
+        setState(ctx, { selectedPackages: new Set() });
+        const sel = document.getElementById('select-visible-packages');
+        if (sel) sel.checked = false;
+        await loadPackages(ctx, st.currentAgentId);
+      } catch (err) {
+        if (statusEl) statusEl.textContent = `${action} failed: ${err.message || err}`;
+      }
+    }
+
+    upgradeBtn?.addEventListener('click', (e) => { e.preventDefault(); void runPackageAction('upgrade'); });
+    reinstallBtn?.addEventListener('click', (e) => { e.preventDefault(); void runPackageAction('reinstall'); });
+    removeBtn?.addEventListener('click', (e) => { e.preventDefault(); void runPackageAction('remove'); });
+
     w.__updatePkgActionControls = updatePkgActionControls;
     updatePkgActionControls();
   }
