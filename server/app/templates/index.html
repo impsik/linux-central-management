@@ -109,6 +109,24 @@
                 </div>
                 <div id="saved-view-status" class="vuln-status" style="margin-top:0;"></div>
               </div>
+
+              <div style="margin-top:0.6rem;border-top:1px solid var(--border);padding-top:0.6rem;display:grid;gap:0.45rem;">
+                <div style="font-size:0.82rem;color:var(--muted-2);font-weight:700;">Create cron from current view</div>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <select id="cron-from-filter-action" class="host-search" style="flex:1 1 220px;">
+                    <option value="security-campaign" selected>Security campaign</option>
+                    <option value="inventory-now">Inventory now</option>
+                    <option value="dist-upgrade">Dist-upgrade</option>
+                  </select>
+                  <select id="cron-from-filter-schedule" class="host-search" style="flex:1 1 220px;">
+                    <option value="weekly-sun-0200" selected>Weekly Sunday 02:00</option>
+                    <option value="daily-0600">Daily 06:00</option>
+                    <option value="once-30m">One-time in 30 min</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" id="cron-from-filter-open" type="button">Open Cron form with visible hosts</button>
+                <div id="cron-from-filter-status" class="vuln-status" style="margin-top:0;"></div>
+              </div>
             </div>
           </div>
 
@@ -2314,6 +2332,64 @@
           loadCronjobs: loadCronjobs,
           withBusyButton: withBusyButton,
         });
+      });
+
+      const fromFilterBtn = document.getElementById('cron-from-filter-open');
+      fromFilterBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const statusEl = document.getElementById('cron-from-filter-status');
+        const action = document.getElementById('cron-from-filter-action')?.value || 'security-campaign';
+        const schedule = document.getElementById('cron-from-filter-schedule')?.value || 'weekly-sun-0200';
+
+        const visibleIds = Array.from(lastRenderedAgentIds || []);
+        const ids = visibleIds.length ? visibleIds : (allHosts || []).map(h => h.agent_id).filter(Boolean);
+        if (!ids.length) {
+          if (statusEl) statusEl.textContent = 'No hosts available. Load hosts first.';
+          return;
+        }
+
+        // Switch to cron tab and prefill fields.
+        document.getElementById('nav-cronjobs')?.click();
+
+        setCronSelectedAgentIds(new Set(ids));
+        setCronHostsPanelVisible(true);
+        renderCronHostsList();
+
+        const actionEl = document.getElementById('cron-action');
+        if (actionEl) actionEl.value = action;
+
+        const nameEl = document.getElementById('cron-name');
+        const env = (document.getElementById('label-env')?.value || '').trim();
+        const role = (document.getElementById('label-role')?.value || '').trim();
+        const search = (document.getElementById('host-search')?.value || '').trim();
+        const scopeBits = [env ? `env:${env}` : '', role ? `role:${role}` : '', search ? `q:${search}` : ''].filter(Boolean).join(' ');
+        if (nameEl) nameEl.value = `${action} (${scopeBits || 'visible hosts'})`;
+
+        const kindEl = document.getElementById('cron-schedule-kind');
+        const runAtEl = document.getElementById('cron-run-at');
+        const timeEl = document.getElementById('cron-time');
+        const weekdayEl = document.getElementById('cron-weekday');
+
+        if (schedule === 'once-30m') {
+          if (kindEl) kindEl.value = 'once';
+          const dt = new Date(Date.now() + 30 * 60 * 1000);
+          const yyyy = dt.getFullYear();
+          const mm = String(dt.getMonth() + 1).padStart(2, '0');
+          const dd = String(dt.getDate()).padStart(2, '0');
+          const hh = String(dt.getHours()).padStart(2, '0');
+          const mi = String(dt.getMinutes()).padStart(2, '0');
+          if (runAtEl) runAtEl.value = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+        } else if (schedule === 'daily-0600') {
+          if (kindEl) kindEl.value = 'daily';
+          if (timeEl) timeEl.value = '06:00';
+        } else {
+          if (kindEl) kindEl.value = 'weekly';
+          if (weekdayEl) weekdayEl.value = '0'; // Sunday
+          if (timeEl) timeEl.value = '02:00';
+        }
+
+        kindEl?.dispatchEvent(new Event('change'));
+        if (statusEl) statusEl.textContent = `Prefilled cron with ${ids.length} hosts.`;
       });
     }
 
