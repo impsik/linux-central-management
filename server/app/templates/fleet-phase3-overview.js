@@ -361,6 +361,58 @@
     }
   }
 
+  async function loadNotifications(ctx, showToastOnManual) {
+    const wrap = document.getElementById('overview-notifications');
+    const badge = document.getElementById('notifications-badge');
+    if (!wrap) return;
+    try {
+      wrap.innerHTML = '<div class="loading">Loading notifications…</div>';
+      const r = await fetch('/dashboard/notifications?limit=30', { credentials: 'include' });
+      if (!r.ok) throw new Error(`notifications failed (${r.status})`);
+      const d = await r.json();
+      const items = Array.isArray(d?.items) ? d.items : [];
+
+      let seen = [];
+      try { seen = JSON.parse(localStorage.getItem('fleet_notifications_seen_v1') || '[]'); } catch (_) { seen = []; }
+      const seenSet = new Set(Array.isArray(seen) ? seen : []);
+      const unread = items.filter((it) => !seenSet.has(String(it.id || '')));
+
+      if (badge) badge.style.display = unread.length ? 'inline' : 'none';
+
+      if (!items.length) {
+        wrap.innerHTML = '<div style="color:#86efac;">No active notifications 🎯</div>';
+      } else {
+        wrap.innerHTML = `
+          <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+            <div style="color:#94a3b8;">Unread: <b>${unread.length}</b> / ${items.length}</div>
+            <button class="btn" id="notifications-mark-read" type="button">Mark all read</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0.45rem;">
+            ${items.map((it) => `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.6rem;background:var(--panel-2);${seenSet.has(String(it.id||'')) ? 'opacity:0.75;' : ''}">
+              <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                <b>${w.escapeHtml(it.title || '')}</b>
+                <span style="font-size:0.75rem;color:${it.severity==='high' ? '#fca5a5' : '#fbbf24'};">${w.escapeHtml(it.severity || 'info')}</span>
+              </div>
+              <div style="color:#94a3b8;font-size:0.88rem;">${w.escapeHtml(it.detail || '')}</div>
+            </div>`).join('')}
+          </div>
+        `;
+
+        document.getElementById('notifications-mark-read')?.addEventListener('click', () => {
+          try {
+            const ids = items.map((it) => String(it.id || '')).filter(Boolean);
+            localStorage.setItem('fleet_notifications_seen_v1', JSON.stringify(ids));
+          } catch (_) { }
+          loadNotifications(ctx, false);
+        });
+      }
+      if (showToastOnManual) w.showToast('Notifications refreshed', 'success');
+    } catch (e) {
+      wrap.innerHTML = `<div class="error">Notifications error: ${w.escapeHtml(e.message || String(e))}</div>`;
+      if (showToastOnManual) w.showToast(`Notifications failed: ${e.message || String(e)}`, 'error');
+    }
+  }
+
   function initFleetOverviewControls(ctx) {
     const navOverview = document.getElementById('nav-overview');
     const navHosts = document.getElementById('nav-hosts');
@@ -375,6 +427,7 @@
       if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadFleetOverview();
       ctx.loadFailedRuns(24, false);
+      loadNotifications(ctx, false);
     }
 
     function showHostsTab() {
@@ -417,10 +470,12 @@
     const secBtn = document.getElementById('overview-security-campaign');
     const distBtn = document.getElementById('overview-dist-upgrade');
     const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
+    const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
     const teamsBriefBtn = document.getElementById('teams-send-brief');
 
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
+    w.wireBusyClick(notificationsRefreshBtn, 'Refreshing…', async () => { await loadNotifications(ctx, true); });
     w.wireBusyClick(teamsTestBtn, 'Sending…', async () => {
       const r = await fetch('/dashboard/alerts/teams/test', { method: 'POST', credentials: 'include' });
       if (!r.ok) {
@@ -476,6 +531,14 @@
 
     w.setupReportSortHandlers(ctx.loadPendingUpdatesReport);
     w.setupKpiHandlers(showHostsTab, showOverviewTab, ctx.loadFailedRuns);
+
+    try {
+      if (window.__fleetNotifInterval) clearInterval(window.__fleetNotifInterval);
+      window.__fleetNotifInterval = setInterval(() => {
+        const isOverview = document.getElementById('server-info-tab')?.classList.contains('active');
+        if (isOverview) loadNotifications(ctx, false);
+      }, 60000);
+    } catch (_) { }
   }
 
   w.phase3Overview = { loadFleetOverview, loadHostsTable, loadPendingUpdatesReport, initFleetOverviewControls };

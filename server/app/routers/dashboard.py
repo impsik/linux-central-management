@@ -392,6 +392,77 @@ def dashboard_teams_test_alert(db: Session = Depends(get_db), user=Depends(requi
     return {"ok": True}
 
 
+@router.get("/notifications")
+def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_ui_user), limit: int = Query(30, ge=1, le=200)):
+    now = datetime.now(timezone.utc)
+    grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
+    online_cutoff = now.timestamp() - grace_s
+
+    items: list[dict] = []
+
+    # Offline hosts (top priority)
+    hosts = db.execute(select(Host).order_by(Host.last_seen.asc().nullsfirst()).limit(200)).scalars().all()
+    for h in hosts:
+        last_seen_ts = h.last_seen.timestamp() if h.last_seen else None
+        online = bool(last_seen_ts is not None and last_seen_ts >= online_cutoff)
+        if not online:
+            last_seen = h.last_seen.isoformat() if h.last_seen else None
+            nid = f"offline:{h.agent_id}:{last_seen or 'never'}"
+            items.append({
+                "id": nid,
+                "severity": "high",
+                "kind": "offline",
+                "title": f"Host offline: {h.hostname or h.agent_id}",
+                "detail": f"Last seen: {last_seen or 'never'}",
+                "ts": last_seen or now.isoformat(),
+            })
+
+    # Failed job runs (24h)
+    failed_rows = db.execute(
+        select(JobRun, Job)
+        .join(Job, Job.id == JobRun.job_id)
+        .where(JobRun.status == "failed", JobRun.finished_at.is_not(None), JobRun.finished_at >= (now - timedelta(hours=24)))
+        .order_by(JobRun.finished_at.desc())
+        .limit(50)
+    ).all()
+    for jr, job in failed_rows:
+        ts = jr.finished_at.isoformat() if jr.finished_at else now.isoformat()
+        nid = f"failed:{job.job_key}:{jr.agent_id}:{ts}"
+        items.append({
+            "id": nid,
+            "severity": "high",
+            "kind": "failed_run",
+            "title": f"Failed run on {jr.agent_id}",
+            "detail": f"{job.job_type} ({job.job_key}) exit={jr.exit_code if jr.exit_code is not None else 'n/a'}",
+            "ts": ts,
+        })
+
+    # Security backlog by host (>=10)
+    sec_rows = db.execute(
+        select(Host.agent_id, Host.hostname, func.count().label("sec_count"))
+        .join(HostPackageUpdate, HostPackageUpdate.host_id == Host.id)
+        .where(HostPackageUpdate.update_available == True, HostPackageUpdate.is_security == True)  # noqa: E712
+        .group_by(Host.agent_id, Host.hostname)
+        .having(func.count() >= 10)
+        .order_by(func.count().desc())
+        .limit(50)
+    ).all()
+    for agent_id, hostname, sec_count in sec_rows:
+        nid = f"sec-backlog:{agent_id}:{int(sec_count or 0)}"
+        items.append({
+            "id": nid,
+            "severity": "medium",
+            "kind": "security_backlog",
+            "title": f"Security backlog: {hostname or agent_id}",
+            "detail": f"{int(sec_count or 0)} security updates pending",
+            "ts": now.isoformat(),
+        })
+
+    items.sort(key=lambda x: (x.get("severity") != "high", x.get("ts") or ""), reverse=True)
+    items = items[:limit]
+    return {"count": len(items), "items": items, "ts": now.isoformat()}
+
+
 @router.post("/alerts/teams/morning-brief")
 def dashboard_teams_morning_brief(db: Session = Depends(get_db), user=Depends(require_admin_user)):
     if not bool(getattr(settings, "teams_alerts_enabled", False)):

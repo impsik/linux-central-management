@@ -219,7 +219,7 @@
       </div>
 
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
-        <button class="btn" id="nav-overview" type="button">Overview</button>
+        <button class="btn" id="nav-overview" type="button">Overview <span id="notifications-badge" style="display:none;margin-left:6px;color:#ef4444;font-weight:900;">•</span></button>
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
         <button class="btn" id="nav-cronjobs" type="button">Cronjobs</button>
         <button class="btn" id="nav-sshkeys" type="button">SSH Keys <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
@@ -380,6 +380,16 @@
               </div>
             </div>
 
+
+            <div class="admin-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Notification Center</span>
+                <button class="btn" id="notifications-refresh" type="button">Reload</button>
+              </div>
+              <div class="admin-card-body">
+                <div id="overview-notifications" style="color:#cbd5e1;">Loading…</div>
+              </div>
+            </div>
 
             <div class="admin-card" id="failed-runs-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
