@@ -365,6 +365,7 @@
                     <div style="color:#94a3b8;font-size:0.9rem;">Online is based on last_seen within grace window.</div>
                     <div style="color:#94a3b8;font-size:0.9rem;">Reboot-required is not yet centralized
                       (per-host/campaign).</div>
+                    <div id="maintenance-window-status" style="color:#94a3b8;font-size:0.9rem;">Maintenance window: checking…</div>
                     <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.3rem;">
                       <button class="btn" id="teams-test-alert" type="button">Teams: Send test</button>
                       <button class="btn" id="teams-send-brief" type="button">Teams: Send morning brief</button>
@@ -2400,7 +2401,12 @@
             r = await fetch('/jobs/dist-upgrade', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent_ids: ids }) });
           }
 
-          if (!r || !r.ok) throw new Error(`request failed (${r ? r.status : 'n/a'})`);
+          if (!r || !r.ok) {
+            const raw = r ? await r.text() : '';
+            let detail = '';
+            try { const j = raw ? JSON.parse(raw) : null; detail = j?.detail || j?.error || ''; } catch (_) { detail = ''; }
+            throw new Error(detail || `request failed (${r ? r.status : 'n/a'})`);
+          }
           if (statusEl) statusEl.textContent = `Triggered ${action} for ${ids.length} hosts.`;
           showToast(`Triggered ${action} for ${ids.length} hosts`, 'success');
         } catch (err) {

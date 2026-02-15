@@ -10,6 +10,7 @@
     const freshEl = document.getElementById('kpi-fresh');
     const attentionEl = document.getElementById('overview-attention');
     const morningBriefEl = document.getElementById('overview-morning-brief');
+    const maintenanceEl = document.getElementById('maintenance-window-status');
 
     try {
       const r = await fetch('/dashboard/summary', { credentials: 'include' });
@@ -43,6 +44,25 @@
       if (updDetailsEl) updDetailsEl.textContent = `${updPkgs} packages`;
       if (failEl) failEl.textContent = `${failed24h}`;
       if (freshEl) freshEl.textContent = freshest ? new Date(freshest).toLocaleString() : '–';
+
+      if (maintenanceEl) {
+        try {
+          const mw = await fetch('/dashboard/maintenance-window', { credentials: 'include' });
+          if (mw.ok) {
+            const md = await mw.json();
+            if (!md.enabled) {
+              maintenanceEl.style.color = '#94a3b8';
+              maintenanceEl.textContent = 'Maintenance window: disabled';
+            } else if (md.within_window_now) {
+              maintenanceEl.style.color = '#86efac';
+              maintenanceEl.textContent = `Maintenance window: ACTIVE (${md.start}-${md.end} ${md.timezone})`;
+            } else {
+              maintenanceEl.style.color = '#fbbf24';
+              maintenanceEl.textContent = `Maintenance window: outside allowed hours (${md.start}-${md.end} ${md.timezone})`;
+            }
+          }
+        } catch (_) { }
+      }
 
       if (morningBriefEl) {
         morningBriefEl.innerHTML = '<div class="loading">Building brief…</div>';
@@ -603,7 +623,12 @@
       const end = new Date(now.getTime() + 60 * 60 * 1000);
       const payload = { agent_ids: agentIds, window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 5, reboot_if_needed: true, include_kernel: false };
       const r = await fetch('/patching/campaigns/security-updates', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
-      if (!r.ok) return w.showToast('Campaign creation failed', 'error');
+      if (!r.ok) {
+        const t = await r.text();
+        let msg = 'Campaign creation failed';
+        try { const j = t ? JSON.parse(t) : null; msg = j?.detail || j?.error || msg; } catch (_) { }
+        return w.showToast(msg, 'error');
+      }
       const d = await r.json();
       w.showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
     });
@@ -612,7 +637,12 @@
       const agentIds = (ctx.getLastRenderedAgentIds() || []).slice();
       if (!agentIds.length) return w.showToast('No visible hosts selected', 'error');
       const r = await fetch('/jobs/dist-upgrade', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent_ids: agentIds }) });
-      if (!r.ok) return w.showToast('dist-upgrade job creation failed', 'error');
+      if (!r.ok) {
+        const t = await r.text();
+        let msg = 'dist-upgrade job creation failed';
+        try { const j = t ? JSON.parse(t) : null; msg = j?.detail || j?.error || msg; } catch (_) { }
+        return w.showToast(msg, 'error');
+      }
       const d = await r.json();
       w.showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
     });
