@@ -101,8 +101,18 @@
       };
     }
 
-    function applySavedView(view) {
+    function setViewInUrl(name) {
+      try {
+        const u = new URL(window.location.href);
+        if (name) u.searchParams.set('view', name);
+        else u.searchParams.delete('view');
+        window.history.replaceState({}, '', u.toString());
+      } catch (_) { }
+    }
+
+    function applySavedView(view, opts) {
       if (!view || typeof view !== 'object') return;
+      const options = opts || {};
       const hostSearchQuery = String(view.hostSearchQuery || '');
       const labelEnv = String(view.labelEnvFilter || '');
       const labelRole = String(view.labelRoleFilter || '');
@@ -116,6 +126,10 @@
       syncSelectionState('labelRoleFilter', labelRole);
       setPatch({ hostSearchQuery, labelEnvFilter: labelEnv, labelRoleFilter: labelRole });
       applyHostFilters();
+
+      if (options.setUrl !== false) {
+        setViewInUrl(String(options.viewName || view.name || ''));
+      }
     }
 
     if (searchEl) {
@@ -214,7 +228,7 @@
         refreshSavedViewsUi();
         return;
       }
-      applySavedView(view.payload || {});
+      applySavedView(view.payload || {}, { viewName: String(view.name || '') });
       if (savedViewNameEl) savedViewNameEl.value = String(view.name || '');
       if (savedViewSharedEl) savedViewSharedEl.checked = !!view.is_shared;
       if (savedViewDefaultEl) savedViewDefaultEl.checked = !!view.is_default_startup;
@@ -270,14 +284,28 @@
       try {
         await fetchSavedViews();
         refreshSavedViewsUi();
-        const def = (savedViewsCache || []).find((it) => !!it?.can_edit && !!it?.is_default_startup);
-        if (def) {
-          applySavedView(def.payload || {});
-          if (savedViewSelectEl) savedViewSelectEl.value = viewKey(def);
-          if (savedViewNameEl) savedViewNameEl.value = String(def.name || '');
-          if (savedViewSharedEl) savedViewSharedEl.checked = !!def.is_shared;
-          if (savedViewDefaultEl) savedViewDefaultEl.checked = !!def.is_default_startup;
-          setSavedViewStatus(`Applied default view "${String(def.name || '')}".`, 'success');
+
+        let target = null;
+        try {
+          const q = new URL(window.location.href).searchParams.get('view');
+          const qv = String(q || '').trim();
+          if (qv) {
+            target = (savedViewsCache || []).find((it) => String(it?.name || '') === qv) || null;
+          }
+        } catch (_) { }
+
+        if (!target) {
+          target = (savedViewsCache || []).find((it) => !!it?.can_edit && !!it?.is_default_startup) || null;
+        }
+
+        if (target) {
+          applySavedView(target.payload || {}, { viewName: String(target.name || '') });
+          if (savedViewSelectEl) savedViewSelectEl.value = viewKey(target);
+          if (savedViewNameEl) savedViewNameEl.value = String(target.name || '');
+          if (savedViewSharedEl) savedViewSharedEl.checked = !!target.is_shared;
+          if (savedViewDefaultEl) savedViewDefaultEl.checked = !!target.is_default_startup;
+          if (savedViewDeleteBtn) savedViewDeleteBtn.disabled = !target.can_edit;
+          setSavedViewStatus(`Applied view "${String(target.name || '')}".`, 'success');
         }
       } catch (_) {
         setSavedViewStatus('Saved views unavailable.', 'error');

@@ -62,14 +62,40 @@
 
           morningBriefEl.innerHTML = `
             <div style="display:flex;flex-direction:column;gap:0.35rem;">
-              <div><span style="color:#94a3b8;">Offline hosts:</span> <b>${hostsOffline}</b></div>
+              <div><span style="color:#94a3b8;">Offline hosts:</span> <b>${hostsOffline}</b> <button class="btn" data-brief-action="offline" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
               <div><span style="color:#94a3b8;">Security backlog:</span> <b>${secPkgs}</b> packages on <b>${secHosts}</b> hosts</div>
               <div><span style="color:#94a3b8;">Reboot required:</span> <b>${rebootRequired}</b> hosts</div>
-              <div><span style="color:#94a3b8;">Failed runs (24h):</span> <b>${failed24h}</b></div>
-              <div><span style="color:#94a3b8;">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b></div>
+              <div><span style="color:#94a3b8;">Failed runs (24h):</span> <b>${failed24h}</b> <button class="btn" data-brief-action="failed" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
+              <div><span style="color:#94a3b8;">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b> <button class="btn" data-brief-action="heavy-security" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
               <div><span style="color:#94a3b8;">Stale inventory (&gt;24h):</span> <b>${staleHosts}</b></div>
             </div>
           `;
+
+          morningBriefEl.querySelectorAll('[data-brief-action]').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              const action = btn.getAttribute('data-brief-action') || '';
+              if (action === 'failed') {
+                const el = document.getElementById('failed-runs-card');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                return;
+              }
+
+              document.getElementById('nav-hosts')?.click();
+              const sortSel = document.getElementById('hosts-sort');
+              const orderSel = document.getElementById('hosts-order');
+
+              if (action === 'offline') {
+                if (sortSel) sortSel.value = 'last_seen';
+                if (orderSel) orderSel.value = 'asc';
+              } else if (action === 'heavy-security') {
+                if (sortSel) sortSel.value = 'security_updates';
+                if (orderSel) orderSel.value = 'desc';
+              }
+
+              sortSel?.dispatchEvent(new Event('change'));
+            });
+          });
         } catch (briefErr) {
           morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
         }
