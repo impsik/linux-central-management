@@ -360,6 +360,25 @@
       }
     }
 
+    async function refreshPackageUpdateCache(targets, statusNode) {
+      const ids = Array.isArray(targets) ? targets.filter(Boolean) : [];
+      if (!ids.length) return;
+      const doWait = ids.length <= 20;
+      if (statusNode) statusNode.textContent = doWait
+        ? 'Refreshing update cache from hosts…'
+        : 'Queued background refresh of update cache…';
+
+      const work = ids.map(async function (aid) {
+        const url = '/hosts/' + encodeURIComponent(aid) + '/packages/refresh?wait=' + (doWait ? 'true' : 'false');
+        const r = await fetch(url, { method: 'POST' });
+        return { aid: aid, ok: !!r.ok };
+      });
+
+      try {
+        await Promise.allSettled(work);
+      } catch (_) { }
+    }
+
     async function upgradeSelected() {
       const pkgName = (pkgEl?.value || '').trim();
       const vulnVersion = (verEl?.value || '').trim();
@@ -428,7 +447,11 @@
         if (!isCveMode) {
           if (upgradeStatusEl) upgradeStatusEl.textContent = 'Upgrade finished. Verifying installed version of ' + pkgName + '…';
           await verifyPackageVersions(targets, pkgName, vulnVersion, upgradeStatusEl);
+          await refreshPackageUpdateCache(targets, upgradeStatusEl);
+          // Re-apply package vulnerability search so stale update rows disappear quickly.
+          await applyVulnFilter();
         } else {
+          await refreshPackageUpdateCache(targets, upgradeStatusEl);
           const prevCve = state.lastCveCheck?.cve || cve;
           setPatch({ lastCveUnionPackages: [], selectedCvePackages: new Set() });
           updateUpgradeControls();
