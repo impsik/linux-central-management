@@ -120,6 +120,22 @@ function openSshKeyDeployApprovalModal(it) {
       const outEl = document.getElementById('service-modal-output');
       if (!modal || !metaEl || !outEl) return;
 
+      // Robust close wiring for service modal.
+      const closeBtn = document.getElementById('service-modal-close');
+      if (closeBtn && !closeBtn.dataset.boundServiceClose) {
+        closeBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          closeServiceModal();
+        });
+        closeBtn.dataset.boundServiceClose = '1';
+      }
+      if (!modal.dataset.boundServiceOverlayClose) {
+        modal.addEventListener('click', (e) => {
+          if (e.target && e.target.id === 'service-modal') closeServiceModal();
+        });
+        modal.dataset.boundServiceOverlayClose = '1';
+      }
+
       const safe = (v) => escapeHtml(v == null ? '' : String(v));
       const kv = (k, v) => `<div class="kv-row"><strong>${safe(k)}:</strong> <code>${safe(v || '')}</code></div>`;
 
