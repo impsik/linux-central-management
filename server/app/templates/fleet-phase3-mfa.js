@@ -16,7 +16,10 @@ function openMfaModal(mode, otpauthUri = '') {
           <div id="mfa-qr" style="background:var(--panel-2);border:1px solid var(--border);border-radius:12px;padding:12px;display:inline-block;"></div>
           <div style="margin-top:0.75rem;">
             <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Code</label>
-            <input id="mfa-code" class="host-search" type="text" placeholder="123456" />
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              <input id="mfa-code" class="host-search" type="password" placeholder="123456" style="flex:1 1 auto;" />
+              <button class="btn" id="mfa-code-toggle" type="button" style="padding:0.4rem 0.6rem;">Show</button>
+            </div>
           </div>
           <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
             <button class="btn btn-primary" id="mfa-confirm" type="button">Confirm</button>
@@ -37,11 +40,22 @@ function openMfaModal(mode, otpauthUri = '') {
           }
         }
 
+        const setupCodeInput = document.getElementById('mfa-code');
+        const setupToggleBtn = document.getElementById('mfa-code-toggle');
+
+        setupToggleBtn?.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (!setupCodeInput) return;
+          const nextType = setupCodeInput.type === 'password' ? 'text' : 'password';
+          setupCodeInput.type = nextType;
+          setupToggleBtn.textContent = nextType === 'password' ? 'Show' : 'Hide';
+        });
+
         document.getElementById('mfa-start')?.addEventListener('click', async () => {
           await mfaEnrollStart();
         });
         document.getElementById('mfa-confirm')?.addEventListener('click', async () => {
-          const code = document.getElementById('mfa-code')?.value || '';
+          const code = setupCodeInput?.value || '';
           await mfaEnrollConfirm(code);
         });
       } else {
@@ -50,7 +64,10 @@ function openMfaModal(mode, otpauthUri = '') {
           <div style="color:var(--muted-2);margin-bottom:0.5rem;">Enter the 6-digit code from your authenticator (or a recovery code).</div>
           <form id="mfa-verify-form" autocomplete="off">
             <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Code</label>
-            <input id="mfa-verify-code" class="host-search" type="text" placeholder="123456" />
+            <div style="display:flex;gap:0.5rem;align-items:center;">
+              <input id="mfa-verify-code" class="host-search" type="password" placeholder="123456" style="flex:1 1 auto;" />
+              <button class="btn" id="mfa-verify-code-toggle" type="button" style="padding:0.4rem 0.6rem;">Show</button>
+            </div>
             <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
               <button class="btn btn-primary" id="mfa-verify" type="submit">Verify</button>
             </div>
@@ -58,6 +75,15 @@ function openMfaModal(mode, otpauthUri = '') {
         `;
         const verifyInput = document.getElementById('mfa-verify-code');
         const verifyForm = document.getElementById('mfa-verify-form');
+        const verifyToggleBtn = document.getElementById('mfa-verify-code-toggle');
+
+        verifyToggleBtn?.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (!verifyInput) return;
+          const nextType = verifyInput.type === 'password' ? 'text' : 'password';
+          verifyInput.type = nextType;
+          verifyToggleBtn.textContent = nextType === 'password' ? 'Show' : 'Hide';
+        });
 
         verifyForm?.addEventListener('submit', async (e) => {
           e.preventDefault();
