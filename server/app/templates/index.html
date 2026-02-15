@@ -1905,7 +1905,16 @@
         loadFailedRuns,
         loadHosts,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
-        setAllHosts: (hosts) => { allHosts = syncHostFilterSelectionState('allHosts', Array.isArray(hosts) ? hosts : []); return allHosts; },
+        setAllHosts: (hosts) => {
+          allHosts = syncHostFilterSelectionState('allHosts', Array.isArray(hosts) ? hosts : []);
+          try {
+            const hostListMod = window.phase3HostList;
+            if (hostListMod && typeof hostListMod.rebuildLabelFilterOptions === 'function') {
+              hostListMod.rebuildLabelFilterOptions(getHostListCtx());
+            }
+          } catch (_) { }
+          return allHosts;
+        },
       };
     }
 
