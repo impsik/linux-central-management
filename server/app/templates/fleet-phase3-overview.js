@@ -533,6 +533,39 @@
     const navSshKeys = document.getElementById('nav-sshkeys');
     const containerEl = document.querySelector('.container');
 
+    function setGuardedButtonState(btn, blocked, message) {
+      if (!btn) return;
+      const original = btn.dataset.originalLabel || btn.textContent || '';
+      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = original;
+      if (blocked) {
+        btn.disabled = true;
+        btn.textContent = original.startsWith('🔒 ') ? original : `🔒 ${original}`;
+        btn.title = message || 'Blocked by maintenance window';
+      } else {
+        btn.disabled = false;
+        btn.textContent = original;
+        btn.title = '';
+      }
+    }
+
+    async function refreshMaintenanceGuardButtons() {
+      try {
+        const r = await fetch('/dashboard/maintenance-window', { credentials: 'include' });
+        if (!r.ok) return;
+        const m = await r.json();
+        const blocked = !!m.enabled && !m.within_window_now;
+        const msg = blocked ? `Blocked outside maintenance window (${m.start}-${m.end} ${m.timezone})` : '';
+
+        // Overview risky actions
+        setGuardedButtonState(document.getElementById('overview-security-campaign'), blocked, msg);
+        setGuardedButtonState(document.getElementById('overview-dist-upgrade'), blocked, msg);
+
+        // Sidebar runbooks (risky ones)
+        setGuardedButtonState(document.getElementById('runbook-security-now'), blocked, msg);
+        setGuardedButtonState(document.getElementById('runbook-dist-now'), blocked, msg);
+      } catch (_) { }
+    }
+
     function showOverviewTab() {
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
@@ -541,6 +574,7 @@
       ctx.loadFleetOverview();
       ctx.loadFailedRuns(24, false);
       loadNotifications(ctx, false);
+      refreshMaintenanceGuardButtons();
     }
 
     function showHostsTab() {
@@ -577,6 +611,7 @@
     navSshKeys?.addEventListener('click', (e) => { e.preventDefault(); showSshKeysTab(); });
 
     showOverviewTab();
+    refreshMaintenanceGuardButtons();
 
     const refreshBtn = document.getElementById('overview-refresh');
     const invBtn = document.getElementById('overview-inventory-now');
@@ -659,7 +694,10 @@
       if (window.__fleetNotifInterval) clearInterval(window.__fleetNotifInterval);
       window.__fleetNotifInterval = setInterval(() => {
         const isOverview = document.getElementById('server-info-tab')?.classList.contains('active');
-        if (isOverview) loadNotifications(ctx, false);
+        if (isOverview) {
+          loadNotifications(ctx, false);
+          refreshMaintenanceGuardButtons();
+        }
       }, 60000);
     } catch (_) { }
   }
