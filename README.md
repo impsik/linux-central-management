@@ -261,4 +261,7 @@ GitHub Actions runs:
 
 Workflow file: `.github/workflows/ci.yml`
 
+### Release notes
+See `CHANGELOG.md` for recent feature additions/fixes.
+
 ---
