@@ -53,10 +53,24 @@ function openMfaModal(mode, otpauthUri = '') {
             <button class="btn btn-primary" id="mfa-verify" type="button">Verify</button>
           </div>
         `;
-        document.getElementById('mfa-verify')?.addEventListener('click', async () => {
-          const code = document.getElementById('mfa-verify-code')?.value || '';
+        const verifyInput = document.getElementById('mfa-verify-code');
+        const verifyBtn = document.getElementById('mfa-verify');
+
+        verifyBtn?.addEventListener('click', async () => {
+          const code = verifyInput?.value || '';
           await mfaVerify(code);
         });
+
+        // UX: allow Enter key to submit MFA verification quickly.
+        verifyInput?.addEventListener('keydown', async (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          const code = verifyInput?.value || '';
+          await mfaVerify(code);
+        });
+
+        // Focus the field when modal opens so user can type/paste immediately.
+        verifyInput?.focus();
       }
 
       modal.hidden = false;
