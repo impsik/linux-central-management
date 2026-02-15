@@ -859,6 +859,32 @@
               </div>
             </div>
 
+            <div class="admin-card" id="admin-approvals-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>High-risk approvals</span>
+                <button class="btn" id="admin-approvals-refresh" type="button">Reload</button>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:900px;">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Requester</th>
+                        <th>Action</th>
+                        <th>Targets</th>
+                        <th style="text-align:right;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-approvals-table">
+                      <tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-approvals-status"></div>
+              </div>
+            </div>
+
             <div class="admin-card" id="admin-audit-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>Audit log</span>
@@ -1666,12 +1692,108 @@
       }
     }
 
+    async function loadAdminApprovals(showToastOnManual = false) {
+      const card = document.getElementById('admin-approvals-card');
+      const tbody = document.getElementById('admin-approvals-table');
+      const statusEl = document.getElementById('admin-approvals-status');
+      if (!card || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';
+
+      try {
+        setTableState(tbody, 5, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+
+        const r = await fetch('/approvals/admin/pending', { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `approvals failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          setTableState(tbody, 5, 'empty', 'No pending approvals');
+          if (showToastOnManual) showToast('Approvals refreshed', 'success');
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const it of items) {
+          const payload = (it && typeof it.payload === 'object' && it.payload) ? it.payload : {};
+          const targets = Array.isArray(payload.agent_ids) ? payload.agent_ids : [];
+          const targetLabel = targets.length ? `${targets.slice(0, 3).join(', ')}${targets.length > 3 ? ` (+${targets.length - 3})` : ''}` : 'selector-based';
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="color:#94a3b8;">${escapeHtml(formatShortTime(it.created_at))}</td>
+            <td>${escapeHtml(it.user || '')}</td>
+            <td><code>${escapeHtml(it.action || '')}</code></td>
+            <td title="${escapeHtml(targets.join('\n'))}">${escapeHtml(targetLabel)}</td>
+            <td style="text-align:right;white-space:nowrap;">
+              <button class="btn btn-primary" data-approve-id="${escapeHtml(it.id)}">Approve</button>
+              <button class="btn" data-reject-id="${escapeHtml(it.id)}">Reject</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        tbody.querySelectorAll('button[data-approve-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-approve-id');
+            if (!id) return;
+            const r2 = await fetch(`/approvals/admin/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include' });
+            const raw2 = await r2.text();
+            let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+            if (!r2.ok) {
+              const msg = (d2 && (d2.detail || d2.error)) || raw2 || 'Approve failed';
+              return showToast(msg, 'error');
+            }
+            showToast('Approved and executed', 'success');
+            loadAdminApprovals();
+            loadAdminAudit();
+          });
+        });
+
+        tbody.querySelectorAll('button[data-reject-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-reject-id');
+            if (!id) return;
+            const note = prompt('Reject note (optional):', '') || '';
+            const r2 = await fetch(`/approvals/admin/${encodeURIComponent(id)}/reject`, {
+              method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ note })
+            });
+            const raw2 = await r2.text();
+            let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+            if (!r2.ok) {
+              const msg = (d2 && (d2.detail || d2.error)) || raw2 || 'Reject failed';
+              return showToast(msg, 'error');
+            }
+            showToast('Rejected', 'success');
+            loadAdminApprovals();
+            loadAdminAudit();
+          });
+        });
+
+        if (showToastOnManual) showToast('Approvals refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 5, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message || String(e);
+        if (showToastOnManual) showToast(e.message || String(e), 'error');
+      }
+    }
+
     function showAdminPage() {
       // Stop metrics updates when leaving server info view
       stopMetricsPolling(metricsLifecycleState);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('admin-tab').classList.add('active');
       loadAdminUsers();
+      loadAdminApprovals();
       loadAdminAudit();
     }
 
@@ -2874,6 +2996,7 @@
         maybeLoadSshKeyAdminQueue,
         loadAdminSshKeys,
         loadAdminUsers,
+        loadAdminApprovals,
         loadAdminAudit,
         setSshHostsPanelVisible,
         renderSshHostsList,
