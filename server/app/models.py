@@ -166,6 +166,26 @@ class AppSession(Base):
     mfa_verified_at = Column(DateTime(timezone=True))
 
 
+class AppSavedView(Base):
+    __tablename__ = "app_saved_views"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Scope kept explicit for future extension (host filters, reports, dashboards, etc.)
+    scope = Column(String, nullable=False, index=True, default="hosts")
+    name = Column(String, nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "scope", "name", name="uq_app_saved_views_user_scope_name"),
+        Index("ix_app_saved_views_user_scope", "user_id", "scope"),
+    )
+
+
 class AnsibleRun(Base):
     __tablename__ = "ansible_runs"
 

@@ -53,7 +53,7 @@
       vulnToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
-    const SAVED_VIEWS_KEY = 'fleet_saved_host_views_v1';
+    let savedViewsCache = [];
 
     function setSavedViewStatus(msg, kind) {
       if (!savedViewStatusEl) return;
@@ -61,26 +61,17 @@
       savedViewStatusEl.style.color = (kind === 'error') ? '#fca5a5' : (kind === 'success' ? '#86efac' : 'var(--muted-2)');
     }
 
-    function loadSavedViews() {
-      try {
-        const raw = localStorage.getItem(SAVED_VIEWS_KEY);
-        if (!raw) return [];
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch (_) {
-        return [];
-      }
-    }
-
-    function storeSavedViews(items) {
-      try {
-        localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(Array.isArray(items) ? items : []));
-      } catch (_) { }
+    async function fetchSavedViews() {
+      const r = await fetch('/auth/views?scope=hosts', { credentials: 'include' });
+      if (!r.ok) throw new Error(`saved views fetch failed (${r.status})`);
+      const d = await r.json();
+      savedViewsCache = Array.isArray(d?.items) ? d.items : [];
+      return savedViewsCache;
     }
 
     function refreshSavedViewsUi() {
       if (!savedViewSelectEl) return;
-      const items = loadSavedViews();
+      const items = Array.isArray(savedViewsCache) ? savedViewsCache : [];
       const prev = savedViewSelectEl.value || '';
       savedViewSelectEl.innerHTML = '<option value="">Select saved view</option>' + items.map((it) => {
         const name = String((it && it.name) || '').trim();
@@ -166,7 +157,7 @@
       applyHostFilters();
     });
 
-    savedViewSaveBtn?.addEventListener('click', function (e) {
+    savedViewSaveBtn?.addEventListener('click', async function (e) {
       e.preventDefault();
       const name = String(savedViewNameEl?.value || '').trim();
       if (!name) {
@@ -174,12 +165,21 @@
         return;
       }
       const current = captureCurrentView();
-      const items = loadSavedViews().filter((it) => it && it.name !== name);
-      items.push({ name, ...current, saved_at: new Date().toISOString() });
-      storeSavedViews(items);
-      refreshSavedViewsUi();
-      if (savedViewSelectEl) savedViewSelectEl.value = name;
-      setSavedViewStatus(`Saved view "${name}".`, 'success');
+      try {
+        const r = await fetch('/auth/views', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ scope: 'hosts', name, payload: current }),
+        });
+        if (!r.ok) throw new Error(`save failed (${r.status})`);
+        await fetchSavedViews();
+        refreshSavedViewsUi();
+        if (savedViewSelectEl) savedViewSelectEl.value = name;
+        setSavedViewStatus(`Saved view "${name}".`, 'success');
+      } catch (err) {
+        setSavedViewStatus((err && err.message) ? err.message : 'Failed to save view', 'error');
+      }
     });
 
     savedViewApplyBtn?.addEventListener('click', function (e) {
@@ -189,28 +189,38 @@
         setSavedViewStatus('Select a saved view first.', 'error');
         return;
       }
-      const view = loadSavedViews().find((it) => it && it.name === name);
+      const view = (savedViewsCache || []).find((it) => it && it.name === name);
       if (!view) {
         setSavedViewStatus('Saved view not found.', 'error');
         refreshSavedViewsUi();
         return;
       }
-      applySavedView(view);
+      applySavedView(view.payload || {});
       if (savedViewNameEl) savedViewNameEl.value = name;
       setSavedViewStatus(`Applied view "${name}".`, 'success');
     });
 
-    savedViewDeleteBtn?.addEventListener('click', function (e) {
+    savedViewDeleteBtn?.addEventListener('click', async function (e) {
       e.preventDefault();
       const name = String(savedViewSelectEl?.value || '').trim();
       if (!name) {
         setSavedViewStatus('Select a saved view to delete.', 'error');
         return;
       }
-      const next = loadSavedViews().filter((it) => it && it.name !== name);
-      storeSavedViews(next);
-      refreshSavedViewsUi();
-      setSavedViewStatus(`Deleted view "${name}".`, 'success');
+      try {
+        const r = await fetch('/auth/views', {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ scope: 'hosts', name }),
+        });
+        if (!r.ok) throw new Error(`delete failed (${r.status})`);
+        await fetchSavedViews();
+        refreshSavedViewsUi();
+        setSavedViewStatus(`Deleted view "${name}".`, 'success');
+      } catch (err) {
+        setSavedViewStatus((err && err.message) ? err.message : 'Failed to delete view', 'error');
+      }
     });
 
     savedViewSelectEl?.addEventListener('change', function () {
@@ -220,7 +230,14 @@
       setSavedViewStatus('Click Apply to use selected view.', null);
     });
 
-    refreshSavedViewsUi();
+    (async () => {
+      try {
+        await fetchSavedViews();
+        refreshSavedViewsUi();
+      } catch (_) {
+        setSavedViewStatus('Saved views unavailable.', 'error');
+      }
+    })();
 
     selectVisibleEl?.addEventListener('change', function () {
       const nextSet = selectVisibleEl.checked ? new Set(st().lastRenderedAgentIds || []) : new Set();

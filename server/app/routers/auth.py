@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
-from ..models import AppSession, AppUser
+from ..models import AppSavedView, AppSession, AppUser
 from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.rbac import permissions_for
@@ -36,6 +36,17 @@ class RegisterRequest(BaseModel):
 class ResetPasswordRequest(BaseModel):
     username: str
     password: str
+
+
+class SaveViewRequest(BaseModel):
+    scope: str = "hosts"
+    name: str
+    payload: dict = {}
+
+
+class DeleteViewRequest(BaseModel):
+    scope: str = "hosts"
+    name: str
 
 
 @router.post("/login")
@@ -249,6 +260,68 @@ def auth_logout(request: Request, db: Session = Depends(get_db)):
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(SESSION_COOKIE, path="/")
     return resp
+
+
+@router.get("/views")
+def auth_list_views(scope: str = "hosts", db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+    scope_norm = (scope or "hosts").strip().lower()
+    rows = db.execute(
+        select(AppSavedView)
+        .where(AppSavedView.user_id == user.id, AppSavedView.scope == scope_norm)
+        .order_by(AppSavedView.name.asc())
+    ).scalars().all()
+    items = [
+        {
+            "scope": scope_norm,
+            "name": r.name,
+            "payload": r.payload if isinstance(r.payload, dict) else {},
+            "updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else None,
+        }
+        for r in rows
+    ]
+    return {"items": items}
+
+
+@router.post("/views")
+def auth_save_view(payload: SaveViewRequest, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+    scope_norm = (payload.scope or "hosts").strip().lower()
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(400, "view name is required")
+
+    existing = db.execute(
+        select(AppSavedView).where(
+            AppSavedView.user_id == user.id,
+            AppSavedView.scope == scope_norm,
+            AppSavedView.name == name,
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        existing.payload = payload.payload or {}
+    else:
+        db.add(AppSavedView(user_id=user.id, scope=scope_norm, name=name, payload=payload.payload or {}))
+
+    db.commit()
+    return {"ok": True, "scope": scope_norm, "name": name}
+
+
+@router.delete("/views")
+def auth_delete_view(payload: DeleteViewRequest, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+    scope_norm = (payload.scope or "hosts").strip().lower()
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(400, "view name is required")
+
+    db.execute(
+        delete(AppSavedView).where(
+            AppSavedView.user_id == user.id,
+            AppSavedView.scope == scope_norm,
+            AppSavedView.name == name,
+        )
+    )
+    db.commit()
+    return {"ok": True, "scope": scope_norm, "name": name}
 
 
 @router.get("/me")
