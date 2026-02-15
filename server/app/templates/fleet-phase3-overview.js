@@ -374,11 +374,21 @@
         throw new Error(`notifications failed (${r.status})`);
       }
       const d = await r.json();
-      const items = Array.isArray(d?.items) ? d.items : [];
+      const itemsRaw = Array.isArray(d?.items) ? d.items : [];
 
       let seen = [];
       try { seen = JSON.parse(localStorage.getItem('fleet_notifications_seen_v1') || '[]'); } catch (_) { seen = []; }
       const seenSet = new Set(Array.isArray(seen) ? seen : []);
+
+      let snoozed = {};
+      try { snoozed = JSON.parse(localStorage.getItem('fleet_notifications_snooze_v1') || '{}') || {}; } catch (_) { snoozed = {}; }
+      const nowMs = Date.now();
+      const isSnoozed = (kind) => {
+        const until = Number((snoozed && snoozed[kind]) || 0);
+        return Number.isFinite(until) && until > nowMs;
+      };
+
+      const items = itemsRaw.filter((it) => !isSnoozed(String(it.kind || '')));
       const unread = items.filter((it) => !seenSet.has(String(it.id || '')));
 
       if (badge) badge.style.display = unread.length ? 'inline' : 'none';
@@ -398,6 +408,12 @@
                 <span style="font-size:0.75rem;color:${it.severity==='high' ? '#fca5a5' : '#fbbf24'};">${w.escapeHtml(it.severity || 'info')}</span>
               </div>
               <div style="color:#94a3b8;font-size:0.88rem;">${w.escapeHtml(it.detail || '')}</div>
+              <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.45rem;">
+                <button class="btn" data-notif-action="open" data-notif-kind="${w.escapeHtml(it.kind || '')}" type="button" style="padding:0.18rem 0.45rem;">Open</button>
+                <button class="btn" data-notif-action="snooze" data-notif-kind="${w.escapeHtml(it.kind || '')}" data-snooze-ms="3600000" type="button" style="padding:0.18rem 0.45rem;">Snooze 1h</button>
+                <button class="btn" data-notif-action="snooze" data-notif-kind="${w.escapeHtml(it.kind || '')}" data-snooze-ms="28800000" type="button" style="padding:0.18rem 0.45rem;">Snooze 8h</button>
+                <button class="btn" data-notif-action="snooze" data-notif-kind="${w.escapeHtml(it.kind || '')}" data-snooze-ms="86400000" type="button" style="padding:0.18rem 0.45rem;">Snooze 24h</button>
+              </div>
             </div>`).join('')}
           </div>
         `;
@@ -408,6 +424,46 @@
             localStorage.setItem('fleet_notifications_seen_v1', JSON.stringify(ids));
           } catch (_) { }
           loadNotifications(ctx, false);
+        });
+
+        wrap.querySelectorAll('[data-notif-action]').forEach((btn) => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const action = btn.getAttribute('data-notif-action') || '';
+            const kind = btn.getAttribute('data-notif-kind') || '';
+            if (!kind) return;
+
+            if (action === 'snooze') {
+              const ms = Number(btn.getAttribute('data-snooze-ms') || 0);
+              if (ms > 0) {
+                try {
+                  snoozed[kind] = Date.now() + ms;
+                  localStorage.setItem('fleet_notifications_snooze_v1', JSON.stringify(snoozed));
+                } catch (_) { }
+                loadNotifications(ctx, false);
+              }
+              return;
+            }
+
+            // Open action by notification kind
+            if (kind === 'failed_run') {
+              const el = document.getElementById('failed-runs-card');
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              return;
+            }
+
+            document.getElementById('nav-hosts')?.click();
+            const sortSel = document.getElementById('hosts-sort');
+            const orderSel = document.getElementById('hosts-order');
+            if (kind === 'offline') {
+              if (sortSel) sortSel.value = 'last_seen';
+              if (orderSel) orderSel.value = 'asc';
+            } else if (kind === 'security_backlog') {
+              if (sortSel) sortSel.value = 'security_updates';
+              if (orderSel) orderSel.value = 'desc';
+            }
+            sortSel?.dispatchEvent(new Event('change'));
+          });
         });
       }
       if (showToastOnManual) w.showToast('Notifications refreshed', 'success');
