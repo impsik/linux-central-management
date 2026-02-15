@@ -708,6 +708,11 @@ body {
   align-items: stretch;
 }
 
+.overview-cards-grid > .admin-card {
+  min-width: 0;
+  overflow: hidden;
+}
+
 @media (max-width: 1400px) {
   .overview-cards-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

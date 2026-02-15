@@ -153,7 +153,7 @@
             attentionEl.innerHTML = '<div style="color:#86efac;">All clear. No high-priority issues detected.</div>';
           } else {
             const html = [];
-            html.push('<div style="overflow:auto;"><table class="process-table" style="min-width:800px;"><thead><tr><th>Host</th><th>Issues</th><th>Last seen</th></tr></thead><tbody>');
+            html.push('<div style="overflow:auto;max-width:100%;"><table class="process-table" style="width:100%;table-layout:fixed;"><thead><tr><th style="width:26%;">Host</th><th>Issues</th><th style="width:28%;">Last seen</th></tr></thead><tbody>');
             for (const it of rows) {
               const agentId = String(it.agent_id || '');
               const hostName = String(it.hostname || it.agent_id || '');
