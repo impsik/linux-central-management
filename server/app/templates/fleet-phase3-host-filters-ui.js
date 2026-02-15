@@ -27,6 +27,8 @@
     const savedViewSaveBtn = document.getElementById('saved-view-save');
     const savedViewApplyBtn = document.getElementById('saved-view-apply');
     const savedViewDeleteBtn = document.getElementById('saved-view-delete');
+    const savedViewSharedEl = document.getElementById('saved-view-shared');
+    const savedViewDefaultEl = document.getElementById('saved-view-default');
     const savedViewStatusEl = document.getElementById('saved-view-status');
 
     function st() { return getState() || {}; }
@@ -69,6 +71,13 @@
       return savedViewsCache;
     }
 
+    function viewKey(it) {
+      const name = String((it && it.name) || '').trim();
+      const owner = String((it && it.owner_username) || '').trim();
+      const shared = !!(it && it.is_shared);
+      return `${name}@@${owner}@@${shared ? '1' : '0'}`;
+    }
+
     function refreshSavedViewsUi() {
       if (!savedViewSelectEl) return;
       const items = Array.isArray(savedViewsCache) ? savedViewsCache : [];
@@ -76,9 +85,12 @@
       savedViewSelectEl.innerHTML = '<option value="">Select saved view</option>' + items.map((it) => {
         const name = String((it && it.name) || '').trim();
         if (!name) return '';
-        return `<option value="${w.escapeHtml(name)}">${w.escapeHtml(name)}</option>`;
+        const shared = !!(it && it.is_shared);
+        const owner = String((it && it.owner_username) || '').trim();
+        const suffix = shared ? ` (shared${owner ? ` by ${owner}` : ''})` : '';
+        return `<option value="${w.escapeHtml(viewKey(it))}">${w.escapeHtml(name + suffix)}</option>`;
       }).join('');
-      if (prev && items.some((x) => x && x.name === prev)) savedViewSelectEl.value = prev;
+      if (prev && items.some((x) => x && viewKey(x) === prev)) savedViewSelectEl.value = prev;
     }
 
     function captureCurrentView() {
@@ -170,12 +182,19 @@
           method: 'POST',
           credentials: 'include',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ scope: 'hosts', name, payload: current }),
+          body: JSON.stringify({
+            scope: 'hosts',
+            name,
+            payload: current,
+            is_shared: !!savedViewSharedEl?.checked,
+            is_default_startup: !!savedViewDefaultEl?.checked,
+          }),
         });
         if (!r.ok) throw new Error(`save failed (${r.status})`);
         await fetchSavedViews();
         refreshSavedViewsUi();
-        if (savedViewSelectEl) savedViewSelectEl.value = name;
+        const saved = (savedViewsCache || []).find((it) => it && it.name === name && !!it.can_edit);
+        if (savedViewSelectEl && saved) savedViewSelectEl.value = viewKey(saved);
         setSavedViewStatus(`Saved view "${name}".`, 'success');
       } catch (err) {
         setSavedViewStatus((err && err.message) ? err.message : 'Failed to save view', 'error');
@@ -184,27 +203,34 @@
 
     savedViewApplyBtn?.addEventListener('click', function (e) {
       e.preventDefault();
-      const name = String(savedViewSelectEl?.value || '').trim();
-      if (!name) {
+      const key = String(savedViewSelectEl?.value || '').trim();
+      if (!key) {
         setSavedViewStatus('Select a saved view first.', 'error');
         return;
       }
-      const view = (savedViewsCache || []).find((it) => it && it.name === name);
+      const view = (savedViewsCache || []).find((it) => viewKey(it) === key);
       if (!view) {
         setSavedViewStatus('Saved view not found.', 'error');
         refreshSavedViewsUi();
         return;
       }
       applySavedView(view.payload || {});
-      if (savedViewNameEl) savedViewNameEl.value = name;
-      setSavedViewStatus(`Applied view "${name}".`, 'success');
+      if (savedViewNameEl) savedViewNameEl.value = String(view.name || '');
+      if (savedViewSharedEl) savedViewSharedEl.checked = !!view.is_shared;
+      if (savedViewDefaultEl) savedViewDefaultEl.checked = !!view.is_default_startup;
+      setSavedViewStatus(`Applied view "${String(view.name || '')}".`, 'success');
     });
 
     savedViewDeleteBtn?.addEventListener('click', async function (e) {
       e.preventDefault();
-      const name = String(savedViewSelectEl?.value || '').trim();
-      if (!name) {
+      const key = String(savedViewSelectEl?.value || '').trim();
+      if (!key) {
         setSavedViewStatus('Select a saved view to delete.', 'error');
+        return;
+      }
+      const view = (savedViewsCache || []).find((it) => viewKey(it) === key);
+      if (!view) {
+        setSavedViewStatus('Saved view not found.', 'error');
         return;
       }
       try {
@@ -212,21 +238,31 @@
           method: 'DELETE',
           credentials: 'include',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ scope: 'hosts', name }),
+          body: JSON.stringify({ scope: 'hosts', name: String(view.name || ''), owner_username: String(view.owner_username || '') }),
         });
         if (!r.ok) throw new Error(`delete failed (${r.status})`);
         await fetchSavedViews();
         refreshSavedViewsUi();
-        setSavedViewStatus(`Deleted view "${name}".`, 'success');
+        setSavedViewStatus(`Deleted view "${String(view.name || '')}".`, 'success');
       } catch (err) {
         setSavedViewStatus((err && err.message) ? err.message : 'Failed to delete view', 'error');
       }
     });
 
     savedViewSelectEl?.addEventListener('change', function () {
-      const name = String(savedViewSelectEl?.value || '').trim();
-      if (savedViewNameEl) savedViewNameEl.value = name;
-      if (!name) return;
+      const key = String(savedViewSelectEl?.value || '').trim();
+      const view = (savedViewsCache || []).find((it) => viewKey(it) === key);
+      if (!view) return;
+      if (savedViewNameEl) savedViewNameEl.value = String(view.name || '');
+      if (savedViewSharedEl) {
+        savedViewSharedEl.checked = !!view.is_shared;
+        savedViewSharedEl.disabled = !view.can_edit;
+      }
+      if (savedViewDefaultEl) {
+        savedViewDefaultEl.checked = !!view.is_default_startup;
+        savedViewDefaultEl.disabled = !view.can_edit;
+      }
+      if (savedViewDeleteBtn) savedViewDeleteBtn.disabled = !view.can_edit;
       setSavedViewStatus('Click Apply to use selected view.', null);
     });
 
@@ -234,6 +270,15 @@
       try {
         await fetchSavedViews();
         refreshSavedViewsUi();
+        const def = (savedViewsCache || []).find((it) => !!it?.can_edit && !!it?.is_default_startup);
+        if (def) {
+          applySavedView(def.payload || {});
+          if (savedViewSelectEl) savedViewSelectEl.value = viewKey(def);
+          if (savedViewNameEl) savedViewNameEl.value = String(def.name || '');
+          if (savedViewSharedEl) savedViewSharedEl.checked = !!def.is_shared;
+          if (savedViewDefaultEl) savedViewDefaultEl.checked = !!def.is_default_startup;
+          setSavedViewStatus(`Applied default view "${String(def.name || '')}".`, 'success');
+        }
       } catch (_) {
         setSavedViewStatus('Saved views unavailable.', 'error');
       }

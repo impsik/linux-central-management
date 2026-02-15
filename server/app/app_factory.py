@@ -38,6 +38,11 @@ def _startup() -> None:
             insp = inspect(engine)
             app_user_cols = {c.get("name") for c in insp.get_columns("app_users")}
             app_session_cols = {c.get("name") for c in insp.get_columns("app_sessions")}
+            app_saved_views_cols = set()
+            try:
+                app_saved_views_cols = {c.get("name") for c in insp.get_columns("app_saved_views")}
+            except Exception:
+                app_saved_views_cols = set()
 
             dialect = engine.dialect.name
             stmts: list[str] = []
@@ -58,6 +63,10 @@ def _startup() -> None:
                     stmts.append("ALTER TABLE app_users ADD COLUMN recovery_codes JSON NOT NULL DEFAULT '[]'")
             if "mfa_verified_at" not in app_session_cols:
                 stmts.append("ALTER TABLE app_sessions ADD COLUMN mfa_verified_at TIMESTAMP WITH TIME ZONE")
+            if app_saved_views_cols and "is_shared" not in app_saved_views_cols:
+                stmts.append("ALTER TABLE app_saved_views ADD COLUMN is_shared BOOLEAN NOT NULL DEFAULT false")
+            if app_saved_views_cols and "is_default_startup" not in app_saved_views_cols:
+                stmts.append("ALTER TABLE app_saved_views ADD COLUMN is_default_startup BOOLEAN NOT NULL DEFAULT false")
 
             if stmts:
                 with engine.begin() as conn:

@@ -177,6 +177,11 @@ class AppSavedView(Base):
     name = Column(String, nullable=False)
     payload = Column(JSON, nullable=False, default=dict)
 
+    # Shared views are visible to all users (admin-managed by default).
+    is_shared = Column(Boolean, nullable=False, default=False, index=True)
+    # Per-user startup default: auto-apply this view on page load.
+    is_default_startup = Column(Boolean, nullable=False, default=False, index=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

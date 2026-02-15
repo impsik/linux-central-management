@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -42,11 +42,14 @@ class SaveViewRequest(BaseModel):
     scope: str = "hosts"
     name: str
     payload: dict = {}
+    is_shared: bool = False
+    is_default_startup: bool = False
 
 
 class DeleteViewRequest(BaseModel):
     scope: str = "hosts"
     name: str
+    owner_username: str | None = None
 
 
 @router.post("/login")
@@ -266,19 +269,31 @@ def auth_logout(request: Request, db: Session = Depends(get_db)):
 def auth_list_views(scope: str = "hosts", db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
     scope_norm = (scope or "hosts").strip().lower()
     rows = db.execute(
-        select(AppSavedView)
-        .where(AppSavedView.user_id == user.id, AppSavedView.scope == scope_norm)
-        .order_by(AppSavedView.name.asc())
-    ).scalars().all()
-    items = [
-        {
-            "scope": scope_norm,
-            "name": r.name,
-            "payload": r.payload if isinstance(r.payload, dict) else {},
-            "updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else None,
-        }
-        for r in rows
-    ]
+        select(AppSavedView, AppUser.username)
+        .join(AppUser, AppUser.id == AppSavedView.user_id)
+        .where(
+            AppSavedView.scope == scope_norm,
+            or_(AppSavedView.user_id == user.id, AppSavedView.is_shared == True),  # noqa: E712
+        )
+        .order_by(AppSavedView.is_shared.asc(), AppSavedView.name.asc())
+    ).all()
+
+    items = []
+    for r, owner_username in rows:
+        can_edit = str(getattr(r, "user_id", "")) == str(user.id)
+        items.append(
+            {
+                "scope": scope_norm,
+                "name": r.name,
+                "payload": r.payload if isinstance(r.payload, dict) else {},
+                "is_shared": bool(getattr(r, "is_shared", False)),
+                "is_default_startup": bool(getattr(r, "is_default_startup", False) and can_edit),
+                "owner_username": owner_username,
+                "can_edit": can_edit,
+                "updated_at": r.updated_at.isoformat() if getattr(r, "updated_at", None) else None,
+            }
+        )
+
     return {"items": items}
 
 
@@ -289,6 +304,12 @@ def auth_save_view(payload: SaveViewRequest, db: Session = Depends(get_db), user
     if not name:
         raise HTTPException(400, "view name is required")
 
+    perms = permissions_for(user)
+    is_shared = bool(getattr(payload, "is_shared", False))
+    is_default_startup = bool(getattr(payload, "is_default_startup", False))
+    if is_shared and (perms.get("role") != "admin"):
+        raise HTTPException(403, "Only admin can create shared views")
+
     existing = db.execute(
         select(AppSavedView).where(
             AppSavedView.user_id == user.id,
@@ -297,10 +318,28 @@ def auth_save_view(payload: SaveViewRequest, db: Session = Depends(get_db), user
         )
     ).scalar_one_or_none()
 
+    if is_default_startup:
+        old_defaults = db.execute(
+            select(AppSavedView).where(AppSavedView.user_id == user.id, AppSavedView.scope == scope_norm)
+        ).scalars().all()
+        for row in old_defaults:
+            row.is_default_startup = False
+
     if existing:
         existing.payload = payload.payload or {}
+        existing.is_shared = is_shared
+        existing.is_default_startup = is_default_startup
     else:
-        db.add(AppSavedView(user_id=user.id, scope=scope_norm, name=name, payload=payload.payload or {}))
+        db.add(
+            AppSavedView(
+                user_id=user.id,
+                scope=scope_norm,
+                name=name,
+                payload=payload.payload or {},
+                is_shared=is_shared,
+                is_default_startup=is_default_startup,
+            )
+        )
 
     db.commit()
     return {"ok": True, "scope": scope_norm, "name": name}
@@ -313,13 +352,30 @@ def auth_delete_view(payload: DeleteViewRequest, db: Session = Depends(get_db), 
     if not name:
         raise HTTPException(400, "view name is required")
 
-    db.execute(
-        delete(AppSavedView).where(
-            AppSavedView.user_id == user.id,
+    q = (
+        select(AppSavedView, AppUser.username)
+        .join(AppUser, AppUser.id == AppSavedView.user_id)
+        .where(
             AppSavedView.scope == scope_norm,
             AppSavedView.name == name,
+            or_(AppSavedView.user_id == user.id, AppSavedView.is_shared == True),  # noqa: E712
         )
     )
+    owner_username_req = (payload.owner_username or "").strip()
+    if owner_username_req:
+        q = q.where(AppUser.username == owner_username_req)
+
+    row_with_owner = db.execute(q).first()
+    row = row_with_owner[0] if row_with_owner else None
+    if not row:
+        raise HTTPException(404, "view not found")
+
+    owner = str(getattr(row, "user_id", "")) == str(user.id)
+    perms = permissions_for(user)
+    if not owner and not (bool(getattr(row, "is_shared", False)) and perms.get("role") == "admin"):
+        raise HTTPException(403, "Not allowed to delete this view")
+
+    db.execute(delete(AppSavedView).where(AppSavedView.id == row.id))
     db.commit()
     return {"ok": True, "scope": scope_norm, "name": name}
 
