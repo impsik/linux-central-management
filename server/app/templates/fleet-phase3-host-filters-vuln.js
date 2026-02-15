@@ -364,19 +364,36 @@
       const ids = Array.isArray(targets) ? targets.filter(Boolean) : [];
       if (!ids.length) return;
       const doWait = ids.length <= 20;
-      if (statusNode) statusNode.textContent = doWait
-        ? 'Refreshing update cache from hosts…'
-        : 'Queued background refresh of update cache…';
+
+      let done = 0;
+      let okCount = 0;
+      const total = ids.length;
+
+      const setProgress = () => {
+        if (!statusNode) return;
+        const mode = doWait ? 'Refreshing update cache' : 'Queueing update cache refresh';
+        statusNode.textContent = `${mode}: ${done}/${total} hosts (${okCount} ok)`;
+      };
+      setProgress();
 
       const work = ids.map(async function (aid) {
         const url = '/hosts/' + encodeURIComponent(aid) + '/packages/refresh?wait=' + (doWait ? 'true' : 'false');
-        const r = await fetch(url, { method: 'POST' });
-        return { aid: aid, ok: !!r.ok };
+        try {
+          const r = await fetch(url, { method: 'POST' });
+          if (r.ok) okCount += 1;
+        } catch (_) { }
+        done += 1;
+        setProgress();
       });
 
       try {
         await Promise.allSettled(work);
       } catch (_) { }
+
+      if (statusNode) {
+        if (doWait) statusNode.textContent = `Update cache refreshed on ${okCount}/${total} hosts.`;
+        else statusNode.textContent = `Refresh queued for ${okCount}/${total} hosts (background).`;
+      }
     }
 
     async function upgradeSelected() {
