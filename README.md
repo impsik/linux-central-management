@@ -14,6 +14,10 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 
 ### Web UI
 - Fleet overview + “Attention required” (offline, high disk, high load, security updates, etc.)
+- **Morning Brief** card with quick drill-down actions
+- **Notification Center** (unread badge, mark-read, snooze by alert kind)
+- **Saved Views** for host filters (per-user, shared/team views, default startup view)
+- **Create cron from current view** + run-now/runbook quick actions
 - Per-host:
   - metrics (CPU/mem/disk), top processes
   - packages list + package details (homepage link opens in new tab)
@@ -28,6 +32,9 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - `/health` for health checks
 - `/hosts/*` for host metrics, packages, users, services
 - `/jobs/*` to dispatch/inspect jobs
+- `/dashboard/notifications` for in-app notification feed
+- `/auth/views` for saved views (user/shared)
+- `/dashboard/alerts/teams/*` for Teams test + morning brief push
 
 ---
 ![Screenshot](docs/image.png)
@@ -55,6 +62,7 @@ cp env.example .env
 #   MFA_ENCRYPTION_KEY   (required when MFA is enabled; see below)
 # optionally:
 #   AGENT_TERMINAL_TOKEN (only if you enable terminal)
+#   TEAMS_WEBHOOK_URL + TEAMS_ALERTS_ENABLED=true (if you want Teams alerts)
 ```
 
 ### 3) Start
@@ -207,6 +215,28 @@ Config via env (server):
 
 ---
 
+## Teams alerts (optional)
+You can send alerts to a Microsoft Teams channel via Incoming Webhook.
+
+### Env settings
+In `deploy/docker/.env`:
+- `TEAMS_WEBHOOK_URL=<incoming webhook url>`
+- `TEAMS_ALERTS_ENABLED=true`
+
+### Create webhook in Teams
+1. Open target Team + Channel
+2. Add **Incoming Webhook** (or Workflow HTTP endpoint, depending on tenant policy)
+3. Copy URL and set `TEAMS_WEBHOOK_URL`
+
+### Test from UI
+In Fleet Overview → **Data freshness**:
+- `Teams: Send test`
+- `Teams: Send morning brief`
+
+If your tenant blocks webhook creation, use in-app Notification Center until Teams admin enables it.
+
+---
+
 ## Developer workflow
 
 ### script.sh (developer convenience)
@@ -222,5 +252,13 @@ cp hosts.example hosts
 # edit hosts
 SERVER_URL=http://<SERVER_IP>:8000 AGENT_TOKEN=<AGENT_SHARED_TOKEN> TERM_TOKEN=<AGENT_TERMINAL_TOKEN> TARGETS=all ./script.sh
 ```
+
+### CI
+GitHub Actions runs:
+- frontend unit tests
+- backend smoke tests (overview/notifications/cron)
+- full backend test suite
+
+Workflow file: `.github/workflows/ci.yml`
 
 ---
