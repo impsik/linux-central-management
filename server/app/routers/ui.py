@@ -55,7 +55,10 @@ def _render_template_with_nonce(name: str, request: Request) -> str:
 
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request):
-    return _render_template_with_nonce("login.html", request)
+    return HTMLResponse(
+        content=_render_template_with_nonce("login.html", request),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/assets/index-MnFIflNy.css")
