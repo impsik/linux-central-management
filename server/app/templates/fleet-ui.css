@@ -699,6 +699,27 @@ body {
   border-color: var(--primary);
 }
 
+/* Overview mid-row cards (Attention / Data freshness / Morning brief)
+   Keep columns balanced across screen sizes. */
+.overview-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+@media (max-width: 1400px) {
+  .overview-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .overview-cards-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .host-name {
   font-weight: 700;
   color: var(--text);
