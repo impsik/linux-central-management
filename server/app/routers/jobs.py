@@ -9,6 +9,7 @@ from ..deps import require_ui_user
 from ..models import HighRiskActionRequest, Job, JobRun
 from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade
 from ..services.db_utils import transaction
+from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import assert_action_allowed_now
@@ -225,6 +226,17 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
                 status="pending",
             )
             db.add(req)
+            db.flush()
+            log_event(
+                db,
+                action="high_risk.request.created",
+                actor=user,
+                request=request,
+                target_type="high_risk_action_request",
+                target_id=str(req.id),
+                target_name="dist-upgrade",
+                meta={"request_id": str(req.id), "action": "dist-upgrade", "target_count": len(targets)},
+            )
         return {
             "approval_required": True,
             "request_id": str(req.id),

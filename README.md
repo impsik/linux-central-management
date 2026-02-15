@@ -223,6 +223,8 @@ Env settings:
 - `HIGH_RISK_APPROVAL_ACTIONS` (CSV, default `dist-upgrade,security-campaign`)
 
 When enabled, risky actions return `approval_required=true` and create pending approval requests.
+Requester cannot approve/reject own request (enforced two-person rule).
+All approval lifecycle steps are written to the audit log.
 Admin endpoints:
 - `GET /approvals/admin/pending`
 - `POST /approvals/admin/{request_id}/approve`

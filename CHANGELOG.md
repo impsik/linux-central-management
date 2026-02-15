@@ -53,6 +53,8 @@ All notable changes to this project are documented in this file.
   - pending/admin approval/rejection endpoints (`/approvals/*`)
   - execution on admin approve (dist-upgrade job or security campaign)
   - frontend toasts updated to show approval-required request IDs
+  - requester self-approve/self-reject blocked (true two-person rule)
+  - audit events added for request created/approved/rejected/executed/failed
 
 ### Changed
 - Overview card layout now uses balanced responsive breakpoints (3/2/1) and better overflow handling.

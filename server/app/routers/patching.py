@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import HighRiskActionRequest, Host, HostPackageUpdate, PatchCampaign, PatchCampaignHost
+from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.high_risk_approval import is_approval_required
 from ..services.maintenance import assert_action_allowed_now
@@ -87,6 +88,7 @@ def patching_dashboard(
 @router.post("/campaigns/security-updates")
 def create_security_updates_campaign(
     payload: dict,
+    request: Request,
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
@@ -155,6 +157,22 @@ def create_security_updates_campaign(
                 status="pending",
             )
             db.add(req)
+            db.flush()
+            log_event(
+                db,
+                action="high_risk.request.created",
+                actor=user,
+                request=request,
+                target_type="high_risk_action_request",
+                target_id=str(req.id),
+                target_name="security-campaign",
+                meta={
+                    "request_id": str(req.id),
+                    "action": "security-campaign",
+                    "agent_count": len(agent_ids or []),
+                    "label_count": len((labels or {}).keys()) if isinstance(labels, dict) else 0,
+                },
+            )
         return {"approval_required": True, "request_id": str(req.id), "action": "security-campaign", "status": "pending"}
 
     with transaction(db):
