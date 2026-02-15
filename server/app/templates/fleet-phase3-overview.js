@@ -388,6 +388,7 @@
         return Number.isFinite(until) && until > nowMs;
       };
 
+      const kinds = Array.from(new Set(itemsRaw.map((it) => String(it.kind || '')).filter(Boolean)));
       const items = itemsRaw.filter((it) => !isSnoozed(String(it.kind || '')));
       const unread = items.filter((it) => !seenSet.has(String(it.id || '')));
 
@@ -397,10 +398,14 @@
         wrap.innerHTML = '<div style="color:#86efac;">No active notifications 🎯</div>';
       } else {
         wrap.innerHTML = `
-          <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+          <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;">
             <div style="color:#94a3b8;">Unread: <b>${unread.length}</b> / ${items.length}</div>
-            <button class="btn" id="notifications-mark-read" type="button">Mark all read</button>
+            <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+              <button class="btn" id="notifications-mark-read" type="button">Mark all read</button>
+              <button class="btn" id="notifications-unsnooze-all" type="button">Unsnooze all</button>
+            </div>
           </div>
+          <div id="notifications-snooze-summary" style="color:#94a3b8;font-size:0.85rem;margin-bottom:0.4rem;"></div>
           <div style="display:flex;flex-direction:column;gap:0.45rem;">
             ${items.map((it) => `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.6rem;background:var(--panel-2);${seenSet.has(String(it.id||'')) ? 'opacity:0.75;' : ''}">
               <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
@@ -418,10 +423,38 @@
           </div>
         `;
 
+        function fmtRemain(ms) {
+          const total = Math.max(0, Math.floor(ms / 1000));
+          const h = Math.floor(total / 3600);
+          const m = Math.floor((total % 3600) / 60);
+          if (h > 0) return `${h}h ${m}m`;
+          return `${m}m`;
+        }
+
+        const snoozeSummaryEl = document.getElementById('notifications-snooze-summary');
+        if (snoozeSummaryEl) {
+          const activeKinds = kinds
+            .map((k) => ({ kind: k, until: Number((snoozed && snoozed[k]) || 0) }))
+            .filter((x) => Number.isFinite(x.until) && x.until > nowMs)
+            .sort((a, b) => a.until - b.until);
+          if (!activeKinds.length) {
+            snoozeSummaryEl.textContent = 'No active snoozes.';
+          } else {
+            snoozeSummaryEl.textContent = 'Snoozed: ' + activeKinds.map((x) => `${x.kind} (${fmtRemain(x.until - nowMs)})`).join(' • ');
+          }
+        }
+
         document.getElementById('notifications-mark-read')?.addEventListener('click', () => {
           try {
             const ids = items.map((it) => String(it.id || '')).filter(Boolean);
             localStorage.setItem('fleet_notifications_seen_v1', JSON.stringify(ids));
+          } catch (_) { }
+          loadNotifications(ctx, false);
+        });
+
+        document.getElementById('notifications-unsnooze-all')?.addEventListener('click', () => {
+          try {
+            localStorage.setItem('fleet_notifications_snooze_v1', JSON.stringify({}));
           } catch (_) { }
           loadNotifications(ctx, false);
         });
