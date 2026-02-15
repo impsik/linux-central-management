@@ -219,7 +219,7 @@
       </div>
 
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.75rem;">
-        <button class="btn" id="nav-overview" type="button">Overview <span id="notifications-badge" style="display:none;margin-left:6px;color:#ef4444;font-weight:900;">•</span></button>
+        <button class="btn" id="nav-overview" type="button">Overview <span id="notifications-badge" style="display:none;margin-left:6px;color:#ef4444;font-weight:900;">•</span><span id="approvals-badge" title="Pending high-risk approvals" style="display:none;margin-left:6px;color:#f59e0b;font-weight:900;">⚠</span></button>
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
         <button class="btn" id="nav-cronjobs" type="button">Cronjobs</button>
         <button class="btn" id="nav-sshkeys" type="button">SSH Keys <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
@@ -1692,6 +1692,26 @@
       }
     }
 
+    async function refreshApprovalsIndicator() {
+      const badge = document.getElementById('approvals-badge');
+      if (!badge) return;
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        badge.style.display = 'none';
+        return;
+      }
+      try {
+        const r = await fetch('/approvals/admin/pending', { credentials: 'include' });
+        if (!r.ok) throw new Error(`approvals failed (${r.status})`);
+        const d = await r.json();
+        const count = ((d && d.items) ? d.items : []).length;
+        badge.style.display = count > 0 ? 'inline' : 'none';
+        badge.textContent = count > 0 ? `⚠${count > 9 ? '9+' : count}` : '⚠';
+      } catch (_) {
+        badge.style.display = 'none';
+      }
+    }
+
     async function loadAdminApprovals(showToastOnManual = false) {
       const card = document.getElementById('admin-approvals-card');
       const tbody = document.getElementById('admin-approvals-table');
@@ -1701,6 +1721,7 @@
       const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
       if (!isAdmin) {
         card.style.display = 'none';
+        await refreshApprovalsIndicator();
         return;
       }
       card.style.display = 'block';
@@ -1717,6 +1738,7 @@
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
           setTableState(tbody, 5, 'empty', 'No pending approvals');
+          await refreshApprovalsIndicator();
           if (showToastOnManual) showToast('Approvals refreshed', 'success');
           return;
         }
@@ -1755,6 +1777,7 @@
             showToast('Approved and executed', 'success');
             loadAdminApprovals();
             loadAdminAudit();
+            refreshApprovalsIndicator();
           });
         });
 
@@ -1776,14 +1799,17 @@
             showToast('Rejected', 'success');
             loadAdminApprovals();
             loadAdminAudit();
+            refreshApprovalsIndicator();
           });
         });
 
+        await refreshApprovalsIndicator();
         if (showToastOnManual) showToast('Approvals refreshed', 'success');
       } catch (e) {
         setTableState(tbody, 5, 'error', e.message || String(e));
         if (statusEl) statusEl.textContent = e.message || String(e);
         if (showToastOnManual) showToast(e.message || String(e), 'error');
+        await refreshApprovalsIndicator();
       }
     }
 
@@ -3099,8 +3125,10 @@
     }, 10000);
 
     void loadFleetOverview();
+    void refreshApprovalsIndicator();
     startHostRefresh();
     setInterval(() => { void loadFleetOverview(); }, 15000);
+    setInterval(() => { void refreshApprovalsIndicator(); }, 60000);
   </script>
 </body>
 
