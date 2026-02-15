@@ -3,6 +3,7 @@ from __future__ import annotations
 import mimetypes
 from pathlib import Path
 
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
@@ -16,6 +17,25 @@ router = APIRouter(tags=["ui"])
 TEMPLATES_DIR = Path(__file__).resolve().parents[1] / "templates"
 
 
+def _compute_asset_version() -> str:
+    """Build a stable per-process cache-busting token from template asset mtimes."""
+    latest_mtime_ns = 0
+    try:
+        for p in TEMPLATES_DIR.glob("*"):
+            if p.is_file() and p.suffix.lower() in (".js", ".css"):
+                try:
+                    latest_mtime_ns = max(latest_mtime_ns, int(p.stat().st_mtime_ns))
+                except Exception:
+                    continue
+    except Exception:
+        latest_mtime_ns = 0
+    # Keep token short for URLs.
+    return str(latest_mtime_ns or 1)
+
+
+ASSET_VERSION = _compute_asset_version()
+
+
 def _read_template(name: str) -> str:
     path = (TEMPLATES_DIR / name).resolve()
     # Basic safety: prevent path traversal
@@ -26,6 +46,7 @@ def _read_template(name: str) -> str:
 
 def _render_template_with_nonce(name: str, request: Request) -> str:
     html = _read_template(name)
+    html = html.replace("__ASSET_VERSION__", ASSET_VERSION)
     nonce = getattr(getattr(request, "state", None), "csp_nonce", None)
     if nonce:
         return html.replace("__CSP_NONCE__", str(nonce))

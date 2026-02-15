@@ -143,7 +143,10 @@ function initAdminPanel() {
         logoutItem.disabled = true;
         let hadError = false;
         try {
-          await fetch('/auth/logout', { method: 'POST' });
+          await fetch('/auth/logout', {
+            method: 'POST',
+            headers: { 'X-CSRF-Token': (typeof getCookie === 'function' ? (getCookie('fleet_csrf') || '') : '') }
+          });
         } catch {
           hadError = true;
         }
