@@ -47,6 +47,12 @@ All notable changes to this project are documented in this file.
   - guarded actions list (CSV)
   - enforcement for `dist-upgrade` and `security-campaign`
   - dashboard endpoint: `/dashboard/maintenance-window`
+- Two-person approval workflow for high-risk actions:
+  - optional enable via env
+  - approval-required responses for guarded actions
+  - pending/admin approval/rejection endpoints (`/approvals/*`)
+  - execution on admin approve (dist-upgrade job or security campaign)
+  - frontend toasts updated to show approval-required request IDs
 
 ### Changed
 - Overview card layout now uses balanced responsive breakpoints (3/2/1) and better overflow handling.

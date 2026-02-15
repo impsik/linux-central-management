@@ -7,8 +7,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Host, HostPackageUpdate, PatchCampaign, PatchCampaignHost
+from ..deps import require_ui_user
+from ..models import HighRiskActionRequest, Host, HostPackageUpdate, PatchCampaign, PatchCampaignHost
 from ..services.db_utils import transaction
+from ..services.high_risk_approval import is_approval_required
 from ..services.maintenance import assert_action_allowed_now
 from ..services.patching import create_patch_campaign
 
@@ -86,6 +88,7 @@ def patching_dashboard(
 def create_security_updates_campaign(
     payload: dict,
     db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
 ):
     """Create a patch campaign.
 
@@ -133,6 +136,26 @@ def create_security_updates_campaign(
     rings = payload.get("rings")
     labels = payload.get("labels")
     agent_ids = payload.get("agent_ids")
+
+    if is_approval_required("security-campaign"):
+        with transaction(db):
+            req = HighRiskActionRequest(
+                user_id=user.id,
+                action="security-campaign",
+                payload={
+                    "labels": labels,
+                    "agent_ids": agent_ids,
+                    "rings": rings,
+                    "window_start": ws.isoformat(),
+                    "window_end": we.isoformat(),
+                    "concurrency": concurrency,
+                    "reboot_if_needed": bool(payload.get("reboot_if_needed") or False),
+                    "include_kernel": bool(payload.get("include_kernel") or False),
+                },
+                status="pending",
+            )
+            db.add(req)
+        return {"approval_required": True, "request_id": str(req.id), "action": "security-campaign", "status": "pending"}
 
     with transaction(db):
         c = create_patch_campaign(

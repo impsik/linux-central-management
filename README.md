@@ -215,6 +215,21 @@ Env settings:
 
 When enabled, guarded actions are rejected with HTTP 403 outside the configured window.
 
+### Two-person approvals for high-risk actions (optional)
+Require explicit admin approval before execution of selected high-risk actions.
+
+Env settings:
+- `HIGH_RISK_APPROVAL_ENABLED=true|false`
+- `HIGH_RISK_APPROVAL_ACTIONS` (CSV, default `dist-upgrade,security-campaign`)
+
+When enabled, risky actions return `approval_required=true` and create pending approval requests.
+Admin endpoints:
+- `GET /approvals/admin/pending`
+- `POST /approvals/admin/{request_id}/approve`
+- `POST /approvals/admin/{request_id}/reject`
+User endpoint:
+- `GET /approvals/my`
+
 ---
 
 ## Background metrics refresh

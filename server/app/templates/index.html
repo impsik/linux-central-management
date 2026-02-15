@@ -2407,6 +2407,15 @@
             try { const j = raw ? JSON.parse(raw) : null; detail = j?.detail || j?.error || ''; } catch (_) { detail = ''; }
             throw new Error(detail || `request failed (${r ? r.status : 'n/a'})`);
           }
+
+          let data = null;
+          try { data = await r.json(); } catch (_) { data = null; }
+          if (data && data.approval_required) {
+            if (statusEl) statusEl.textContent = `Approval required: request ${data.request_id}`;
+            showToast(`Approval required (${action}). Request: ${data.request_id}`, 'info', 5000);
+            return;
+          }
+
           if (statusEl) statusEl.textContent = `Triggered ${action} for ${ids.length} hosts.`;
           showToast(`Triggered ${action} for ${ids.length} hosts`, 'success');
         } catch (err) {

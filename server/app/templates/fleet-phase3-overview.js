@@ -665,6 +665,9 @@
         return w.showToast(msg, 'error');
       }
       const d = await r.json();
+      if (d && d.approval_required) {
+        return w.showToast(`Approval required (security-campaign): ${d.request_id}`, 'info', 5000);
+      }
       w.showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
     });
 
@@ -679,6 +682,9 @@
         return w.showToast(msg, 'error');
       }
       const d = await r.json();
+      if (d && d.approval_required) {
+        return w.showToast(`Approval required (dist-upgrade): ${d.request_id}`, 'info', 5000);
+      }
       w.showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
     });
 

@@ -339,6 +339,26 @@ class UserSSHKey(Base):
     __table_args__ = (Index("ix_user_ssh_keys_user_created", "user_id", "created_at"),)
 
 
+class HighRiskActionRequest(Base):
+    __tablename__ = "high_risk_action_requests"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="CASCADE"), nullable=False, index=True)
+    action = Column(String, nullable=False, index=True)  # dist-upgrade|security-campaign
+    payload = Column(JSON, nullable=False, default=dict)
+
+    status = Column(String, nullable=False, default="pending", index=True)  # pending|approved|rejected|executed|failed
+    approved_by = Column(String, nullable=True, index=True)
+    approved_at = Column(DateTime(timezone=True))
+
+    error = Column(Text)
+    execution_ref = Column(String, index=True)  # job_key or campaign_key
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    finished_at = Column(DateTime(timezone=True))
+
+
 class SSHKeyDeploymentRequest(Base):
     __tablename__ = "ssh_key_deployment_requests"
 

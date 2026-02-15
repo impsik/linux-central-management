@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
-from ..models import Job, JobRun
+from ..models import HighRiskActionRequest, Job, JobRun
 from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade
 from ..services.db_utils import transaction
+from ..services.high_risk_approval import is_approval_required
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import assert_action_allowed_now
 from ..services.targets import resolve_agent_ids
@@ -203,7 +204,7 @@ async def cve_check(payload: JobCreateCVECheck, db: Session = Depends(get_db)):
 
 
 @router.post("/dist-upgrade")
-async def dist_upgrade(payload: JobCreateDistUpgrade, db: Session = Depends(get_db)):
+async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Run apt-get dist-upgrade/full-upgrade on targeted agents."""
 
     try:
@@ -214,6 +215,23 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, db: Session = Depends(get_
     targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
+
+    if is_approval_required("dist-upgrade"):
+        with transaction(db):
+            req = HighRiskActionRequest(
+                user_id=user.id,
+                action="dist-upgrade",
+                payload={"agent_ids": targets},
+                status="pending",
+            )
+            db.add(req)
+        return {
+            "approval_required": True,
+            "request_id": str(req.id),
+            "action": "dist-upgrade",
+            "targets": targets,
+            "status": "pending",
+        }
 
     with transaction(db):
         created = create_job_with_runs(
