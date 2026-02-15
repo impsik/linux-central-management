@@ -32,6 +32,7 @@ services:
       BOOTSTRAP_USERNAME: ${BOOTSTRAP_USERNAME:-admin}
       BOOTSTRAP_PASSWORD: ${BOOTSTRAP_PASSWORD:-}
       UI_COOKIE_SECURE: ${UI_COOKIE_SECURE:-false}
+      UI_REVOKE_ALL_SESSIONS_ON_STARTUP: ${UI_REVOKE_ALL_SESSIONS_ON_STARTUP:-false}
 
       # Once Alembic is in use, disable auto-create in production deployments:
       DB_AUTO_CREATE_TABLES: ${DB_AUTO_CREATE_TABLES:-true}

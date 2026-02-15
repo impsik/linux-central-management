@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
-from sqlalchemy import inspect, text
+from sqlalchemy import delete, inspect, text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 # NOTE: DB schema should be managed by Alembic in production.
@@ -79,6 +79,22 @@ def _startup() -> None:
             except Exception:
                 # Fail fast to avoid confusing runtime errors.
                 raise
+
+    # Optional hard reset of UI sessions on each startup.
+    # Useful for environments where restart should force everyone to re-login.
+    if bool(getattr(settings, "ui_revoke_all_sessions_on_startup", False)):
+        from .models import AppSession
+
+        db = SessionLocal()
+        try:
+            deleted_count = db.execute(delete(AppSession)).rowcount or 0
+            db.commit()
+            logger.warning("Revoked all UI sessions on startup (deleted=%s)", deleted_count)
+        except Exception:
+            logger.exception("Failed to revoke UI sessions on startup")
+            db.rollback()
+        finally:
+            db.close()
 
     # Seed initial UI user (configurable via env)
     from passlib.context import CryptContext

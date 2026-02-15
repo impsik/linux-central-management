@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     # UI auth
     ui_cookie_secure: bool = False  # set True behind HTTPS
     ui_session_days: int = 30
+    # If true, revoke all UI sessions on server startup (useful when you want restart=>forced relogin).
+    ui_revoke_all_sessions_on_startup: bool = False
 
     # MFA (TOTP)
     # Required for admin/operator when mfa_require_for_privileged=true
