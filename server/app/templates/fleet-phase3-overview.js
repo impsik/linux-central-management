@@ -14,11 +14,12 @@
     try {
       const r = await fetch('/dashboard/summary', { credentials: 'include' });
       if (!r.ok) {
-        if (r.status === 403 && typeof w.loadAuthInfo === 'function') {
-          try { await w.loadAuthInfo(); } catch (_) {}
-          if (typeof w.showToast === 'function') {
-            w.showToast('MFA required — complete setup/verification to continue.', 'info', 4000);
+        if (r.status === 403) {
+          // Expected transient state during MFA gating; avoid flashing scary errors.
+          if (typeof w.loadAuthInfo === 'function') {
+            try { await w.loadAuthInfo(); } catch (_) {}
           }
+          return;
         }
         throw new Error(`dashboard summary failed (${r.status})`);
       }
@@ -368,7 +369,10 @@
     try {
       wrap.innerHTML = '<div class="loading">Loading notifications…</div>';
       const r = await fetch('/dashboard/notifications?limit=30', { credentials: 'include' });
-      if (!r.ok) throw new Error(`notifications failed (${r.status})`);
+      if (!r.ok) {
+        if (r.status === 403) return; // MFA transient
+        throw new Error(`notifications failed (${r.status})`);
+      }
       const d = await r.json();
       const items = Array.isArray(d?.items) ? d.items : [];
 
