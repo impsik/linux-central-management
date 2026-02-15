@@ -417,8 +417,26 @@
     const secBtn = document.getElementById('overview-security-campaign');
     const distBtn = document.getElementById('overview-dist-upgrade');
     const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
+    const teamsTestBtn = document.getElementById('teams-test-alert');
+    const teamsBriefBtn = document.getElementById('teams-send-brief');
 
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
+    w.wireBusyClick(teamsTestBtn, 'Sending…', async () => {
+      const r = await fetch('/dashboard/alerts/teams/test', { method: 'POST', credentials: 'include' });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(`Teams test failed (${r.status}): ${t}`);
+      }
+      w.showToast('Teams test alert sent', 'success');
+    });
+    w.wireBusyClick(teamsBriefBtn, 'Sending…', async () => {
+      const r = await fetch('/dashboard/alerts/teams/morning-brief', { method: 'POST', credentials: 'include' });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(`Teams brief failed (${r.status}): ${t}`);
+      }
+      w.showToast('Teams morning brief sent', 'success');
+    });
     w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false)]); });
 
     w.wireBusyClick(invBtn, 'Queueing…', async () => {

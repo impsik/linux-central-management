@@ -71,5 +71,9 @@ class Settings(BaseSettings):
     metrics_background_refresh_seconds: int = 60  # set 0 to disable
     metrics_background_batch_limit: int = 50
 
+    # Teams notifications
+    teams_webhook_url: str | None = None
+    teams_alerts_enabled: bool = False
+
 
 settings = Settings()

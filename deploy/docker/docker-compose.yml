@@ -60,6 +60,10 @@ services:
       METRICS_BACKGROUND_REFRESH_SECONDS: ${METRICS_BACKGROUND_REFRESH_SECONDS:-60}
       METRICS_BACKGROUND_BATCH_LIMIT: ${METRICS_BACKGROUND_BATCH_LIMIT:-50}
 
+      # Teams alerts (optional)
+      TEAMS_WEBHOOK_URL: ${TEAMS_WEBHOOK_URL:-}
+      TEAMS_ALERTS_ENABLED: ${TEAMS_ALERTS_ENABLED:-false}
+
     depends_on:
       db:
         condition: service_healthy

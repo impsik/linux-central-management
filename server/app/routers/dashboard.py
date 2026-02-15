@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
-from ..deps import require_ui_user
+from ..deps import require_admin_user, require_ui_user
 from ..models import Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.teams import post_teams_message
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -370,3 +371,89 @@ def list_failed_runs(
         )
 
     return {"hours": hours, "limit": limit, "count": len(items), "items": items}
+
+
+@router.post("/alerts/teams/test")
+def dashboard_teams_test_alert(db: Session = Depends(get_db), user=Depends(require_admin_user)):
+    if not bool(getattr(settings, "teams_alerts_enabled", False)):
+        raise HTTPException(400, "Teams alerts are disabled (set TEAMS_ALERTS_ENABLED=true)")
+    webhook = (getattr(settings, "teams_webhook_url", None) or "").strip()
+    if not webhook:
+        raise HTTPException(400, "TEAMS_WEBHOOK_URL is not configured")
+
+    post_teams_message(
+        webhook,
+        title="Fleet Teams integration test",
+        lines=[
+            f"Triggered by: {getattr(user, 'username', 'unknown')}",
+            "If you can read this, Teams webhook is configured correctly.",
+        ],
+    )
+    return {"ok": True}
+
+
+@router.post("/alerts/teams/morning-brief")
+def dashboard_teams_morning_brief(db: Session = Depends(get_db), user=Depends(require_admin_user)):
+    if not bool(getattr(settings, "teams_alerts_enabled", False)):
+        raise HTTPException(400, "Teams alerts are disabled (set TEAMS_ALERTS_ENABLED=true)")
+    webhook = (getattr(settings, "teams_webhook_url", None) or "").strip()
+    if not webhook:
+        raise HTTPException(400, "TEAMS_WEBHOOK_URL is not configured")
+
+    now = datetime.now(timezone.utc)
+    grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
+    online_cutoff = now.timestamp() - grace_s
+
+    total_hosts = int(db.execute(select(func.count()).select_from(Host)).scalar_one() or 0)
+    online_hosts = int(
+        db.execute(
+            select(func.count())
+            .select_from(Host)
+            .where(Host.last_seen.is_not(None), func.extract("epoch", Host.last_seen) >= online_cutoff)
+        ).scalar_one()
+        or 0
+    )
+    offline_hosts = max(0, total_hosts - online_hosts)
+
+    sec_total = int(
+        db.execute(
+            select(func.count())
+            .select_from(HostPackageUpdate)
+            .where(HostPackageUpdate.update_available == True, HostPackageUpdate.is_security == True)  # noqa: E712
+        ).scalar_one()
+        or 0
+    )
+    sec_hosts = int(
+        db.execute(
+            select(func.count(func.distinct(HostPackageUpdate.host_id)))
+            .select_from(HostPackageUpdate)
+            .where(HostPackageUpdate.update_available == True, HostPackageUpdate.is_security == True)  # noqa: E712
+        ).scalar_one()
+        or 0
+    )
+
+    reboot_required_hosts = int(
+        db.execute(select(func.count()).select_from(Host).where(Host.reboot_required == True)).scalar_one() or 0  # noqa: E712
+    )
+
+    failed_runs_24h = int(
+        db.execute(
+            select(func.count())
+            .select_from(JobRun)
+            .where(JobRun.status == "failed", JobRun.finished_at.is_not(None), JobRun.finished_at >= (now - timedelta(hours=24)))
+        ).scalar_one()
+        or 0
+    )
+
+    post_teams_message(
+        webhook,
+        title="Fleet Morning Brief",
+        lines=[
+            f"Hosts online: {online_hosts}/{total_hosts} (offline: {offline_hosts})",
+            f"Security updates: {sec_total} packages on {sec_hosts} hosts",
+            f"Reboot required: {reboot_required_hosts} hosts",
+            f"Failed runs (24h): {failed_runs_24h}",
+            f"Triggered by: {getattr(user, 'username', 'unknown')}",
+        ],
+    )
+    return {"ok": True}
