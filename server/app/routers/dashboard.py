@@ -12,6 +12,7 @@ from ..deps import require_admin_user, require_ui_user
 from ..models import Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.maintenance import is_within_maintenance_window
 from ..services.teams import post_teams_message
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -121,6 +122,24 @@ def dashboard_summary(db: Session = Depends(get_db), user=Depends(require_ui_use
         },
         "jobs": {"failed_runs_last_24h": failed_runs_24h},
         "notes": [],
+    }
+
+
+@router.get("/maintenance-window")
+def dashboard_maintenance_window(user=Depends(require_ui_user)):
+    start = str(getattr(settings, "maintenance_window_start_hhmm", "01:00") or "01:00")
+    end = str(getattr(settings, "maintenance_window_end_hhmm", "05:00") or "05:00")
+    tz = str(getattr(settings, "maintenance_window_timezone", "UTC") or "UTC")
+    enabled = bool(getattr(settings, "maintenance_window_enabled", False))
+    guarded = [x.strip() for x in str(getattr(settings, "maintenance_window_guarded_actions", "") or "").split(",") if x.strip()]
+
+    return {
+        "enabled": enabled,
+        "timezone": tz,
+        "start": start,
+        "end": end,
+        "guarded_actions": guarded,
+        "within_window_now": bool(is_within_maintenance_window()),
     }
 
 

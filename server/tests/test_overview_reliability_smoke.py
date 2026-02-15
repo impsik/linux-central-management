@@ -1,5 +1,12 @@
 import importlib
+import sys
 from datetime import datetime, timedelta, timezone
+
+
+def _reload_app_modules():
+    for k in list(sys.modules.keys()):
+        if k == "app" or k.startswith("app."):
+            sys.modules.pop(k, None)
 
 
 def test_overview_and_cron_smoke_sqlite(monkeypatch):
@@ -11,6 +18,7 @@ def test_overview_and_cron_smoke_sqlite(monkeypatch):
     monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
 
+    _reload_app_modules()
     app_factory = importlib.import_module("app.app_factory")
     app = app_factory.create_app()
 

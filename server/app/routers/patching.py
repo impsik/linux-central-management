@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import Host, HostPackageUpdate, PatchCampaign, PatchCampaignHost
 from ..services.db_utils import transaction
+from ..services.maintenance import assert_action_allowed_now
 from ..services.patching import create_patch_campaign
 
 router = APIRouter(prefix="/patching", tags=["patching"])
@@ -103,6 +104,11 @@ def create_security_updates_campaign(
       "include_kernel": false
     }
     """
+
+    try:
+        assert_action_allowed_now("security-campaign")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     window_start = payload.get("window_start")
     window_end = payload.get("window_end")

@@ -75,5 +75,13 @@ class Settings(BaseSettings):
     teams_webhook_url: str | None = None
     teams_alerts_enabled: bool = False
 
+    # Maintenance windows (guardrails for risky actions)
+    maintenance_window_enabled: bool = False
+    maintenance_window_timezone: str = "UTC"
+    maintenance_window_start_hhmm: str = "01:00"
+    maintenance_window_end_hhmm: str = "05:00"
+    # CSV list of guarded actions, e.g. "dist-upgrade,security-campaign"
+    maintenance_window_guarded_actions: str = "dist-upgrade,security-campaign"
+
 
 settings = Settings()

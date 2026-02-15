@@ -10,6 +10,7 @@ from ..models import Job, JobRun
 from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.maintenance import assert_action_allowed_now
 from ..services.targets import resolve_agent_ids
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -204,6 +205,11 @@ async def cve_check(payload: JobCreateCVECheck, db: Session = Depends(get_db)):
 @router.post("/dist-upgrade")
 async def dist_upgrade(payload: JobCreateDistUpgrade, db: Session = Depends(get_db)):
     """Run apt-get dist-upgrade/full-upgrade on targeted agents."""
+
+    try:
+        assert_action_allowed_now("dist-upgrade")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
     if not targets:

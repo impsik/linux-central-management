@@ -203,6 +203,18 @@ For HTTPS deployments, also set:
 - Postgres is internal-only by default in `deploy/docker/docker-compose.yml` (not published to host).
 - If you need host-local debug access, expose `127.0.0.1:5432:5432` via compose override.
 
+### Maintenance window guardrails (optional)
+Use this to block risky actions outside an approved window.
+
+Env settings:
+- `MAINTENANCE_WINDOW_ENABLED=true|false`
+- `MAINTENANCE_WINDOW_TIMEZONE` (IANA TZ, e.g. `UTC`, `Europe/Tallinn`)
+- `MAINTENANCE_WINDOW_START_HHMM` (e.g. `01:00`)
+- `MAINTENANCE_WINDOW_END_HHMM` (e.g. `05:00`)
+- `MAINTENANCE_WINDOW_GUARDED_ACTIONS` (CSV, default `dist-upgrade,security-campaign`)
+
+When enabled, guarded actions are rejected with HTTP 403 outside the configured window.
+
 ---
 
 ## Background metrics refresh

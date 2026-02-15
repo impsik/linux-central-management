@@ -41,6 +41,12 @@ All notable changes to this project are documented in this file.
   - failed-runs feed
   - cron create/list
   - MFA transient 403 suppression smoke check
+  - maintenance-window guardrail enforcement tests
+- Maintenance window guardrails for risky actions:
+  - configurable window (timezone + start/end)
+  - guarded actions list (CSV)
+  - enforcement for `dist-upgrade` and `security-campaign`
+  - dashboard endpoint: `/dashboard/maintenance-window`
 
 ### Changed
 - Overview card layout now uses balanced responsive breakpoints (3/2/1) and better overflow handling.
