@@ -334,6 +334,7 @@
       document.getElementById('server-info-tab')?.classList.add('active');
       if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadFleetOverview();
+      ctx.loadFailedRuns(24, false);
     }
 
     function showHostsTab() {
@@ -378,7 +379,7 @@
     const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
 
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
-    w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts()]); });
+    w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false)]); });
 
     w.wireBusyClick(invBtn, 'Queueing…', async () => {
       const agentIds = (ctx.getLastRenderedAgentIds() || []).slice();
