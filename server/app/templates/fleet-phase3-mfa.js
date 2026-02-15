@@ -7,6 +7,7 @@ function openMfaModal(mode, otpauthUri = '') {
 
       statusEl.textContent = '';
       statusEl.classList.remove('error', 'success');
+      detachMfaVerifyEnterHandler();
 
       if (mode === 'setup') {
         titleEl.textContent = 'Set up MFA (required)';
@@ -66,6 +67,23 @@ function openMfaModal(mode, otpauthUri = '') {
 
         // Focus the field when modal opens so user can type/paste immediately.
         verifyInput?.focus();
+
+        // Extra robustness: capture Enter at document level while MFA modal is open.
+        // Some host pages/components can swallow normal submit/keydown events.
+        detachMfaVerifyEnterHandler();
+        const enterHandler = async (e) => {
+          if (e.key !== 'Enter') return;
+          const modalEl = document.getElementById('mfa-modal');
+          if (!modalEl || modalEl.hidden || !modalEl.classList.contains('open')) return;
+          const active = document.activeElement;
+          if (!active || !modalEl.contains(active)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const code = verifyInput?.value || '';
+          await mfaVerify(code);
+        };
+        document.addEventListener('keydown', enterHandler, true);
+        window.__mfaVerifyEnterHandler = enterHandler;
       }
 
       modal.hidden = false;
@@ -73,9 +91,18 @@ function openMfaModal(mode, otpauthUri = '') {
       modal.setAttribute('aria-hidden', 'false');
     }
 
+    function detachMfaVerifyEnterHandler() {
+      const h = window.__mfaVerifyEnterHandler;
+      if (h) {
+        document.removeEventListener('keydown', h, true);
+        window.__mfaVerifyEnterHandler = null;
+      }
+    }
+
     function closeMfaModal() {
       const modal = document.getElementById('mfa-modal');
       if (!modal) return;
+      detachMfaVerifyEnterHandler();
       modal.classList.remove('open');
       modal.setAttribute('aria-hidden', 'true');
       modal.hidden = true;
