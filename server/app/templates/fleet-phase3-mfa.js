@@ -47,23 +47,18 @@ function openMfaModal(mode, otpauthUri = '') {
         titleEl.textContent = 'MFA verification required';
         bodyEl.innerHTML = `
           <div style="color:var(--muted-2);margin-bottom:0.5rem;">Enter the 6-digit code from your authenticator (or a recovery code).</div>
-          <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Code</label>
-          <input id="mfa-verify-code" class="host-search" type="text" placeholder="123456" />
-          <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
-            <button class="btn btn-primary" id="mfa-verify" type="button">Verify</button>
-          </div>
+          <form id="mfa-verify-form" autocomplete="off">
+            <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Code</label>
+            <input id="mfa-verify-code" class="host-search" type="text" placeholder="123456" />
+            <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="mfa-verify" type="submit">Verify</button>
+            </div>
+          </form>
         `;
         const verifyInput = document.getElementById('mfa-verify-code');
-        const verifyBtn = document.getElementById('mfa-verify');
+        const verifyForm = document.getElementById('mfa-verify-form');
 
-        verifyBtn?.addEventListener('click', async () => {
-          const code = verifyInput?.value || '';
-          await mfaVerify(code);
-        });
-
-        // UX: allow Enter key to submit MFA verification quickly.
-        verifyInput?.addEventListener('keydown', async (e) => {
-          if (e.key !== 'Enter') return;
+        verifyForm?.addEventListener('submit', async (e) => {
           e.preventDefault();
           const code = verifyInput?.value || '';
           await mfaVerify(code);
