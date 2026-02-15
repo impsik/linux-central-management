@@ -9,6 +9,7 @@
     const failEl = document.getElementById('kpi-fail');
     const freshEl = document.getElementById('kpi-fresh');
     const attentionEl = document.getElementById('overview-attention');
+    const morningBriefEl = document.getElementById('overview-morning-brief');
 
     try {
       const r = await fetch('/dashboard/summary', { credentials: 'include' });
@@ -41,6 +42,38 @@
       if (updDetailsEl) updDetailsEl.textContent = `${updPkgs} packages`;
       if (failEl) failEl.textContent = `${failed24h}`;
       if (freshEl) freshEl.textContent = freshest ? new Date(freshest).toLocaleString() : '–';
+
+      if (morningBriefEl) {
+        morningBriefEl.innerHTML = '<div class="loading">Building brief…</div>';
+        try {
+          const reportUrl = `/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500`;
+          const rr = await fetch(reportUrl, { credentials: 'include' });
+          if (!rr.ok) throw new Error(`hosts-updates failed (${rr.status})`);
+          const report = await rr.json();
+          const items = Array.isArray(report?.items) ? report.items : [];
+
+          const rebootRequired = items.filter((it) => !!it.reboot_required).length;
+          const heavySecurity = items.filter((it) => Number(it.security_updates || 0) >= 10).length;
+          const staleHosts = items.filter((it) => {
+            const last = it?.last_seen ? Date.parse(it.last_seen) : NaN;
+            if (!Number.isFinite(last)) return true;
+            return (Date.now() - last) > (24 * 60 * 60 * 1000);
+          }).length;
+
+          morningBriefEl.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:0.35rem;">
+              <div><span style="color:#94a3b8;">Offline hosts:</span> <b>${hostsOffline}</b></div>
+              <div><span style="color:#94a3b8;">Security backlog:</span> <b>${secPkgs}</b> packages on <b>${secHosts}</b> hosts</div>
+              <div><span style="color:#94a3b8;">Reboot required:</span> <b>${rebootRequired}</b> hosts</div>
+              <div><span style="color:#94a3b8;">Failed runs (24h):</span> <b>${failed24h}</b></div>
+              <div><span style="color:#94a3b8;">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b></div>
+              <div><span style="color:#94a3b8;">Stale inventory (&gt;24h):</span> <b>${staleHosts}</b></div>
+            </div>
+          `;
+        } catch (briefErr) {
+          morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
+        }
+      }
 
       if (attentionEl) {
         attentionEl.innerHTML = '<div class="loading">Loading attention list…</div>';

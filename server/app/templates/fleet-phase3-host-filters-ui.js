@@ -22,6 +22,13 @@
     const ansibleToggle = document.getElementById('ansible-filter-toggle');
     const ansibleToggleBtn = document.getElementById('ansible-toggle-btn');
 
+    const savedViewNameEl = document.getElementById('saved-view-name');
+    const savedViewSelectEl = document.getElementById('saved-view-select');
+    const savedViewSaveBtn = document.getElementById('saved-view-save');
+    const savedViewApplyBtn = document.getElementById('saved-view-apply');
+    const savedViewDeleteBtn = document.getElementById('saved-view-delete');
+    const savedViewStatusEl = document.getElementById('saved-view-status');
+
     function st() { return getState() || {}; }
     function setPatch(patch) { setState(patch || {}); }
 
@@ -44,6 +51,68 @@
       vulnSection.classList.toggle('open', open);
       vulnToggleBtn.textContent = open ? '−' : '+';
       vulnToggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    const SAVED_VIEWS_KEY = 'fleet_saved_host_views_v1';
+
+    function setSavedViewStatus(msg, kind) {
+      if (!savedViewStatusEl) return;
+      savedViewStatusEl.textContent = msg || '';
+      savedViewStatusEl.style.color = (kind === 'error') ? '#fca5a5' : (kind === 'success' ? '#86efac' : 'var(--muted-2)');
+    }
+
+    function loadSavedViews() {
+      try {
+        const raw = localStorage.getItem(SAVED_VIEWS_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function storeSavedViews(items) {
+      try {
+        localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(Array.isArray(items) ? items : []));
+      } catch (_) { }
+    }
+
+    function refreshSavedViewsUi() {
+      if (!savedViewSelectEl) return;
+      const items = loadSavedViews();
+      const prev = savedViewSelectEl.value || '';
+      savedViewSelectEl.innerHTML = '<option value="">Select saved view</option>' + items.map((it) => {
+        const name = String((it && it.name) || '').trim();
+        if (!name) return '';
+        return `<option value="${w.escapeHtml(name)}">${w.escapeHtml(name)}</option>`;
+      }).join('');
+      if (prev && items.some((x) => x && x.name === prev)) savedViewSelectEl.value = prev;
+    }
+
+    function captureCurrentView() {
+      return {
+        hostSearchQuery: searchEl?.value || '',
+        labelEnvFilter: envSel?.value || '',
+        labelRoleFilter: roleSel?.value || '',
+      };
+    }
+
+    function applySavedView(view) {
+      if (!view || typeof view !== 'object') return;
+      const hostSearchQuery = String(view.hostSearchQuery || '');
+      const labelEnv = String(view.labelEnvFilter || '');
+      const labelRole = String(view.labelRoleFilter || '');
+
+      if (searchEl) searchEl.value = hostSearchQuery;
+      if (envSel) envSel.value = labelEnv;
+      if (roleSel) roleSel.value = labelRole;
+
+      syncSelectionState('hostSearchQuery', hostSearchQuery);
+      syncSelectionState('labelEnvFilter', labelEnv);
+      syncSelectionState('labelRoleFilter', labelRole);
+      setPatch({ hostSearchQuery, labelEnvFilter: labelEnv, labelRoleFilter: labelRole });
+      applyHostFilters();
     }
 
     if (searchEl) {
@@ -96,6 +165,62 @@
       setPatch({ labelEnvFilter: '', labelRoleFilter: '' });
       applyHostFilters();
     });
+
+    savedViewSaveBtn?.addEventListener('click', function (e) {
+      e.preventDefault();
+      const name = String(savedViewNameEl?.value || '').trim();
+      if (!name) {
+        setSavedViewStatus('Enter a name first.', 'error');
+        return;
+      }
+      const current = captureCurrentView();
+      const items = loadSavedViews().filter((it) => it && it.name !== name);
+      items.push({ name, ...current, saved_at: new Date().toISOString() });
+      storeSavedViews(items);
+      refreshSavedViewsUi();
+      if (savedViewSelectEl) savedViewSelectEl.value = name;
+      setSavedViewStatus(`Saved view "${name}".`, 'success');
+    });
+
+    savedViewApplyBtn?.addEventListener('click', function (e) {
+      e.preventDefault();
+      const name = String(savedViewSelectEl?.value || '').trim();
+      if (!name) {
+        setSavedViewStatus('Select a saved view first.', 'error');
+        return;
+      }
+      const view = loadSavedViews().find((it) => it && it.name === name);
+      if (!view) {
+        setSavedViewStatus('Saved view not found.', 'error');
+        refreshSavedViewsUi();
+        return;
+      }
+      applySavedView(view);
+      if (savedViewNameEl) savedViewNameEl.value = name;
+      setSavedViewStatus(`Applied view "${name}".`, 'success');
+    });
+
+    savedViewDeleteBtn?.addEventListener('click', function (e) {
+      e.preventDefault();
+      const name = String(savedViewSelectEl?.value || '').trim();
+      if (!name) {
+        setSavedViewStatus('Select a saved view to delete.', 'error');
+        return;
+      }
+      const next = loadSavedViews().filter((it) => it && it.name !== name);
+      storeSavedViews(next);
+      refreshSavedViewsUi();
+      setSavedViewStatus(`Deleted view "${name}".`, 'success');
+    });
+
+    savedViewSelectEl?.addEventListener('change', function () {
+      const name = String(savedViewSelectEl?.value || '').trim();
+      if (savedViewNameEl) savedViewNameEl.value = name;
+      if (!name) return;
+      setSavedViewStatus('Click Apply to use selected view.', null);
+    });
+
+    refreshSavedViewsUi();
 
     selectVisibleEl?.addEventListener('change', function () {
       const nextSet = selectVisibleEl.checked ? new Set(st().lastRenderedAgentIds || []) : new Set();

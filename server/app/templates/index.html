@@ -87,6 +87,22 @@
               <div class="vuln-actions">
                 <button class="btn" id="labels-clear">Clear</button>
               </div>
+
+              <div style="margin-top:0.6rem;border-top:1px solid var(--border);padding-top:0.6rem;display:grid;gap:0.45rem;">
+                <div style="font-size:0.82rem;color:var(--muted-2);font-weight:700;">Saved views</div>
+                <input id="saved-view-name" class="host-search" type="text" placeholder="View name (e.g. Prod DBs)" />
+                <div style="display:flex;gap:0.4rem;align-items:center;">
+                  <select id="saved-view-select" class="host-search" style="flex:1 1 auto;">
+                    <option value="">Select saved view</option>
+                  </select>
+                </div>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <button class="btn btn-primary" id="saved-view-save" type="button">Save current</button>
+                  <button class="btn" id="saved-view-apply" type="button">Apply</button>
+                  <button class="btn" id="saved-view-delete" type="button">Delete</button>
+                </div>
+                <div id="saved-view-status" class="vuln-status" style="margin-top:0;"></div>
+              </div>
             </div>
           </div>
 
@@ -302,7 +318,7 @@
               </div>
             </div>
 
-            <div style="display:grid;grid-template-columns:1.35fr 1fr;gap:1rem;margin-top:1rem;align-items:start;">
+            <div style="display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:1rem;margin-top:1rem;align-items:start;">
               <div class="admin-card" style="margin:0;">
                 <div class="admin-card-title">Attention required</div>
                 <div class="admin-card-body">
@@ -318,6 +334,12 @@
                     <div style="color:#94a3b8;font-size:0.9rem;">Reboot-required is not yet centralized
                       (per-host/campaign).</div>
                   </div>
+                </div>
+              </div>
+              <div class="admin-card" style="margin:0;">
+                <div class="admin-card-title">Morning brief</div>
+                <div class="admin-card-body">
+                  <div id="overview-morning-brief" style="color:#cbd5e1;">Loading…</div>
                 </div>
               </div>
             </div>
