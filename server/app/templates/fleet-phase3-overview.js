@@ -174,17 +174,32 @@
       const hostsEl = document.getElementById('hosts');
       const hostText = (hostsEl?.textContent || '').toLowerCase();
       if (hostsEl && hostText.includes('loading hosts')) {
-        hostsEl.innerHTML = items.map((it) => `
+        hostsEl.innerHTML = items.map((it) => {
+          const ip = it.ip_address || '';
+          const lastSeen = ctx.formatShortTime(it.last_seen);
+          const labels = (it.labels && typeof it.labels === 'object') ? it.labels : {};
+          const env = labels.env || '';
+          const role = labels.role || '';
+          return `
           <div class="host-item" data-agent-id="${w.escapeHtml(it.agent_id || '')}">
             <div class="host-meta">
               <div class="host-row-top">
                 <div class="host-name">${w.escapeHtml(it.hostname || it.agent_id || '')}</div>
                 <span class="status-dot ${it.is_online ? 'online' : 'offline'}"></span>
               </div>
-              <div class="host-subline"><span class="host-subitem">${w.escapeHtml(it.agent_id || '')}</span></div>
+              <div class="host-subline">
+                <span class="host-subitem">${w.escapeHtml(ip || it.agent_id || '')}</span>
+                <span class="host-subsep">•</span>
+                <span class="host-subitem">seen ${w.escapeHtml(lastSeen)}</span>
+              </div>
+              <div class="host-tags">
+                ${env ? `<span class="tag">env: <code>${w.escapeHtml(env)}</code></span>` : ''}
+                ${role ? `<span class="tag">role: <code>${w.escapeHtml(role)}</code></span>` : ''}
+              </div>
             </div>
           </div>
-        `).join('');
+        `;
+        }).join('');
         hostsEl.querySelectorAll('.host-item').forEach((el) => {
           el.addEventListener('click', () => {
             const aid = el.getAttribute('data-agent-id') || '';
