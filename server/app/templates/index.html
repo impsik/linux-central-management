@@ -124,7 +124,15 @@
                     <option value="once-30m">One-time in 30 min</option>
                   </select>
                 </div>
-                <button class="btn btn-primary" id="cron-from-filter-open" type="button">Open Cron form with visible hosts</button>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <button class="btn btn-primary" id="cron-from-filter-open" type="button">Open Cron form with visible hosts</button>
+                  <button class="btn" id="cron-from-filter-run-now" type="button">Run now (visible hosts)</button>
+                </div>
+                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                  <button class="btn" id="runbook-inventory-now" type="button">Runbook: Inventory now</button>
+                  <button class="btn" id="runbook-security-now" type="button">Runbook: Security campaign now</button>
+                  <button class="btn" id="runbook-dist-now" type="button">Runbook: Dist-upgrade now</button>
+                </div>
                 <div id="cron-from-filter-status" class="vuln-status" style="margin-top:0;"></div>
               </div>
             </div>
@@ -2344,14 +2352,57 @@
       });
 
       const fromFilterBtn = document.getElementById('cron-from-filter-open');
+      const fromFilterRunNowBtn = document.getElementById('cron-from-filter-run-now');
+      const runbookInventoryBtn = document.getElementById('runbook-inventory-now');
+      const runbookSecurityBtn = document.getElementById('runbook-security-now');
+      const runbookDistBtn = document.getElementById('runbook-dist-now');
+
+      function getVisibleOrAllHostIds() {
+        const visibleIds = Array.from(lastRenderedAgentIds || []);
+        return visibleIds.length ? visibleIds : (allHosts || []).map(h => h.agent_id).filter(Boolean);
+      }
+
+      async function runImmediateForVisible(action) {
+        const statusEl = document.getElementById('cron-from-filter-status');
+        const ids = getVisibleOrAllHostIds();
+        if (!ids.length) {
+          if (statusEl) statusEl.textContent = 'No hosts available. Load hosts first.';
+          return;
+        }
+
+        try {
+          if (statusEl) statusEl.textContent = `Running ${action} for ${ids.length} hosts…`;
+          let r = null;
+          if (action === 'inventory-now') {
+            r = await fetch('/jobs/inventory-now', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent_ids: ids }) });
+          } else if (action === 'security-campaign') {
+            const now = new Date();
+            const end = new Date(now.getTime() + 60 * 60 * 1000);
+            r = await fetch('/patching/campaigns/security-updates', {
+              method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ agent_ids: ids, window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 5, reboot_if_needed: true, include_kernel: false })
+            });
+          } else {
+            r = await fetch('/jobs/dist-upgrade', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent_ids: ids }) });
+          }
+
+          if (!r || !r.ok) throw new Error(`request failed (${r ? r.status : 'n/a'})`);
+          if (statusEl) statusEl.textContent = `Triggered ${action} for ${ids.length} hosts.`;
+          showToast(`Triggered ${action} for ${ids.length} hosts`, 'success');
+        } catch (err) {
+          const msg = (err && err.message) ? err.message : String(err);
+          if (statusEl) statusEl.textContent = msg;
+          showToast(msg, 'error');
+        }
+      }
+
       fromFilterBtn?.addEventListener('click', (e) => {
         e.preventDefault();
         const statusEl = document.getElementById('cron-from-filter-status');
         const action = document.getElementById('cron-from-filter-action')?.value || 'security-campaign';
         const schedule = document.getElementById('cron-from-filter-schedule')?.value || 'weekly-sun-0200';
 
-        const visibleIds = Array.from(lastRenderedAgentIds || []);
-        const ids = visibleIds.length ? visibleIds : (allHosts || []).map(h => h.agent_id).filter(Boolean);
+        const ids = getVisibleOrAllHostIds();
         if (!ids.length) {
           if (statusEl) statusEl.textContent = 'No hosts available. Load hosts first.';
           return;
@@ -2400,6 +2451,16 @@
         kindEl?.dispatchEvent(new Event('change'));
         if (statusEl) statusEl.textContent = `Prefilled cron with ${ids.length} hosts.`;
       });
+
+      fromFilterRunNowBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const action = document.getElementById('cron-from-filter-action')?.value || 'security-campaign';
+        await runImmediateForVisible(action);
+      });
+
+      runbookInventoryBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible('inventory-now'); });
+      runbookSecurityBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible('security-campaign'); });
+      runbookDistBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible('dist-upgrade'); });
     }
 
     // SSH Keys UI

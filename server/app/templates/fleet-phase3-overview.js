@@ -60,6 +60,25 @@
             return (Date.now() - last) > (24 * 60 * 60 * 1000);
           }).length;
 
+          const thresholdsKey = 'fleet_brief_thresholds_v1';
+          let th = { offline: 1, failed: 1, secPkgs: 20 };
+          try {
+            const raw = localStorage.getItem(thresholdsKey);
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed && typeof parsed === 'object') {
+              th = {
+                offline: Number(parsed.offline || 1),
+                failed: Number(parsed.failed || 1),
+                secPkgs: Number(parsed.secPkgs || 20),
+              };
+            }
+          } catch (_) { }
+
+          const alerts = [];
+          if (hostsOffline >= th.offline) alerts.push(`offline hosts (${hostsOffline} ≥ ${th.offline})`);
+          if (failed24h >= th.failed) alerts.push(`failed runs (${failed24h} ≥ ${th.failed})`);
+          if (secPkgs >= th.secPkgs) alerts.push(`security backlog (${secPkgs} ≥ ${th.secPkgs})`);
+
           morningBriefEl.innerHTML = `
             <div style="display:flex;flex-direction:column;gap:0.35rem;">
               <div><span style="color:#94a3b8;">Offline hosts:</span> <b>${hostsOffline}</b> <button class="btn" data-brief-action="offline" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
@@ -68,6 +87,15 @@
               <div><span style="color:#94a3b8;">Failed runs (24h):</span> <b>${failed24h}</b> <button class="btn" data-brief-action="failed" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
               <div><span style="color:#94a3b8;">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b> <button class="btn" data-brief-action="heavy-security" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
               <div><span style="color:#94a3b8;">Stale inventory (&gt;24h):</span> <b>${staleHosts}</b></div>
+
+              <div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid var(--border);display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">
+                <span style="color:#94a3b8;font-size:0.82rem;">Alerts:</span>
+                <label style="font-size:0.8rem;color:#94a3b8;">Offline ≥ <input id="brief-th-offline" type="number" min="0" value="${th.offline}" style="width:58px;" /></label>
+                <label style="font-size:0.8rem;color:#94a3b8;">Failed ≥ <input id="brief-th-failed" type="number" min="0" value="${th.failed}" style="width:58px;" /></label>
+                <label style="font-size:0.8rem;color:#94a3b8;">Sec pkgs ≥ <input id="brief-th-sec" type="number" min="0" value="${th.secPkgs}" style="width:64px;" /></label>
+                <button class="btn" id="brief-th-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
+              </div>
+              <div style="font-size:0.85rem;color:${alerts.length ? '#fca5a5' : '#86efac'};">${alerts.length ? ('Attention: ' + alerts.join(' • ')) : 'No alert thresholds exceeded.'}</div>
             </div>
           `;
 
@@ -95,6 +123,18 @@
 
               sortSel?.dispatchEvent(new Event('change'));
             });
+          });
+
+          document.getElementById('brief-th-save')?.addEventListener('click', () => {
+            const offlineN = Number(document.getElementById('brief-th-offline')?.value || 0);
+            const failedN = Number(document.getElementById('brief-th-failed')?.value || 0);
+            const secN = Number(document.getElementById('brief-th-sec')?.value || 0);
+            try {
+              localStorage.setItem('fleet_brief_thresholds_v1', JSON.stringify({ offline: offlineN, failed: failedN, secPkgs: secN }));
+              if (typeof w.showToast === 'function') w.showToast('Morning brief thresholds saved', 'success');
+            } catch (_) {
+              if (typeof w.showToast === 'function') w.showToast('Failed to save thresholds', 'error');
+            }
           });
         } catch (briefErr) {
           morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
