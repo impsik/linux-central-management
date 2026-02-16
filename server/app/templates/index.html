@@ -862,7 +862,18 @@
             <div class="admin-card" id="admin-approvals-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>High-risk approvals</span>
-                <button class="btn" id="admin-approvals-refresh" type="button">Reload</button>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <input id="approvals-filter-action" class="host-search" style="max-width:180px;" type="text" placeholder="Action" />
+                  <input id="approvals-filter-requester" class="host-search" style="max-width:180px;" type="text" placeholder="Requester" />
+                  <select id="approvals-filter-age" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="">Any age</option>
+                    <option value="15">≤ 15 min</option>
+                    <option value="60">≤ 1 hour</option>
+                    <option value="240">≤ 4 hours</option>
+                    <option value="1440">≤ 24 hours</option>
+                  </select>
+                  <button class="btn" id="admin-approvals-refresh" type="button">Reload</button>
+                </div>
               </div>
               <div class="admin-card-body">
                 <div style="overflow-x:auto;">
@@ -1085,6 +1096,22 @@
         <textarea id="audit-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
         <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
           <button class="btn" id="audit-detail-modal-copy" type="button">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="approval-detail-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="approval-detail-modal-title" style="width:min(1100px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="approval-detail-modal-title">Approval request</div>
+        <button class="btn modal-close" id="approval-detail-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="approval-detail-modal-meta"></div>
+        <textarea id="approval-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
+        <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
+          <button class="btn" id="approval-detail-modal-copy" type="button">Copy</button>
         </div>
       </div>
     </div>
@@ -1736,15 +1763,36 @@
         if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `approvals failed (${r.status})`);
 
         const items = (d && d.items) ? d.items : [];
-        if (!items.length) {
-          setTableState(tbody, 5, 'empty', 'No pending approvals');
+
+        const filterAction = (document.getElementById('approvals-filter-action')?.value || '').trim().toLowerCase();
+        const filterRequester = (document.getElementById('approvals-filter-requester')?.value || '').trim().toLowerCase();
+        const ageMins = parseInt((document.getElementById('approvals-filter-age')?.value || '').trim(), 10);
+        const nowMs = Date.now();
+
+        const filtered = items.filter((it) => {
+          const act = String(it?.action || '').toLowerCase();
+          const usr = String(it?.user || '').toLowerCase();
+          if (filterAction && !act.includes(filterAction)) return false;
+          if (filterRequester && !usr.includes(filterRequester)) return false;
+          if (!Number.isNaN(ageMins) && ageMins > 0) {
+            const ts = Date.parse(String(it?.created_at || ''));
+            if (!Number.isNaN(ts)) {
+              const age = (nowMs - ts) / 60000;
+              if (age > ageMins) return false;
+            }
+          }
+          return true;
+        });
+
+        if (!filtered.length) {
+          setTableState(tbody, 5, 'empty', items.length ? 'No requests match filters' : 'No pending approvals');
           await refreshApprovalsIndicator();
           if (showToastOnManual) showToast('Approvals refreshed', 'success');
           return;
         }
 
         tbody.innerHTML = '';
-        for (const it of items) {
+        for (const it of filtered) {
           const payload = (it && typeof it.payload === 'object' && it.payload) ? it.payload : {};
           const targets = Array.isArray(payload.agent_ids) ? payload.agent_ids : [];
           const targetLabel = targets.length ? `${targets.slice(0, 3).join(', ')}${targets.length > 3 ? ` (+${targets.length - 3})` : ''}` : 'selector-based';
@@ -1755,12 +1803,36 @@
             <td><code>${escapeHtml(it.action || '')}</code></td>
             <td title="${escapeHtml(targets.join('\n'))}">${escapeHtml(targetLabel)}</td>
             <td style="text-align:right;white-space:nowrap;">
+              <button class="btn" data-details-id="${escapeHtml(it.id)}">Details</button>
               <button class="btn btn-primary" data-approve-id="${escapeHtml(it.id)}">Approve</button>
               <button class="btn" data-reject-id="${escapeHtml(it.id)}">Reject</button>
             </td>
           `;
+          tr.dataset.approvalPayload = JSON.stringify(it || {});
           tbody.appendChild(tr);
         }
+
+        tbody.querySelectorAll('button[data-details-id]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const tr = btn.closest('tr');
+            if (!tr) return;
+            let row = null;
+            try { row = JSON.parse(tr.dataset.approvalPayload || '{}'); } catch { row = null; }
+            if (!row) return;
+            const modal = document.getElementById('approval-detail-modal');
+            const titleEl = document.getElementById('approval-detail-modal-title');
+            const metaEl = document.getElementById('approval-detail-modal-meta');
+            const outEl = document.getElementById('approval-detail-modal-output');
+            if (!modal || !titleEl || !metaEl || !outEl) return;
+            titleEl.textContent = `Approval request: ${row.action || ''}`;
+            metaEl.textContent = `Requested: ${row.created_at || ''} · By: ${row.user || ''} · Status: ${row.status || ''} · ID: ${row.id || ''}`;
+            outEl.value = JSON.stringify(row.payload || {}, null, 2);
+            modal.hidden = false;
+            modal.classList.add('open');
+            modal.setAttribute('aria-hidden', 'false');
+          });
+        });
 
         tbody.querySelectorAll('button[data-approve-id]').forEach(btn => {
           btn.addEventListener('click', async (e) => {
@@ -3009,6 +3081,49 @@
       });
     }
 
+    function initApprovalDetailModalControls() {
+      const modal = document.getElementById('approval-detail-modal');
+      const closeBtn = document.getElementById('approval-detail-modal-close');
+      const copyBtn = document.getElementById('approval-detail-modal-copy');
+      const outEl = document.getElementById('approval-detail-modal-output');
+      if (!modal) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'approval-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl ? (outEl.value || '') : '';
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Copied', 'success');
+        } catch {
+          if (outEl) {
+            outEl.focus();
+            outEl.select();
+          }
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+    }
+
+    function initApprovalsFilterControls() {
+      const ids = ['approvals-filter-action', 'approvals-filter-requester', 'approvals-filter-age'];
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const evt = id === 'approvals-filter-age' ? 'change' : 'input';
+        el.addEventListener(evt, () => { loadAdminApprovals(false); });
+      });
+    }
+
     function initHostActionControls() {
       const mod = window.phase3HostActions;
       if (mod && typeof mod.initHostActionControls === 'function') {
@@ -3062,6 +3177,8 @@
     safeInit('initSettingsMenu', initSettingsMenu);
     safeInit('initHostActionControls', initHostActionControls);
     safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
+    safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
+    safeInit('initApprovalsFilterControls', initApprovalsFilterControls);
     safeInit('bindDiskCardClick', () => {
       const diskCard = document.getElementById('disk-card');
       if (!diskCard) return;
