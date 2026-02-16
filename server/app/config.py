@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     teams_webhook_url: str | None = None
     teams_alerts_enabled: bool = False
 
+    # Notification center backend dedupe/cooldown
+    notifications_dedupe_enabled: bool = True
+    # Cooldown window for the same notification key (kind+host/action), in seconds.
+    notifications_dedupe_cooldown_seconds: int = 1800
+
     # Maintenance windows (guardrails for risky actions)
     maintenance_window_enabled: bool = False
     maintenance_window_timezone: str = "UTC"

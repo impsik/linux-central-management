@@ -215,6 +215,15 @@ Env settings:
 
 When enabled, guarded actions are rejected with HTTP 403 outside the configured window.
 
+### Notification dedupe/cooldown (optional)
+Reduce repeated alert noise in Notification Center using server-side cooldowns.
+
+Env settings:
+- `NOTIFICATIONS_DEDUPE_ENABLED=true|false`
+- `NOTIFICATIONS_DEDUPE_COOLDOWN_SECONDS` (default `1800`)
+
+When enabled, repeated alerts for the same key (e.g., same offline host) are suppressed during cooldown.
+
 ### Two-person approvals for high-risk actions (optional)
 Require explicit admin approval before execution of selected high-risk actions.
 

@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import require_admin_user, require_ui_user
-from ..models import Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun
+from ..models import Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun, NotificationDedupeState
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import is_within_maintenance_window
@@ -417,7 +417,12 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
     grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
     online_cutoff = now.timestamp() - grace_s
 
-    items: list[dict] = []
+    dedupe_enabled = bool(getattr(settings, "notifications_dedupe_enabled", True))
+    cooldown_s = int(getattr(settings, "notifications_dedupe_cooldown_seconds", 1800) or 1800)
+    if cooldown_s < 0:
+        cooldown_s = 0
+
+    candidates: list[dict] = []
 
     # Offline hosts (top priority)
     hosts = db.execute(select(Host).order_by(Host.last_seen.asc().nullsfirst()).limit(200)).scalars().all()
@@ -427,8 +432,9 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
         if not online:
             last_seen = h.last_seen.isoformat() if h.last_seen else None
             nid = f"offline:{h.agent_id}:{last_seen or 'never'}"
-            items.append({
+            candidates.append({
                 "id": nid,
+                "dedupe_key": f"offline:{h.agent_id}",
                 "severity": "high",
                 "kind": "offline",
                 "title": f"Host offline: {h.hostname or h.agent_id}",
@@ -447,8 +453,9 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
     for jr, job in failed_rows:
         ts = jr.finished_at.isoformat() if jr.finished_at else now.isoformat()
         nid = f"failed:{job.job_key}:{jr.agent_id}:{ts}"
-        items.append({
+        candidates.append({
             "id": nid,
+            "dedupe_key": f"failed_run:{jr.agent_id}:{job.job_type}",
             "severity": "high",
             "kind": "failed_run",
             "title": f"Failed run on {jr.agent_id}",
@@ -468,8 +475,9 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
     ).all()
     for agent_id, hostname, sec_count in sec_rows:
         nid = f"sec-backlog:{agent_id}:{int(sec_count or 0)}"
-        items.append({
+        candidates.append({
             "id": nid,
+            "dedupe_key": f"security_backlog:{agent_id}",
             "severity": "medium",
             "kind": "security_backlog",
             "title": f"Security backlog: {hostname or agent_id}",
@@ -477,9 +485,77 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
             "ts": now.isoformat(),
         })
 
-    items.sort(key=lambda x: (x.get("severity") != "high", x.get("ts") or ""), reverse=True)
-    items = items[:limit]
-    return {"count": len(items), "items": items, "ts": now.isoformat()}
+    candidates.sort(key=lambda x: (x.get("severity") != "high", x.get("ts") or ""), reverse=True)
+
+    suppressed = 0
+    if dedupe_enabled and cooldown_s > 0 and candidates:
+        keys = [str(x.get("dedupe_key") or "") for x in candidates if x.get("dedupe_key")]
+        state_rows = db.execute(select(NotificationDedupeState).where(NotificationDedupeState.dedupe_key.in_(keys))).scalars().all()
+        state_map = {str(r.dedupe_key): r for r in state_rows}
+
+        allowed: list[dict] = []
+        cooldown_cutoff = now - timedelta(seconds=cooldown_s)
+        for it in candidates:
+            key = str(it.get("dedupe_key") or "")
+            if not key:
+                allowed.append(it)
+                continue
+            st = state_map.get(key)
+            if st and st.last_emitted_at:
+                last_emitted = st.last_emitted_at
+                if getattr(last_emitted, "tzinfo", None) is None:
+                    last_emitted = last_emitted.replace(tzinfo=timezone.utc)
+                if last_emitted > cooldown_cutoff:
+                    suppressed += 1
+                    continue
+            allowed.append(it)
+
+        items = allowed[:limit]
+
+        if items:
+            with transaction(db):
+                for it in items:
+                    key = str(it.get("dedupe_key") or "")
+                    if not key:
+                        continue
+                    st = state_map.get(key)
+                    if st:
+                        st.last_emitted_at = now
+                        st.last_title = str(it.get("title") or "")
+                        st.kind = str(it.get("kind") or "")
+                        st.severity = str(it.get("severity") or "")
+                    else:
+                        db.add(
+                            NotificationDedupeState(
+                                dedupe_key=key,
+                                kind=str(it.get("kind") or ""),
+                                severity=str(it.get("severity") or ""),
+                                last_emitted_at=now,
+                                last_title=str(it.get("title") or ""),
+                            )
+                        )
+
+        for it in items:
+            it.pop("dedupe_key", None)
+
+        return {
+            "count": len(items),
+            "items": items,
+            "ts": now.isoformat(),
+            "suppressed": suppressed,
+            "dedupe": {"enabled": True, "cooldown_seconds": cooldown_s},
+        }
+
+    items = candidates[:limit]
+    for it in items:
+        it.pop("dedupe_key", None)
+    return {
+        "count": len(items),
+        "items": items,
+        "ts": now.isoformat(),
+        "suppressed": 0,
+        "dedupe": {"enabled": bool(dedupe_enabled and cooldown_s > 0), "cooldown_seconds": cooldown_s},
+    }
 
 
 @router.post("/alerts/teams/morning-brief")

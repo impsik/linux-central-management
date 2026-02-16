@@ -381,6 +381,16 @@ class SSHKeyDeploymentRequest(Base):
     __table_args__ = (Index("ix_ssh_key_deploy_req_status", "status"),)
 
 
+class NotificationDedupeState(Base):
+    __tablename__ = "notification_dedupe_state"
+
+    dedupe_key = Column(String, primary_key=True)
+    kind = Column(String, nullable=False, index=True)
+    severity = Column(String, nullable=False, index=True)
+    last_emitted_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    last_title = Column(String)
+
+
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 
