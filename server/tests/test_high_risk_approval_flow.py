@@ -2,7 +2,7 @@ import importlib
 import sys
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 
 def _reload_app_modules():
@@ -206,6 +206,143 @@ def test_admin_pending_endpoint_supports_recent_mode(monkeypatch):
         assert q2.status_code == 200, q2.text
         assert q2.json().get("mode") == "recent"
         assert len(q2.json().get("items") or []) >= 1
+
+
+def test_double_approve_is_idempotent_and_executes_once(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("HIGH_RISK_APPROVAL_ENABLED", "true")
+    monkeypatch.setenv("HIGH_RISK_APPROVAL_ACTIONS", "dist-upgrade,security-campaign")
+
+    _reload_app_modules()
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import AppUser, Job
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as requester:
+        rr = requester.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-001",
+                "hostname": "srv-001",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert rr.status_code == 200, rr.text
+
+        lr = requester.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
+        assert lr.status_code == 200, lr.text
+        csrf = requester.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
+
+        reg = requester.post("/auth/register", json={"username": "reviewer", "password": "reviewer-pass-123"}, headers=headers)
+        assert reg.status_code == 200, reg.text
+        with SessionLocal() as db:
+            u = db.execute(select(AppUser).where(AppUser.username == "reviewer")).scalar_one()
+            u.role = "admin"
+            db.commit()
+
+        created = requester.post("/jobs/dist-upgrade", json={"agent_ids": ["srv-001"]}, headers=headers)
+        assert created.status_code == 200, created.text
+        req_id = created.json().get("request_id")
+        assert req_id
+
+    with TestClient(app) as reviewer:
+        lr2 = reviewer.post("/auth/login", json={"username": "reviewer", "password": "reviewer-pass-123"})
+        assert lr2.status_code == 200, lr2.text
+        csrf2 = reviewer.cookies.get("fleet_csrf")
+        headers2 = {"X-CSRF-Token": csrf2} if csrf2 else {}
+
+        first = reviewer.post(f"/approvals/admin/{req_id}/approve", headers=headers2)
+        assert first.status_code == 200, first.text
+        assert first.json().get("status") == "executed"
+
+        second = reviewer.post(f"/approvals/admin/{req_id}/approve", headers=headers2)
+        assert second.status_code == 200, second.text
+        assert (second.json().get("summary") or {}).get("already_processed") is True
+
+        with SessionLocal() as db:
+            cnt = int(db.execute(select(func.count()).select_from(Job).where(Job.job_type == "dist-upgrade")).scalar_one() or 0)
+            assert cnt == 1
+
+
+def test_approve_then_reject_is_idempotent(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("HIGH_RISK_APPROVAL_ENABLED", "true")
+    monkeypatch.setenv("HIGH_RISK_APPROVAL_ACTIONS", "dist-upgrade,security-campaign")
+
+    _reload_app_modules()
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import AppUser
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as requester:
+        rr = requester.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-001",
+                "hostname": "srv-001",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert rr.status_code == 200, rr.text
+
+        lr = requester.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
+        assert lr.status_code == 200, lr.text
+        csrf = requester.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
+
+        reg = requester.post("/auth/register", json={"username": "reviewer", "password": "reviewer-pass-123"}, headers=headers)
+        assert reg.status_code == 200, reg.text
+        with SessionLocal() as db:
+            u = db.execute(select(AppUser).where(AppUser.username == "reviewer")).scalar_one()
+            u.role = "admin"
+            db.commit()
+
+        created = requester.post("/jobs/dist-upgrade", json={"agent_ids": ["srv-001"]}, headers=headers)
+        assert created.status_code == 200, created.text
+        req_id = created.json().get("request_id")
+        assert req_id
+
+    with TestClient(app) as reviewer:
+        lr2 = reviewer.post("/auth/login", json={"username": "reviewer", "password": "reviewer-pass-123"})
+        assert lr2.status_code == 200, lr2.text
+        csrf2 = reviewer.cookies.get("fleet_csrf")
+        headers2 = {"X-CSRF-Token": csrf2} if csrf2 else {}
+
+        first = reviewer.post(f"/approvals/admin/{req_id}/approve", headers=headers2)
+        assert first.status_code == 200, first.text
+        assert first.json().get("status") == "executed"
+
+        second = reviewer.post(
+            f"/approvals/admin/{req_id}/reject",
+            headers=headers2,
+            json={"note": "late reject should do nothing"},
+        )
+        assert second.status_code == 200, second.text
+        assert second.json().get("status") == "executed"
+        assert (second.json().get("summary") or {}).get("already_processed") is True
 
 
 def test_second_admin_can_approve_and_execution_is_audited(monkeypatch):

@@ -57,6 +57,7 @@ All notable changes to this project are documented in this file.
   - audit events added for request created/approved/rejected/executed/failed
   - admin queue UX improvements: pending/recent toggle, sorting, copy request id, richer row status
   - approval/rejection API responses now include execution summaries (message, target count, refs)
+  - added idempotency tests for double-approve and approve-then-reject behavior
 - Notification center backend dedupe/cooldown:
   - optional server-side suppression window (configurable seconds)
   - persisted dedupe state in DB (`notification_dedupe_state`)
