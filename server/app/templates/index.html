@@ -906,6 +906,41 @@
               </div>
             </div>
 
+            <div class="admin-card" id="admin-dedupe-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Notification dedupe state</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <input id="dedupe-filter-kind" class="host-search" style="max-width:180px;" type="text" placeholder="Kind (optional)" />
+                  <select id="dedupe-filter-minutes" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="60">Last 1h</option>
+                    <option value="240">Last 4h</option>
+                    <option value="1440" selected>Last 24h</option>
+                    <option value="10080">Last 7d</option>
+                  </select>
+                  <button class="btn" id="admin-dedupe-refresh" type="button">Reload</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:900px;">
+                    <thead>
+                      <tr>
+                        <th>Last emitted</th>
+                        <th>Kind</th>
+                        <th>Severity</th>
+                        <th>Dedupe key</th>
+                        <th>Title</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-dedupe-table">
+                      <tr><td colspan="5" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-dedupe-status"></div>
+              </div>
+            </div>
+
             <div class="admin-card" id="admin-audit-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>Audit log</span>
@@ -1730,6 +1765,63 @@
       }
     }
 
+    async function loadAdminNotificationDedupe(showToastOnManual = false) {
+      const card = document.getElementById('admin-dedupe-card');
+      const tbody = document.getElementById('admin-dedupe-table');
+      const statusEl = document.getElementById('admin-dedupe-status');
+      if (!card || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';
+
+      try {
+        setTableState(tbody, 5, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+
+        const kind = (document.getElementById('dedupe-filter-kind')?.value || '').trim();
+        const minutes = (document.getElementById('dedupe-filter-minutes')?.value || '1440').trim();
+        const qs = new URLSearchParams();
+        qs.set('limit', '100');
+        qs.set('minutes', minutes || '1440');
+        if (kind) qs.set('kind', kind);
+
+        const r = await fetch(`/dashboard/notifications/dedupe-state?${qs.toString()}`, { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `dedupe state failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          setTableState(tbody, 5, 'empty', 'No dedupe entries in selected window');
+          if (showToastOnManual) showToast('Dedupe state refreshed', 'success');
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const it of items) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td style="color:#94a3b8;">${escapeHtml(formatShortTime(it.last_emitted_at || ''))}</td>
+            <td><code>${escapeHtml(it.kind || '')}</code></td>
+            <td>${escapeHtml(it.severity || '')}</td>
+            <td><code>${escapeHtml(it.dedupe_key || '')}</code></td>
+            <td style="color:#94a3b8;">${escapeHtml(it.last_title || '')}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        if (showToastOnManual) showToast('Dedupe state refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 5, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message || String(e);
+        if (showToastOnManual) showToast(e.message || String(e), 'error');
+      }
+    }
+
     async function refreshApprovalsIndicator() {
       const badge = document.getElementById('approvals-badge');
       if (!badge) return;
@@ -1938,6 +2030,7 @@
       document.getElementById('admin-tab').classList.add('active');
       loadAdminUsers();
       loadAdminApprovals();
+      loadAdminNotificationDedupe();
       loadAdminAudit();
     }
 
@@ -3168,6 +3261,11 @@
         const evt = (id === 'approvals-filter-action' || id === 'approvals-filter-requester') ? 'input' : 'change';
         el.addEventListener(evt, () => { loadAdminApprovals(false); });
       });
+
+      const dedupeKind = document.getElementById('dedupe-filter-kind');
+      const dedupeMinutes = document.getElementById('dedupe-filter-minutes');
+      dedupeKind?.addEventListener('input', () => { loadAdminNotificationDedupe(false); });
+      dedupeMinutes?.addEventListener('change', () => { loadAdminNotificationDedupe(false); });
     }
 
     function initHostActionControls() {
@@ -3184,6 +3282,7 @@
         loadAdminSshKeys,
         loadAdminUsers,
         loadAdminApprovals,
+        loadAdminNotificationDedupe,
         loadAdminAudit,
         setSshHostsPanelVisible,
         renderSshHostsList,

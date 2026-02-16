@@ -593,6 +593,8 @@
     if (usersRefresh) usersRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminUsers === 'function') api.loadAdminUsers(true); });
     const approvalsRefresh = document.getElementById('admin-approvals-refresh');
     if (approvalsRefresh) approvalsRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminApprovals === 'function') api.loadAdminApprovals(true); });
+    const dedupeRefresh = document.getElementById('admin-dedupe-refresh');
+    if (dedupeRefresh) dedupeRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminNotificationDedupe === 'function') api.loadAdminNotificationDedupe(true); });
     const auditRefresh = document.getElementById('admin-audit-refresh');
     if (auditRefresh) auditRefresh.addEventListener('click', function (e) { e.preventDefault(); if (typeof api.loadAdminAudit === 'function') api.loadAdminAudit(true); });
   }

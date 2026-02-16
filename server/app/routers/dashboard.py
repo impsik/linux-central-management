@@ -558,6 +558,37 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
     }
 
 
+@router.get("/notifications/dedupe-state")
+def dashboard_notifications_dedupe_state(
+    db: Session = Depends(get_db),
+    user=Depends(require_admin_user),
+    limit: int = Query(100, ge=1, le=500),
+    kind: str | None = Query(None),
+    minutes: int = Query(1440, ge=1, le=10080),
+):
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=minutes)
+    q = select(NotificationDedupeState).where(NotificationDedupeState.last_emitted_at >= cutoff)
+    if kind:
+        q = q.where(NotificationDedupeState.kind == kind)
+
+    rows = db.execute(q.order_by(NotificationDedupeState.last_emitted_at.desc()).limit(limit)).scalars().all()
+    return {
+        "count": len(rows),
+        "limit": limit,
+        "minutes": minutes,
+        "items": [
+            {
+                "dedupe_key": r.dedupe_key,
+                "kind": r.kind,
+                "severity": r.severity,
+                "last_emitted_at": r.last_emitted_at.isoformat() if r.last_emitted_at else None,
+                "last_title": r.last_title,
+            }
+            for r in rows
+        ],
+    }
+
+
 @router.post("/alerts/teams/morning-brief")
 def dashboard_teams_morning_brief(db: Session = Depends(get_db), user=Depends(require_admin_user)):
     if not bool(getattr(settings, "teams_alerts_enabled", False)):

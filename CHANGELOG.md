@@ -62,6 +62,8 @@ All notable changes to this project are documented in this file.
   - optional server-side suppression window (configurable seconds)
   - persisted dedupe state in DB (`notification_dedupe_state`)
   - notifications endpoint now returns `suppressed` and `dedupe` metadata
+  - new admin observability endpoint: `/dashboard/notifications/dedupe-state`
+  - admin UI card for dedupe state (filters + reload)
 
 ### Changed
 - Overview card layout now uses balanced responsive breakpoints (3/2/1) and better overflow handling.
