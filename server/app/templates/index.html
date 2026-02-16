@@ -1173,6 +1173,7 @@
     var currentUsername = null;
     var adminUsername = null;
     var currentPermissions = {};
+    var approvalActionFeedback = {}; // request_id -> short result text
 
     // Attach terminal input handler ONCE.
     // If we attach this inside connect(), it will stack and each keystroke gets sent multiple times.
@@ -1822,10 +1823,11 @@
           const tr = document.createElement('tr');
           const isPending = String(it?.status || '') === 'pending';
           const execRef = String(it?.execution_ref || '');
+          const feedback = String((approvalActionFeedback && approvalActionFeedback[it.id]) || '');
           tr.innerHTML = `
             <td style="color:#94a3b8;">${escapeHtml(formatShortTime(it.created_at))}</td>
             <td>${escapeHtml(it.user || '')}<div style="color:#94a3b8;font-size:0.8rem;">${escapeHtml(String(it?.status || ''))}</div></td>
-            <td><code>${escapeHtml(it.action || '')}</code>${execRef ? `<div style="color:#94a3b8;font-size:0.8rem;">${escapeHtml(execRef.slice(0, 16))}</div>` : ''}</td>
+            <td><code>${escapeHtml(it.action || '')}</code>${execRef ? `<div style="color:#94a3b8;font-size:0.8rem;">${escapeHtml(execRef.slice(0, 16))}</div>` : ''}${feedback ? `<div style="color:#86efac;font-size:0.78rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(feedback)}">${escapeHtml(feedback)}</div>` : ''}</td>
             <td title="${escapeHtml(targets.join('\n'))}">${escapeHtml(targetLabel)}</td>
             <td style="text-align:right;white-space:nowrap;">
               <button class="btn" data-copy-id="${escapeHtml(it.id)}">Copy ID</button>
@@ -1887,6 +1889,7 @@
               return showToast(msg, 'error');
             }
             const msg = (d2 && d2.summary && d2.summary.message) ? d2.summary.message : 'Approved and executed';
+            approvalActionFeedback[id] = msg;
             showToast(msg, 'success');
             loadAdminApprovals();
             loadAdminAudit();
@@ -1910,6 +1913,7 @@
               return showToast(msg, 'error');
             }
             const msg = (d2 && d2.summary && d2.summary.message) ? d2.summary.message : 'Rejected';
+            approvalActionFeedback[id] = msg;
             showToast(msg, 'success');
             loadAdminApprovals();
             loadAdminAudit();
