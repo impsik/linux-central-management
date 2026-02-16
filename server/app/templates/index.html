@@ -1886,7 +1886,8 @@
               const msg = (d2 && (d2.detail || d2.error)) || raw2 || 'Approve failed';
               return showToast(msg, 'error');
             }
-            showToast('Approved and executed', 'success');
+            const msg = (d2 && d2.summary && d2.summary.message) ? d2.summary.message : 'Approved and executed';
+            showToast(msg, 'success');
             loadAdminApprovals();
             loadAdminAudit();
             refreshApprovalsIndicator();
@@ -1908,7 +1909,8 @@
               const msg = (d2 && (d2.detail || d2.error)) || raw2 || 'Reject failed';
               return showToast(msg, 'error');
             }
-            showToast('Rejected', 'success');
+            const msg = (d2 && d2.summary && d2.summary.message) ? d2.summary.message : 'Rejected';
+            showToast(msg, 'success');
             loadAdminApprovals();
             loadAdminAudit();
             refreshApprovalsIndicator();

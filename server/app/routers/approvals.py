@@ -114,7 +114,16 @@ async def approve_request(request_id: str, request: Request, db: Session = Depen
         raise HTTPException(403, "Two-person rule: requester cannot approve own request")
 
     if req.status != "pending":
-        return {"id": str(req.id), "status": req.status, "execution_ref": req.execution_ref}
+        return {
+            "id": str(req.id),
+            "action": req.action,
+            "status": req.status,
+            "execution_ref": req.execution_ref,
+            "summary": {
+                "already_processed": True,
+                "message": f"Request already {req.status}",
+            },
+        }
 
     # Race-safe claim: exactly one admin can transition pending -> approved.
     now = datetime.now(timezone.utc)
@@ -140,7 +149,16 @@ async def approve_request(request_id: str, request: Request, db: Session = Depen
     if not req:
         raise HTTPException(404, "request not found")
     if claimed == 0:
-        return {"id": str(req.id), "status": req.status, "execution_ref": req.execution_ref}
+        return {
+            "id": str(req.id),
+            "action": req.action,
+            "status": req.status,
+            "execution_ref": req.execution_ref,
+            "summary": {
+                "already_processed": True,
+                "message": f"Request already {req.status}",
+            },
+        }
 
     p = req.payload or {}
     action = (req.action or "").strip().lower()
@@ -181,7 +199,17 @@ async def approve_request(request_id: str, request: Request, db: Session = Depen
                     meta={"request_id": str(req.id), "action": req.action, "execution_ref": created.job_key},
                 )
 
-            return {"id": str(req.id), "status": req.status, "execution_ref": created.job_key}
+            return {
+                "id": str(req.id),
+                "action": req.action,
+                "status": req.status,
+                "execution_ref": created.job_key,
+                "summary": {
+                    "message": f"dist-upgrade executed for {len(agent_ids)} host(s)",
+                    "job_type": "dist-upgrade",
+                    "target_count": len(agent_ids),
+                },
+            }
 
         if action == "security-campaign":
             with transaction(db):
@@ -212,7 +240,18 @@ async def approve_request(request_id: str, request: Request, db: Session = Depen
                     meta={"request_id": str(req.id), "action": req.action, "execution_ref": c.campaign_key},
                 )
 
-            return {"id": str(req.id), "status": req.status, "execution_ref": c.campaign_key}
+            target_count = len([str(x) for x in (p.get("agent_ids") or []) if str(x).strip()])
+            return {
+                "id": str(req.id),
+                "action": req.action,
+                "status": req.status,
+                "execution_ref": c.campaign_key,
+                "summary": {
+                    "message": f"security campaign created ({target_count} explicit host target(s))",
+                    "campaign_kind": "security-updates",
+                    "target_count": target_count,
+                },
+            }
 
         raise HTTPException(400, "unsupported action")
     except HTTPException:
@@ -283,7 +322,15 @@ def reject_request(
         raise HTTPException(403, "Two-person rule: requester cannot reject own request")
 
     if req.status != "pending":
-        return {"id": str(req.id), "status": req.status}
+        return {
+            "id": str(req.id),
+            "action": req.action,
+            "status": req.status,
+            "summary": {
+                "already_processed": True,
+                "message": f"Request already {req.status}",
+            },
+        }
 
     with transaction(db):
         changed = db.execute(
@@ -313,4 +360,12 @@ def reject_request(
     req = db.execute(select(HighRiskActionRequest).where(HighRiskActionRequest.id == req_uuid)).scalar_one_or_none()
     if not req:
         raise HTTPException(404, "request not found")
-    return {"id": str(req.id), "status": req.status}
+    return {
+        "id": str(req.id),
+        "action": req.action,
+        "status": req.status,
+        "summary": {
+            "message": "Request rejected",
+            "note": (payload.note if payload else None) or "rejected by admin",
+        },
+    }

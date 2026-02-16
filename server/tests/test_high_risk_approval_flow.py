@@ -266,6 +266,7 @@ def test_second_admin_can_approve_and_execution_is_audited(monkeypatch):
         approved = reviewer.post(f"/approvals/admin/{req_id}/approve", headers=headers2)
         assert approved.status_code == 200, approved.text
         assert approved.json().get("status") == "executed"
+        assert (approved.json().get("summary") or {}).get("target_count") == 1
 
         a1 = reviewer.get("/audit?action=high_risk.request.approved")
         assert a1.status_code == 200, a1.text
