@@ -395,6 +395,7 @@
       }
       const d = await r.json();
       const itemsRaw = Array.isArray(d?.items) ? d.items : [];
+      const suppressedCount = Number(d?.suppressed || 0);
 
       let seen = [];
       try { seen = JSON.parse(localStorage.getItem('fleet_notifications_seen_v1') || '[]'); } catch (_) { seen = []; }
@@ -419,7 +420,10 @@
       } else {
         wrap.innerHTML = `
           <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;">
-            <div style="color:#94a3b8;">Unread: <b>${unread.length}</b> / ${items.length}</div>
+            <div style="color:#94a3b8;display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
+              <span>Unread: <b>${unread.length}</b> / ${items.length}</span>
+              ${suppressedCount > 0 ? `<span title="Suppressed by server cooldown" style="color:#fbbf24;">Suppressed: ${suppressedCount}</span>` : ''}
+            </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
               <button class="btn" id="notifications-mark-read" type="button">Mark all read</button>
               <button class="btn" id="notifications-unsnooze-all" type="button">Unsnooze all</button>
