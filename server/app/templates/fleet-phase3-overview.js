@@ -173,7 +173,7 @@
             attentionEl.innerHTML = '<div style="color:#86efac;">All clear. No high-priority issues detected.</div>';
           } else {
             const html = [];
-            html.push('<div style="overflow:auto;max-width:100%;"><table class="process-table" style="width:100%;table-layout:fixed;"><thead><tr><th style="width:26%;">Host</th><th>Issues</th><th style="width:28%;">Last seen</th></tr></thead><tbody>');
+            html.push('<div style="overflow:auto;max-width:100%;"><table class="process-table" style="width:100%;table-layout:fixed;"><thead><tr><th style="width:24%;">Host</th><th style="width:46%;">Issues</th><th style="width:30%;">Last seen</th></tr></thead><tbody>');
             for (const it of rows) {
               const agentId = String(it.agent_id || '');
               const hostName = String(it.hostname || it.agent_id || '');
@@ -184,7 +184,7 @@
                 const msg = String(x.message || '');
                 return `<a href="#" class="attention-issue" data-agent-id="${w.escapeHtml(agentId)}" data-hostname="${w.escapeHtml(hostName)}" data-kind="${w.escapeHtml(kind)}" style="text-decoration:underline;">${w.escapeHtml(msg)}</a>`;
               }).join(', ');
-              html.push(`<tr><td style="font-family:monospace;">${host}</td><td>${issuesHtml || ''}</td><td style="color:#94a3b8;">${last}</td></tr>`);
+              html.push(`<tr><td style="font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${host}</td><td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35;">${issuesHtml || ''}</td><td style="color:#94a3b8;white-space:normal;overflow-wrap:anywhere;">${last}</td></tr>`);
             }
             html.push('</tbody></table></div>');
             attentionEl.innerHTML = html.join('');
