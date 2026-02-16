@@ -1808,8 +1808,8 @@
             <td style="color:#94a3b8;">${escapeHtml(formatShortTime(it.last_emitted_at || ''))}</td>
             <td><code>${escapeHtml(it.kind || '')}</code></td>
             <td>${escapeHtml(it.severity || '')}</td>
-            <td><code>${escapeHtml(it.dedupe_key || '')}</code></td>
-            <td style="color:#94a3b8;">${escapeHtml(it.last_title || '')}</td>
+            <td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;"><code>${escapeHtml(it.dedupe_key || '')}</code></td>
+            <td style="color:#94a3b8;white-space:normal;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(it.last_title || '')}</td>
           `;
           tbody.appendChild(tr);
         }
@@ -1961,7 +1961,20 @@
             if (!modal || !titleEl || !metaEl || !outEl) return;
             titleEl.textContent = `Approval request: ${row.action || ''}`;
             metaEl.textContent = `Requested: ${row.created_at || ''} · By: ${row.user || ''} · Status: ${row.status || ''} · ID: ${row.id || ''}`;
-            outEl.value = JSON.stringify(row.payload || {}, null, 2);
+            outEl.value = JSON.stringify({
+              request: {
+                id: row.id || '',
+                action: row.action || '',
+                user: row.user || '',
+                status: row.status || '',
+                created_at: row.created_at || null,
+                finished_at: row.finished_at || null,
+                approved_by: row.approved_by || null,
+                execution_ref: row.execution_ref || null,
+                error: row.error || null,
+              },
+              payload: row.payload || {},
+            }, null, 2);
             modal.hidden = false;
             modal.classList.add('open');
             modal.setAttribute('aria-hidden', 'false');
