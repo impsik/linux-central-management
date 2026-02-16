@@ -872,6 +872,16 @@
                     <option value="240">≤ 4 hours</option>
                     <option value="1440">≤ 24 hours</option>
                   </select>
+                  <select id="approvals-filter-mode" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:200px;">
+                    <option value="pending">Pending only</option>
+                    <option value="recent">Last 24h (all states)</option>
+                  </select>
+                  <select id="approvals-filter-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:200px;">
+                    <option value="created_desc">Newest first</option>
+                    <option value="created_asc">Oldest first</option>
+                    <option value="action_asc">Action A→Z</option>
+                    <option value="requester_asc">Requester A→Z</option>
+                  </select>
                   <button class="btn" id="admin-approvals-refresh" type="button">Reload</button>
                 </div>
               </div>
@@ -1757,17 +1767,22 @@
         setTableState(tbody, 5, 'loading', 'Loading…');
         if (statusEl) statusEl.textContent = '';
 
-        const r = await fetch('/approvals/admin/pending', { credentials: 'include' });
+        const filterAction = (document.getElementById('approvals-filter-action')?.value || '').trim().toLowerCase();
+        const filterRequester = (document.getElementById('approvals-filter-requester')?.value || '').trim().toLowerCase();
+        const ageMins = parseInt((document.getElementById('approvals-filter-age')?.value || '').trim(), 10);
+        const mode = (document.getElementById('approvals-filter-mode')?.value || 'pending').trim();
+        const sortMode = (document.getElementById('approvals-filter-sort')?.value || 'created_desc').trim();
+        const nowMs = Date.now();
+
+        const qs = new URLSearchParams();
+        qs.set('mode', mode === 'recent' ? 'recent' : 'pending');
+        qs.set('hours', '24');
+        const r = await fetch(`/approvals/admin/pending?${qs.toString()}`, { credentials: 'include' });
         const raw = await r.text();
         let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
         if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `approvals failed (${r.status})`);
 
         const items = (d && d.items) ? d.items : [];
-
-        const filterAction = (document.getElementById('approvals-filter-action')?.value || '').trim().toLowerCase();
-        const filterRequester = (document.getElementById('approvals-filter-requester')?.value || '').trim().toLowerCase();
-        const ageMins = parseInt((document.getElementById('approvals-filter-age')?.value || '').trim(), 10);
-        const nowMs = Date.now();
 
         const filtered = items.filter((it) => {
           const act = String(it?.action || '').toLowerCase();
@@ -1784,8 +1799,16 @@
           return true;
         });
 
+        filtered.sort((a, b) => {
+          if (sortMode === 'created_asc') return Date.parse(String(a?.created_at || '')) - Date.parse(String(b?.created_at || ''));
+          if (sortMode === 'action_asc') return String(a?.action || '').localeCompare(String(b?.action || ''));
+          if (sortMode === 'requester_asc') return String(a?.user || '').localeCompare(String(b?.user || ''));
+          return Date.parse(String(b?.created_at || '')) - Date.parse(String(a?.created_at || ''));
+        });
+
         if (!filtered.length) {
-          setTableState(tbody, 5, 'empty', items.length ? 'No requests match filters' : 'No pending approvals');
+          const emptyBase = (mode === 'recent') ? 'No approvals in last 24h' : 'No pending approvals';
+          setTableState(tbody, 5, 'empty', items.length ? 'No requests match filters' : emptyBase);
           await refreshApprovalsIndicator();
           if (showToastOnManual) showToast('Approvals refreshed', 'success');
           return;
@@ -1797,20 +1820,37 @@
           const targets = Array.isArray(payload.agent_ids) ? payload.agent_ids : [];
           const targetLabel = targets.length ? `${targets.slice(0, 3).join(', ')}${targets.length > 3 ? ` (+${targets.length - 3})` : ''}` : 'selector-based';
           const tr = document.createElement('tr');
+          const isPending = String(it?.status || '') === 'pending';
+          const execRef = String(it?.execution_ref || '');
           tr.innerHTML = `
             <td style="color:#94a3b8;">${escapeHtml(formatShortTime(it.created_at))}</td>
-            <td>${escapeHtml(it.user || '')}</td>
-            <td><code>${escapeHtml(it.action || '')}</code></td>
+            <td>${escapeHtml(it.user || '')}<div style="color:#94a3b8;font-size:0.8rem;">${escapeHtml(String(it?.status || ''))}</div></td>
+            <td><code>${escapeHtml(it.action || '')}</code>${execRef ? `<div style="color:#94a3b8;font-size:0.8rem;">${escapeHtml(execRef.slice(0, 16))}</div>` : ''}</td>
             <td title="${escapeHtml(targets.join('\n'))}">${escapeHtml(targetLabel)}</td>
             <td style="text-align:right;white-space:nowrap;">
+              <button class="btn" data-copy-id="${escapeHtml(it.id)}">Copy ID</button>
               <button class="btn" data-details-id="${escapeHtml(it.id)}">Details</button>
-              <button class="btn btn-primary" data-approve-id="${escapeHtml(it.id)}">Approve</button>
-              <button class="btn" data-reject-id="${escapeHtml(it.id)}">Reject</button>
+              <button class="btn btn-primary" data-approve-id="${escapeHtml(it.id)}" ${isPending ? '' : 'disabled'}>Approve</button>
+              <button class="btn" data-reject-id="${escapeHtml(it.id)}" ${isPending ? '' : 'disabled'}>Reject</button>
             </td>
           `;
           tr.dataset.approvalPayload = JSON.stringify(it || {});
           tbody.appendChild(tr);
         }
+
+        tbody.querySelectorAll('button[data-copy-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-copy-id') || '';
+            if (!id) return;
+            try {
+              await navigator.clipboard.writeText(id);
+              showToast('Request ID copied', 'success');
+            } catch {
+              showToast('Copy failed', 'error');
+            }
+          });
+        });
 
         tbody.querySelectorAll('button[data-details-id]').forEach(btn => {
           btn.addEventListener('click', (e) => {
@@ -3115,11 +3155,11 @@
     }
 
     function initApprovalsFilterControls() {
-      const ids = ['approvals-filter-action', 'approvals-filter-requester', 'approvals-filter-age'];
+      const ids = ['approvals-filter-action', 'approvals-filter-requester', 'approvals-filter-age', 'approvals-filter-mode', 'approvals-filter-sort'];
       ids.forEach((id) => {
         const el = document.getElementById(id);
         if (!el) return;
-        const evt = id === 'approvals-filter-age' ? 'change' : 'input';
+        const evt = (id === 'approvals-filter-action' || id === 'approvals-filter-requester') ? 'input' : 'change';
         el.addEventListener(evt, () => { loadAdminApprovals(false); });
       });
     }

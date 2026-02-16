@@ -160,6 +160,54 @@ def test_two_person_rule_blocks_self_approve_and_audits_creation(monkeypatch):
         assert any((it.get("target_type") == "high_risk_action_request" and (it.get("meta") or {}).get("request_id") == req_id) for it in items)
 
 
+def test_admin_pending_endpoint_supports_recent_mode(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("HIGH_RISK_APPROVAL_ENABLED", "true")
+    monkeypatch.setenv("HIGH_RISK_APPROVAL_ACTIONS", "dist-upgrade,security-campaign")
+
+    _reload_app_modules()
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        rr = client.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-001",
+                "hostname": "srv-001",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert rr.status_code == 200, rr.text
+
+        lr = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
+        assert lr.status_code == 200, lr.text
+        csrf = client.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
+
+        created = client.post("/jobs/dist-upgrade", json={"agent_ids": ["srv-001"]}, headers=headers)
+        assert created.status_code == 200, created.text
+
+        q1 = client.get("/approvals/admin/pending")
+        assert q1.status_code == 200, q1.text
+        assert q1.json().get("mode") == "pending"
+
+        q2 = client.get("/approvals/admin/pending?mode=recent&hours=24")
+        assert q2.status_code == 200, q2.text
+        assert q2.json().get("mode") == "recent"
+        assert len(q2.json().get("items") or []) >= 1
+
+
 def test_second_admin_can_approve_and_execution_is_audited(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
     monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")

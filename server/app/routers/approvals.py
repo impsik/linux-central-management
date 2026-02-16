@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
@@ -53,17 +53,20 @@ def list_my_requests(db: Session = Depends(get_db), user=Depends(require_ui_user
 
 
 @router.get("/admin/pending")
-def list_pending(db: Session = Depends(get_db), admin=Depends(require_admin_user)):
-    rows = (
-        db.execute(
-            select(HighRiskActionRequest, AppUser.username)
-            .join(AppUser, AppUser.id == HighRiskActionRequest.user_id)
-            .where(HighRiskActionRequest.status == "pending")
-            .order_by(HighRiskActionRequest.created_at.asc())
-            .limit(200)
-        )
-        .all()
-    )
+def list_pending(
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin_user),
+    mode: str = Query("pending", pattern="^(pending|recent)$"),
+    hours: int = Query(24, ge=1, le=168),
+):
+    q = select(HighRiskActionRequest, AppUser.username).join(AppUser, AppUser.id == HighRiskActionRequest.user_id)
+    if mode == "pending":
+        q = q.where(HighRiskActionRequest.status == "pending")
+    else:
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        q = q.where(HighRiskActionRequest.created_at >= cutoff)
+
+    rows = db.execute(q.order_by(HighRiskActionRequest.created_at.desc()).limit(300)).all()
 
     items = []
     for r, uname in rows:
@@ -74,10 +77,14 @@ def list_pending(db: Session = Depends(get_db), admin=Depends(require_admin_user
                 "action": r.action,
                 "payload": r.payload,
                 "status": r.status,
+                "approved_by": r.approved_by,
+                "execution_ref": r.execution_ref,
+                "error": r.error,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
             }
         )
-    return {"items": items}
+    return {"items": items, "mode": mode, "hours": hours}
 
 
 @router.post("/admin/{request_id}/approve")
