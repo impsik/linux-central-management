@@ -14,6 +14,7 @@ from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import is_within_maintenance_window
 from ..services.teams import post_teams_message
+from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -161,7 +162,10 @@ async def dashboard_attention(
     grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
     online_cutoff = now.timestamp() - grace_s
 
-    hosts = db.execute(select(Host).order_by(Host.hostname.asc()).limit(limit)).scalars().all()
+    hosts = [
+        h for h in db.execute(select(Host).order_by(Host.hostname.asc()).limit(limit * 5)).scalars().all()
+        if is_host_visible_to_user(db, user, h)
+    ][:limit]
 
     # Per-host update counts
     upd_rows = db.execute(
@@ -424,9 +428,15 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
 
     candidates: list[dict] = []
 
+    allowed_agent_ids = {
+        h.agent_id for h in db.execute(select(Host)).scalars().all() if is_host_visible_to_user(db, user, h)
+    }
+
     # Offline hosts (top priority)
     hosts = db.execute(select(Host).order_by(Host.last_seen.asc().nullsfirst()).limit(200)).scalars().all()
     for h in hosts:
+        if h.agent_id not in allowed_agent_ids:
+            continue
         last_seen_ts = h.last_seen.timestamp() if h.last_seen else None
         online = bool(last_seen_ts is not None and last_seen_ts >= online_cutoff)
         if not online:
@@ -451,6 +461,8 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
         .limit(50)
     ).all()
     for jr, job in failed_rows:
+        if (jr.agent_id or "") not in allowed_agent_ids:
+            continue
         ts = jr.finished_at.isoformat() if jr.finished_at else now.isoformat()
         nid = f"failed:{job.job_key}:{jr.agent_id}:{ts}"
         candidates.append({
@@ -474,6 +486,8 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
         .limit(50)
     ).all()
     for agent_id, hostname, sec_count in sec_rows:
+        if (agent_id or "") not in allowed_agent_ids:
+            continue
         nid = f"sec-backlog:{agent_id}:{int(sec_count or 0)}"
         candidates.append({
             "id": nid,

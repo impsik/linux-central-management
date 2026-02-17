@@ -16,6 +16,8 @@ All notable changes to this project are documented in this file.
 ### Changed
 - Target resolution now supports user-aware filtering (`resolve_agent_ids(..., user=...)`).
 - Scoped filtering is enforced for job creation (`/jobs/*`), patch campaign target selection, cron target selection, SSH key deployment requests, and terminal websocket host access.
+- Read-path scope filtering now applies to host listing (`/hosts`), search endpoints (`/search/packages`, `/search/cve`), and dashboard attention/notifications host visibility.
+- Admin Users UI now supports editing per-user label scope selectors inline (JSON array) and saving via the new auth scope endpoints.
 
 ## [2026-02-15]
 

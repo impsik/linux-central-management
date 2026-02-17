@@ -16,12 +16,13 @@ from ..services.hosts import is_host_online, seconds_since_seen
 from ..services.job_wait import wait_for_job_run
 from ..services.audit import log_event
 from ..services.rbac import permissions_for
+from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
 
 
 @router.get("")
-def list_hosts(online_only: bool = False, db: Session = Depends(get_db)):
+def list_hosts(online_only: bool = False, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     rows = db.execute(select(Host).order_by(Host.hostname)).scalars().all()
     now = datetime.now(timezone.utc)
     return [
@@ -39,6 +40,7 @@ def list_hosts(online_only: bool = False, db: Session = Depends(get_db)):
             "is_online": is_host_online(h, now),
         }
         for h in rows
+        if is_host_visible_to_user(db, user, h)
         if (not online_only or is_host_online(h, now))
     ]
 
@@ -148,6 +150,8 @@ def list_host_packages(
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
         raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
 
     base_filter = [HostPackage.host_id == host.id]
     if search:
@@ -233,9 +237,11 @@ def list_host_packages(
 
 
 @router.get("/{agent_id}/packages/{pkg_name}/info")
-async def get_package_info(agent_id: str, pkg_name: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_package_info(agent_id: str, pkg_name: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
@@ -282,9 +288,11 @@ async def get_package_info(agent_id: str, pkg_name: str, wait: bool = True, db: 
 
 
 @router.post("/{agent_id}/packages/check-updates")
-async def check_host_package_updates(agent_id: str, refresh: bool = True, wait: bool = True, db: Session = Depends(get_db)):
+async def check_host_package_updates(agent_id: str, refresh: bool = True, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     with transaction(db):
@@ -350,9 +358,11 @@ async def check_host_package_updates(agent_id: str, refresh: bool = True, wait: 
 
 
 @router.post("/{agent_id}/packages/refresh")
-async def refresh_host_packages(agent_id: str, wait: bool = False, db: Session = Depends(get_db)):
+async def refresh_host_packages(agent_id: str, wait: bool = False, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     with transaction(db):
@@ -396,6 +406,8 @@ async def host_packages_action(
 ):
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     action = (payload.get("action") or "").strip()
@@ -447,9 +459,11 @@ async def host_packages_action(
 
 
 @router.get("/{agent_id}/users")
-async def get_users(agent_id: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_users(agent_id: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
@@ -515,6 +529,8 @@ async def control_user(
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
         raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
@@ -560,9 +576,11 @@ async def control_user(
 
 
 @router.get("/{agent_id}/services")
-async def get_services(agent_id: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_services(agent_id: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
@@ -605,10 +623,12 @@ async def get_services(agent_id: str, wait: bool = True, db: Session = Depends(g
 
 
 @router.get("/{agent_id}/services/{service_name}")
-async def get_service_details(agent_id: str, service_name: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_service_details(agent_id: str, service_name: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Return selected systemd properties for a service."""
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
@@ -655,10 +675,12 @@ async def get_service_details(agent_id: str, service_name: str, wait: bool = Tru
 
 
 @router.get("/{agent_id}/users/{username}")
-async def get_user_details(agent_id: str, username: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_user_details(agent_id: str, username: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Return detailed info about a system user (best-effort)."""
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
@@ -705,13 +727,15 @@ async def get_user_details(agent_id: str, username: str, wait: bool = True, db: 
 
 
 @router.get("/{agent_id}/df")
-async def get_df(agent_id: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_df(agent_id: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Return `df -h` output for the host.
 
     Response: {"stdout": "..."}
     """
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
@@ -752,7 +776,7 @@ async def get_df(agent_id: str, wait: bool = True, db: Session = Depends(get_db)
 
 
 @router.get("/{agent_id}/metrics")
-async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Fetch basic host metrics (disk/mem/cpu/load/ips).
 
     UI expects a *flat* JSON object with keys like disk_usage, memory, cpu, ip_addresses.
@@ -760,6 +784,8 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
     """
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):
@@ -876,6 +902,8 @@ def get_load_history(
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
         raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
 
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=since_seconds)
     rows = (
@@ -917,10 +945,12 @@ def get_load_history(
 
 
 @router.get("/{agent_id}/top-processes")
-async def get_top_processes(agent_id: str, wait: bool = True, db: Session = Depends(get_db)):
+async def get_top_processes(agent_id: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Fetch top processes by CPU (fast polling endpoint used by UI)."""
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
     if not is_host_online(host):

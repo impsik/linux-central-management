@@ -847,11 +847,12 @@
                         <th>Active</th>
                         <th>MFA</th>
                         <th>Created</th>
+                        <th>Scope selectors</th>
                         <th></th>
                       </tr>
                     </thead>
                     <tbody id="admin-users-table">
-                      <tr><td colspan="6" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
+                      <tr><td colspan="7" style="text-align:center;color:#a0aec0;">Loading…</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -1700,7 +1701,7 @@
       if (!tbody) return;
 
       try {
-        setTableState(tbody, 6, 'loading', 'Loading…');
+        setTableState(tbody, 7, 'loading', 'Loading…');
         if (statusEl) statusEl.textContent = '';
         const r = await fetch('/auth/admin/users', { credentials: 'include' });
         const raw = await r.text();
@@ -1709,7 +1710,7 @@
 
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
-          setTableState(tbody, 6, 'empty', 'No users');
+          setTableState(tbody, 7, 'empty', 'No users');
           return;
         }
         tbody.innerHTML = '';
@@ -1729,12 +1730,63 @@
             <td>${escapeHtml(active)}</td>
             <td>${escapeHtml(mfa)}</td>
             <td style="color:#94a3b8;">${escapeHtml(created)}</td>
+            <td>
+              <textarea class="admin-input" rows="2" data-user-scope="${escapeHtml(uname)}" placeholder='[{"env":["prod"],"team":["core"]}]' style="min-width:260px;"></textarea>
+              <div style="margin-top:0.35rem;"><button class="btn" data-user-scope-save="${escapeHtml(uname)}">Save scope</button></div>
+            </td>
             <td style="text-align:right;white-space:nowrap;">
               <button class="btn" data-user-delete="${escapeHtml(uname)}" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Deactivate user' : 'Cannot delete this user'}">Delete</button>
             </td>
           `;
           tbody.appendChild(tr);
         }
+
+        // Load per-user scope selectors into textareas.
+        const scopeAreas = Array.from(tbody.querySelectorAll('textarea[data-user-scope]'));
+        for (const ta of scopeAreas) {
+          const uname = ta.getAttribute('data-user-scope') || '';
+          if (!uname) continue;
+          try {
+            const rs = await fetch(`/auth/admin/users/${encodeURIComponent(uname)}/scopes`, { credentials: 'include' });
+            if (!rs.ok) continue;
+            const ds = await rs.json();
+            ta.value = JSON.stringify((ds && ds.selectors) ? ds.selectors : [], null, 2);
+          } catch {}
+        }
+
+        tbody.querySelectorAll('button[data-user-scope-save]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-scope-save') || '';
+            const ta = tbody.querySelector(`textarea[data-user-scope="${CSS.escape(uname)}"]`);
+            if (!uname || !ta) return;
+            let selectors = [];
+            try {
+              const raw = (ta.value || '').trim() || '[]';
+              const parsed = JSON.parse(raw);
+              if (!Array.isArray(parsed)) throw new Error('Scope must be a JSON array');
+              selectors = parsed;
+            } catch (err) {
+              showToast(`Invalid scope JSON for ${uname}: ${err.message || err}`, 'error', 5000);
+              return;
+            }
+            try {
+              const r3 = await fetch(`/auth/admin/users/${encodeURIComponent(uname)}/scopes`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+                body: JSON.stringify({ selectors }),
+              });
+              const raw3 = await r3.text();
+              let d3 = null; try { d3 = raw3 ? JSON.parse(raw3) : null; } catch {}
+              if (!r3.ok) throw new Error((d3 && (d3.detail||d3.error)) || raw3 || 'Scope save failed');
+              showToast(`Scope updated for ${uname}`, 'success');
+              loadAdminAudit();
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
 
         tbody.querySelectorAll('button[data-user-delete]').forEach(btn => {
           btn.addEventListener('click', async (e) => {
