@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -195,6 +195,20 @@ def delete_user(username: str, request: Request, db: Session = Depends(get_db), 
     if not target:
         raise HTTPException(404, "user not found")
 
+    # Guardrail: never allow deactivating the last active admin.
+    role_norm = (getattr(target, "role", "operator") or "operator").lower()
+    if role_norm == "admin" and bool(getattr(target, "is_active", True)):
+        active_admins = int(
+            db.execute(
+                select(func.count())
+                .select_from(AppUser)
+                .where(AppUser.is_active == True, AppUser.role == "admin")  # noqa: E712
+            ).scalar_one()
+            or 0
+        )
+        if active_admins <= 1:
+            raise HTTPException(400, "Cannot deactivate the last active admin")
+
     with transaction(db):
         target.is_active = False
         # Revoke all sessions for that user
@@ -202,6 +216,27 @@ def delete_user(username: str, request: Request, db: Session = Depends(get_db), 
         log_event(db, action="user.deactivate", actor=user, request=request, target_type="app_user", target_name=uname)
 
     return {"ok": True, "username": uname, "active": False}
+
+
+@router.post("/users/{username}/activate")
+def activate_user(username: str, request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+    perms = permissions_for(user)
+    if not perms.get("can_delete_app_users"):
+        raise HTTPException(403, "Insufficient permissions to activate users")
+
+    uname = (username or "").strip()
+    if not uname:
+        raise HTTPException(400, "username required")
+
+    target = db.execute(select(AppUser).where(AppUser.username == uname)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "user not found")
+
+    with transaction(db):
+        target.is_active = True
+        log_event(db, action="user.activate", actor=user, request=request, target_type="app_user", target_name=uname)
+
+    return {"ok": True, "username": uname, "active": True}
 
 
 @router.post("/register")

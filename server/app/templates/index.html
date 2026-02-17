@@ -1749,8 +1749,9 @@
           const created = formatShortTime(u.created_at || '');
           const uname = String(u.username || '');
           const bootstrap = String(adminUsername || 'admin');
-          const canDelete = !!(currentPermissions && currentPermissions.can_delete_app_users) && uname && uname !== bootstrap && uname !== currentUsername;
+          const canToggleActive = !!(currentPermissions && currentPermissions.can_delete_app_users) && uname && uname !== bootstrap && uname !== currentUsername;
           const canResetMfa = !!(currentPermissions && currentPermissions.can_manage_users) && uname && uname !== currentUsername;
+          const isActive = (u.active !== false);
 
           tr.innerHTML = `
             <td><code>${escapeHtml(uname)}</code></td>
@@ -1764,7 +1765,7 @@
             </td>
             <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end;">
               <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
-              <button class="btn" data-user-delete="${escapeHtml(uname)}" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Deactivate user' : 'Cannot delete this user'}">Delete</button>
+              <button class="btn" data-user-toggle-active="${escapeHtml(uname)}" data-user-active="${isActive ? '1' : '0'}" ${canToggleActive ? '' : 'disabled'} title="${canToggleActive ? (isActive ? 'Deactivate user' : 'Activate user') : 'Cannot change this user'}">${isActive ? 'Deactivate' : 'Activate'}</button>
             </td>
           `;
           tbody.appendChild(tr);
@@ -1845,19 +1846,22 @@
           });
         });
 
-        tbody.querySelectorAll('button[data-user-delete]').forEach(btn => {
+        tbody.querySelectorAll('button[data-user-toggle-active]').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             e.preventDefault();
-            const uname = btn.getAttribute('data-user-delete') || '';
+            const uname = btn.getAttribute('data-user-toggle-active') || '';
+            const isActive = (btn.getAttribute('data-user-active') || '1') === '1';
             if (!uname) return;
-            const ok = confirm(`Deactivate user '${uname}'?\n\nThis will disable login and revoke sessions.`);
+            const action = isActive ? 'deactivate' : 'activate';
+            const ok = confirm(`${isActive ? 'Deactivate' : 'Activate'} user '${uname}'?` + (isActive ? '\n\nThis will disable login and revoke sessions.' : ''));
             if (!ok) return;
             try {
-              const r2 = await fetch(`/auth/users/${encodeURIComponent(uname)}/delete`, { method: 'POST', credentials: 'include', headers: { 'X-CSRF-Token': (getCookie('fleet_csrf')||'') } });
+              const endpoint = isActive ? `/auth/users/${encodeURIComponent(uname)}/delete` : `/auth/users/${encodeURIComponent(uname)}/activate`;
+              const r2 = await fetch(endpoint, { method: 'POST', credentials: 'include', headers: { 'X-CSRF-Token': (getCookie('fleet_csrf')||'') } });
               const raw2 = await r2.text();
               let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
-              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'Delete failed');
-              showToast(`User '${uname}' deactivated`, 'success');
+              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || `${action} failed`);
+              showToast(`User '${uname}' ${isActive ? 'deactivated' : 'activated'}`, 'success');
               loadAdminUsers();
               loadAdminAudit();
             } catch (err) {
@@ -1868,7 +1872,7 @@
 
         if (showToastOnManual) showToast('Users refreshed', 'success');
       } catch (e) {
-        setTableState(tbody, 6, 'error', e.message || String(e));
+        setTableState(tbody, 7, 'error', e.message || String(e));
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
       }
