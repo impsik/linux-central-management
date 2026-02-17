@@ -14,6 +14,7 @@ from ..services.db_utils import transaction
 from ..services.high_risk_approval import is_approval_required
 from ..services.maintenance import assert_action_allowed_now
 from ..services.patching import create_patch_campaign
+from ..services.targets import resolve_agent_ids
 
 router = APIRouter(prefix="/patching", tags=["patching"])
 
@@ -139,6 +140,10 @@ def create_security_updates_campaign(
     labels = payload.get("labels")
     agent_ids = payload.get("agent_ids")
 
+    scoped_targets = resolve_agent_ids(db, agent_ids, labels, user=user)
+    if not scoped_targets:
+        raise HTTPException(400, "No targets resolved within your scope")
+
     if is_approval_required("security-campaign"):
         with transaction(db):
             req = HighRiskActionRequest(
@@ -146,7 +151,7 @@ def create_security_updates_campaign(
                 action="security-campaign",
                 payload={
                     "labels": labels,
-                    "agent_ids": agent_ids,
+                    "agent_ids": scoped_targets,
                     "rings": rings,
                     "window_start": ws.isoformat(),
                     "window_end": we.isoformat(),
@@ -169,7 +174,7 @@ def create_security_updates_campaign(
                 meta={
                     "request_id": str(req.id),
                     "action": "security-campaign",
-                    "agent_count": len(agent_ids or []),
+                    "agent_count": len(scoped_targets or []),
                     "label_count": len((labels or {}).keys()) if isinstance(labels, dict) else 0,
                 },
             )
@@ -181,7 +186,7 @@ def create_security_updates_campaign(
             created_by=str(payload.get("created_by") or "ui"),
             kind="security-updates",
             labels=labels,
-            agent_ids=agent_ids,
+            agent_ids=scoped_targets,
             rings=rings,
             window_start=ws,
             window_end=we,

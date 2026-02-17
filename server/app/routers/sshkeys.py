@@ -14,6 +14,7 @@ from ..deps import require_admin_user, require_ui_user
 from ..models import AppUser, Host, SSHKeyDeploymentRequest, UserSSHKey
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.user_scopes import filter_agent_ids_for_user
 
 router = APIRouter(prefix="/sshkeys", tags=["sshkeys"])
 
@@ -131,15 +132,16 @@ class DeployRequestCreate(BaseModel):
 
 @router.post("/deploy-requests")
 def create_deploy_request(payload: DeployRequestCreate, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
-    if not payload.agent_ids:
-        raise HTTPException(400, "select at least one host")
+    scoped_agent_ids = filter_agent_ids_for_user(db, user, payload.agent_ids or [])
+    if not scoped_agent_ids:
+        raise HTTPException(400, "select at least one host within your scope")
 
     k = db.execute(select(UserSSHKey).where(UserSSHKey.id == payload.key_id, UserSSHKey.user_id == user.id, UserSSHKey.revoked_at.is_(None))).scalar_one_or_none()
     if not k:
         raise HTTPException(404, "unknown key")
 
     with transaction(db):
-        req = SSHKeyDeploymentRequest(user_id=user.id, key_id=k.id, agent_ids=payload.agent_ids, status="pending")
+        req = SSHKeyDeploymentRequest(user_id=user.id, key_id=k.id, agent_ids=scoped_agent_ids, status="pending")
         db.add(req)
 
     return {"id": str(req.id), "status": req.status}

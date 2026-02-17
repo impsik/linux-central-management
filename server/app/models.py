@@ -154,6 +154,24 @@ class AppUser(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+class AppUserScope(Base):
+    __tablename__ = "app_user_scopes"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # MVP: label selector scope, e.g. {"env": ["prod", "stage"], "team": ["core"]}
+    scope_type = Column(String, nullable=False, default="label_selector", index=True)
+    selector = Column(JSON, nullable=False, default=dict)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("ix_app_user_scopes_user_scope_type", "user_id", "scope_type"),
+    )
+
+
 class AppSession(Base):
     __tablename__ = "app_sessions"
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

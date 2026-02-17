@@ -27,6 +27,7 @@ def list_jobs(
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
 ):
     """List jobs with basic filtering + pagination.
 
@@ -85,8 +86,8 @@ def list_jobs(
 
 
 @router.post("/pkg-upgrade")
-async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends(get_db)):
-    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
+async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
 
@@ -122,8 +123,8 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends
 
 
 @router.post("/pkg-query")
-async def create_pkg_query(payload: JobCreatePkgQuery, db: Session = Depends(get_db)):
-    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
+async def create_pkg_query(payload: JobCreatePkgQuery, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
     if not payload.packages:
@@ -151,10 +152,10 @@ async def create_pkg_query(payload: JobCreatePkgQuery, db: Session = Depends(get
 
 
 @router.post("/inventory-now")
-async def inventory_now(payload: JobCreateInventoryNow, db: Session = Depends(get_db)):
+async def inventory_now(payload: JobCreateInventoryNow, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Trigger immediate inventory refresh on targeted agents."""
 
-    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
+    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
 
@@ -176,14 +177,14 @@ async def inventory_now(payload: JobCreateInventoryNow, db: Session = Depends(ge
 
 
 @router.post("/cve-check")
-async def cve_check(payload: JobCreateCVECheck, db: Session = Depends(get_db)):
+async def cve_check(payload: JobCreateCVECheck, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Run an Ubuntu-native CVE inspection (pro fix <CVE> --dry-run) on targeted agents."""
 
     cve = (payload.cve or "").strip().upper()
     if not cve.startswith("CVE-"):
         raise HTTPException(400, "invalid cve format")
 
-    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
+    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
 
@@ -213,7 +214,7 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
     except PermissionError as e:
         raise HTTPException(403, str(e))
 
-    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels)
+    targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
 
@@ -263,7 +264,7 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
 
 
 @router.get("/{job_id}")
-def job_status(job_id: str, db: Session = Depends(get_db)):
+def job_status(job_id: str, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     job = db.execute(select(Job).where(Job.job_key == job_id)).scalar_one_or_none()
     if not job:
         raise HTTPException(404, "unknown job")

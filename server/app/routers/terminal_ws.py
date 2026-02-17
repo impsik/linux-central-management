@@ -12,6 +12,7 @@ from ..db import SessionLocal
 from ..deps import SESSION_COOKIE, sha256_hex
 from ..models import AppSession, AppUser, Host
 from ..services.hosts import resolve_host_target
+from ..services.user_scopes import is_host_visible_to_user
 from ..terminal_pipe import raw_pipe
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,9 @@ async def ws_terminal(ws: WebSocket, agent_id: str) -> None:
         host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
         if not host:
             await ws.close(code=1008, reason="Host not found")
+            return
+        if not is_host_visible_to_user(db, user, host):
+            await ws.close(code=4403, reason="Host out of scope")
             return
 
         # Enforce MFA for privileged roles before allowing terminal.

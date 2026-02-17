@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
-from ..models import AppSavedView, AppSession, AppUser
+from ..models import AppSavedView, AppSession, AppUser, AppUserScope
+from ..services.user_scopes import get_user_scope_selectors, user_has_scope_limits
 from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.rbac import permissions_for
@@ -50,6 +51,10 @@ class DeleteViewRequest(BaseModel):
     scope: str = "hosts"
     name: str
     owner_username: str | None = None
+
+
+class UserScopeSetRequest(BaseModel):
+    selectors: list[dict] = []
 
 
 @router.post("/login")
@@ -380,6 +385,62 @@ def auth_delete_view(payload: DeleteViewRequest, db: Session = Depends(get_db), 
     return {"ok": True, "scope": scope_norm, "name": name}
 
 
+@router.get("/admin/users/{username}/scopes")
+def auth_admin_get_user_scopes(username: str, request: Request, db: Session = Depends(get_db)):
+    require_admin_user(request, db)
+
+    target = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "user not found")
+
+    rows = db.execute(
+        select(AppUserScope)
+        .where(AppUserScope.user_id == target.id, AppUserScope.scope_type == "label_selector")
+        .order_by(AppUserScope.created_at.asc())
+    ).scalars().all()
+
+    return {
+        "username": target.username,
+        "selectors": [r.selector if isinstance(r.selector, dict) else {} for r in rows],
+    }
+
+
+@router.post("/admin/users/{username}/scopes")
+def auth_admin_set_user_scopes(
+    username: str,
+    payload: UserScopeSetRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AppUser = Depends(require_admin_user),
+):
+    target = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "user not found")
+
+    selectors = payload.selectors or []
+    norm: list[dict] = []
+    for s in selectors:
+        if isinstance(s, dict):
+            norm.append(s)
+
+    with transaction(db):
+        db.execute(delete(AppUserScope).where(AppUserScope.user_id == target.id, AppUserScope.scope_type == "label_selector"))
+        for sel in norm:
+            db.add(AppUserScope(user_id=target.id, scope_type="label_selector", selector=sel))
+
+        log_event(
+            db,
+            action="user.scope.update",
+            actor=admin,
+            request=request,
+            target_type="app_user",
+            target_name=target.username,
+            meta={"selector_count": len(norm)},
+        )
+
+    return {"ok": True, "username": target.username, "selector_count": len(norm)}
+
+
 @router.get("/me")
 def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
     perms = permissions_for(user)
@@ -406,6 +467,10 @@ def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Dep
                 "verified": mfa_verified,
                 "setup_required": bool(require_mfa and not mfa_enabled),
                 "verify_required": bool(require_mfa and mfa_enabled and not mfa_verified),
+            },
+            "scope": {
+                "limited": user_has_scope_limits(db, user),
+                "selectors": get_user_scope_selectors(db, user),
             },
         }
     )

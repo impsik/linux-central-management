@@ -14,6 +14,7 @@ from ..db import get_db
 from ..deps import require_ui_user
 from ..models import CronJob, CronJobRun
 from ..services.db_utils import transaction
+from ..services.user_scopes import filter_agent_ids_for_user
 
 router = APIRouter(prefix="/cronjobs", tags=["cronjobs"])
 
@@ -179,8 +180,9 @@ def create_cronjob(payload: CronJobCreate, db: Session = Depends(get_db), user=D
             raise HTTPException(400, "invalid schedule_kind")
 
     agent_ids = [a.strip() for a in (payload.agent_ids or []) if a and a.strip()]
+    agent_ids = filter_agent_ids_for_user(db, user, agent_ids)
     if not agent_ids:
-        raise HTTPException(400, "select at least one host")
+        raise HTTPException(400, "select at least one host within your scope")
 
     with transaction(db):
         cj = CronJob(

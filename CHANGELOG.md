@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Phase 1 groundwork for scoped RBAC by host labels:
+  - new `app_user_scopes` table (Alembic migration `20260217_00`)
+  - scope utility service (`services/user_scopes.py`) for selector evaluation and target filtering
+  - admin APIs to get/set per-user label selectors:
+    - `GET /auth/admin/users/{username}/scopes`
+    - `POST /auth/admin/users/{username}/scopes`
+  - `/auth/me` now returns scope metadata (`scope.limited`, `scope.selectors`)
+
+### Changed
+- Target resolution now supports user-aware filtering (`resolve_agent_ids(..., user=...)`).
+- Scoped filtering is enforced for job creation (`/jobs/*`), patch campaign target selection, cron target selection, SSH key deployment requests, and terminal websocket host access.
+
 ## [2026-02-15]
 
 ### Added
