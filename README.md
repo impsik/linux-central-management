@@ -165,7 +165,8 @@ OIDC configuration flags are now available (feature-flagged, disabled by default
 Current status:
 - Login page can show **Sign in with SSO** when OIDC is enabled.
 - `/auth/oidc/login` performs OIDC discovery + redirects to IdP.
-- `/auth/oidc/callback` is not implemented yet (next slice).
+- `/auth/oidc/callback` now exchanges code, fetches userinfo, provisions/links user, and creates app session.
+- Initial role for newly provisioned OIDC users is `readonly` (safe default).
 
 ### MFA (TOTP) for privileged users
 By default, MFA is **required** for `admin` and `operator` users.

@@ -168,6 +168,34 @@ def _oidc_discovery() -> dict:
     return data
 
 
+def _oidc_allowed_domain(email: str | None) -> bool:
+    raw = str(getattr(settings, "auth_oidc_allowed_email_domains", "") or "").strip()
+    if not raw:
+        return True
+    e = (email or "").strip().lower()
+    if "@" not in e:
+        return False
+    domain = e.split("@", 1)[1]
+    allowed = {x.strip().lower() for x in raw.split(",") if x.strip()}
+    return domain in allowed
+
+
+def _oidc_username_from_claims(claims: dict) -> str:
+    preferred = str(claims.get("preferred_username") or "").strip()
+    email = str(claims.get("email") or "").strip()
+    sub = str(claims.get("sub") or "").strip()
+
+    candidate = preferred or email
+    if candidate and "@" in candidate:
+        candidate = candidate.split("@", 1)[0]
+
+    if not candidate:
+        candidate = f"oidc_{sub[:16]}" if sub else "oidc_user"
+
+    safe = "".join(ch for ch in candidate if ch.isalnum() or ch in ("-", "_", "."))
+    return (safe or "oidc_user")[:64]
+
+
 @router.get("/oidc/login")
 def auth_oidc_login():
     if not bool(getattr(settings, "auth_oidc_enabled", False)):
@@ -211,8 +239,125 @@ def auth_oidc_login():
 
 
 @router.get("/oidc/callback")
-def auth_oidc_callback():
-    raise HTTPException(501, "OIDC callback not implemented yet (next slice)")
+def auth_oidc_callback(request: Request, code: str | None = None, state: str | None = None, db: Session = Depends(get_db)):
+    if not bool(getattr(settings, "auth_oidc_enabled", False)):
+        raise HTTPException(404, "OIDC is disabled")
+
+    if not code:
+        raise HTTPException(400, "missing authorization code")
+
+    expected_state = request.cookies.get("fleet_oidc_state")
+    if not expected_state or not state or state != expected_state:
+        raise HTTPException(400, "invalid OIDC state")
+
+    disc = _oidc_discovery()
+    token_endpoint = str(disc.get("token_endpoint") or "").strip()
+    userinfo_endpoint = str(disc.get("userinfo_endpoint") or "").strip()
+    if not token_endpoint or not userinfo_endpoint:
+        raise HTTPException(502, "OIDC endpoints missing in discovery document")
+
+    try:
+        token_resp = httpx.post(
+            token_endpoint,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": str(getattr(settings, "auth_oidc_redirect_uri", "") or ""),
+                "client_id": str(getattr(settings, "auth_oidc_client_id", "") or ""),
+                "client_secret": str(getattr(settings, "auth_oidc_client_secret", "") or ""),
+            },
+            timeout=10.0,
+        )
+        token_resp.raise_for_status()
+        token_data = token_resp.json()
+    except Exception as e:
+        raise HTTPException(502, f"OIDC token exchange failed: {e}")
+
+    access_token = str((token_data or {}).get("access_token") or "").strip()
+    if not access_token:
+        raise HTTPException(502, "OIDC token response missing access_token")
+
+    try:
+        userinfo_resp = httpx.get(
+            userinfo_endpoint,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10.0,
+        )
+        userinfo_resp.raise_for_status()
+        claims = userinfo_resp.json()
+    except Exception as e:
+        raise HTTPException(502, f"OIDC userinfo fetch failed: {e}")
+
+    if not isinstance(claims, dict):
+        raise HTTPException(502, "OIDC userinfo response invalid")
+
+    email = str(claims.get("email") or "").strip().lower() or None
+    if not _oidc_allowed_domain(email):
+        raise HTTPException(403, "OIDC email domain is not allowed")
+
+    username = _oidc_username_from_claims(claims)
+
+    user = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
+    if not user:
+        user = AppUser(username=username, password_hash=pwd_context.hash(secrets.token_urlsafe(24)), role="readonly", is_active=True)
+        db.add(user)
+        db.flush()
+    if not bool(getattr(user, "is_active", True)):
+        raise HTTPException(403, "User is inactive")
+
+    token = secrets.token_urlsafe(32)
+    token_hash = sha256_hex(token)
+    now = datetime.now(timezone.utc)
+    expires = now + timedelta(days=int(getattr(settings, "ui_session_days", 30)))
+
+    # Cleanup expired sessions (best-effort)
+    try:
+        db.execute(delete(AppSession).where(AppSession.expires_at <= now))
+    except Exception:
+        pass
+
+    role = (getattr(user, "role", "operator") or "operator").lower()
+    require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+
+    sess = AppSession(user_id=user.id, token_sha256=token_hash, expires_at=expires)
+    if not require_mfa:
+        sess.mfa_verified_at = now
+    db.add(sess)
+
+    log_event(
+        db,
+        action="auth.login.oidc",
+        actor=user,
+        request=request,
+        meta={"email": email, "subject": str(claims.get("sub") or "")[:80]},
+    )
+    db.commit()
+
+    from fastapi.responses import RedirectResponse
+
+    redirect = RedirectResponse(url="/", status_code=302)
+    redirect.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        expires=int(expires.timestamp()),
+        path="/",
+    )
+    csrf = secrets.token_urlsafe(32)
+    redirect.set_cookie(
+        key=CSRF_COOKIE,
+        value=csrf,
+        httponly=False,
+        samesite="lax",
+        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        expires=int(expires.timestamp()),
+        path="/",
+    )
+    redirect.delete_cookie("fleet_oidc_state", path="/")
+    redirect.delete_cookie("fleet_oidc_nonce", path="/")
+    return redirect
 
 
 @router.get("/admin/users")

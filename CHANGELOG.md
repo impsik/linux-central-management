@@ -9,8 +9,9 @@ All notable changes to this project are documented in this file.
   - new OIDC config/env keys (`AUTH_OIDC_*`)
   - startup validation for required OIDC settings when enabled
   - login page SSO button visibility via `/auth/admin-info`
-  - initial `/auth/oidc/login` endpoint (OIDC discovery + authorize redirect)
-  - placeholder `/auth/oidc/callback` endpoint (not implemented yet)
+  - `/auth/oidc/login` endpoint (OIDC discovery + authorize redirect)
+  - `/auth/oidc/callback` implementation (code exchange + userinfo + local session issuance)
+  - OIDC auto-provisioning for first login with default role `readonly`
 
 ### Added
 - Phase 1 groundwork for scoped RBAC by host labels:
