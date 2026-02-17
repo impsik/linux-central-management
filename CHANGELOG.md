@@ -16,6 +16,7 @@ All notable changes to this project are documented in this file.
   - OIDC group->scope selector sync on login via `AUTH_OIDC_GROUP_SCOPE_MAP`
   - admin OIDC mapping preview endpoint: `POST /auth/admin/oidc/map-preview`
   - Admin UI card to run OIDC mapping previews by pasting claims JSON
+  - Added OIDC auth flow tests (login redirect, callback provisioning, domain deny)
 
 ### Added
 - Phase 1 groundwork for scoped RBAC by host labels:
