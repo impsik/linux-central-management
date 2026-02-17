@@ -9,6 +9,9 @@ def test_job_flow_sqlite(monkeypatch):
     monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
     monkeypatch.setenv("UI_COOKIE_SECURE", "false")
     monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
 
     # Import after env is set
