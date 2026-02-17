@@ -251,6 +251,68 @@ def _oidc_role_from_claims(claims: dict) -> str:
     return best_role
 
 
+def _oidc_scope_selectors_from_claims(claims: dict) -> list[dict]:
+    raw_map = str(getattr(settings, "auth_oidc_group_scope_map", "") or "").strip()
+    if not raw_map:
+        return []
+
+    try:
+        parsed = json.loads(raw_map)
+    except Exception:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+
+    groups = claims.get("groups")
+    if isinstance(groups, str):
+        groups = [groups]
+    if not isinstance(groups, list):
+        groups = []
+
+    out: list[dict] = []
+
+    def _norm_selector(obj: dict) -> dict:
+        norm: dict = {}
+        for k, v in obj.items():
+            key = str(k or "").strip()
+            if not key:
+                continue
+            if isinstance(v, list):
+                vals = [str(x).strip() for x in v if str(x).strip()]
+            else:
+                vv = str(v or "").strip()
+                vals = [vv] if vv else []
+            if vals:
+                norm[key] = sorted(list(set(vals)))
+        return norm
+
+    for g in groups:
+        name = str(g or "").strip()
+        if not name:
+            continue
+        mapped = parsed.get(name)
+        selectors: list = []
+        if isinstance(mapped, dict):
+            selectors = [mapped]
+        elif isinstance(mapped, list):
+            selectors = [x for x in mapped if isinstance(x, dict)]
+        for s in selectors:
+            n = _norm_selector(s)
+            if n:
+                out.append(n)
+
+    # Deduplicate selectors by JSON string form
+    seen = set()
+    uniq: list[dict] = []
+    for s in out:
+        key = json.dumps(s, sort_keys=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(s)
+    return uniq
+
+
 def _oidc_username_from_claims(claims: dict) -> str:
     preferred = str(claims.get("preferred_username") or "").strip()
     email = str(claims.get("email") or "").strip()
@@ -382,6 +444,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
 
     username = _oidc_username_from_claims(claims)
     mapped_role = _oidc_role_from_claims(claims)
+    mapped_scopes = _oidc_scope_selectors_from_claims(claims)
 
     user = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
     if not user:
@@ -391,6 +454,12 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
     else:
         # Sync role from OIDC mapping on each login (safe: defaults to readonly).
         user.role = mapped_role
+
+    # Sync user scopes from OIDC group mapping (label_selector scope type).
+    db.execute(delete(AppUserScope).where(AppUserScope.user_id == user.id, AppUserScope.scope_type == "label_selector"))
+    for sel in mapped_scopes:
+        db.add(AppUserScope(user_id=user.id, scope_type="label_selector", selector=sel))
+
     if not bool(getattr(user, "is_active", True)):
         raise HTTPException(403, "User is inactive")
 
@@ -423,6 +492,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
             "subject": str(claims.get("sub") or "")[:80],
             "role": mapped_role,
             "groups_count": len(claims.get("groups") or []) if isinstance(claims.get("groups"), list) else 0,
+            "scope_selectors": len(mapped_scopes),
         },
     )
     db.commit()

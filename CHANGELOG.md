@@ -13,6 +13,7 @@ All notable changes to this project are documented in this file.
   - `/auth/oidc/callback` implementation (code exchange + id_token validation + userinfo + local session issuance)
   - OIDC auto-provisioning for first login
   - OIDC group->role sync on login via `AUTH_OIDC_GROUP_ROLE_MAP` (unmapped defaults to `readonly`)
+  - OIDC group->scope selector sync on login via `AUTH_OIDC_GROUP_SCOPE_MAP`
 
 ### Added
 - Phase 1 groundwork for scoped RBAC by host labels:

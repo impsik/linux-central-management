@@ -103,6 +103,9 @@ class Settings(BaseSettings):
     auth_oidc_allowed_email_domains: str | None = None
     # JSON object map: {"oidc-group-name":"role"}, role in admin|operator|readonly
     auth_oidc_group_role_map: str | None = None
+    # JSON object map for scope sync by group.
+    # Example: {"fleet-prod":[{"env":["prod"]}],"fleet-core":{"team":["core"]}}
+    auth_oidc_group_scope_map: str | None = None
 
 
 settings = Settings()
