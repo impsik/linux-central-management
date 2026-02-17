@@ -61,6 +61,10 @@ class UserScopeSetRequest(BaseModel):
     selectors: list[dict] = []
 
 
+class OidcMapPreviewRequest(BaseModel):
+    claims: dict = {}
+
+
 @router.post("/login")
 def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     username = (payload.username or "").strip()
@@ -852,6 +856,45 @@ def auth_admin_set_user_scopes(
         )
 
     return {"ok": True, "username": target.username, "selector_count": len(norm)}
+
+
+@router.post("/admin/oidc/map-preview")
+def auth_admin_oidc_map_preview(
+    payload: OidcMapPreviewRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AppUser = Depends(require_admin_user),
+):
+    claims = payload.claims if isinstance(payload.claims, dict) else {}
+
+    username = _oidc_username_from_claims(claims)
+    role = _oidc_role_from_claims(claims)
+    selectors = _oidc_scope_selectors_from_claims(claims)
+
+    email = str(claims.get("email") or "").strip().lower() or None
+    domain_allowed = _oidc_allowed_domain(email)
+
+    log_event(
+        db,
+        action="auth.oidc.map_preview",
+        actor=admin,
+        request=request,
+        meta={
+            "subject": str(claims.get("sub") or "")[:80],
+            "groups_count": len(claims.get("groups") or []) if isinstance(claims.get("groups"), list) else 0,
+            "role": role,
+            "scope_selectors": len(selectors),
+        },
+    )
+    db.commit()
+
+    return {
+        "username": username,
+        "role": role,
+        "scope_selectors": selectors,
+        "email": email,
+        "domain_allowed": domain_allowed,
+    }
 
 
 @router.get("/me")

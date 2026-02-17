@@ -170,6 +170,7 @@ Current status:
 - `/auth/oidc/callback` now exchanges code, validates `id_token` (issuer/audience/signature/nonce), fetches userinfo, provisions/links user, and creates app session.
 - OIDC group->role mapping is supported via `AUTH_OIDC_GROUP_ROLE_MAP`; unmapped users default to `readonly`.
 - OIDC group->scope sync is supported via `AUTH_OIDC_GROUP_SCOPE_MAP`; label selectors are synced on each OIDC login.
+- Admin diagnostic endpoint for mapping checks: `POST /auth/admin/oidc/map-preview`.
 
 ### MFA (TOTP) for privileged users
 By default, MFA is **required** for `admin` and `operator` users.
