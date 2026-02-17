@@ -18,6 +18,8 @@ All notable changes to this project are documented in this file.
 - Scoped filtering is enforced for job creation (`/jobs/*`), patch campaign target selection, cron target selection, SSH key deployment requests, and terminal websocket host access.
 - Read-path scope filtering now applies to host listing (`/hosts`), search endpoints (`/search/packages`, `/search/cve`), and dashboard attention/notifications host visibility.
 - Admin Users UI now supports editing per-user label scope selectors inline (JSON array) and saving via the new auth scope endpoints.
+- MFA verify modal now includes an explicit **Log out** action for recovery when the user cannot provide MFA code.
+- CSRF middleware now allows `/auth/logout` without CSRF token to avoid MFA lock-in/logout dead-ends.
 
 ## [2026-02-15]
 

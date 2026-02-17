@@ -283,7 +283,8 @@ def create_app() -> FastAPI:
         # - health check
         # - websockets
         # - login (no session yet)
-        if path.startswith("/agent/") or path == "/health" or path.startswith("/ws/") or path == "/auth/login":
+        # - logout (safe to allow without CSRF to prevent MFA lock-in loops)
+        if path.startswith("/agent/") or path == "/health" or path.startswith("/ws/") or path in ("/auth/login", "/auth/logout"):
             return await call_next(request)
 
         if method in ("GET", "HEAD", "OPTIONS"):

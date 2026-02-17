@@ -70,6 +70,7 @@ function openMfaModal(mode, otpauthUri = '') {
             </div>
             <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
               <button class="btn btn-primary" id="mfa-verify" type="submit">Verify</button>
+              <button class="btn" id="mfa-force-logout" type="button">Log out</button>
             </div>
           </form>
         `;
@@ -89,6 +90,10 @@ function openMfaModal(mode, otpauthUri = '') {
           e.preventDefault();
           const code = verifyInput?.value || '';
           await mfaVerify(code);
+        });
+        document.getElementById('mfa-force-logout')?.addEventListener('click', async (e) => {
+          e.preventDefault();
+          await mfaForceLogout();
         });
 
         // Focus the field when modal opens so user can type/paste immediately.
@@ -212,6 +217,15 @@ function openMfaModal(mode, otpauthUri = '') {
       } catch (e) {
         if (statusEl) statusEl.textContent = e.message;
       }
+    }
+
+    async function mfaForceLogout() {
+      const statusEl = document.getElementById('mfa-modal-status');
+      try {
+        if (statusEl) statusEl.textContent = 'Signing out…';
+        await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
+      } catch (_) {}
+      window.location.href = '/login';
     }
 
     function getCookie(name) {
