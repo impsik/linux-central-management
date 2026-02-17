@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     auth_oidc_redirect_uri: str | None = None
     auth_oidc_scopes: str = "openid profile email"
     auth_oidc_allowed_email_domains: str | None = None
+    # JSON object map: {"oidc-group-name":"role"}, role in admin|operator|readonly
+    auth_oidc_group_role_map: str | None = None
 
 
 settings = Settings()

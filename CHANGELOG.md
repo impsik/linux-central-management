@@ -11,7 +11,8 @@ All notable changes to this project are documented in this file.
   - login page SSO button visibility via `/auth/admin-info`
   - `/auth/oidc/login` endpoint (OIDC discovery + authorize redirect)
   - `/auth/oidc/callback` implementation (code exchange + id_token validation + userinfo + local session issuance)
-  - OIDC auto-provisioning for first login with default role `readonly`
+  - OIDC auto-provisioning for first login
+  - OIDC group->role sync on login via `AUTH_OIDC_GROUP_ROLE_MAP` (unmapped defaults to `readonly`)
 
 ### Added
 - Phase 1 groundwork for scoped RBAC by host labels:

@@ -161,12 +161,13 @@ OIDC configuration flags are now available (feature-flagged, disabled by default
 - `AUTH_OIDC_REDIRECT_URI`
 - `AUTH_OIDC_SCOPES` (default `openid profile email`)
 - `AUTH_OIDC_ALLOWED_EMAIL_DOMAINS` (optional)
+- `AUTH_OIDC_GROUP_ROLE_MAP` (optional JSON map, e.g. `{"fleet-admins":"admin","fleet-ops":"operator"}`)
 
 Current status:
 - Login page can show **Sign in with SSO** when OIDC is enabled.
 - `/auth/oidc/login` performs OIDC discovery + redirects to IdP.
 - `/auth/oidc/callback` now exchanges code, validates `id_token` (issuer/audience/signature/nonce), fetches userinfo, provisions/links user, and creates app session.
-- Initial role for newly provisioned OIDC users is `readonly` (safe default).
+- OIDC group->role mapping is supported via `AUTH_OIDC_GROUP_ROLE_MAP`; unmapped users default to `readonly`.
 
 ### MFA (TOTP) for privileged users
 By default, MFA is **required** for `admin` and `operator` users.

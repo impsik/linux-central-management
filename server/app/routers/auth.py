@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
@@ -214,6 +215,42 @@ def _oidc_allowed_domain(email: str | None) -> bool:
     return domain in allowed
 
 
+def _oidc_role_from_claims(claims: dict) -> str:
+    raw_map = str(getattr(settings, "auth_oidc_group_role_map", "") or "").strip()
+    if not raw_map:
+        return "readonly"
+
+    try:
+        parsed = json.loads(raw_map)
+    except Exception:
+        return "readonly"
+
+    if not isinstance(parsed, dict):
+        return "readonly"
+
+    allowed_roles = {"admin", "operator", "readonly"}
+    role_priority = {"readonly": 0, "operator": 1, "admin": 2}
+
+    groups = claims.get("groups")
+    if isinstance(groups, str):
+        groups = [groups]
+    if not isinstance(groups, list):
+        groups = []
+
+    best_role = "readonly"
+    for g in groups:
+        name = str(g or "").strip()
+        if not name:
+            continue
+        mapped = str(parsed.get(name) or "").strip().lower()
+        if mapped not in allowed_roles:
+            continue
+        if role_priority[mapped] > role_priority[best_role]:
+            best_role = mapped
+
+    return best_role
+
+
 def _oidc_username_from_claims(claims: dict) -> str:
     preferred = str(claims.get("preferred_username") or "").strip()
     email = str(claims.get("email") or "").strip()
@@ -344,12 +381,16 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         raise HTTPException(403, "OIDC email domain is not allowed")
 
     username = _oidc_username_from_claims(claims)
+    mapped_role = _oidc_role_from_claims(claims)
 
     user = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
     if not user:
-        user = AppUser(username=username, password_hash=pwd_context.hash(secrets.token_urlsafe(24)), role="readonly", is_active=True)
+        user = AppUser(username=username, password_hash=pwd_context.hash(secrets.token_urlsafe(24)), role=mapped_role, is_active=True)
         db.add(user)
         db.flush()
+    else:
+        # Sync role from OIDC mapping on each login (safe: defaults to readonly).
+        user.role = mapped_role
     if not bool(getattr(user, "is_active", True)):
         raise HTTPException(403, "User is inactive")
 
@@ -377,7 +418,12 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         action="auth.login.oidc",
         actor=user,
         request=request,
-        meta={"email": email, "subject": str(claims.get("sub") or "")[:80]},
+        meta={
+            "email": email,
+            "subject": str(claims.get("sub") or "")[:80],
+            "role": mapped_role,
+            "groups_count": len(claims.get("groups") or []) if isinstance(claims.get("groups"), list) else 0,
+        },
     )
     db.commit()
 
