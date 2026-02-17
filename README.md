@@ -152,6 +152,21 @@ See also: `docs/security-baseline.md`.
 The server **does not** ship with a safe default password. You must set:
 - `BOOTSTRAP_PASSWORD` in `deploy/docker/.env`
 
+### OIDC SSO (foundation / in progress)
+OIDC configuration flags are now available (feature-flagged, disabled by default):
+- `AUTH_OIDC_ENABLED=true|false`
+- `AUTH_OIDC_ISSUER`
+- `AUTH_OIDC_CLIENT_ID`
+- `AUTH_OIDC_CLIENT_SECRET`
+- `AUTH_OIDC_REDIRECT_URI`
+- `AUTH_OIDC_SCOPES` (default `openid profile email`)
+- `AUTH_OIDC_ALLOWED_EMAIL_DOMAINS` (optional)
+
+Current status:
+- Login page can show **Sign in with SSO** when OIDC is enabled.
+- `/auth/oidc/login` performs OIDC discovery + redirects to IdP.
+- `/auth/oidc/callback` is not implemented yet (next slice).
+
 ### MFA (TOTP) for privileged users
 By default, MFA is **required** for `admin` and `operator` users.
 Readonly users can be password-only.

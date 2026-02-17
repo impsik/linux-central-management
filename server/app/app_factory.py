@@ -28,6 +28,15 @@ def _startup() -> None:
             "Set AGENT_SHARED_TOKEN or set ALLOW_INSECURE_NO_AGENT_TOKEN=true for local dev only."
         )
 
+    # OIDC config sanity checks (enabled path only)
+    if bool(getattr(settings, "auth_oidc_enabled", False)):
+        missing = []
+        for name in ("auth_oidc_issuer", "auth_oidc_client_id", "auth_oidc_client_secret", "auth_oidc_redirect_uri"):
+            if not (getattr(settings, name, None) or "").strip():
+                missing.append(name.upper())
+        if missing:
+            raise RuntimeError(f"OIDC is enabled but missing required settings: {', '.join(missing)}")
+
     if bool(getattr(settings, "db_auto_create_tables", True)):
         Base.metadata.create_all(bind=engine)
         logger.info("DB auto-create enabled: ensured database tables exist")

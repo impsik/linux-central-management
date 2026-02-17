@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
+
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -143,7 +146,73 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
 
 @router.get("/admin-info")
 def auth_admin_info():
-    return {"admin_username": getattr(settings, "bootstrap_username", "admin")}
+    return {
+        "admin_username": getattr(settings, "bootstrap_username", "admin"),
+        "oidc_enabled": bool(getattr(settings, "auth_oidc_enabled", False)),
+    }
+
+
+def _oidc_discovery() -> dict:
+    issuer = (getattr(settings, "auth_oidc_issuer", None) or "").strip().rstrip("/")
+    if not issuer:
+        raise HTTPException(500, "OIDC issuer is not configured")
+    url = f"{issuer}/.well-known/openid-configuration"
+    try:
+        resp = httpx.get(url, timeout=8.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        raise HTTPException(502, f"OIDC discovery failed: {e}")
+    if not isinstance(data, dict) or not data.get("authorization_endpoint"):
+        raise HTTPException(502, "OIDC discovery document is invalid")
+    return data
+
+
+@router.get("/oidc/login")
+def auth_oidc_login():
+    if not bool(getattr(settings, "auth_oidc_enabled", False)):
+        raise HTTPException(404, "OIDC is disabled")
+
+    disc = _oidc_discovery()
+    authz = str(disc.get("authorization_endpoint") or "").strip()
+    if not authz:
+        raise HTTPException(502, "OIDC authorization endpoint not found")
+
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    scopes = str(getattr(settings, "auth_oidc_scopes", "openid profile email") or "openid profile email").strip()
+
+    query = urlencode(
+        {
+            "client_id": str(getattr(settings, "auth_oidc_client_id", "") or ""),
+            "response_type": "code",
+            "redirect_uri": str(getattr(settings, "auth_oidc_redirect_uri", "") or ""),
+            "scope": scopes,
+            "state": state,
+            "nonce": nonce,
+        }
+    )
+
+    # Redirect to IdP authorization endpoint and keep short-lived anti-CSRF cookies.
+    from fastapi.responses import RedirectResponse
+
+    redirect = RedirectResponse(url=f"{authz}?{query}", status_code=302)
+    for c_name, c_val in (("fleet_oidc_state", state), ("fleet_oidc_nonce", nonce)):
+        redirect.set_cookie(
+            key=c_name,
+            value=c_val,
+            httponly=True,
+            samesite="lax",
+            secure=bool(getattr(settings, "ui_cookie_secure", False)),
+            max_age=600,
+            path="/",
+        )
+    return redirect
+
+
+@router.get("/oidc/callback")
+def auth_oidc_callback():
+    raise HTTPException(501, "OIDC callback not implemented yet (next slice)")
 
 
 @router.get("/admin/users")

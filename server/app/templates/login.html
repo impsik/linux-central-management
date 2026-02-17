@@ -59,6 +59,7 @@
     <input id="p" type="password" autocomplete="current-password" />
     <div class="caps-hint" id="caps-hint">Caps Lock is on.</div>
     <button id="btn">Login</button>
+    <button id="btn-oidc" style="display:none;background:#0f766e;">Sign in with SSO</button>
     <div class="err" id="err"></div>
     <div class="hint">Your session is stored in a secure cookie (HttpOnly). Passwords are stored hashed in DB.</div>
   </div>
@@ -74,6 +75,7 @@
     const btn = document.getElementById('btn');
     const err = document.getElementById('err');
     const capsHint = document.getElementById('caps-hint');
+    const oidcBtn = document.getElementById('btn-oidc');
 
     setTimeout(() => { u?.focus(); }, 0);
 
@@ -99,6 +101,21 @@
         setTimeout(() => toast.remove(), 200);
       };
       setTimeout(remove, timeoutMs);
+    }
+
+    async function initOidcButton() {
+      try {
+        const r = await fetch('/auth/admin-info');
+        if (!r.ok) return;
+        const d = await r.json();
+        if (d && d.oidc_enabled && oidcBtn) {
+          oidcBtn.style.display = 'block';
+          oidcBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            window.location.href = '/auth/oidc/login';
+          });
+        }
+      } catch {}
     }
 
     async function login() {
@@ -132,6 +149,7 @@
     }
     btn.addEventListener('click', (e) => { e.preventDefault(); login(); });
     p.addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
+    initOidcButton();
   </script>
 </body>
 </html>

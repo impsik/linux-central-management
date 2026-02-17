@@ -93,5 +93,14 @@ class Settings(BaseSettings):
     # CSV list, e.g. "dist-upgrade,security-campaign"
     high_risk_approval_actions: str = "dist-upgrade,security-campaign"
 
+    # OIDC SSO (week-1 foundation)
+    auth_oidc_enabled: bool = False
+    auth_oidc_issuer: str | None = None
+    auth_oidc_client_id: str | None = None
+    auth_oidc_client_secret: str | None = None
+    auth_oidc_redirect_uri: str | None = None
+    auth_oidc_scopes: str = "openid profile email"
+    auth_oidc_allowed_email_domains: str | None = None
+
 
 settings = Settings()

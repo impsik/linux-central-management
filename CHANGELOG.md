@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- OIDC week-1 foundation (feature-flagged):
+  - new OIDC config/env keys (`AUTH_OIDC_*`)
+  - startup validation for required OIDC settings when enabled
+  - login page SSO button visibility via `/auth/admin-info`
+  - initial `/auth/oidc/login` endpoint (OIDC discovery + authorize redirect)
+  - placeholder `/auth/oidc/callback` endpoint (not implemented yet)
+
+### Added
 - Phase 1 groundwork for scoped RBAC by host labels:
   - new `app_user_scopes` table (Alembic migration `20260217_00`)
   - scope utility service (`services/user_scopes.py`) for selector evaluation and target filtering
