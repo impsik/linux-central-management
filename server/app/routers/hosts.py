@@ -139,6 +139,7 @@ def list_host_packages(
     limit: int = 500,
     offset: int = 0,
     db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
 ):
     if limit < 1:
         limit = 1
@@ -883,6 +884,7 @@ def get_load_history(
     since_seconds: int = 3600,
     limit: int = 600,
     db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
 ):
     """Return historical load data for the UI graph.
 
