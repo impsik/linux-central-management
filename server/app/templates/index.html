@@ -2321,12 +2321,28 @@
           else if (action === 'remove') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y ${pkgArgs}`;
           if (!cmd) return false;
 
+          const username = prompt('Terminal login username:');
+          if (username === null || !String(username).trim()) return false;
+          const password = prompt(`Password for ${String(username).trim()}:`);
+          if (password === null) return false;
+
+          const user = String(username).trim();
+          const pass = String(password);
+
           showTerminal();
           setTimeout(() => {
             try {
               if (ws && ws.readyState === 1) {
-                ws.send(new TextEncoder().encode(cmd + '\n'));
-                showToast(`Sent ${action} command to terminal`, 'success');
+                const enc = new TextEncoder();
+                // Feed credentials first, then command, with short spacing so TTY prompts can consume input.
+                ws.send(enc.encode(user + '\n'));
+                setTimeout(() => {
+                  try { if (ws && ws.readyState === 1) ws.send(enc.encode(pass + '\n')); } catch (_) {}
+                }, 700);
+                setTimeout(() => {
+                  try { if (ws && ws.readyState === 1) ws.send(enc.encode(cmd + '\n')); } catch (_) {}
+                }, 1500);
+                showToast(`Sent login + ${action} command sequence to terminal`, 'success');
               } else {
                 showToast('Terminal not connected yet, try again in a second.', 'error', 4000);
               }

@@ -25,6 +25,7 @@ All notable changes to this project are documented in this file.
   - accepts optional reset reason (stored in audit metadata)
   - blocks self-reset via admin endpoint (safer control)
   - Admin Users UI now includes **Reset MFA** action per user
+- Interactive package actions now prompt for terminal username/password first, then send the package command sequence to terminal (login -> password -> apt command).
 
 ## [2026-02-15]
 
