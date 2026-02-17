@@ -95,8 +95,8 @@ def test_job_flow_sqlite(monkeypatch):
 
         # Ansible run persistence (API v2 style)
         # Ensure the log artifact exists for /ansible/runs/{id}/log
-        from pathlib import Path
-        ansible_logs_dir = Path("ansible/logs")
+        from app.services.ansible import ANSIBLE_LOG_DIR
+        ansible_logs_dir = ANSIBLE_LOG_DIR
         ansible_logs_dir.mkdir(parents=True, exist_ok=True)
         (ansible_logs_dir / "test.log").write_text("hello log", encoding="utf-8")
 
