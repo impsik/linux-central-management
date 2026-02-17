@@ -1723,6 +1723,7 @@
           const uname = String(u.username || '');
           const bootstrap = String(adminUsername || 'admin');
           const canDelete = !!(currentPermissions && currentPermissions.can_delete_app_users) && uname && uname !== bootstrap && uname !== currentUsername;
+          const canResetMfa = !!(currentPermissions && currentPermissions.can_manage_users) && uname && uname !== currentUsername;
 
           tr.innerHTML = `
             <td><code>${escapeHtml(uname)}</code></td>
@@ -1734,7 +1735,8 @@
               <textarea class="admin-input" rows="2" data-user-scope="${escapeHtml(uname)}" placeholder='[{"env":["prod"],"team":["core"]}]' style="min-width:260px;"></textarea>
               <div style="margin-top:0.35rem;"><button class="btn" data-user-scope-save="${escapeHtml(uname)}">Save scope</button></div>
             </td>
-            <td style="text-align:right;white-space:nowrap;">
+            <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end;">
+              <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
               <button class="btn" data-user-delete="${escapeHtml(uname)}" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Deactivate user' : 'Cannot delete this user'}">Delete</button>
             </td>
           `;
@@ -1781,6 +1783,34 @@
               let d3 = null; try { d3 = raw3 ? JSON.parse(raw3) : null; } catch {}
               if (!r3.ok) throw new Error((d3 && (d3.detail||d3.error)) || raw3 || 'Scope save failed');
               showToast(`Scope updated for ${uname}`, 'success');
+              loadAdminAudit();
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
+
+        tbody.querySelectorAll('button[data-user-mfa-reset]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-mfa-reset') || '';
+            if (!uname) return;
+            const reason = prompt(`Reset MFA for '${uname}'.\n\nOptional reason/ticket:`, '');
+            if (reason === null) return;
+            const ok = confirm(`Reset MFA for '${uname}' now?\n\nThis will revoke all active sessions and require re-enrollment at next login.`);
+            if (!ok) return;
+            try {
+              const r2 = await fetch('/auth/mfa/admin/reset', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+                body: JSON.stringify({ username: uname, reason: reason || '' }),
+              });
+              const raw2 = await r2.text();
+              let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'MFA reset failed');
+              showToast(`MFA reset for '${uname}' (sessions revoked: ${d2 && d2.sessions_revoked != null ? d2.sessions_revoked : 0})`, 'success');
+              loadAdminUsers();
               loadAdminAudit();
             } catch (err) {
               showToast(err.message || String(err), 'error', 5000);

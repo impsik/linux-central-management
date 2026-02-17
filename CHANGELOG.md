@@ -20,6 +20,11 @@ All notable changes to this project are documented in this file.
 - Admin Users UI now supports editing per-user label scope selectors inline (JSON array) and saving via the new auth scope endpoints.
 - MFA verify modal now includes an explicit **Log out** action for recovery when the user cannot provide MFA code.
 - CSRF middleware now allows `/auth/logout` without CSRF token to avoid MFA lock-in/logout dead-ends.
+- Added admin MFA recovery path:
+  - `POST /auth/mfa/admin/reset` now revokes all user sessions and clears MFA enrollment/secrets/recovery codes
+  - accepts optional reset reason (stored in audit metadata)
+  - blocks self-reset via admin endpoint (safer control)
+  - Admin Users UI now includes **Reset MFA** action per user
 
 ## [2026-02-15]
 

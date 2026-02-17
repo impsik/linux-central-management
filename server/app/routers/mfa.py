@@ -148,6 +148,7 @@ def verify(payload: CodePayload, request: Request, db: Session = Depends(get_db)
 
 class AdminResetPayload(BaseModel):
     username: str
+    reason: str | None = None
 
 
 @router.post("/admin/reset")
@@ -157,11 +158,15 @@ def admin_reset(payload: AdminResetPayload, request: Request, db: Session = Depe
     if not uname:
         raise HTTPException(400, "username required")
 
-    from sqlalchemy import select
+    from sqlalchemy import delete, select
 
     u = db.execute(select(AppUser).where(AppUser.username == uname)).scalar_one_or_none()
     if not u:
         raise HTTPException(404, "user not found")
+
+    # Do not allow resetting own MFA through admin endpoint; reduces risky self-bypass flows.
+    if str(getattr(u, "id", "")) == str(getattr(admin, "id", "")):
+        raise HTTPException(400, "cannot reset your own MFA via admin reset")
 
     with transaction(db):
         u.mfa_enabled = False
@@ -170,6 +175,21 @@ def admin_reset(payload: AdminResetPayload, request: Request, db: Session = Depe
         u.mfa_enrolled_at = None
         u.mfa_pending_at = None
         u.recovery_codes = []
-        log_event(db, action="mfa.reset", actor=admin, request=request, target_type="app_user", target_name=uname)
 
-    return {"ok": True, "username": uname, "mfa_enabled": False}
+        # Force fresh login and re-verification after reset.
+        revoked = db.execute(delete(AppSession).where(AppSession.user_id == u.id)).rowcount or 0
+
+        log_event(
+            db,
+            action="mfa.reset",
+            actor=admin,
+            request=request,
+            target_type="app_user",
+            target_name=uname,
+            meta={
+                "reason": (payload.reason or "").strip()[:300],
+                "sessions_revoked": int(revoked),
+            },
+        )
+
+    return {"ok": True, "username": uname, "mfa_enabled": False, "sessions_revoked": int(revoked)}
