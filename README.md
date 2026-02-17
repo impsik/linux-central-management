@@ -171,6 +171,7 @@ Current status:
 - OIDC group->role mapping is supported via `AUTH_OIDC_GROUP_ROLE_MAP`; unmapped users default to `readonly`.
 - OIDC group->scope sync is supported via `AUTH_OIDC_GROUP_SCOPE_MAP`; label selectors are synced on each OIDC login.
 - Admin diagnostic endpoint for mapping checks: `POST /auth/admin/oidc/map-preview`.
+- Admin UI includes an **OIDC mapping preview** card for quick claim-to-role/scope checks.
 
 ### MFA (TOTP) for privileged users
 By default, MFA is **required** for `admin` and `operator` users.

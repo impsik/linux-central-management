@@ -863,6 +863,20 @@
               </div>
             </div>
 
+            <div class="admin-card" id="admin-oidc-map-preview-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>OIDC mapping preview</span>
+                <button class="btn" id="admin-oidc-preview-run" type="button">Run preview</button>
+              </div>
+              <div class="admin-card-body">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.35rem;">Claims JSON</label>
+                <textarea id="admin-oidc-preview-input" class="admin-input" rows="6" style="width:100%;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;" placeholder='{"sub":"123","email":"user@example.com","groups":["fleet-ops"]}'></textarea>
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin:0.75rem 0 0.35rem;">Result</label>
+                <textarea id="admin-oidc-preview-output" class="admin-input" rows="6" readonly style="width:100%;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;"></textarea>
+                <div class="admin-status" id="admin-oidc-preview-status"></div>
+              </div>
+            </div>
+
             <div class="admin-card" id="admin-approvals-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>High-risk approvals</span>
@@ -1876,6 +1890,53 @@
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
       }
+    }
+
+    function initOidcMapPreview() {
+      const runBtn = document.getElementById('admin-oidc-preview-run');
+      const inEl = document.getElementById('admin-oidc-preview-input');
+      const outEl = document.getElementById('admin-oidc-preview-output');
+      const statusEl = document.getElementById('admin-oidc-preview-status');
+      const card = document.getElementById('admin-oidc-map-preview-card');
+      if (!runBtn || !inEl || !outEl || !statusEl || !card) return;
+
+      card.style.display = 'block';
+
+      runBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        let claims = {};
+        try {
+          const raw = (inEl.value || '').trim() || '{}';
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Claims must be a JSON object');
+          claims = parsed;
+        } catch (err) {
+          statusEl.textContent = err.message || String(err);
+          showToast(statusEl.textContent, 'error');
+          return;
+        }
+
+        runBtn.disabled = true;
+        statusEl.textContent = 'Running preview…';
+        try {
+          const r = await fetch('/auth/admin/oidc/map-preview', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+            body: JSON.stringify({ claims }),
+          });
+          const raw = await r.text();
+          let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+          if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `Preview failed (${r.status})`);
+          outEl.value = JSON.stringify(d || {}, null, 2);
+          statusEl.textContent = 'Preview ready.';
+        } catch (err) {
+          statusEl.textContent = err.message || String(err);
+          showToast(statusEl.textContent, 'error', 5000);
+        } finally {
+          runBtn.disabled = false;
+        }
+      });
     }
 
     async function loadAdminNotificationDedupe(showToastOnManual = false) {
@@ -3437,6 +3498,7 @@
     safeInit('initLoadTimeframeControls', initLoadTimeframeControls);
     safeInit('initPackagesSearch', initPackagesSearch);
     safeInit('initAdminPanel', initAdminPanel);
+    safeInit('initOidcMapPreview', initOidcMapPreview);
     safeInit('initThemeToggle', initThemeToggle);
     safeInit('initSettingsMenu', initSettingsMenu);
     safeInit('initHostActionControls', initHostActionControls);

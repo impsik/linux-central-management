@@ -15,6 +15,7 @@ All notable changes to this project are documented in this file.
   - OIDC group->role sync on login via `AUTH_OIDC_GROUP_ROLE_MAP` (unmapped defaults to `readonly`)
   - OIDC group->scope selector sync on login via `AUTH_OIDC_GROUP_SCOPE_MAP`
   - admin OIDC mapping preview endpoint: `POST /auth/admin/oidc/map-preview`
+  - Admin UI card to run OIDC mapping previews by pasting claims JSON
 
 ### Added
 - Phase 1 groundwork for scoped RBAC by host labels:
