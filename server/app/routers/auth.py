@@ -168,6 +168,40 @@ def _oidc_discovery() -> dict:
     return data
 
 
+def _oidc_validate_id_token(disc: dict, id_token: str, expected_nonce: str | None) -> dict:
+    try:
+        import jwt
+    except Exception:
+        raise HTTPException(500, "PyJWT dependency missing on server")
+
+    jwks_uri = str(disc.get("jwks_uri") or "").strip()
+    issuer = str(getattr(settings, "auth_oidc_issuer", "") or "").strip().rstrip("/")
+    audience = str(getattr(settings, "auth_oidc_client_id", "") or "").strip()
+    if not jwks_uri:
+        raise HTTPException(502, "OIDC discovery missing jwks_uri")
+    if not issuer or not audience:
+        raise HTTPException(500, "OIDC issuer/client_id not configured")
+
+    try:
+        signing_key = jwt.PyJWKClient(jwks_uri).get_signing_key_from_jwt(id_token).key
+        claims = jwt.decode(
+            id_token,
+            signing_key,
+            algorithms=["RS256", "RS384", "RS512", "ES256", "ES384", "ES512"],
+            audience=audience,
+            issuer=issuer,
+            options={"require": ["exp", "iat", "iss", "aud"]},
+        )
+    except Exception as e:
+        raise HTTPException(401, f"OIDC id_token validation failed: {e}")
+
+    nonce = str(claims.get("nonce") or "").strip()
+    if expected_nonce and nonce != expected_nonce:
+        raise HTTPException(401, "OIDC nonce mismatch")
+
+    return claims if isinstance(claims, dict) else {}
+
+
 def _oidc_allowed_domain(email: str | None) -> bool:
     raw = str(getattr(settings, "auth_oidc_allowed_email_domains", "") or "").strip()
     if not raw:
@@ -274,8 +308,14 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         raise HTTPException(502, f"OIDC token exchange failed: {e}")
 
     access_token = str((token_data or {}).get("access_token") or "").strip()
+    id_token = str((token_data or {}).get("id_token") or "").strip()
     if not access_token:
         raise HTTPException(502, "OIDC token response missing access_token")
+    if not id_token:
+        raise HTTPException(502, "OIDC token response missing id_token")
+
+    expected_nonce = request.cookies.get("fleet_oidc_nonce")
+    id_claims = _oidc_validate_id_token(disc, id_token, expected_nonce)
 
     try:
         userinfo_resp = httpx.get(
@@ -290,6 +330,14 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
 
     if not isinstance(claims, dict):
         raise HTTPException(502, "OIDC userinfo response invalid")
+
+    # Prefer userinfo claims; fill required fields from id_token claims if missing.
+    if not claims.get("sub") and id_claims.get("sub"):
+        claims["sub"] = id_claims.get("sub")
+    if not claims.get("email") and id_claims.get("email"):
+        claims["email"] = id_claims.get("email")
+    if not claims.get("preferred_username") and id_claims.get("preferred_username"):
+        claims["preferred_username"] = id_claims.get("preferred_username")
 
     email = str(claims.get("email") or "").strip().lower() or None
     if not _oidc_allowed_domain(email):
