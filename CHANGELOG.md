@@ -26,7 +26,7 @@ All notable changes to this project are documented in this file.
   - blocks self-reset via admin endpoint (safer control)
   - Admin Users UI now includes **Reset MFA** action per user
 - Interactive package actions no longer collect credentials in browser prompts.
-- Interactive workflow is now two-step: first click opens terminal for manual login; second click sends the package command.
+- Interactive workflow now queues command and opens terminal for manual login, then runs via a dedicated **Run pending package command** button in Terminal.
 
 ## [2026-02-15]
 

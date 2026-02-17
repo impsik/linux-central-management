@@ -782,6 +782,9 @@
       </div>
     </div>
     <div class="tab-content-custom" id="terminal-tab">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem;">
+        <button class="btn" id="terminal-run-pending-cmd" type="button" style="display:none;">Run pending package command</button>
+      </div>
       <div class="terminal-container">
         <div id="terminal"></div>
       </div>
@@ -1206,6 +1209,7 @@
 
     let ws = null;
     let currentAgentId = null;
+    let pendingInteractivePackageCmd = null;
     var currentUsername = null;
     var adminUsername = null;
     var currentPermissions = {};
@@ -1222,6 +1226,29 @@
           ws.send(new TextEncoder().encode(data));
         }
       });
+    }
+
+    function updateTerminalPendingCmdButton() {
+      const btn = document.getElementById('terminal-run-pending-cmd');
+      if (!btn) return;
+      btn.style.display = pendingInteractivePackageCmd ? 'inline-flex' : 'none';
+      btn.disabled = !pendingInteractivePackageCmd;
+    }
+
+    function runPendingInteractivePackageCommand() {
+      if (!pendingInteractivePackageCmd) return;
+      if (!(ws && ws.readyState === 1)) {
+        showToast('Terminal not connected yet.', 'error', 3500);
+        return;
+      }
+      try {
+        ws.send(new TextEncoder().encode(pendingInteractivePackageCmd + '\n'));
+        pendingInteractivePackageCmd = null;
+        updateTerminalPendingCmdButton();
+        showToast('Sent pending package command to terminal', 'success');
+      } catch (e) {
+        showToast(`Failed to send pending command: ${e.message || e}`, 'error', 5000);
+      }
     }
 
     // Tab switching removed - tabs are now accessed via server info buttons only
@@ -2322,27 +2349,11 @@
           if (!cmd) return false;
 
           // Security: never collect terminal credentials in browser prompts.
-          // UX: first click opens terminal and arms command; second click sends command after user logs in.
-          if (window.__pkgInteractiveReadyAgent !== currentAgentId) {
-            window.__pkgInteractiveReadyAgent = currentAgentId;
-            showTerminal();
-            showToast('Terminal opened. Log in there, then click the action again to run command.', 'info', 5000);
-            return true;
-          }
-
+          // Queue command, switch to terminal, and let user run it after login.
+          pendingInteractivePackageCmd = cmd;
+          updateTerminalPendingCmdButton();
           showTerminal();
-          setTimeout(() => {
-            try {
-              if (ws && ws.readyState === 1) {
-                ws.send(new TextEncoder().encode(cmd + '\n'));
-                showToast(`Sent ${action} command to terminal`, 'success');
-              } else {
-                showToast('Terminal not connected yet, try again in a second.', 'error', 4000);
-              }
-            } catch (e) {
-              showToast(`Interactive command failed: ${e.message || e}`, 'error', 5000);
-            }
-          }, 300);
+          showToast('Terminal opened. Log in and click "Run pending package command".', 'info', 5000);
           return true;
         },
       };
@@ -3448,6 +3459,11 @@
     });
     safeInit('initTerminalOnce', initTerminalOnce);
     safeInit('attachTerminalInputHandlerOnce', attachTerminalInputHandlerOnce);
+    safeInit('initTerminalPendingCmdButton', () => {
+      const btn = document.getElementById('terminal-run-pending-cmd');
+      if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); runPendingInteractivePackageCommand(); });
+      updateTerminalPendingCmdButton();
+    });
     safeInit('initAnsibleSection', initAnsibleSection);
 
     safeInit('initCommonModalDismissHandlers', () => {
