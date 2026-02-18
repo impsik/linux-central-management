@@ -472,8 +472,10 @@
           </div>
         </div>
 
-        <div style="display:flex;align-items:center;justify-content:flex-end;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
-          <label style="color:#94a3b8;font-size:0.9rem;">Sort</label>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
+          <span id="hosts-visible-counter" style="color:#94a3b8;font-size:0.9rem;">0 / 0 hosts shown</span>
+          <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+            <label style="color:#94a3b8;font-size:0.9rem;">Sort</label>
           <select id="hosts-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
             <option value="hostname" selected>Host</option>
             <option value="os_version">OS</option>
@@ -487,6 +489,7 @@
           </select>
           <button class="btn" id="hosts-reload" type="button">Reload</button>
           <button class="btn" id="hosts-cleanup-offline" type="button" title="Delete hosts that have been offline for a while">Clean offline…</button>
+          </div>
         </div>
 
         <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">

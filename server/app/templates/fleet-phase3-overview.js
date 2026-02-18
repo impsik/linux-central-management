@@ -267,11 +267,16 @@
 
   function renderHostsTableRows(ctx, tbody, items) {
     if (!tbody) return;
+    const counterEl = document.getElementById('hosts-visible-counter');
+    const total = Array.isArray(hostsTableItemsCache) ? hostsTableItemsCache.length : 0;
     if (!items.length) {
+      if (counterEl) counterEl.textContent = `0 / ${total} hosts shown`;
       w.setTableState(tbody, 9, 'empty', 'No hosts match current filters');
       if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
       return;
     }
+
+    if (counterEl) counterEl.textContent = `${items.length} / ${total} hosts shown`;
 
     if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') {
       ctx.setLastRenderedAgentIds(items.map((it) => String(it.agent_id || '')).filter(Boolean));
