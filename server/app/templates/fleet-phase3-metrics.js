@@ -7,7 +7,7 @@
     }
     if (!tbody) return;
     if (!processes || processes.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">No process data</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;" class="status-muted">No process data</td></tr>';
       return;
     }
     tbody.innerHTML = processes.slice(0, 10).map(function (p) {
@@ -74,7 +74,8 @@
     });
     ctx.stroke();
 
-    ctx.fillStyle = '#94a3b8';
+    const mutedColor = getComputedStyle(document.documentElement).getPropertyValue('--muted-2').trim() || '#64748b';
+    ctx.fillStyle = mutedColor;
     ctx.font = '11px sans-serif';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';

@@ -18,6 +18,16 @@ jobs:
         run: npm ci
       - name: Run frontend tests
         run: npm run test:frontend
+      - name: Lint status colors (no legacy inline hex in templates)
+        run: |
+          set -euo pipefail
+          forbidden='(#86efac|#fca5a5|#fbbf24|#94a3b8|#a0aec0|#cbd5e1)'
+          files=$(find server/app/templates -type f \( -name '*.js' -o -name 'index.html' \) ! -name 'index-MnFIflNy.css')
+          if grep -RInE "$forbidden" $files; then
+            echo "❌ Found legacy status hex colors in templates. Use semantic classes or CSS vars instead."
+            exit 1
+          fi
+          echo "✅ Status color lint passed"
 
   backend-tests:
     runs-on: ubuntu-latest
