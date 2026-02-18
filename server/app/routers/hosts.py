@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
-from ..models import HostCVEStatus, HostUser, PatchCampaignHost, Job, JobRun
+from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
@@ -138,6 +138,28 @@ def host_drift(
         )
     ).scalar_one()
 
+    latest_security_campaign_success_at = db.execute(
+        select(func.max(PatchCampaignHost.finished_at))
+        .select_from(PatchCampaignHost)
+        .join(PatchCampaign, PatchCampaignHost.campaign_id == PatchCampaign.id)
+        .where(
+            PatchCampaignHost.agent_id == agent_id,
+            PatchCampaign.kind == "security-updates",
+            PatchCampaignHost.status == "success",
+        )
+    ).scalar_one()
+
+    remediations = [
+        ("inventory-now", last_success_inventory_at),
+        ("security-campaign", latest_security_campaign_success_at),
+    ]
+    remediations = [(name, ts) for name, ts in remediations if ts is not None]
+    last_remediated_at = None
+    last_remediated_via = None
+    if remediations:
+        remediations.sort(key=lambda x: x[1], reverse=True)
+        last_remediated_via, last_remediated_at = remediations[0]
+
     failed_runs_24h = db.execute(
         select(func.count())
         .select_from(JobRun)
@@ -234,6 +256,8 @@ def host_drift(
             "all_updates": int(all_updates or 0),
             "failed_runs_24h": int(failed_runs_24h or 0),
             "missing_labels": missing_labels,
+            "last_remediated_at": last_remediated_at,
+            "last_remediated_via": last_remediated_via,
         },
         "checks": checks,
     }

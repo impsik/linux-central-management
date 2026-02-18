@@ -1828,9 +1828,12 @@
         if (!r.ok) throw new Error(`drift failed (${r.status})`);
         const d = await r.json();
         const s = d?.summary || {};
+        const lastRemAt = s.last_remediated_at ? new Date(s.last_remediated_at).toLocaleString() : null;
+        const lastRemVia = s.last_remediated_via ? String(s.last_remediated_via).replace('-', ' ') : '';
         sumEl.innerHTML = `
           <div>Checks: <b>${s.checks_pass || 0}</b>/<b>${s.checks_total || 0}</b> pass • <b>${s.checks_warn || 0}</b> warnings</div>
           <div class="status-muted" style="font-size:0.82rem;margin-top:0.25rem;">Security updates: ${s.security_updates || 0} • All updates: ${s.all_updates || 0} • Failed runs 24h: ${s.failed_runs_24h || 0}</div>
+          <div class="status-muted" style="font-size:0.82rem;margin-top:0.2rem;">Last remediated: ${lastRemAt ? `${escapeHtml(lastRemAt)}${lastRemVia ? ` via ${escapeHtml(lastRemVia)}` : ''}` : 'n/a'}</div>
           <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.45rem;">
             <button class="btn" id="host-drift-refresh" type="button">Re-check</button>
             <button class="btn" id="host-drift-inventory" type="button">Inventory now</button>
