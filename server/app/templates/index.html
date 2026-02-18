@@ -3857,6 +3857,7 @@
         getAnsiblePlaybooks: () => ansiblePlaybooks,
         setAnsiblePlaybooks: (v) => { ansiblePlaybooks = Array.isArray(v) ? v : []; return ansiblePlaybooks; },
         getSelectedAgentIds: () => selectedAgentIds,
+        getLastRenderedAgentIds: () => lastRenderedAgentIds,
         getCurrentAgentId: () => currentAgentId,
       };
     }

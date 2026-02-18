@@ -295,8 +295,9 @@
 
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
+      const selectedAgentIds = (ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || new Set();
       tr.innerHTML = `
-        <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" /></td>
+        <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
         <td><b>${w.escapeHtml(hostName)}</b><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
         <td>${w.escapeHtml(os)}</td>
         <td><code>${w.escapeHtml(kernel)}</code></td>
@@ -316,6 +317,16 @@
       const cb = tr.querySelector('.hosts-row-select');
       if (cb) {
         cb.addEventListener('click', (e) => e.stopPropagation());
+        cb.addEventListener('change', (e) => {
+          e.stopPropagation();
+          const aid = String(cb.getAttribute('data-agent-id') || '').trim();
+          if (!aid || !ctx.getSelectedAgentIds) return;
+          const selected = ctx.getSelectedAgentIds();
+          if (!(selected instanceof Set)) return;
+          if (cb.checked) selected.add(aid);
+          else selected.delete(aid);
+          if (typeof ctx.updateUpgradeControls === 'function') ctx.updateUpgradeControls();
+        });
       }
 
       tbody.appendChild(tr);

@@ -44,10 +44,15 @@
     const fromState = Array.from((ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || []);
     if (fromState.length) return fromState;
 
-    const checked = Array.from(document.querySelectorAll('.host-select:checked'))
+    const checked = Array.from(document.querySelectorAll('.host-select:checked, .hosts-row-select:checked'))
       .map((el) => String(el.getAttribute('data-agent-id') || '').trim())
       .filter(Boolean);
     if (checked.length) return checked;
+
+    const visible = Array.from((ctx.getLastRenderedAgentIds && ctx.getLastRenderedAgentIds()) || [])
+      .map((v) => String(v || '').trim())
+      .filter(Boolean);
+    if (visible.length) return visible;
 
     if (ctx.getCurrentAgentId && ctx.getCurrentAgentId()) return [ctx.getCurrentAgentId()];
     return [];
