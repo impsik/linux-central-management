@@ -294,6 +294,7 @@
       const lastSeen = ctx.formatShortTime(it.last_seen);
 
       const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
       tr.innerHTML = `
         <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" /></td>
         <td><b>${w.escapeHtml(hostName)}</b><div style="color:#94a3b8;font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
@@ -305,6 +306,18 @@
         <td>${online}</td>
         <td style="color:#94a3b8;">${w.escapeHtml(lastSeen)}</td>
       `;
+
+      tr.addEventListener('click', () => {
+        const aid = String(it.agent_id || '');
+        if (!aid) return;
+        ctx.selectHost(aid, hostName);
+      });
+
+      const cb = tr.querySelector('.hosts-row-select');
+      if (cb) {
+        cb.addEventListener('click', (e) => e.stopPropagation());
+      }
+
       tbody.appendChild(tr);
     }
   }
