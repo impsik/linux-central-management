@@ -358,6 +358,12 @@ body {
   overflow: visible;
 }
 
+/* Service details: same dynamic behavior, avoid inner output scroll box. */
+#service-modal-output {
+  max-height: none;
+  overflow: visible;
+}
+
 .tabs {
   display: flex;
   gap: 0.5rem;
