@@ -1004,7 +1004,8 @@ body {
   position: sticky;
   top: 1rem;
   max-height: calc(100vh - 340px);
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
 .package-info-title {
@@ -1042,8 +1043,9 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.8rem;
   color: var(--text);
-  overflow: auto;
-  max-height: 420px;
+  overflow-x: auto;
+  overflow-y: visible;
+  max-height: none;
 }
 
 .section-title {
