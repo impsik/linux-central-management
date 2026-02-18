@@ -60,7 +60,7 @@
     function setSavedViewStatus(msg, kind) {
       if (!savedViewStatusEl) return;
       savedViewStatusEl.textContent = msg || '';
-      savedViewStatusEl.style.color = (kind === 'error') ? '#fca5a5' : (kind === 'success' ? '#86efac' : 'var(--muted-2)');
+      savedViewStatusEl.style.color = (kind === 'error') ? 'var(--danger)' : (kind === 'success' ? 'var(--success)' : 'var(--muted-2)');
     }
 
     async function fetchSavedViews() {

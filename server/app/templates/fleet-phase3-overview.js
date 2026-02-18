@@ -102,18 +102,18 @@
 
           morningBriefEl.innerHTML = `
             <div style="display:flex;flex-direction:column;gap:0.35rem;">
-              <div><span style="color:#94a3b8;">Offline hosts:</span> <b>${hostsOffline}</b> <button class="btn" data-brief-action="offline" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:#94a3b8;">Security backlog:</span> <b>${secPkgs}</b> packages on <b>${secHosts}</b> hosts</div>
-              <div><span style="color:#94a3b8;">Reboot required:</span> <b>${rebootRequired}</b> hosts</div>
-              <div><span style="color:#94a3b8;">Failed runs (24h):</span> <b>${failed24h}</b> <button class="btn" data-brief-action="failed" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:#94a3b8;">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b> <button class="btn" data-brief-action="heavy-security" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:#94a3b8;">Stale inventory (&gt;24h):</span> <b>${staleHosts}</b></div>
+              <div><span style="color:var(--muted-2);">Offline hosts:</span> <b>${hostsOffline}</b> <button class="btn" data-brief-action="offline" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
+              <div><span style="color:var(--muted-2);">Security backlog:</span> <b>${secPkgs}</b> packages on <b>${secHosts}</b> hosts</div>
+              <div><span style="color:var(--muted-2);">Reboot required:</span> <b>${rebootRequired}</b> hosts</div>
+              <div><span style="color:var(--muted-2);">Failed runs (24h):</span> <b>${failed24h}</b> <button class="btn" data-brief-action="failed" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
+              <div><span style="color:var(--muted-2);">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b> <button class="btn" data-brief-action="heavy-security" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
+              <div><span style="color:var(--muted-2);">Stale inventory (&gt;24h):</span> <b>${staleHosts}</b></div>
 
               <div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid var(--border);display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">
-                <span style="color:#94a3b8;font-size:0.82rem;">Alerts:</span>
-                <label style="font-size:0.8rem;color:#94a3b8;">Offline ≥ <input id="brief-th-offline" type="number" min="0" value="${th.offline}" style="width:58px;" /></label>
-                <label style="font-size:0.8rem;color:#94a3b8;">Failed ≥ <input id="brief-th-failed" type="number" min="0" value="${th.failed}" style="width:58px;" /></label>
-                <label style="font-size:0.8rem;color:#94a3b8;">Sec pkgs ≥ <input id="brief-th-sec" type="number" min="0" value="${th.secPkgs}" style="width:64px;" /></label>
+                <span style="color:var(--muted-2);font-size:0.82rem;">Alerts:</span>
+                <label style="font-size:0.8rem;color:var(--muted-2);">Offline ≥ <input id="brief-th-offline" type="number" min="0" value="${th.offline}" style="width:58px;" /></label>
+                <label style="font-size:0.8rem;color:var(--muted-2);">Failed ≥ <input id="brief-th-failed" type="number" min="0" value="${th.failed}" style="width:58px;" /></label>
+                <label style="font-size:0.8rem;color:var(--muted-2);">Sec pkgs ≥ <input id="brief-th-sec" type="number" min="0" value="${th.secPkgs}" style="width:64px;" /></label>
                 <button class="btn" id="brief-th-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
               </div>
               <div style="font-size:0.85rem;" class="${alerts.length ? 'status-error' : 'status-ok'}">${alerts.length ? ('Attention: ' + alerts.join(' • ')) : 'No alert thresholds exceeded.'}</div>
@@ -184,7 +184,7 @@
                 const msg = String(x.message || '');
                 return `<a href="#" class="attention-issue" data-agent-id="${w.escapeHtml(agentId)}" data-hostname="${w.escapeHtml(hostName)}" data-kind="${w.escapeHtml(kind)}" style="text-decoration:underline;">${w.escapeHtml(msg)}</a>`;
               }).join(', ');
-              html.push(`<tr><td style="font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${host}</td><td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35;">${issuesHtml || ''}</td><td style="color:#94a3b8;white-space:normal;overflow-wrap:anywhere;">${last}</td></tr>`);
+              html.push(`<tr><td style="font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${host}</td><td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35;">${issuesHtml || ''}</td><td style="color:var(--muted-2);white-space:normal;overflow-wrap:anywhere;">${last}</td></tr>`);
             }
             html.push('</tbody></table></div>');
             attentionEl.innerHTML = html.join('');
@@ -297,7 +297,7 @@
       tr.style.cursor = 'pointer';
       tr.innerHTML = `
         <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" /></td>
-        <td><b>${w.escapeHtml(hostName)}</b><div style="color:#94a3b8;font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
+        <td><b>${w.escapeHtml(hostName)}</b><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
         <td>${w.escapeHtml(os)}</td>
         <td><code>${w.escapeHtml(kernel)}</code></td>
         <td style="text-align:right;"><b>${sec}</b></td>
@@ -442,7 +442,7 @@
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
-          <td><b>${w.escapeHtml(hostName)}</b><div style="color:#94a3b8;font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
+          <td><b>${w.escapeHtml(hostName)}</b><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
           <td>${w.escapeHtml(os)}</td>
           <td><code>${w.escapeHtml(kernel)}</code></td>
           <td><b>${sec}</b></td>
@@ -496,7 +496,7 @@
       } else {
         wrap.innerHTML = `
           <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;">
-            <div style="color:#94a3b8;display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
+            <div style="color:var(--muted-2);display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
               <span>Unread: <b>${unread.length}</b> / ${items.length}</span>
               ${suppressedCount > 0 ? `<span title="Suppressed by server cooldown" class="status-warn">Suppressed: ${suppressedCount}</span>` : ''}
             </div>
@@ -505,7 +505,7 @@
               <button class="btn" id="notifications-unsnooze-all" type="button">Unsnooze all</button>
             </div>
           </div>
-          <div id="notifications-snooze-summary" style="color:#94a3b8;font-size:0.85rem;margin-bottom:0.4rem;"></div>
+          <div id="notifications-snooze-summary" style="color:var(--muted-2);font-size:0.85rem;margin-bottom:0.4rem;"></div>
           <div style="display:flex;flex-direction:column;gap:0.45rem;">
             ${items.map((it) => `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.6rem;background:var(--panel-2);${seenSet.has(String(it.id||'')) ? 'opacity:0.75;' : ''}">
               <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">

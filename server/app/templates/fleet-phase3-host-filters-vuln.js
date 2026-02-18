@@ -107,7 +107,7 @@
           let html = '<div><b>Plan:</b> ' + selectedHosts.length + ' host(s), ' + selectedPkgs.length + ' package(s) selected.</div>' +
             '<div><b>Effective upgrades:</b> ' + effectiveHostsWithPkgs + '/' + selectedHosts.length + ' host(s), ' + effectiveTotalPkgs + ' package upgrade(s) total.</div>';
           if (selectedHosts.length > 0) html += '<details style="margin-top:4px"><summary>Per-host package counts</summary><div style="margin-top:4px">' + rows + '</div></details>';
-          if (effectiveTotalPkgs === 0) html += '<div style="margin-top:4px;color:#fbbf24">No selected packages apply to the selected host(s).</div>';
+          if (effectiveTotalPkgs === 0) html += '<div style="margin-top:4px;color:var(--warning)">No selected packages apply to the selected host(s).</div>';
           cvePlanSummaryEl.innerHTML = html;
         } else cvePlanSummaryEl.innerHTML = '';
       }
@@ -277,7 +277,7 @@
                 return '<tr><td><code>' + escapeHtml(aid) + '</code></td><td>' + escapeHtml(st) + '</td><td><a href="' + stdoutUrl + '" target="_blank" rel="noopener noreferrer">stdout</a></td><td><a href="' + stderrUrl + '" target="_blank" rel="noopener noreferrer">stderr</a></td></tr>';
               }).join('');
               statusNode.innerHTML = 'Upgrade finished for ' + escapeHtml(String(pkgName)) + '. success: ' + (c.success || 0) + ', failed: ' + (c.failed || 0) + '. (job_id: <code>' + escapeHtml(jobId) + '</code>) <a href="' + logsUrl + '" target="_blank" rel="noopener noreferrer">logs.zip</a>' +
-                '<details style="margin-top:6px"><summary>Per-host logs</summary><div style="overflow:auto; max-height:220px; border:1px solid #333; padding:6px; margin-top:6px"><table style="width:100%; border-collapse:collapse"><thead><tr><th align="left">Host</th><th align="left">Status</th><th align="left">stdout</th><th align="left">stderr</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div></details>';
+                '<details style="margin-top:6px"><summary>Per-host logs</summary><div style="overflow:auto; max-height:220px; border:1px solid var(--border); padding:6px; margin-top:6px"><table style="width:100%; border-collapse:collapse"><thead><tr><th align="left">Host</th><th align="left">Status</th><th align="left">stdout</th><th align="left">stderr</th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div></details>';
             }
             return;
           }
