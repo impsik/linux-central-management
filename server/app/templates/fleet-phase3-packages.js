@@ -319,7 +319,7 @@
       const candidate = data.candidate_version ? `<code>${w.escapeHtml(data.candidate_version)}</code>` : '<code>n/a</code>';
       const summary = w.escapeHtml(data.summary || '');
       const desc = w.escapeHtml(data.description || '');
-      infoEl.innerHTML = `<h3>${name}</h3><p>${summary}</p><div>Installed: ${installed}</div><div>Candidate: ${candidate}</div><pre>${desc}</pre>`;
+      infoEl.innerHTML = `<h3>${name}</h3><p>${summary}</p><div>Installed: ${installed}</div><div><b>Candidate:</b> <b>${candidate}</b></div><pre>${desc}</pre>`;
     } catch (e) {
       infoEl.innerHTML = `<div class="error">${w.escapeHtml(e.message || String(e))}</div>`;
     }
