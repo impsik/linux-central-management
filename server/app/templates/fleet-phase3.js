@@ -116,7 +116,7 @@
     const esc = typeof w.escapeHtml === 'function'
       ? w.escapeHtml
       : function (s) { return String(s == null ? '' : s); };
-    const color = kind === 'error' ? '#fca5a5' : '#a0aec0';
+    const color = kind === 'error' ? 'var(--danger)' : 'var(--muted-2)';
     tbody.innerHTML = '<tr><td colspan="' + String(colspan) + '" style="text-align:center;color:' + color + ';">' + esc(message) + '</td></tr>';
   }
 
@@ -430,7 +430,7 @@
       const left = document.createElement('div');
       left.style.display = 'flex';
       left.style.flexDirection = 'column';
-      left.innerHTML = '<b>' + esc(name) + '</b><span style="color:#94a3b8;font-size:0.85rem;">' + esc(aid) + (os ? ' • ' + esc(os) : '') + '</span>';
+      left.innerHTML = '<b>' + esc(name) + '</b><span class="status-muted" style="font-size:0.85rem;">' + esc(aid) + (os ? ' • ' + esc(os) : '') + '</span>';
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';
@@ -604,7 +604,7 @@
     if (!tbody) return;
 
     if (!processes || processes.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#a0aec0;">No process data</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;" class="status-muted">No process data</td></tr>';
       return;
     }
 
