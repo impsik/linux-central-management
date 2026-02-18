@@ -141,9 +141,9 @@
       });
     }
 
-    setLabelsOpen(true);
-    setAnsibleOpen(true);
-    setVulnOpen(true);
+    setLabelsOpen(false);
+    setAnsibleOpen(false);
+    setVulnOpen(false);
 
     labelsToggle?.addEventListener('click', function (e) {
       if (e.target && (e.target.id === 'label-env' || e.target.id === 'label-role')) return;
