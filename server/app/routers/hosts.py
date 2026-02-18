@@ -154,17 +154,23 @@ def host_drift(
     required_labels = ["env", "role"]
     missing_labels = [k for k in required_labels if not str(labels.get(k) or "").strip()]
 
+    sec_updates_n = int(sec_updates or 0)
+    all_updates_n = int(all_updates or 0)
+    failed_runs_n = int(failed_runs_24h or 0)
+
     checks = [
         {
             "key": "online",
             "title": "Host online",
             "status": "pass" if online else "warn",
+            "severity": "ok" if online else "critical",
             "detail": "Host heartbeat is healthy" if online else "Host is offline/stale",
         },
         {
             "key": "inventory_freshness",
             "title": "Inventory freshness",
             "status": "pass" if (inv_age_h is not None and inv_age_h <= 24) else "warn",
+            "severity": "ok" if (inv_age_h is not None and inv_age_h <= 24) else "warn",
             "detail": (
                 f"Last package inventory {inv_age_h:.1f}h ago" if inv_age_h is not None else "No package inventory data"
             ),
@@ -173,6 +179,7 @@ def host_drift(
             "key": "inventory_run_recent",
             "title": "Inventory job health",
             "status": "pass" if last_success_inventory_at and last_success_inventory_at >= (now - timedelta(hours=24)) else "warn",
+            "severity": "ok" if last_success_inventory_at and last_success_inventory_at >= (now - timedelta(hours=24)) else "warn",
             "detail": (
                 f"Last successful inventory job: {last_success_inventory_at.isoformat()}" if last_success_inventory_at else "No successful inventory-now job in history"
             ),
@@ -180,31 +187,36 @@ def host_drift(
         {
             "key": "security_updates",
             "title": "Security updates backlog",
-            "status": "pass" if int(sec_updates or 0) == 0 else "warn",
-            "detail": f"{int(sec_updates or 0)} security package(s) pending",
+            "status": "pass" if sec_updates_n == 0 else "warn",
+            "severity": "ok" if sec_updates_n == 0 else ("critical" if sec_updates_n >= 20 else "warn"),
+            "detail": f"{sec_updates_n} security package(s) pending",
         },
         {
             "key": "all_updates",
             "title": "Total updates backlog",
-            "status": "pass" if int(all_updates or 0) <= 10 else "warn",
-            "detail": f"{int(all_updates or 0)} package update(s) pending",
+            "status": "pass" if all_updates_n <= 10 else "warn",
+            "severity": "ok" if all_updates_n <= 10 else ("critical" if all_updates_n >= 100 else "warn"),
+            "detail": f"{all_updates_n} package update(s) pending",
         },
         {
             "key": "failed_runs_24h",
             "title": "Failed runs (24h)",
-            "status": "pass" if int(failed_runs_24h or 0) == 0 else "warn",
-            "detail": f"{int(failed_runs_24h or 0)} failed job run(s) in last 24h",
+            "status": "pass" if failed_runs_n == 0 else "warn",
+            "severity": "ok" if failed_runs_n == 0 else ("critical" if failed_runs_n >= 3 else "warn"),
+            "detail": f"{failed_runs_n} failed job run(s) in last 24h",
         },
         {
             "key": "labels_baseline",
             "title": "Baseline labels",
             "status": "pass" if not missing_labels else "warn",
+            "severity": "ok" if not missing_labels else "warn",
             "detail": "All baseline labels set" if not missing_labels else ("Missing: " + ", ".join(missing_labels)),
         },
         {
             "key": "reboot_required",
             "title": "Reboot required",
             "status": "warn" if bool(host.reboot_required) else "pass",
+            "severity": "warn" if bool(host.reboot_required) else "ok",
             "detail": "Reboot required by host" if bool(host.reboot_required) else "No reboot required",
         },
     ]

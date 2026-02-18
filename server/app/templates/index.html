@@ -134,7 +134,7 @@
               </div>
               <div class="admin-card">
                 <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:0.6rem;flex-wrap:wrap;">
-                  <span>Host timeline</span>
+                  <span>Host timeline <span id="host-timeline-count" class="status-muted" style="font-size:0.82rem;font-weight:500;"></span></span>
                   <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
                     <button class="btn" id="timeline-filter-all" type="button">All</button>
                     <button class="btn" id="timeline-filter-failed" type="button">Failed</button>
@@ -1503,10 +1503,12 @@
       const driftSummary = document.getElementById('host-drift-summary');
       const driftList = document.getElementById('host-drift-list');
       const timelineList = document.getElementById('host-timeline-list');
+      const timelineCount = document.getElementById('host-timeline-count');
       if (driftSummary) driftSummary.textContent = 'Select a host';
       if (driftList) driftList.innerHTML = '';
       hostTimelineItemsCache = [];
       if (timelineList) timelineList.innerHTML = '';
+      if (timelineCount) timelineCount.textContent = '';
     }
 
     function selectHost(agentId, hostname) {
@@ -1696,6 +1698,7 @@
 
     function renderHostTimeline() {
       const el = document.getElementById('host-timeline-list');
+      const countEl = document.getElementById('host-timeline-count');
       if (!el) return;
 
       ['all', 'failed', 'security', 'package', 'service'].forEach((k) => {
@@ -1704,7 +1707,9 @@
         btn.classList.toggle('btn-primary', hostTimelineFilter === k);
       });
 
-      const items = (hostTimelineItemsCache || []).filter(timelineFilterMatch);
+      const allItems = (hostTimelineItemsCache || []);
+      const items = allItems.filter(timelineFilterMatch);
+      if (countEl) countEl.textContent = `(${items.length}/${allItems.length})`;
       if (!items.length) {
         el.innerHTML = '<div class="status-muted">No events for selected filter.</div>';
         return;
@@ -1724,10 +1729,38 @@
             <b>${jobType}</b>
             <span class="${stClass}" style="font-size:0.8rem;">${escapeHtml(st)}</span>
           </div>
-          <div class="status-muted" style="font-size:0.82rem;margin-top:0.2rem;">${escapeHtml(t)} • <code>${jobId}</code></div>
+          <div class="status-muted" style="font-size:0.82rem;margin-top:0.2rem;display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+            <span>${escapeHtml(t)} • <code>${jobId}</code></span>
+            <button class="btn" data-copy-job-id="${jobId}" type="button" style="padding:0.16rem 0.45rem;">Copy job id</button>
+          </div>
           ${links ? `<div style="font-size:0.8rem;margin-top:0.2rem;">${links}</div>` : ''}
         </div>`;
       }).join('');
+
+      el.querySelectorAll('button[data-copy-job-id]').forEach((btn) => {
+        if (btn.dataset.boundCopyJobId === '1') return;
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const id = btn.getAttribute('data-copy-job-id') || '';
+          if (!id) return;
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(id);
+            } else {
+              const ta = document.createElement('textarea');
+              ta.value = id;
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand('copy');
+              document.body.removeChild(ta);
+            }
+            showToast('Job ID copied', 'success', 1800);
+          } catch (_) {
+            showToast('Failed to copy job ID', 'error', 2200);
+          }
+        });
+        btn.dataset.boundCopyJobId = '1';
+      });
     }
 
     async function loadHostTimeline(agentId) {
@@ -1817,10 +1850,11 @@
 
         const checks = Array.isArray(d?.checks) ? d.checks : [];
         listEl.innerHTML = checks.map((c) => {
-          const warn = String(c?.status || '') !== 'pass';
+          const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
+          const sevClass = sev === 'critical' ? 'status-error' : (sev === 'warn' ? 'status-warn' : 'status-ok');
           return `<div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:flex-start;">
             <div><b>${escapeHtml(String(c?.title || 'check'))}</b><div class="status-muted" style="font-size:0.82rem;">${escapeHtml(String(c?.detail || ''))}</div></div>
-            <span class="${warn ? 'status-warn' : 'status-ok'}" style="font-size:0.75rem;">${warn ? 'warn' : 'pass'}</span>
+            <span class="${sevClass}" style="font-size:0.75rem;">${escapeHtml(sev)}</span>
           </div>`;
         }).join('');
       } catch (e) {
