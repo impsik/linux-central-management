@@ -382,17 +382,16 @@ body {
 
 .container {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 1fr;
   flex: 1;
   min-height: 0;
   height: auto; /* page can scroll if needed */
   width: 100%;
 }
 
-/* When in Overview mode we collapse the sidebar but keep it in the grid flow,
-   otherwise the main column can jump into the left track leaving blank space. */
+/* Sidebar removed in Hosts redesign; keep class for JS compatibility. */
 .container.sidebar-collapsed {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 1fr;
 }
 
 .container.sidebar-collapsed .sidebar {
@@ -497,6 +496,21 @@ body {
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 10px;
+}
+
+.hosts-top-filters .filter-section {
+  margin-top: 0;
+  padding: 0.65rem;
+}
+
+.hosts-top-filters .filter-section-title {
+  font-size: 0.82rem;
+}
+
+@media (min-width: 1400px) {
+  .hosts-top-filters > div {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
 }
 
 .filter-section-header {

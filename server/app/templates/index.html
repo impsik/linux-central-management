@@ -60,154 +60,8 @@
   </div>
 
   <div class="container">
-    <div class="sidebar">
-      <div class="sidebar-header">Hosts management</div>
-      <div class="sidebar-content">
-        <div class="host-filters">
-          <input id="host-search" class="host-search" type="text" placeholder="Search hosts (name, id, IP)..." />
-
-          <div class="filter-section" id="labels-filter-section">
-            <div class="filter-section-header" id="labels-filter-toggle">
-              <div class="filter-section-title">Label filters</div>
-              <button class="filter-toggle" type="button" aria-expanded="false" aria-controls="labels-filter-body"
-                id="labels-toggle-btn">+</button>
-            </div>
-
-            <div class="filter-section-body" id="labels-filter-body">
-              <div class="vuln-row">
-                <select id="label-env" class="host-search">
-                  <option value="">Env: Any</option>
-                </select>
-              </div>
-              <div class="vuln-row">
-                <select id="label-role" class="host-search">
-                  <option value="">Role: Any</option>
-                </select>
-              </div>
-              <div class="vuln-actions">
-                <button class="btn" id="labels-clear">Clear</button>
-              </div>
-
-              <div style="margin-top:0.6rem;border-top:1px solid var(--border);padding-top:0.6rem;display:grid;gap:0.45rem;">
-                <div style="font-size:0.82rem;color:var(--muted-2);font-weight:700;">Saved views</div>
-                <input id="saved-view-name" class="host-search" type="text" placeholder="View name (e.g. Prod DBs)" />
-                <div style="display:flex;gap:0.4rem;align-items:center;">
-                  <select id="saved-view-select" class="host-search" style="flex:1 1 auto;">
-                    <option value="">Select saved view</option>
-                  </select>
-                </div>
-                <label style="display:flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.82rem;">
-                  <input id="saved-view-shared" type="checkbox" /> Shared (team)
-                </label>
-                <label style="display:flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.82rem;">
-                  <input id="saved-view-default" type="checkbox" /> Default on startup
-                </label>
-                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-                  <button class="btn btn-primary" id="saved-view-save" type="button">Save current</button>
-                  <button class="btn" id="saved-view-apply" type="button">Apply</button>
-                  <button class="btn" id="saved-view-delete" type="button">Delete</button>
-                </div>
-                <div id="saved-view-status" class="vuln-status" style="margin-top:0;"></div>
-              </div>
-
-              <div style="margin-top:0.6rem;border-top:1px solid var(--border);padding-top:0.6rem;display:grid;gap:0.45rem;">
-                <div style="font-size:0.82rem;color:var(--muted-2);font-weight:700;">Create cron from current view</div>
-                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-                  <select id="cron-from-filter-action" class="host-search" style="flex:1 1 220px;">
-                    <option value="security-campaign" selected>Security campaign</option>
-                    <option value="inventory-now">Inventory now</option>
-                    <option value="dist-upgrade">Dist-upgrade</option>
-                  </select>
-                  <select id="cron-from-filter-schedule" class="host-search" style="flex:1 1 220px;">
-                    <option value="weekly-sun-0200" selected>Weekly Sunday 02:00</option>
-                    <option value="daily-0600">Daily 06:00</option>
-                    <option value="once-30m">One-time in 30 min</option>
-                  </select>
-                </div>
-                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-                  <button class="btn btn-primary" id="cron-from-filter-open" type="button">Open Cron form with visible hosts</button>
-                  <button class="btn" id="cron-from-filter-run-now" type="button">Run now (visible hosts)</button>
-                </div>
-                <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-                  <button class="btn" id="runbook-inventory-now" type="button">Runbook: Inventory now</button>
-                  <button class="btn" id="runbook-security-now" type="button">Runbook: Security campaign now</button>
-                  <button class="btn" id="runbook-dist-now" type="button">Runbook: Dist-upgrade now</button>
-                </div>
-                <div id="cron-from-filter-status" class="vuln-status" style="margin-top:0;"></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="filter-section" id="vuln-filter-section">
-            <div class="filter-section-header" id="vuln-filter-toggle">
-              <div class="filter-section-title">Vulnerability filter</div>
-              <button class="filter-toggle" type="button" aria-expanded="false" aria-controls="vuln-filter-body"
-                id="vuln-toggle-btn">+</button>
-            </div>
-
-            <div class="filter-section-body" id="vuln-filter-body">
-              <div class="vuln-filter">
-                <div class="vuln-row">
-                  <input id="vuln-cve" class="host-search" type="text" placeholder="CVE (e.g. CVE-2021-45105)" />
-                </div>
-                <div class="vuln-row">
-                  <input id="vuln-package" class="host-search" type="text" placeholder="Package name (e.g. openssl)" />
-                </div>
-                <div class="vuln-row">
-                  <input id="vuln-version" class="host-search" type="text"
-                    placeholder="Vulnerable version (exact, e.g. 1.1.1w-0+deb11u1)" />
-                </div>
-                <div class="vuln-actions">
-                  <button class="btn btn-primary" id="vuln-apply">Show vulnerable</button>
-                  <button class="btn" id="vuln-clear" disabled>Clear</button>
-                </div>
-                <div class="vuln-status" id="vuln-status"></div>
-
-                <div class="vuln-upgrade">
-                  <label class="vuln-inline">
-                    <input type="checkbox" id="select-visible-hosts" />
-                    Select all visible hosts
-                  </label>
-
-                  <div id="cve-packages-panel" style="display:none;margin:0.5rem 0 0.25rem 0;">
-                    <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:0.25rem;">Affected packages (CVE)</div>
-                    <div id="cve-packages-list" style="display:flex;flex-direction:column;gap:0.25rem;max-height:220px;overflow:auto;padding:0.25rem 0.25rem;border:1px solid #2d3748;border-radius:8px;"></div>
-                    <div id="cve-plan-summary" style="font-size:0.8rem;color:#94a3b8;margin-top:0.35rem;"></div>
-                    <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem;">We’ll upgrade the selected packages on each selected host, but only if that host reported the package as affected.</div>
-                  </div>
-
-                  <button class="btn btn-primary" id="upgrade-selected" disabled>Upgrade selected</button>
-                  <div class="vuln-status" id="upgrade-status"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="filter-section" id="ansible-filter-section">
-            <div class="filter-section-header" id="ansible-filter-toggle">
-              <div class="filter-section-title">Ansible</div>
-              <button class="filter-toggle" type="button" aria-expanded="false" aria-controls="ansible-filter-body"
-                id="ansible-toggle-btn">+</button>
-            </div>
-            <div class="filter-section-body" id="ansible-filter-body">
-              <div class="vuln-row">
-                <select id="ansible-playbook" class="host-search">
-                  <option value="">Select playbook</option>
-                </select>
-              </div>
-              <div class="vuln-actions">
-                <button class="btn btn-primary" id="ansible-open" disabled>Configure & Run</button>
-                <button class="btn" id="ansible-refresh">Refresh</button>
-              </div>
-              <div class="vuln-status" id="ansible-status"></div>
-            </div>
-          </div>
-        </div>
-
-        <div id="hosts">
-          <div class="loading">Loading hosts...</div>
-        </div>
-      </div>
+    <div class="sidebar" aria-hidden="true" style="display:none;">
+      <div id="hosts" style="display:none;"></div>
     </div>
 
     <div class="main-content">
@@ -477,7 +331,148 @@
             <div style="color:#94a3b8;font-size:0.95rem;">Sortable fleet table (updates, security, reboot-needed).
               Select rows for bulk actions.</div>
           </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+        </div>
+
+        <div class="hosts-top-filters" style="margin-top:0.9rem;display:grid;gap:0.75rem;">
+          <input id="host-search" class="host-search" type="text" placeholder="Search hosts (name, id, IP)..." />
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:0.75rem;align-items:start;">
+            <div class="filter-section" id="labels-filter-section" style="margin-top:0;">
+              <div class="filter-section-header" id="labels-filter-toggle">
+                <div class="filter-section-title">Label filters</div>
+                <button class="filter-toggle" type="button" aria-expanded="false" aria-controls="labels-filter-body" id="labels-toggle-btn">+</button>
+              </div>
+
+              <div class="filter-section-body" id="labels-filter-body">
+                <div class="vuln-row">
+                  <select id="label-env" class="host-search">
+                    <option value="">Env: Any</option>
+                  </select>
+                </div>
+                <div class="vuln-row">
+                  <select id="label-role" class="host-search">
+                    <option value="">Role: Any</option>
+                  </select>
+                </div>
+                <div class="vuln-actions">
+                  <button class="btn" id="labels-clear">Clear</button>
+                </div>
+
+                <div style="margin-top:0.6rem;border-top:1px solid var(--border);padding-top:0.6rem;display:grid;gap:0.45rem;">
+                  <div style="font-size:0.82rem;color:var(--muted-2);font-weight:700;">Saved views</div>
+                  <input id="saved-view-name" class="host-search" type="text" placeholder="View name (e.g. Prod DBs)" />
+                  <div style="display:flex;gap:0.4rem;align-items:center;">
+                    <select id="saved-view-select" class="host-search" style="flex:1 1 auto;">
+                      <option value="">Select saved view</option>
+                    </select>
+                  </div>
+                  <label style="display:flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.82rem;">
+                    <input id="saved-view-shared" type="checkbox" /> Shared (team)
+                  </label>
+                  <label style="display:flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.82rem;">
+                    <input id="saved-view-default" type="checkbox" /> Default on startup
+                  </label>
+                  <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                    <button class="btn btn-primary" id="saved-view-save" type="button">Save current</button>
+                    <button class="btn" id="saved-view-apply" type="button">Apply</button>
+                    <button class="btn" id="saved-view-delete" type="button">Delete</button>
+                  </div>
+                  <div id="saved-view-status" class="vuln-status" style="margin-top:0;"></div>
+                </div>
+
+                <div style="margin-top:0.6rem;border-top:1px solid var(--border);padding-top:0.6rem;display:grid;gap:0.45rem;">
+                  <div style="font-size:0.82rem;color:var(--muted-2);font-weight:700;">Create cron from current view</div>
+                  <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                    <select id="cron-from-filter-action" class="host-search" style="flex:1 1 220px;">
+                      <option value="security-campaign" selected>Security campaign</option>
+                      <option value="inventory-now">Inventory now</option>
+                      <option value="dist-upgrade">Dist-upgrade</option>
+                    </select>
+                    <select id="cron-from-filter-schedule" class="host-search" style="flex:1 1 220px;">
+                      <option value="weekly-sun-0200" selected>Weekly Sunday 02:00</option>
+                      <option value="daily-0600">Daily 06:00</option>
+                      <option value="once-30m">One-time in 30 min</option>
+                    </select>
+                  </div>
+                  <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                    <button class="btn btn-primary" id="cron-from-filter-open" type="button">Open Cron form with visible hosts</button>
+                    <button class="btn" id="cron-from-filter-run-now" type="button">Run now (visible hosts)</button>
+                  </div>
+                  <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
+                    <button class="btn" id="runbook-inventory-now" type="button">Runbook: Inventory now</button>
+                    <button class="btn" id="runbook-security-now" type="button">Runbook: Security campaign now</button>
+                    <button class="btn" id="runbook-dist-now" type="button">Runbook: Dist-upgrade now</button>
+                  </div>
+                  <div id="cron-from-filter-status" class="vuln-status" style="margin-top:0;"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-section" id="vuln-filter-section" style="margin-top:0;">
+              <div class="filter-section-header" id="vuln-filter-toggle">
+                <div class="filter-section-title">Vulnerability filter</div>
+                <button class="filter-toggle" type="button" aria-expanded="false" aria-controls="vuln-filter-body" id="vuln-toggle-btn">+</button>
+              </div>
+
+              <div class="filter-section-body" id="vuln-filter-body">
+                <div class="vuln-filter">
+                  <div class="vuln-row">
+                    <input id="vuln-cve" class="host-search" type="text" placeholder="CVE (e.g. CVE-2021-45105)" />
+                  </div>
+                  <div class="vuln-row">
+                    <input id="vuln-package" class="host-search" type="text" placeholder="Package name (e.g. openssl)" />
+                  </div>
+                  <div class="vuln-row">
+                    <input id="vuln-version" class="host-search" type="text" placeholder="Vulnerable version (exact, e.g. 1.1.1w-0+deb11u1)" />
+                  </div>
+                  <div class="vuln-actions">
+                    <button class="btn btn-primary" id="vuln-apply">Show vulnerable</button>
+                    <button class="btn" id="vuln-clear" disabled>Clear</button>
+                  </div>
+                  <div class="vuln-status" id="vuln-status"></div>
+
+                  <div class="vuln-upgrade">
+                    <label class="vuln-inline">
+                      <input type="checkbox" id="select-visible-hosts" />
+                      Select all visible hosts
+                    </label>
+
+                    <div id="cve-packages-panel" style="display:none;margin:0.5rem 0 0.25rem 0;">
+                      <div style="font-size:0.85rem;color:#94a3b8;margin-bottom:0.25rem;">Affected packages (CVE)</div>
+                      <div id="cve-packages-list" style="display:flex;flex-direction:column;gap:0.25rem;max-height:220px;overflow:auto;padding:0.25rem 0.25rem;border:1px solid #2d3748;border-radius:8px;"></div>
+                      <div id="cve-plan-summary" style="font-size:0.8rem;color:#94a3b8;margin-top:0.35rem;"></div>
+                      <div style="font-size:0.8rem;color:#94a3b8;margin-top:0.25rem;">We’ll upgrade the selected packages on each selected host, but only if that host reported the package as affected.</div>
+                    </div>
+
+                    <button class="btn btn-primary" id="upgrade-selected" disabled>Upgrade selected</button>
+                    <div class="vuln-status" id="upgrade-status"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="filter-section" id="ansible-filter-section" style="margin-top:0;">
+              <div class="filter-section-header" id="ansible-filter-toggle">
+                <div class="filter-section-title">Ansible hosts</div>
+                <button class="filter-toggle" type="button" aria-expanded="false" aria-controls="ansible-filter-body" id="ansible-toggle-btn">+</button>
+              </div>
+              <div class="filter-section-body" id="ansible-filter-body">
+                <div class="vuln-row">
+                  <select id="ansible-playbook" class="host-search">
+                    <option value="">Select playbook</option>
+                  </select>
+                </div>
+                <div class="vuln-actions">
+                  <button class="btn btn-primary" id="ansible-open" disabled>Configure & Run</button>
+                  <button class="btn" id="ansible-refresh">Refresh</button>
+                </div>
+                <div class="vuln-status" id="ansible-status"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
             <label style="color:#94a3b8;font-size:0.9rem;">Sort</label>
             <select id="hosts-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
               <option value="hostname" selected>Host</option>
