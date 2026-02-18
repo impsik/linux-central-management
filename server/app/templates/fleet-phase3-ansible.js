@@ -40,24 +40,40 @@
     }
   }
 
+  function resolveAnsibleTargets(ctx) {
+    const fromState = Array.from((ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || []);
+    if (fromState.length) return fromState;
+
+    const checked = Array.from(document.querySelectorAll('.host-select:checked'))
+      .map((el) => String(el.getAttribute('data-agent-id') || '').trim())
+      .filter(Boolean);
+    if (checked.length) return checked;
+
+    if (ctx.getCurrentAgentId && ctx.getCurrentAgentId()) return [ctx.getCurrentAgentId()];
+    return [];
+  }
+
   function openAnsibleModal(ctx, playbookName) {
+    const inlineStatus = document.getElementById('ansible-status');
     const modal = document.getElementById('ansible-modal');
     const formEl = document.getElementById('ansible-modal-form');
     const metaEl = document.getElementById('ansible-modal-meta');
     const statusEl = document.getElementById('ansible-modal-status');
     const outputEl = document.getElementById('ansible-modal-output');
     const logEl = document.getElementById('ansible-modal-log');
-    if (!modal || !formEl || !metaEl || !statusEl || !outputEl || !logEl) return;
-
-    const playbook = ctx.getAnsiblePlaybooks().find(p => p.name === playbookName);
-    if (!playbook) return;
-    const targets = Array.from(ctx.getSelectedAgentIds());
-    if (targets.length === 0 && ctx.getCurrentAgentId()) {
-      targets.push(ctx.getCurrentAgentId());
+    if (!modal || !formEl || !metaEl || !statusEl || !outputEl || !logEl) {
+      if (inlineStatus) inlineStatus.textContent = 'Ansible modal is not available (missing UI element).';
+      return;
     }
+
+    const playbook = (ctx.getAnsiblePlaybooks() || []).find(p => p.name === playbookName);
+    if (!playbook) {
+      if (inlineStatus) inlineStatus.textContent = 'Selected playbook not found in loaded list. Click Refresh.';
+      return;
+    }
+    const targets = resolveAnsibleTargets(ctx);
     if (targets.length === 0) {
-      const status = document.getElementById('ansible-status');
-      if (status) status.textContent = 'Select at least one host.';
+      if (inlineStatus) inlineStatus.textContent = 'Select at least one host.';
       return;
     }
 
@@ -131,10 +147,7 @@
     if (!modal || !statusEl || !outputEl || !runBtn || !selectEl || !formEl || !logEl) return;
 
     const playbookName = selectEl.value;
-    const targets = Array.from(ctx.getSelectedAgentIds());
-    if (targets.length === 0 && ctx.getCurrentAgentId()) {
-      targets.push(ctx.getCurrentAgentId());
-    }
+    const targets = resolveAnsibleTargets(ctx);
     if (!playbookName || targets.length === 0) {
       statusEl.textContent = 'Select a playbook and at least one host.';
       statusEl.classList.add('error');
@@ -233,9 +246,11 @@
       loadAnsiblePlaybooks(ctx);
     });
 
-    selectEl?.addEventListener('change', () => {
-      if (openBtn) openBtn.disabled = !selectEl.value;
-    });
+    const syncRunBtnState = () => {
+      if (openBtn) openBtn.disabled = !(selectEl && selectEl.value);
+    };
+    selectEl?.addEventListener('change', syncRunBtnState);
+    selectEl?.addEventListener('input', syncRunBtnState);
 
     openBtn?.addEventListener('click', (e) => {
       e.preventDefault();
