@@ -498,6 +498,15 @@ body {
   border-radius: 10px;
 }
 
+.hosts-top-filters {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: var(--bg);
+  padding: 0.25rem 0 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
 .hosts-top-filters .filter-section {
   margin-top: 0;
   padding: 0.65rem;
