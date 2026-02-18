@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
-from ..models import HostCVEStatus, HostUser, PatchCampaignHost
+from ..models import HostCVEStatus, HostUser, PatchCampaignHost, Job, JobRun
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
@@ -43,6 +43,137 @@ def list_hosts(online_only: bool = False, db: Session = Depends(get_db), user=De
         if is_host_visible_to_user(db, user, h)
         if (not online_only or is_host_online(h, now))
     ]
+
+
+@router.get("/{agent_id}/timeline")
+def host_timeline(
+    agent_id: str,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    if limit < 1:
+        limit = 1
+    if limit > 200:
+        limit = 200
+
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host or not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    rows = db.execute(
+        select(JobRun, Job)
+        .join(Job, JobRun.job_id == Job.id)
+        .where(JobRun.agent_id == agent_id)
+        .order_by(JobRun.finished_at.desc().nullslast(), JobRun.started_at.desc().nullslast(), Job.created_at.desc())
+        .limit(limit)
+    ).all()
+
+    items = []
+    for run, job in rows:
+        ts = run.finished_at or run.started_at or job.created_at
+        items.append({
+            "time": ts,
+            "job_id": job.job_key,
+            "job_type": job.job_type,
+            "status": run.status,
+            "exit_code": run.exit_code,
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+            "created_by": job.created_by,
+            "logs_zip": f"/jobs/{job.job_key}/logs.zip",
+            "stdout": f"/jobs/{job.job_key}/runs/{agent_id}/stdout.txt",
+            "stderr": f"/jobs/{job.job_key}/runs/{agent_id}/stderr.txt",
+        })
+
+    return {"agent_id": agent_id, "items": items}
+
+
+@router.get("/{agent_id}/drift")
+def host_drift(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host or not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    now = datetime.now(timezone.utc)
+    online = is_host_online(host, now)
+
+    latest_inventory_at = db.execute(
+        select(func.max(HostPackage.collected_at)).where(HostPackage.host_id == host.id)
+    ).scalar_one()
+    inv_age_h = None
+    if latest_inventory_at:
+        inv_age_h = max(0.0, (now - latest_inventory_at).total_seconds() / 3600.0)
+
+    sec_updates = db.execute(
+        select(func.count())
+        .select_from(HostPackageUpdate)
+        .where(
+            HostPackageUpdate.host_id == host.id,
+            HostPackageUpdate.update_available == True,  # noqa: E712
+            HostPackageUpdate.is_security == True,  # noqa: E712
+        )
+    ).scalar_one()
+    all_updates = db.execute(
+        select(func.count())
+        .select_from(HostPackageUpdate)
+        .where(
+            HostPackageUpdate.host_id == host.id,
+            HostPackageUpdate.update_available == True,  # noqa: E712
+        )
+    ).scalar_one()
+
+    checks = [
+        {
+            "key": "online",
+            "title": "Host online",
+            "status": "pass" if online else "warn",
+            "detail": "Host heartbeat is healthy" if online else "Host is offline/stale",
+        },
+        {
+            "key": "inventory_freshness",
+            "title": "Inventory freshness",
+            "status": "pass" if (inv_age_h is not None and inv_age_h <= 24) else "warn",
+            "detail": (
+                f"Last inventory {inv_age_h:.1f}h ago" if inv_age_h is not None else "No package inventory data"
+            ),
+        },
+        {
+            "key": "security_updates",
+            "title": "Security updates backlog",
+            "status": "pass" if int(sec_updates or 0) == 0 else "warn",
+            "detail": f"{int(sec_updates or 0)} security package(s) pending",
+        },
+        {
+            "key": "all_updates",
+            "title": "Total updates backlog",
+            "status": "pass" if int(all_updates or 0) == 0 else "warn",
+            "detail": f"{int(all_updates or 0)} package update(s) pending",
+        },
+        {
+            "key": "reboot_required",
+            "title": "Reboot required",
+            "status": "warn" if bool(host.reboot_required) else "pass",
+            "detail": "Reboot required by host" if bool(host.reboot_required) else "No reboot required",
+        },
+    ]
+
+    pass_count = len([c for c in checks if c["status"] == "pass"])
+    warn_count = len([c for c in checks if c["status"] == "warn"])
+
+    return {
+        "agent_id": agent_id,
+        "summary": {
+            "checks_total": len(checks),
+            "checks_pass": pass_count,
+            "checks_warn": warn_count,
+        },
+        "checks": checks,
+    }
 
 
 @router.post("/cleanup-offline")

@@ -124,6 +124,22 @@
               </div>
             </div>
 
+            <div class="overview-cards-grid" style="margin:0.5rem 0 1rem;grid-template-columns:minmax(280px,1fr) minmax(380px,1.4fr);">
+              <div class="admin-card">
+                <div class="admin-card-title">Drift v1</div>
+                <div class="admin-card-body">
+                  <div id="host-drift-summary" style="color:var(--muted-2);font-size:0.9rem;">Loading…</div>
+                  <div id="host-drift-list" style="display:grid;gap:0.35rem;margin-top:0.5rem;"></div>
+                </div>
+              </div>
+              <div class="admin-card">
+                <div class="admin-card-title">Host timeline</div>
+                <div class="admin-card-body">
+                  <div id="host-timeline-list" style="display:grid;gap:0.4rem;max-height:220px;overflow:auto;"></div>
+                </div>
+              </div>
+            </div>
+
             <div class="load-graph-container">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <div class="metric-label" style="margin-bottom:0;">System Load (1 min average)</div>
@@ -1483,6 +1499,12 @@
       const header = document.getElementById('server-info-header');
       if (placeholder) placeholder.style.display = 'block';
       if (header) header.style.display = 'none';
+      const driftSummary = document.getElementById('host-drift-summary');
+      const driftList = document.getElementById('host-drift-list');
+      const timelineList = document.getElementById('host-timeline-list');
+      if (driftSummary) driftSummary.textContent = 'Select a host';
+      if (driftList) driftList.innerHTML = '';
+      if (timelineList) timelineList.innerHTML = '';
     }
 
     function selectHost(agentId, hostname) {
@@ -1526,6 +1548,8 @@
       document.getElementById('server-info-hostname').textContent = hostname;
 
       const hostObj = (allHosts || []).find(h => h.agent_id === agentId);
+      void loadHostDrift(agentId);
+      void loadHostTimeline(agentId);
       const hostDisplayName = (hostObj?.hostname || hostname || agentId || '—');
       const hostIp = (hostObj?.ip_address || hostObj?.fqdn || 'n/a');
       document.querySelectorAll('.host-context-name').forEach((el) => { el.textContent = hostDisplayName; });
@@ -1651,6 +1675,64 @@
       const mod = window.phase3Metrics;
       if (mod && typeof mod.updateLoadGraph === 'function') {
         return mod.updateLoadGraph(getMetricsCtx(), loadValue);
+      }
+    }
+
+    async function loadHostTimeline(agentId) {
+      const el = document.getElementById('host-timeline-list');
+      if (!el || !agentId) return;
+      el.innerHTML = '<div class="loading" style="padding:0.5rem;">Loading timeline…</div>';
+      try {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/timeline?limit=25`, { credentials: 'include' });
+        if (!r.ok) throw new Error(`timeline failed (${r.status})`);
+        const d = await r.json();
+        const items = Array.isArray(d?.items) ? d.items : [];
+        if (!items.length) {
+          el.innerHTML = '<div style="color:var(--muted-2);">No events yet.</div>';
+          return;
+        }
+        el.innerHTML = items.map((it) => {
+          const t = it?.time ? new Date(it.time).toLocaleString() : 'n/a';
+          const st = String(it?.status || 'unknown');
+          const stColor = st === 'success' ? '#86efac' : (st === 'failed' ? '#fca5a5' : '#94a3b8');
+          const jobType = escapeHtml(String(it?.job_type || 'job'));
+          const jobId = escapeHtml(String(it?.job_id || ''));
+          return `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.55rem;background:var(--panel-2);">
+            <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+              <b>${jobType}</b>
+              <span style="color:${stColor};font-size:0.8rem;">${escapeHtml(st)}</span>
+            </div>
+            <div style="font-size:0.82rem;color:var(--muted-2);margin-top:0.2rem;">${escapeHtml(t)} • <code>${jobId}</code></div>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        el.innerHTML = `<div class="error" style="margin:0;">${escapeHtml(e?.message || String(e))}</div>`;
+      }
+    }
+
+    async function loadHostDrift(agentId) {
+      const sumEl = document.getElementById('host-drift-summary');
+      const listEl = document.getElementById('host-drift-list');
+      if (!sumEl || !listEl || !agentId) return;
+      sumEl.textContent = 'Loading…';
+      listEl.innerHTML = '';
+      try {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/drift`, { credentials: 'include' });
+        if (!r.ok) throw new Error(`drift failed (${r.status})`);
+        const d = await r.json();
+        const s = d?.summary || {};
+        sumEl.textContent = `Checks: ${s.checks_pass || 0}/${s.checks_total || 0} pass • ${s.checks_warn || 0} warnings`;
+        const checks = Array.isArray(d?.checks) ? d.checks : [];
+        listEl.innerHTML = checks.map((c) => {
+          const warn = String(c?.status || '') !== 'pass';
+          return `<div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:flex-start;">
+            <div><b>${escapeHtml(String(c?.title || 'check'))}</b><div style="font-size:0.82rem;color:var(--muted-2);">${escapeHtml(String(c?.detail || ''))}</div></div>
+            <span style="font-size:0.75rem;color:${warn ? '#fbbf24' : '#86efac'};">${warn ? 'warn' : 'pass'}</span>
+          </div>`;
+        }).join('');
+      } catch (e) {
+        sumEl.textContent = 'Drift unavailable';
+        listEl.innerHTML = `<div class="error" style="margin:0;">${escapeHtml(e?.message || String(e))}</div>`;
       }
     }
 
