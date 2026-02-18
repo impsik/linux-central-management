@@ -514,14 +514,6 @@
           <span id="hosts-bulk-status" style="color:#94a3b8;font-size:0.9rem;"></span>
         </div>
 
-        <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;margin-top:0.55rem;">
-          <button class="btn" id="hosts-ring-security" type="button">Security rollout by rings</button>
-          <label style="display:flex;align-items:center;gap:0.35rem;color:var(--muted-2);font-size:0.85rem;">
-            stop when failures in a ring exceed
-            <input id="hosts-ring-fail-threshold" class="host-search" type="number" min="0" value="0" style="width:70px;padding:0.3rem 0.45rem;" />
-          </label>
-          <span id="hosts-ring-status" style="color:#94a3b8;font-size:0.9rem;"></span>
-        </div>
 
         <div class="hosts-table-wrap" style="margin-top:0.75rem;">
           <table class="process-table hosts-table">
@@ -2789,83 +2781,6 @@
         const ids = getSelectedHostAgentIds();
         if (!ids.length) return showToast('Select hosts first', 'error');
         await bulkPost('/jobs/dist-upgrade', { agent_ids: ids }, `dist-upgrade queued for ${ids.length} hosts`);
-      });
-
-      document.getElementById('hosts-ring-security')?.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const statusEl = document.getElementById('hosts-ring-status');
-        const failThresholdRaw = Number.parseInt((document.getElementById('hosts-ring-fail-threshold')?.value || '0').trim(), 10);
-        const failThreshold = Number.isFinite(failThresholdRaw) && failThresholdRaw >= 0 ? failThresholdRaw : 0;
-
-        const visible = (allHosts || []).filter((h) => {
-          const aid = String(h?.agent_id || '');
-          return aid && (lastRenderedAgentIds || []).includes(aid);
-        });
-        if (!visible.length) return showToast('No visible hosts for ring rollout', 'error');
-
-        const groups = new Map();
-        const rank = (ring) => {
-          const r = String(ring || '').trim().toLowerCase();
-          if (r === 'canary') return 0;
-          const m = r.match(/^ring\s*([0-9]+)$/) || r.match(/^ring([0-9]+)$/);
-          if (m) return Number.parseInt(m[1], 10);
-          return 999;
-        };
-
-        visible.forEach((h) => {
-          const ring = String(h?.labels?.ring || 'unassigned').trim() || 'unassigned';
-          if (!groups.has(ring)) groups.set(ring, []);
-          groups.get(ring).push(String(h.agent_id));
-        });
-
-        const order = Array.from(groups.keys()).sort((a, b) => {
-          const ra = rank(a); const rb = rank(b);
-          if (ra !== rb) return ra - rb;
-          return String(a).localeCompare(String(b));
-        });
-
-        if (statusEl) statusEl.textContent = `Rollout planned: ${order.map((k) => `${k} (${groups.get(k).length})`).join(' → ')}`;
-        if (!confirm(`Run security rollout by rings?\n\nOrder: ${order.join(' → ')}\nHosts: ${visible.length}\nFailure threshold per ring: ${failThreshold}`)) return;
-
-        for (const ring of order) {
-          const ids = groups.get(ring) || [];
-          if (!ids.length) continue;
-          if (statusEl) statusEl.textContent = `Running ring ${ring} (${ids.length} hosts)…`;
-
-          const now = new Date();
-          const end = new Date(now.getTime() + 60 * 60 * 1000);
-          const payload = {
-            agent_ids: ids,
-            window_start: now.toISOString(),
-            window_end: end.toISOString(),
-            concurrency: Math.min(5, ids.length),
-            reboot_if_needed: true,
-            include_kernel: false,
-          };
-
-          const created = await bulkPost('/patching/campaigns/security-updates', payload, `Ring ${ring}: campaign scheduled`);
-          const jobId = created?.job_id;
-          if (!jobId) {
-            if (statusEl) statusEl.textContent = `Ring ${ring}: no job_id returned; stopping rollout.`;
-            break;
-          }
-
-          const done = await (window.pollJob ? window.pollJob(jobId, statusEl, 20 * 60 * 1000) : Promise.resolve({ runs: [] }));
-          const runs = Array.isArray(done?.runs) ? done.runs : [];
-          const failed = runs.filter((r) => r && r.status === 'failed').length;
-          const success = runs.filter((r) => r && r.status === 'success').length;
-
-          if (statusEl) statusEl.textContent = `Ring ${ring} done: success ${success}, failed ${failed}`;
-          if (failed > failThreshold) {
-            showToast(`Stopped rollout at ring ${ring}: failures ${failed} > threshold ${failThreshold}`, 'error');
-            if (statusEl) statusEl.textContent += ' — rollout stopped';
-            return;
-          }
-        }
-
-        if (statusEl) statusEl.textContent = 'Ring rollout completed.';
-        showToast('Security rollout by rings completed', 'success');
-        await loadHostsTable();
       });
 
       // Cleanup offline hosts
