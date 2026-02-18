@@ -171,7 +171,19 @@ function openSshKeyDeployApprovalModal(it) {
           { test: (x) => x === 'systemd-timesyncd.service' || x === 'chronyd.service' || x === 'ntp.service', what: 'Keeps system time synchronized.', why: 'Time drift can break TLS, auth, logs and distributed systems.' },
           { test: (x) => x === 'docker.service', what: 'Runs Docker daemon for container workloads.', why: 'If down, containers and dependent apps may stop.' },
           { test: (x) => x === 'containerd.service', what: 'Runs containerd runtime used by Kubernetes/containers.', why: 'If down, pods/containers may fail to start or run.' },
+          { test: (x) => x === 'crio.service' || x === 'cri-o.service', what: 'Runs CRI-O container runtime for Kubernetes workloads.', why: 'If down, kubelet cannot start/manage pods correctly.' },
           { test: (x) => x === 'kubelet.service', what: 'Kubernetes node agent managing pods on this host.', why: 'If down, node health degrades and pods stop reconciling.' },
+          { test: (x) => x === 'kube-proxy.service', what: 'Maintains Kubernetes Service networking rules on the node.', why: 'If down, service-to-pod traffic may fail or become inconsistent.' },
+          { test: (x) => x === 'etcd.service', what: 'Stores Kubernetes/control-plane state in a distributed key-value store.', why: 'If unhealthy, cluster control-plane operations can fail.' },
+          { test: (x) => x === 'flanneld.service' || x === 'flannel.service', what: 'Provides pod network overlay (Flannel) for Kubernetes.', why: 'If down, pod-to-pod networking can break across nodes.' },
+          { test: (x) => x.includes('calico'), what: 'Provides Kubernetes networking/policy components (Calico).', why: 'If unhealthy, network policy enforcement and pod networking may fail.' },
+          { test: (x) => x.includes('coredns') || x === 'kube-dns.service', what: 'Handles DNS resolution for Kubernetes services and pods.', why: 'If down, service discovery and internal DNS lookups will fail.' },
+          { test: (x) => x === 'node-exporter.service' || x === 'prometheus-node-exporter.service', what: 'Exports host metrics for Prometheus scraping.', why: 'If down, host monitoring visibility is reduced.' },
+          { test: (x) => x === 'prometheus.service', what: 'Collects and stores time-series metrics from targets.', why: 'If down, monitoring and alert evaluations stop updating.' },
+          { test: (x) => x === 'alertmanager.service', what: 'Routes, groups, and deduplicates alerts from Prometheus.', why: 'If down, critical alerts may not be delivered.' },
+          { test: (x) => x === 'grafana-server.service' || x === 'grafana.service', what: 'Serves Grafana dashboards and visualizations.', why: 'If down, operational dashboards are unavailable.' },
+          { test: (x) => x === 'loki.service', what: 'Aggregates and stores logs for querying (Grafana Loki).', why: 'If down, centralized log search and retention are impacted.' },
+          { test: (x) => x === 'promtail.service', what: 'Collects local logs and ships them to Loki.', why: 'If down, new host logs will not reach centralized storage.' },
         ];
         return map.find((it) => it.test(n)) || null;
       };
