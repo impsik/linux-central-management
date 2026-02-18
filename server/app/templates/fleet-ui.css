@@ -505,6 +505,7 @@ body {
   background: var(--bg);
   padding: 0.25rem 0 0.6rem 0;
   border-bottom: 1px solid var(--border);
+  box-shadow: 0 6px 16px rgba(2, 6, 23, 0.18);
 }
 
 .hosts-top-filters .filter-section {
