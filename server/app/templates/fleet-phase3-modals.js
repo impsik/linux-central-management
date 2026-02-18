@@ -203,12 +203,26 @@ function openSshKeyDeployApprovalModal(it) {
 
         const svcName = String(info?.name || serviceName || '');
         const expl = explainService(svcName);
-        const explHtml = expl ? (`<div class="admin-card" style="margin:0 0 0.6rem 0;">` +
+        const fallbackExpl = (() => {
+          const n = svcName.toLowerCase();
+          if (n.startsWith('systemd-')) {
+            return {
+              what: 'Core systemd unit that supports Linux boot/runtime system management tasks.',
+              why: 'Stopping or masking it without understanding dependencies can impact boot flow or system stability.',
+            };
+          }
+          return {
+            what: 'Background system service managed by systemd.',
+            why: 'If this service is required by other units, disabling/restarting it may affect dependent functionality.',
+          };
+        })();
+        const explEff = expl || fallbackExpl;
+        const explHtml = (`<div class="admin-card" style="margin:0 0 0.6rem 0;">` +
           `<div class="admin-card-title" style="padding:0.55rem 0.7rem;">What this service does</div>` +
           `<div class="admin-card-body" style="padding:0.6rem 0.7rem;display:grid;gap:0.35rem;">` +
-          `<div><b>Purpose:</b> ${safe(expl.what)}</div>` +
-          `<div><b>Why it matters:</b> ${safe(expl.why)}</div>` +
-          `</div></div>`) : '';
+          `<div><b>Purpose:</b> ${safe(explEff.what)}</div>` +
+          `<div><b>Why it matters:</b> ${safe(explEff.why)}</div>` +
+          `</div></div>`);
 
         outEl.innerHTML = [
           explHtml,
