@@ -6,16 +6,22 @@
     if (!selectEl) return;
     try {
       if (statusEl) statusEl.textContent = 'Loading playbooks...';
-      const resp = await fetch('/ansible/playbooks');
+      const resp = await fetch('/ansible/playbooks', { credentials: 'include' });
       if (!resp.ok) throw new Error(resp.statusText);
       const data = await resp.json();
-      ctx.setAnsiblePlaybooks(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data)
+        ? data
+        : (Array.isArray(data?.playbooks) ? data.playbooks : (Array.isArray(data?.items) ? data.items : []));
+      ctx.setAnsiblePlaybooks(list);
       const ansiblePlaybooks = ctx.getAnsiblePlaybooks();
       selectEl.innerHTML = '<option value="">Select playbook</option>' + ansiblePlaybooks.map(p => {
         const name = w.escapeHtml(p.name || '');
         return `<option value="${name}">${name}</option>`;
       }).join('');
-      if (statusEl) statusEl.textContent = ansiblePlaybooks.length ? '' : 'No playbooks found.';
+      if (statusEl) {
+        if (ansiblePlaybooks.length) statusEl.textContent = `Loaded ${ansiblePlaybooks.length} playbook(s).`;
+        else statusEl.textContent = 'No playbooks found.';
+      }
     } catch (e) {
       if (statusEl) statusEl.textContent = `Failed to load playbooks: ${e.message}`;
     } finally {
