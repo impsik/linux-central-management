@@ -1689,15 +1689,45 @@
     let hostDriftCriticalOnly = false;
     let hostDriftChecksCache = [];
 
+    function timelineJobCategory(it) {
+      const jtRaw = String(it?.job_type || '').toLowerCase();
+      const jt = jtRaw.replace(/[_\s]+/g, '-');
+
+      const securityJobTypes = new Set([
+        'cve-check',
+        'security-campaign',
+        'security-updates',
+        'patch-security',
+      ]);
+      if (securityJobTypes.has(jt) || /(^|-)security(-|$)|(^|-)cve(-|$)/.test(jt)) return 'security';
+
+      const serviceJobTypes = new Set([
+        'query-services',
+        'query-service-details',
+        'service-restart',
+        'service-start',
+        'service-stop',
+      ]);
+      if (serviceJobTypes.has(jt) || /(^|-)service(s)?(-|$)/.test(jt)) return 'service';
+
+      const packageJobTypes = new Set([
+        'query-pkg-info',
+        'query-pkg-updates',
+        'query-pkg-version',
+        'inventory-now',
+        'pkg-upgrade',
+        'dist-upgrade',
+      ]);
+      if (packageJobTypes.has(jt) || /(^|-)pkg(-|$)|(^|-)package(s)?(-|$)|(^|-)upgrade(-|$)|(^|-)inventory(-|$)/.test(jt)) return 'package';
+
+      return 'other';
+    }
+
     function timelineFilterMatch(it) {
       if (hostTimelineFilter === 'all') return true;
       const st = String(it?.status || '').toLowerCase();
-      const jt = String(it?.job_type || '').toLowerCase();
       if (hostTimelineFilter === 'failed') return st === 'failed';
-      if (hostTimelineFilter === 'security') return jt.includes('security') || jt.includes('cve');
-      if (hostTimelineFilter === 'package') return jt.includes('pkg') || jt.includes('package') || jt.includes('upgrade');
-      if (hostTimelineFilter === 'service') return jt.includes('service');
-      return true;
+      return timelineJobCategory(it) === hostTimelineFilter;
     }
 
     function renderHostTimeline() {
