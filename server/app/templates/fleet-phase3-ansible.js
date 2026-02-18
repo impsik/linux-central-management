@@ -1,4 +1,15 @@
 (function (w) {
+  function esc(v) {
+    const s = String(v == null ? '' : v);
+    if (typeof w.escapeHtml === 'function') return w.escapeHtml(s);
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   async function loadAnsiblePlaybooks(ctx) {
     const selectEl = document.getElementById('ansible-playbook');
     const statusEl = document.getElementById('ansible-status');
@@ -15,7 +26,7 @@
       ctx.setAnsiblePlaybooks(list);
       const ansiblePlaybooks = ctx.getAnsiblePlaybooks();
       selectEl.innerHTML = '<option value="">Select playbook</option>' + ansiblePlaybooks.map(p => {
-        const name = w.escapeHtml(p.name || '');
+        const name = esc(p.name || '');
         return `<option value="${name}">${name}</option>`;
       }).join('');
       if (statusEl) {
