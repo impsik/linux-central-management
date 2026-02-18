@@ -1359,6 +1359,22 @@ body {
   color: #1d4ed8;
 }
 
+/* Light theme: map very bright success/warn/error inline colors to readable variants. */
+:root[data-theme="light"] [style*="color:#86efac"],
+:root[data-theme="light"] [style*="color: #86efac"] {
+  color: #166534 !important;
+}
+
+:root[data-theme="light"] [style*="color:#fca5a5"],
+:root[data-theme="light"] [style*="color: #fca5a5"] {
+  color: #b91c1c !important;
+}
+
+:root[data-theme="light"] [style*="color:#fbbf24"],
+:root[data-theme="light"] [style*="color: #fbbf24"] {
+  color: #92400e !important;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
