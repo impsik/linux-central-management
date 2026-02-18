@@ -21,9 +21,13 @@ jobs:
       - name: Lint status colors (no legacy inline hex in templates)
         run: |
           set -euo pipefail
+          echo "Checking commit: $(git rev-parse --short HEAD)"
           forbidden='(#86efac|#fca5a5|#fbbf24|#94a3b8|#a0aec0|#cbd5e1)'
-          files=$(find server/app/templates -type f \( -name '*.js' -o -name 'index.html' \) ! -name 'index-MnFIflNy.css')
-          if grep -RInE "$forbidden" $files; then
+          # Only check tracked template sources used by the UI runtime.
+          matches=$(mktemp)
+          if git ls-files -z 'server/app/templates/*.js' 'server/app/templates/index.html' \
+            | xargs -0 grep -nE "$forbidden" > "$matches"; then
+            cat "$matches"
             echo "❌ Found legacy status hex colors in templates. Use semantic classes or CSS vars instead."
             exit 1
           fi
