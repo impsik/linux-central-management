@@ -3852,6 +3852,22 @@
       }
     }
 
+    function getAnsibleCtx() {
+      return {
+        getAnsiblePlaybooks: () => ansiblePlaybooks,
+        setAnsiblePlaybooks: (v) => { ansiblePlaybooks = Array.isArray(v) ? v : []; return ansiblePlaybooks; },
+        getSelectedAgentIds: () => selectedAgentIds,
+        getCurrentAgentId: () => currentAgentId,
+      };
+    }
+
+    function initAnsibleSection() {
+      const mod = window.phase3Ansible;
+      if (mod && typeof mod.initAnsibleSection === 'function') {
+        return mod.initAnsibleSection(getAnsibleCtx());
+      }
+    }
+
 // Load hosts on page load
     function safeInit(name, fn) {
       try { if (typeof fn === 'function') fn(); }
