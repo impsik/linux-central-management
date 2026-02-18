@@ -3918,6 +3918,24 @@
       updateTerminalPendingCmdButton();
     });
     safeInit('initAnsibleSection', initAnsibleSection);
+    safeInit('bindAnsibleOpenFallback', () => {
+      const btn = document.getElementById('ansible-open');
+      const sel = document.getElementById('ansible-playbook');
+      const status = document.getElementById('ansible-status');
+      if (!btn || btn.dataset.boundAnsibleOpenFallback === '1') return;
+      btn.addEventListener('click', (e) => {
+        const mod = window.phase3Ansible;
+        if (!mod || typeof mod.openAnsibleModal !== 'function') return;
+        e.preventDefault();
+        const pb = sel ? (sel.value || '') : '';
+        if (!pb) {
+          if (status) status.textContent = 'Select playbook first.';
+          return;
+        }
+        mod.openAnsibleModal(getAnsibleCtx(), pb);
+      });
+      btn.dataset.boundAnsibleOpenFallback = '1';
+    });
     safeInit('initTimelineFilters', initTimelineFilters);
 
     safeInit('initCommonModalDismissHandlers', () => {
