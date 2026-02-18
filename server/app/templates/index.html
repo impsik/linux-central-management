@@ -1119,7 +1119,7 @@
         <div class="modal-title" id="disk-modal-title">Disk usage (df -h)</div>
         <button class="btn modal-close" id="disk-modal-close" type="button">Close</button>
       </div>
-      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;max-height:none;">
         <div class="modal-meta" id="disk-modal-meta"></div>
         <div class="modal-actions" style="margin:8px 0;justify-content:space-between;position:sticky;top:0;background:var(--panel-2, transparent);padding:6px 0;z-index:2;gap:12px;flex-wrap:wrap;">
           <label style="display:flex;align-items:center;gap:8px;color:var(--muted-2);font-size:0.9rem;user-select:none;">
@@ -1128,7 +1128,7 @@
           </label>
           <button class="btn" id="disk-modal-refresh" type="button">Refresh</button>
         </div>
-        <div class="modal-output" id="disk-modal-output" style="white-space:normal;"></div>
+        <div class="modal-output" id="disk-modal-output" style="white-space:normal;max-height:none;overflow:visible;"></div>
       </div>
     </div>
   </div>

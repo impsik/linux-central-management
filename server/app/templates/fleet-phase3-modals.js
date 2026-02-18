@@ -244,7 +244,7 @@ function openSshKeyDeployApprovalModal(it) {
         }
         const header = ['Filesystem','Type','Mounted','Used','Avail','Size','Use%'];
         const html = [];
-        html.push(`<div style="overflow:auto;">
+        html.push(`<div style="overflow-x:auto;overflow-y:visible;">
           <table class="process-table" style="min-width:860px;">
             <thead><tr>${header.map(h=>`<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>
             <tbody>
