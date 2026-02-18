@@ -1345,6 +1345,20 @@ body {
   padding: 0.42rem 0.6rem;
 }
 
+/* Light theme readability fixes for overview (many legacy inline colors are too faint). */
+:root[data-theme="light"] #server-info-placeholder [style*="color:#94a3b8"],
+:root[data-theme="light"] #server-info-placeholder [style*="color: #94a3b8"],
+:root[data-theme="light"] #server-info-placeholder [style*="color:#cbd5e1"],
+:root[data-theme="light"] #server-info-placeholder [style*="color: #cbd5e1"],
+:root[data-theme="light"] #server-info-placeholder [style*="color:#a0aec0"],
+:root[data-theme="light"] #server-info-placeholder [style*="color: #a0aec0"] {
+  color: #475569 !important;
+}
+
+:root[data-theme="light"] #server-info-placeholder .process-table a {
+  color: #1d4ed8;
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
