@@ -1003,9 +1003,8 @@ body {
   /* Keep details visible while scrolling the package list */
   position: sticky;
   top: 1rem;
-  max-height: calc(100vh - 340px);
-  overflow-x: auto;
-  overflow-y: visible;
+  max-height: none;
+  overflow: visible;
 }
 
 .package-info-title {
