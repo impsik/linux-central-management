@@ -68,6 +68,22 @@ function openSshKeyDeployApprovalModal(it) {
       const outEl = document.getElementById('user-modal-output');
       if (!modal || !metaEl || !outEl) return;
 
+      // Robust close wiring for user modal.
+      const closeBtn = document.getElementById('user-modal-close');
+      if (closeBtn && !closeBtn.dataset.boundUserClose) {
+        closeBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          closeUserModal();
+        });
+        closeBtn.dataset.boundUserClose = '1';
+      }
+      if (!modal.dataset.boundUserOverlayClose) {
+        modal.addEventListener('click', (e) => {
+          if (e.target && e.target.id === 'user-modal') closeUserModal();
+        });
+        modal.dataset.boundUserOverlayClose = '1';
+      }
+
       const safe = (v) => escapeHtml(v == null ? '' : String(v));
       const kv = (k, v) => `<div class="kv-row"><strong>${safe(k)}:</strong> <code>${safe(v || '')}</code></div>`;
 
@@ -82,6 +98,11 @@ function openSshKeyDeployApprovalModal(it) {
         try { d = raw ? JSON.parse(raw) : null; } catch { }
         const info = (d && d.user) ? d.user : d;
 
+        const sudoRules = String(info.sudo_rules || '').trim();
+        const hasSudoFlag = !!info.has_sudo;
+        const deniedByRules = /not allowed to run sudo/i.test(sudoRules) || /may not run sudo/i.test(sudoRules);
+        const sudoAllowed = hasSudoFlag && !deniedByRules;
+
         outEl.innerHTML = [
           kv('Username', info.username),
           kv('UID', info.uid),
@@ -90,10 +111,10 @@ function openSshKeyDeployApprovalModal(it) {
           kv('Shell', info.shell),
           kv('Groups', info.groups),
           kv('Locked', info.locked),
-          kv('Has sudo', info.has_sudo),
-          kv('Sudo rules', info.sudo_rules),
+          kv('Sudo access', sudoAllowed ? 'allowed' : 'denied'),
           kv('Password status', info.password_status),
           kv('Last login', info.last_login),
+          sudoRules ? `<details style="margin-top:0.5rem;"><summary>Sudo check output</summary><pre class="pkg-raw" style="margin-top:0.4rem;">${safe(sudoRules)}</pre></details>` : '',
         ].join('');
       } catch (e) {
         outEl.innerHTML = `<div class="error">${safe(e.message || String(e))}</div>`;
