@@ -28,15 +28,18 @@
     }).join('');
   }
 
-  function redrawLoadGraph(ctx) {
+  function redrawLoadGraph(stateCtx) {
     const canvas = document.getElementById('load-graph');
-    const loadGraphData = ctx.getLoadGraphData();
-    const loadTimeframeSeconds = ctx.getLoadTimeframeSeconds();
+    const loadGraphData = stateCtx.getLoadGraphData();
+    const loadTimeframeSeconds = stateCtx.getLoadTimeframeSeconds();
     if (!canvas || !loadGraphData || loadGraphData.length < 2) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
     const paddingTop = 26, paddingBottom = 22, paddingLeft = 6, paddingRight = 6;
     const plotW = canvas.width - paddingLeft - paddingRight;
     const plotH = canvas.height - paddingTop - paddingBottom;
+    if (plotW <= 0 || plotH <= 0) return;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -45,12 +48,12 @@
     const data = loadGraphData.filter(p => p.time && p.time.getTime() >= minAllowed);
     if (data.length < 2) return;
 
-    const maxLoad = Math.max(...data.map(d => d.load), 1) * 1.1;
+    const maxLoad = Math.max(...data.map(d => Number(d.load || 0)), 1) * 1.1;
     const minT = data[0].time.getTime();
     const maxT = data[data.length - 1].time.getTime();
     const rangeT = Math.max(1, maxT - minT);
 
-    ctx.strokeStyle = '#e2e8f0';
+    ctx.strokeStyle = '#334155';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 5; i++) {
       const y = paddingTop + (plotH / 5) * i;
@@ -66,12 +69,12 @@
     data.forEach((point, index) => {
       const t = point.time.getTime();
       const x = paddingLeft + ((t - minT) / rangeT) * plotW;
-      const y = paddingTop + (plotH - (point.load / maxLoad) * plotH);
+      const y = paddingTop + (plotH - (Number(point.load || 0) / maxLoad) * plotH);
       if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
 
-    ctx.fillStyle = '#718096';
+    ctx.fillStyle = '#94a3b8';
     ctx.font = '11px sans-serif';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
@@ -84,7 +87,7 @@
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(`Load: ${last.load.toFixed(2)} @ ${w.formatTimeLabel(last.time, loadTimeframeSeconds)}`, 10, 20);
+    ctx.fillText(`Load: ${Number(last.load || 0).toFixed(2)} @ ${w.formatTimeLabel(last.time, loadTimeframeSeconds)}`, 10, 20);
   }
 
   function updateLoadGraph(ctx, loadValue) {

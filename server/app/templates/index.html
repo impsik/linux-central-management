@@ -1656,10 +1656,10 @@
       }
     }
 
-    function redrawLoadGraph(ctx, canvas) {
+    function redrawLoadGraph() {
       const mod = window.phase3Metrics;
       if (mod && typeof mod.redrawLoadGraph === 'function') {
-        return mod.redrawLoadGraph(ctx, getMetricsCtx(), canvas);
+        return mod.redrawLoadGraph(getMetricsCtx());
       }
     }
 
