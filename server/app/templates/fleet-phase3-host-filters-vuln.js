@@ -224,7 +224,7 @@
       if (verEl) verEl.value = '';
       const emptySel = new Set();
       syncSelectionState('selectedAgentIds', emptySel);
-      setPatch({ selectedAgentIds: emptySel, lastPkgVerification: null, lastCveCheck: null, lastCveAffectedAgentIds: [], lastCveUnionPackages: [], selectedCvePackages: new Set() });
+      setPatch({ vulnFilteredAgentIds: null, selectedAgentIds: emptySel, lastPkgVerification: null, lastCveCheck: null, lastCveAffectedAgentIds: [], lastCveUnionPackages: [], selectedCvePackages: new Set() });
       if (selectVisibleEl) selectVisibleEl.checked = false;
       applyHostFilters();
       updateUpgradeControls();
