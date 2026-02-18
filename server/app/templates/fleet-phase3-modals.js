@@ -159,40 +159,6 @@ function openSshKeyDeployApprovalModal(it) {
 
       const safe = (v) => escapeHtml(v == null ? '' : String(v));
       const kv = (k, v) => `<div class="kv-row"><strong>${safe(k)}:</strong> <code>${safe(v || '')}</code></div>`;
-      const explainService = (svc) => {
-        const raw = String(svc || '').toLowerCase().trim();
-        const base = raw
-          .replace(/^.*\//, '')
-          .replace(/\.service$/,'')
-          .replace(/@.*/,'');
-
-        const map = [
-          { test: (x) => x === 'systemd-sysctl', what: 'Applies kernel sysctl settings from /etc/sysctl.conf and /etc/sysctl.d/*.conf.', why: 'Without it, required kernel/network hardening and tuning values may not be applied.' },
-          { test: (x) => x === 'systemd-pstore', what: 'Collects and stores persistent kernel crash logs (pstore) after reboot.', why: 'Helps with post-crash diagnostics; disabling it can hide useful failure evidence.' },
-          { test: (x) => x === 'ssh' || x === 'sshd', what: 'Runs the OpenSSH server so you can connect remotely via SSH.', why: 'If stopped, remote shell access to this host may be unavailable.' },
-          { test: (x) => x === 'cron' || x === 'crond', what: 'Executes scheduled cron jobs.', why: 'If stopped, scheduled maintenance and automation tasks will not run.' },
-          { test: (x) => x === 'rsyslog', what: 'Collects and writes system/application logs.', why: 'If stopped, centralized/local log capture can be incomplete.' },
-          { test: (x) => x.startsWith('systemd-networkd'), what: 'Manages network interfaces and routing (systemd-networkd).', why: 'If restarted incorrectly, network connectivity can flap.' },
-          { test: (x) => x.startsWith('networkmanager'), what: 'Manages network connections and interface profiles.', why: 'Restarting may briefly interrupt network connectivity.' },
-          { test: (x) => x === 'systemd-timesyncd' || x === 'chronyd' || x === 'ntp', what: 'Keeps system time synchronized.', why: 'Time drift can break TLS, auth, logs and distributed systems.' },
-          { test: (x) => x === 'docker', what: 'Runs Docker daemon for container workloads.', why: 'If down, containers and dependent apps may stop.' },
-          { test: (x) => x === 'containerd', what: 'Runs containerd runtime used by Kubernetes/containers.', why: 'If down, pods/containers may fail to start or run.' },
-          { test: (x) => x === 'crio' || x === 'cri-o', what: 'Runs CRI-O container runtime for Kubernetes workloads.', why: 'If down, kubelet cannot start/manage pods correctly.' },
-          { test: (x) => x === 'kubelet', what: 'Kubernetes node agent managing pods on this host.', why: 'If down, node health degrades and pods stop reconciling.' },
-          { test: (x) => x === 'kube-proxy', what: 'Maintains Kubernetes Service networking rules on the node.', why: 'If down, service-to-pod traffic may fail or become inconsistent.' },
-          { test: (x) => x === 'etcd', what: 'Stores Kubernetes/control-plane state in a distributed key-value store.', why: 'If unhealthy, cluster control-plane operations can fail.' },
-          { test: (x) => x === 'flanneld' || x === 'flannel', what: 'Provides pod network overlay (Flannel) for Kubernetes.', why: 'If down, pod-to-pod networking can break across nodes.' },
-          { test: (x) => x.includes('calico'), what: 'Provides Kubernetes networking/policy components (Calico).', why: 'If unhealthy, network policy enforcement and pod networking may fail.' },
-          { test: (x) => x.includes('coredns') || x === 'kube-dns', what: 'Handles DNS resolution for Kubernetes services and pods.', why: 'If down, service discovery and internal DNS lookups will fail.' },
-          { test: (x) => x === 'node-exporter' || x === 'prometheus-node-exporter', what: 'Exports host metrics for Prometheus scraping.', why: 'If down, host monitoring visibility is reduced.' },
-          { test: (x) => x === 'prometheus', what: 'Collects and stores time-series metrics from targets.', why: 'If down, monitoring and alert evaluations stop updating.' },
-          { test: (x) => x === 'alertmanager', what: 'Routes, groups, and deduplicates alerts from Prometheus.', why: 'If down, critical alerts may not be delivered.' },
-          { test: (x) => x === 'grafana-server' || x === 'grafana', what: 'Serves Grafana dashboards and visualizations.', why: 'If down, operational dashboards are unavailable.' },
-          { test: (x) => x === 'loki', what: 'Aggregates and stores logs for querying (Grafana Loki).', why: 'If down, centralized log search and retention are impacted.' },
-          { test: (x) => x === 'promtail', what: 'Collects local logs and ships them to Loki.', why: 'If down, new host logs will not reach centralized storage.' },
-        ];
-        return map.find((it) => it.test(base) || it.test(raw)) || null;
-      };
 
       outEl.innerHTML = '<div class="loading">Loading…</div>';
       metaEl.textContent = `Host: ${agentId}`;
@@ -207,31 +173,7 @@ function openSshKeyDeployApprovalModal(it) {
 
         const mem = info && (info.memory_current_human || info.memory_current);
 
-        const svcName = String(info?.name || serviceName || '');
-        const expl = explainService(svcName);
-        const fallbackExpl = (() => {
-          const n = svcName.toLowerCase();
-          if (n.startsWith('systemd-')) {
-            return {
-              what: 'Core systemd unit that supports Linux boot/runtime system management tasks.',
-              why: 'Stopping or masking it without understanding dependencies can impact boot flow or system stability.',
-            };
-          }
-          return {
-            what: 'Background system service managed by systemd.',
-            why: 'If this service is required by other units, disabling/restarting it may affect dependent functionality.',
-          };
-        })();
-        const explEff = expl || fallbackExpl;
-        const explHtml = (`<div class="admin-card" style="margin:0 0 0.6rem 0;">` +
-          `<div class="admin-card-title" style="padding:0.55rem 0.7rem;">What this service does</div>` +
-          `<div class="admin-card-body" style="padding:0.6rem 0.7rem;display:grid;gap:0.35rem;">` +
-          `<div><b>Purpose:</b> ${safe(explEff.what)}</div>` +
-          `<div><b>Why it matters:</b> ${safe(explEff.why)}</div>` +
-          `</div></div>`);
-
         outEl.innerHTML = [
-          explHtml,
           kv('Path', info.fragment_path),
           kv('Memory usage', mem),
           kv('Requires', info.requires),
