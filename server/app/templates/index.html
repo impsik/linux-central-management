@@ -1705,6 +1705,14 @@
         const btn = document.getElementById(`timeline-filter-${k}`);
         if (!btn) return;
         btn.classList.toggle('btn-primary', hostTimelineFilter === k);
+        if (btn.dataset.boundTimelineFilterRender !== '1') {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            hostTimelineFilter = k;
+            renderHostTimeline();
+          });
+          btn.dataset.boundTimelineFilterRender = '1';
+        }
       });
 
       const allItems = (hostTimelineItemsCache || []);
