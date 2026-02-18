@@ -1375,6 +1375,19 @@ body {
   color: #92400e !important;
 }
 
+/* Semantic status colors (prefer these over inline hex styles). */
+.status-ok { color: #86efac; }
+.status-warn { color: #fbbf24; }
+.status-error { color: #fca5a5; }
+.status-muted { color: #94a3b8; }
+.status-link { color: #60a5fa; }
+
+:root[data-theme="light"] .status-ok { color: #166534; }
+:root[data-theme="light"] .status-warn { color: #92400e; }
+:root[data-theme="light"] .status-error { color: #b91c1c; }
+:root[data-theme="light"] .status-muted { color: #475569; }
+:root[data-theme="light"] .status-link { color: #1d4ed8; }
+
 .status-badge {
   display: inline-flex;
   align-items: center;

@@ -51,13 +51,13 @@
           if (mw.ok) {
             const md = await mw.json();
             if (!md.enabled) {
-              maintenanceEl.style.color = '#94a3b8';
+              maintenanceEl.className = 'status-muted';
               maintenanceEl.textContent = 'Maintenance window: disabled';
             } else if (md.within_window_now) {
-              maintenanceEl.style.color = '#86efac';
+              maintenanceEl.className = 'status-ok';
               maintenanceEl.textContent = `Maintenance window: ACTIVE (${md.start}-${md.end} ${md.timezone})`;
             } else {
-              maintenanceEl.style.color = '#fbbf24';
+              maintenanceEl.className = 'status-warn';
               maintenanceEl.textContent = `Maintenance window: outside allowed hours (${md.start}-${md.end} ${md.timezone})`;
             }
           }
@@ -116,7 +116,7 @@
                 <label style="font-size:0.8rem;color:#94a3b8;">Sec pkgs ≥ <input id="brief-th-sec" type="number" min="0" value="${th.secPkgs}" style="width:64px;" /></label>
                 <button class="btn" id="brief-th-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
               </div>
-              <div style="font-size:0.85rem;color:${alerts.length ? '#fca5a5' : '#86efac'};">${alerts.length ? ('Attention: ' + alerts.join(' • ')) : 'No alert thresholds exceeded.'}</div>
+              <div style="font-size:0.85rem;" class="${alerts.length ? 'status-error' : 'status-ok'}">${alerts.length ? ('Attention: ' + alerts.join(' • ')) : 'No alert thresholds exceeded.'}</div>
             </div>
           `;
 
@@ -170,7 +170,7 @@
           const a = await r2.json();
           const rows = a?.items || [];
           if (!rows.length) {
-            attentionEl.innerHTML = '<div style="color:#86efac;">All clear. No high-priority issues detected.</div>';
+            attentionEl.innerHTML = '<div class="status-ok">All clear. No high-priority issues detected.</div>';
           } else {
             const html = [];
             html.push('<div style="overflow:auto;max-width:100%;"><table class="process-table" style="width:100%;table-layout:fixed;"><thead><tr><th style="width:24%;">Host</th><th style="width:46%;">Issues</th><th style="width:30%;">Last seen</th></tr></thead><tbody>');
@@ -289,8 +289,8 @@
       const kernel = it.kernel || '–';
       const sec = Number(it.security_updates || 0);
       const all = Number(it.updates || 0);
-      const online = it.is_online ? '<span style="color:#86efac;">online</span>' : '<span style="color:#fca5a5;">offline</span>';
-      const reboot = it.reboot_required ? '<span style="color:#fbbf24;">required</span>' : '<span style="color:#94a3b8;">no</span>';
+      const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
+      const reboot = it.reboot_required ? '<span class="status-warn">required</span>' : '<span class="status-muted">no</span>';
       const lastSeen = ctx.formatShortTime(it.last_seen);
 
       const tr = document.createElement('tr');
@@ -304,7 +304,7 @@
         <td style="text-align:right;"><b>${all}</b></td>
         <td>${reboot}</td>
         <td>${online}</td>
-        <td style="color:#94a3b8;">${w.escapeHtml(lastSeen)}</td>
+        <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
       `;
 
       tr.addEventListener('click', () => {
@@ -437,7 +437,7 @@
         const kernel = it.kernel || '–';
         const sec = Number(it.security_updates || 0);
         const all = Number(it.updates || 0);
-        const online = it.is_online ? '<span style="color:#86efac;">online</span>' : '<span style="color:#fca5a5;">offline</span>';
+        const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
         const lastSeen = ctx.formatShortTime(it.last_seen);
 
         const tr = document.createElement('tr');
@@ -448,7 +448,7 @@
           <td><b>${sec}</b></td>
           <td><b>${all}</b></td>
           <td>${online}</td>
-          <td style="color:#94a3b8;">${w.escapeHtml(lastSeen)}</td>
+          <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
         `;
         tbody.appendChild(tr);
       }
@@ -492,13 +492,13 @@
       if (badge) badge.style.display = unread.length ? 'inline' : 'none';
 
       if (!items.length) {
-        wrap.innerHTML = '<div style="color:#86efac;">No active notifications 🎯</div>';
+        wrap.innerHTML = '<div class="status-ok">No active notifications 🎯</div>';
       } else {
         wrap.innerHTML = `
           <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;">
             <div style="color:#94a3b8;display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
               <span>Unread: <b>${unread.length}</b> / ${items.length}</span>
-              ${suppressedCount > 0 ? `<span title="Suppressed by server cooldown" style="color:#fbbf24;">Suppressed: ${suppressedCount}</span>` : ''}
+              ${suppressedCount > 0 ? `<span title="Suppressed by server cooldown" class="status-warn">Suppressed: ${suppressedCount}</span>` : ''}
             </div>
             <div style="display:flex;gap:0.35rem;flex-wrap:wrap;">
               <button class="btn" id="notifications-mark-read" type="button">Mark all read</button>
@@ -510,9 +510,9 @@
             ${items.map((it) => `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.6rem;background:var(--panel-2);${seenSet.has(String(it.id||'')) ? 'opacity:0.75;' : ''}">
               <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
                 <b>${w.escapeHtml(it.title || '')}</b>
-                <span style="font-size:0.75rem;color:${it.severity==='high' ? '#fca5a5' : '#fbbf24'};">${w.escapeHtml(it.severity || 'info')}</span>
+                <span style="font-size:0.75rem;" class="${it.severity==='high' ? 'status-error' : 'status-warn'}">${w.escapeHtml(it.severity || 'info')}</span>
               </div>
-              <div style="color:#94a3b8;font-size:0.88rem;">${w.escapeHtml(it.detail || '')}</div>
+              <div class="status-muted" style="font-size:0.88rem;">${w.escapeHtml(it.detail || '')}</div>
               <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-top:0.45rem;">
                 <button class="btn" data-notif-action="open" data-notif-kind="${w.escapeHtml(it.kind || '')}" type="button" style="padding:0.18rem 0.45rem;">Open</button>
                 <button class="btn" data-notif-action="snooze" data-notif-kind="${w.escapeHtml(it.kind || '')}" data-snooze-ms="3600000" type="button" style="padding:0.18rem 0.45rem;">Snooze 1h</button>

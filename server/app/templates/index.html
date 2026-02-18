@@ -2662,7 +2662,7 @@
             <td><b>${escapeHtml(host)}</b></td>
             <td>${escapeHtml(job)}</td>
             <td style="text-align:right;">${escapeHtml(exit)}</td>
-            <td style="color:#fca5a5;">${escapeHtml(err || 'failed')}</td>
+            <td class="status-error">${escapeHtml(err || 'failed')}</td>
           `;
 
           tr.addEventListener('click', () => {
@@ -3315,7 +3315,7 @@
             <td>${escapeHtml(String((it.agent_ids||[]).length))}</td>
             <td>${escapeHtml(it.status || '')}</td>
             <td>${escapeHtml(it.approved_by || '')}</td>
-            <td style="color:#fca5a5;">${escapeHtml(it.error || '')}</td>
+            <td class="status-error">${escapeHtml(it.error || '')}</td>
           `;
           tbody.appendChild(tr);
         }
