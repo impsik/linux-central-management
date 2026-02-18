@@ -780,7 +780,12 @@
       </div>
     </div>
     <div class="tab-content-custom" id="terminal-tab">
-      <div style="display:flex;justify-content:flex-end;margin-bottom:0.5rem;">
+      <div class="host-context-bar" style="margin:0 1rem 0.5rem;">
+        Host: <b class="host-context-name">—</b>
+        <span class="host-subsep">•</span>
+        IP: <code class="host-context-ip">—</code>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin:0 1rem 0.5rem;">
         <button class="btn" id="terminal-run-pending-cmd" type="button" style="display:none;">Run pending package command</button>
       </div>
       <div class="terminal-container">
@@ -790,6 +795,11 @@
 
     <div class="tab-content-custom" id="users-tab">
       <div class="users-content">
+        <div class="host-context-bar" style="margin-bottom:0.65rem;">
+          Host: <b class="host-context-name">—</b>
+          <span class="host-subsep">•</span>
+          IP: <code class="host-context-ip">—</code>
+        </div>
         <div class="section-title">System Users & Sudo Rights</div>
         <div class="admin-note" id="users-access-note" style="display:none;">Admin access required to lock or unlock
           users.</div>
@@ -994,6 +1004,11 @@
 
     <div class="tab-content-custom" id="services-tab">
       <div class="services-content">
+        <div class="host-context-bar" style="margin-bottom:0.65rem;">
+          Host: <b class="host-context-name">—</b>
+          <span class="host-subsep">•</span>
+          IP: <code class="host-context-ip">—</code>
+        </div>
         <div class="section-title">System Services</div>
         <div id="services-list">
           <div class="loading">Select a host to view services...</div>
@@ -1003,6 +1018,11 @@
 
     <div class="tab-content-custom" id="packages-tab">
       <div class="packages-content">
+        <div class="host-context-bar" style="margin-bottom:0.65rem;">
+          Host: <b class="host-context-name">—</b>
+          <span class="host-subsep">•</span>
+          IP: <code class="host-context-ip">—</code>
+        </div>
         <div class="section-title">Installed Packages</div>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;margin-bottom:0.75rem;">
           <div class="input-with-clear">
@@ -1448,6 +1468,9 @@
       if (hostActions) hostActions.style.display = 'none';
       setHostActionActive(null);
 
+      document.querySelectorAll('.host-context-name').forEach((el) => { el.textContent = '—'; });
+      document.querySelectorAll('.host-context-ip').forEach((el) => { el.textContent = '—'; });
+
       // Reset the overview panel to fleet overview placeholder
       const placeholder = document.getElementById('server-info-placeholder');
       const header = document.getElementById('server-info-header');
@@ -1496,6 +1519,10 @@
       document.getElementById('server-info-hostname').textContent = hostname;
 
       const hostObj = (allHosts || []).find(h => h.agent_id === agentId);
+      const hostDisplayName = (hostObj?.hostname || hostname || agentId || '—');
+      const hostIp = (hostObj?.ip_address || hostObj?.fqdn || 'n/a');
+      document.querySelectorAll('.host-context-name').forEach((el) => { el.textContent = hostDisplayName; });
+      document.querySelectorAll('.host-context-ip').forEach((el) => { el.textContent = hostIp; });
 
       const detailsEl = document.getElementById('server-info-details');
       if (detailsEl) {

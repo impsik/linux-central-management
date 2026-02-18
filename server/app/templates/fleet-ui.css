@@ -1357,6 +1357,24 @@ body {
   color: inherit;
 }
 
+.host-context-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.host-context-bar code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
 .server-action-buttons {
   display: flex;
   gap: 0.75rem;
