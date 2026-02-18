@@ -1000,9 +1000,8 @@ body {
   padding: 1rem;
   min-height: 200px;
 
-  /* Keep details visible while scrolling the package list */
-  position: sticky;
-  top: 1rem;
+  /* Let details grow naturally (avoid inner scrollbars in description panel). */
+  position: static;
   max-height: none;
   overflow: visible;
 }
