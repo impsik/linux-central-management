@@ -352,6 +352,12 @@ body {
   overflow: auto;
 }
 
+/* User details: allow dynamic growth (incl. expanded sudo output) without nested scrolling box. */
+#user-modal-output {
+  max-height: none;
+  overflow: visible;
+}
+
 .tabs {
   display: flex;
   gap: 0.5rem;
