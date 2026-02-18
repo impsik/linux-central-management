@@ -1387,9 +1387,13 @@
     }
 
     function applyHostFilters() {
-      const mod = window.phase3HostList;
-      if (mod && typeof mod.applyHostFilters === 'function') {
-        return mod.applyHostFilters(getHostListCtx());
+      const listMod = window.phase3HostList;
+      if (listMod && typeof listMod.applyHostFilters === 'function') {
+        listMod.applyHostFilters(getHostListCtx());
+      }
+      const overviewMod = window.phase3Overview;
+      if (overviewMod && typeof overviewMod.applyHostsTableFilters === 'function') {
+        overviewMod.applyHostsTableFilters(getOverviewCtx());
       }
     }
 
@@ -2461,6 +2465,11 @@
         loadFailedRuns,
         loadHosts,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
+        setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(v) ? v : []); return lastRenderedAgentIds; },
+        getHostSearchQuery: () => hostSearchQuery,
+        getLabelEnvFilter: () => labelEnvFilter,
+        getLabelRoleFilter: () => labelRoleFilter,
+        getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
         setAllHosts: (hosts) => {
           allHosts = syncHostFilterSelectionState('allHosts', Array.isArray(hosts) ? hosts : []);
           try {

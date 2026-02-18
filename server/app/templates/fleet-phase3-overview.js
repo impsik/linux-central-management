@@ -233,6 +233,84 @@
     ctx.loadPendingUpdatesReport();
   }
 
+  let hostsTableItemsCache = [];
+
+  function filterHostsTableItems(ctx, items) {
+    let out = Array.isArray(items) ? items.slice() : [];
+    const q = String((ctx && typeof ctx.getHostSearchQuery === 'function') ? (ctx.getHostSearchQuery() || '') : '').trim().toLowerCase();
+    const labelEnv = String((ctx && typeof ctx.getLabelEnvFilter === 'function') ? (ctx.getLabelEnvFilter() || '') : '').trim();
+    const labelRole = String((ctx && typeof ctx.getLabelRoleFilter === 'function') ? (ctx.getLabelRoleFilter() || '') : '').trim();
+    const vulnSet = (ctx && typeof ctx.getVulnFilteredAgentIds === 'function') ? ctx.getVulnFilteredAgentIds() : null;
+
+    if (vulnSet instanceof Set) {
+      out = out.filter((it) => vulnSet.has(String(it.agent_id || '')));
+    }
+
+    if (labelEnv || labelRole) {
+      out = out.filter((it) => {
+        const labels = (it && it.labels && typeof it.labels === 'object') ? it.labels : {};
+        if (labelEnv && String(labels.env || '') !== labelEnv) return false;
+        if (labelRole && String(labels.role || '') !== labelRole) return false;
+        return true;
+      });
+    }
+
+    if (q) {
+      out = out.filter((it) => {
+        const hay = `${it.hostname || ''} ${it.agent_id || ''} ${it.ip_address || ''} ${it.fqdn || ''} ${it.os_id || ''} ${it.os_version || ''}`.toLowerCase();
+        return hay.includes(q);
+      });
+    }
+
+    return out;
+  }
+
+  function renderHostsTableRows(ctx, tbody, items) {
+    if (!tbody) return;
+    if (!items.length) {
+      w.setTableState(tbody, 9, 'empty', 'No hosts match current filters');
+      if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
+      return;
+    }
+
+    if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') {
+      ctx.setLastRenderedAgentIds(items.map((it) => String(it.agent_id || '')).filter(Boolean));
+    }
+
+    tbody.innerHTML = '';
+    for (const it of items) {
+      const hostName = it.hostname || it.agent_id;
+      const os = `${it.os_id || ''} ${it.os_version || ''}`.trim() || '–';
+      const kernel = it.kernel || '–';
+      const sec = Number(it.security_updates || 0);
+      const all = Number(it.updates || 0);
+      const online = it.is_online ? '<span style="color:#86efac;">online</span>' : '<span style="color:#fca5a5;">offline</span>';
+      const reboot = it.reboot_required ? '<span style="color:#fbbf24;">required</span>' : '<span style="color:#94a3b8;">no</span>';
+      const lastSeen = ctx.formatShortTime(it.last_seen);
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" /></td>
+        <td><b>${w.escapeHtml(hostName)}</b><div style="color:#94a3b8;font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
+        <td>${w.escapeHtml(os)}</td>
+        <td><code>${w.escapeHtml(kernel)}</code></td>
+        <td style="text-align:right;"><b>${sec}</b></td>
+        <td style="text-align:right;"><b>${all}</b></td>
+        <td>${reboot}</td>
+        <td>${online}</td>
+        <td style="color:#94a3b8;">${w.escapeHtml(lastSeen)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function applyHostsTableFilters(ctx) {
+    const tbody = document.getElementById('hosts-table-body');
+    if (!tbody) return;
+    const filtered = filterHostsTableItems(ctx, hostsTableItemsCache);
+    renderHostsTableRows(ctx, tbody, filtered);
+  }
+
   async function loadHostsTable(ctx) {
     const tbody = document.getElementById('hosts-table-body');
     if (!tbody) return;
@@ -248,11 +326,15 @@
       if (!r.ok) throw new Error(`hosts report failed (${r.status})`);
       const d = await r.json();
       const items = d?.items || [];
-      if (!items.length) return w.setTableState(tbody, 9, 'empty', 'No hosts');
+      hostsTableItemsCache = Array.isArray(items) ? items : [];
+      if (!hostsTableItemsCache.length) {
+        if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
+        return w.setTableState(tbody, 9, 'empty', 'No hosts');
+      }
 
-      // Keep sidebar host metadata hydrated even if sidebar fetch path fails.
+      // Keep host metadata hydrated for filter options and host detail panel.
       if (ctx && typeof ctx.setAllHosts === 'function') {
-        ctx.setAllHosts(items.map((it) => ({
+        ctx.setAllHosts(hostsTableItemsCache.map((it) => ({
           agent_id: it.agent_id,
           hostname: it.hostname || it.agent_id,
           ip_address: it.ip_address || '',
@@ -264,37 +346,13 @@
         })));
       }
 
-      tbody.innerHTML = '';
-      for (const it of items) {
-        const hostName = it.hostname || it.agent_id;
-        const os = `${it.os_id || ''} ${it.os_version || ''}`.trim() || '–';
-        const kernel = it.kernel || '–';
-        const sec = Number(it.security_updates || 0);
-        const all = Number(it.updates || 0);
-        const online = it.is_online ? '<span style="color:#86efac;">online</span>' : '<span style="color:#fca5a5;">offline</span>';
-        const reboot = it.reboot_required ? '<span style="color:#fbbf24;">required</span>' : '<span style="color:#94a3b8;">no</span>';
-        const lastSeen = ctx.formatShortTime(it.last_seen);
+      applyHostsTableFilters(ctx);
 
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" /></td>
-          <td><b>${w.escapeHtml(hostName)}</b><div style="color:#94a3b8;font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
-          <td>${w.escapeHtml(os)}</td>
-          <td><code>${w.escapeHtml(kernel)}</code></td>
-          <td style="text-align:right;"><b>${sec}</b></td>
-          <td style="text-align:right;"><b>${all}</b></td>
-          <td>${reboot}</td>
-          <td>${online}</td>
-          <td style="color:#94a3b8;">${w.escapeHtml(lastSeen)}</td>
-        `;
-        tbody.appendChild(tr);
-      }
-
-      // Sidebar fallback: if host list panel is still stuck in loading state, render from report rows.
+      // Legacy hidden list fallback kept for compatibility.
       const hostsEl = document.getElementById('hosts');
       const hostText = (hostsEl?.textContent || '').toLowerCase();
       if (hostsEl && hostText.includes('loading hosts')) {
-        hostsEl.innerHTML = items.map((it) => {
+        hostsEl.innerHTML = hostsTableItemsCache.map((it) => {
           const ip = it.ip_address || '';
           const lastSeen = ctx.formatShortTime(it.last_seen);
           const labels = (it.labels && typeof it.labels === 'object') ? it.labels : {};
@@ -324,7 +382,7 @@
           el.addEventListener('click', () => {
             const aid = el.getAttribute('data-agent-id') || '';
             if (!aid) return;
-            const row = items.find((x) => (x.agent_id || '') === aid) || {};
+            const row = hostsTableItemsCache.find((x) => (x.agent_id || '') === aid) || {};
             ctx.selectHost(aid, row.hostname || aid);
           });
         });
@@ -712,5 +770,5 @@
     } catch (_) { }
   }
 
-  w.phase3Overview = { loadFleetOverview, loadHostsTable, loadPendingUpdatesReport, initFleetOverviewControls };
+  w.phase3Overview = { loadFleetOverview, loadHostsTable, applyHostsTableFilters, loadPendingUpdatesReport, initFleetOverviewControls };
 })(window);
