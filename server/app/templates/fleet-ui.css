@@ -1297,6 +1297,42 @@ body {
   color: #64748b;
 }
 
+#server-info-placeholder {
+  padding: 1rem 0 0.5rem !important;
+}
+
+#server-info-placeholder .metrics-grid {
+  margin-bottom: 1rem;
+  gap: 1rem;
+}
+
+#server-info-placeholder .overview-cards-grid {
+  gap: 1rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.78rem;
+  border: 1px solid transparent;
+}
+
+.status-badge.ok {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.status-badge.warn {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
 .empty-state svg {
   width: 64px;
   height: 64px;

@@ -111,7 +111,7 @@ function openSshKeyDeployApprovalModal(it) {
           kv('Shell', info.shell),
           kv('Groups', info.groups),
           kv('Locked', info.locked),
-          kv('Sudo access', sudoAllowed ? 'allowed' : 'denied'),
+          `<div class="kv-row"><strong>Sudo access:</strong> <span class="status-badge ${sudoAllowed ? 'ok' : 'warn'}">${sudoAllowed ? 'allowed' : 'denied'}</span></div>`,
           kv('Password status', info.password_status),
           kv('Last login', info.last_login),
           sudoRules ? `<details style="margin-top:0.5rem;"><summary>Sudo check output</summary><pre class="pkg-raw" style="margin-top:0.4rem;">${safe(sudoRules)}</pre></details>` : '',
