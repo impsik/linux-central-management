@@ -159,6 +159,22 @@ function openSshKeyDeployApprovalModal(it) {
 
       const safe = (v) => escapeHtml(v == null ? '' : String(v));
       const kv = (k, v) => `<div class="kv-row"><strong>${safe(k)}:</strong> <code>${safe(v || '')}</code></div>`;
+      const explainService = (svc) => {
+        const n = String(svc || '').toLowerCase();
+        const map = [
+          { test: (x) => x === 'systemd-sysctl.service' || x === 'systemd-sysctl', what: 'Applies kernel sysctl settings from /etc/sysctl.conf and /etc/sysctl.d/*.conf.', why: 'Without it, required kernel/network hardening and tuning values may not be applied.' },
+          { test: (x) => x === 'ssh.service' || x === 'sshd.service' || x === 'ssh' || x === 'sshd', what: 'Runs the OpenSSH server so you can connect remotely via SSH.', why: 'If stopped, remote shell access to this host may be unavailable.' },
+          { test: (x) => x === 'cron.service' || x === 'crond.service' || x === 'cron', what: 'Executes scheduled cron jobs.', why: 'If stopped, scheduled maintenance and automation tasks will not run.' },
+          { test: (x) => x === 'rsyslog.service' || x === 'rsyslog', what: 'Collects and writes system/application logs.', why: 'If stopped, centralized/local log capture can be incomplete.' },
+          { test: (x) => x.startsWith('systemd-networkd'), what: 'Manages network interfaces and routing (systemd-networkd).', why: 'If restarted incorrectly, network connectivity can flap.' },
+          { test: (x) => x.startsWith('networkmanager'), what: 'Manages network connections and interface profiles.', why: 'Restarting may briefly interrupt network connectivity.' },
+          { test: (x) => x === 'systemd-timesyncd.service' || x === 'chronyd.service' || x === 'ntp.service', what: 'Keeps system time synchronized.', why: 'Time drift can break TLS, auth, logs and distributed systems.' },
+          { test: (x) => x === 'docker.service', what: 'Runs Docker daemon for container workloads.', why: 'If down, containers and dependent apps may stop.' },
+          { test: (x) => x === 'containerd.service', what: 'Runs containerd runtime used by Kubernetes/containers.', why: 'If down, pods/containers may fail to start or run.' },
+          { test: (x) => x === 'kubelet.service', what: 'Kubernetes node agent managing pods on this host.', why: 'If down, node health degrades and pods stop reconciling.' },
+        ];
+        return map.find((it) => it.test(n)) || null;
+      };
 
       outEl.innerHTML = '<div class="loading">Loading…</div>';
       metaEl.textContent = `Host: ${agentId}`;
@@ -173,7 +189,17 @@ function openSshKeyDeployApprovalModal(it) {
 
         const mem = info && (info.memory_current_human || info.memory_current);
 
+        const svcName = String(info?.name || serviceName || '');
+        const expl = explainService(svcName);
+        const explHtml = expl ? (`<div class="admin-card" style="margin:0 0 0.6rem 0;">` +
+          `<div class="admin-card-title" style="padding:0.55rem 0.7rem;">What this service does</div>` +
+          `<div class="admin-card-body" style="padding:0.6rem 0.7rem;display:grid;gap:0.35rem;">` +
+          `<div><b>Purpose:</b> ${safe(expl.what)}</div>` +
+          `<div><b>Why it matters:</b> ${safe(expl.why)}</div>` +
+          `</div></div>`) : '';
+
         outEl.innerHTML = [
+          explHtml,
           kv('Path', info.fragment_path),
           kv('Memory usage', mem),
           kv('Requires', info.requires),
