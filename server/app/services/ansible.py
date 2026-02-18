@@ -45,7 +45,10 @@ def _parse_playbook_prompts(playbook_path: Path) -> list[dict[str, Any]]:
         pass
 
     # Very rough fallback parser
-    text = playbook_path.read_text(encoding="utf-8", errors="ignore")
+    try:
+        text = playbook_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return []
     lines = text.splitlines()
     in_block = False
     block_indent = None
@@ -100,16 +103,34 @@ def _parse_playbook_prompts(playbook_path: Path) -> list[dict[str, Any]]:
     return cleaned
 
 
-def list_playbooks() -> list[dict[str, Any]]:
+def _iter_playbook_files() -> list[Path]:
     if not ANSIBLE_DIR.exists():
         return []
-    playbooks: list[dict[str, Any]] = []
-    for path in sorted(ANSIBLE_DIR.glob("*.yml")) + sorted(ANSIBLE_DIR.glob("*.yaml")):
+
+    files: list[Path] = []
+    for path in sorted(ANSIBLE_DIR.rglob("*.yml")) + sorted(ANSIBLE_DIR.rglob("*.yaml")):
         if not path.is_file():
             continue
-        if path.name in {"inventory.yml", "inventory.yaml"}:
+        rel = path.relative_to(ANSIBLE_DIR)
+        rel_parts = [p.lower() for p in rel.parts]
+
+        # Skip inventory and common non-playbook locations/files.
+        if path.name.lower() in {"inventory.yml", "inventory.yaml", "hosts.yml", "hosts.yaml"}:
             continue
-        playbooks.append({"name": path.name, "prompts": _parse_playbook_prompts(path)})
+        if any(p in {"group_vars", "host_vars", "roles", ".git"} for p in rel_parts):
+            continue
+
+        files.append(path)
+
+    return files
+
+
+
+def list_playbooks() -> list[dict[str, Any]]:
+    playbooks: list[dict[str, Any]] = []
+    for path in _iter_playbook_files():
+        rel_name = path.relative_to(ANSIBLE_DIR).as_posix()
+        playbooks.append({"name": rel_name, "prompts": _parse_playbook_prompts(path)})
     return playbooks
 
 
@@ -142,8 +163,12 @@ def run_playbook(
     if not agent_ids:
         raise HTTPException(400, "agent_ids is required")
 
-    playbook_path = ANSIBLE_DIR / playbook
-    if not playbook_path.exists():
+    playbook_path = (ANSIBLE_DIR / playbook).resolve()
+    try:
+        playbook_path.relative_to(ANSIBLE_DIR)
+    except Exception:
+        raise HTTPException(400, "Invalid playbook path")
+    if not playbook_path.exists() or not playbook_path.is_file():
         raise HTTPException(404, "Playbook not found")
 
     extra_vars = extra_vars or {}
