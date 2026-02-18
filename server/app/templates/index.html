@@ -3463,7 +3463,11 @@
             if (jobId) {
               showToast('Approved (waiting for agent result)…', 'info', 4500);
               try {
-                const res = await waitForJobDone(String(jobId), 60000);
+                const waitFn = (window.phase3Ansible && typeof window.phase3Ansible.waitForJobDone === 'function')
+                  ? window.phase3Ansible.waitForJobDone
+                  : (window.pollJob ? window.pollJob : null);
+                if (!waitFn) throw new Error('Job wait helper is not available');
+                const res = await waitFn(String(jobId), 60000);
                 const runSummary = (res.runs || []).map(r => `${r.agent_id}: ${r.status}${r.exit_code != null ? ` (exit ${r.exit_code})` : ''}${r.error ? ` — ${r.error}` : ''}`).join('\n');
                 if (res.done && (res.runs || []).every(r => r.status === 'success')) {
                   showToast('Deployment completed successfully', 'success', 5000);
