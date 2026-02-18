@@ -1252,17 +1252,29 @@ body {
   border-color: color-mix(in srgb, var(--danger) 60%, var(--border));
 }
 
+#terminal-tab {
+  min-height: 0;
+}
+
+#terminal-tab.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .terminal-container {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
   padding: 1rem;
   background: #0b1220;
   overflow: hidden;
+  display: flex;
 }
 
 #terminal {
   height: 100%;
   width: 100%;
+  min-height: 50vh;
 }
 
 .loading {

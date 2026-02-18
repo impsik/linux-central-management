@@ -7,6 +7,7 @@
   <script src="/assets/fleet-theme-bootstrap.js?v=__ASSET_VERSION__"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
   <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.js"></script>
   <script src="/assets/fleet-phase3.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-mfa.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-ui.js?v=__ASSET_VERSION__"></script>
@@ -1182,6 +1183,20 @@
   <script nonce="__CSP_NONCE__">
     // Init xterm only when the container exists. If this throws early, it can break other UI JS (e.g. theme toggle).
     let term = null;
+    let termFitAddon = null;
+
+    function fitTerminalViewport() {
+      if (!term) return;
+      const tab = document.getElementById('terminal-tab');
+      if (!tab || !tab.classList.contains('active')) return;
+      try {
+        if (termFitAddon && typeof termFitAddon.fit === 'function') {
+          termFitAddon.fit();
+        }
+      } catch (_) { }
+      try { term.focus(); } catch { }
+    }
+
     function initTerminalOnce() {
       if (term) return;
       const termEl = document.getElementById('terminal');
@@ -1212,10 +1227,20 @@
         }
       });
       term.open(termEl);
+      try {
+        if (window.FitAddon && typeof window.FitAddon.FitAddon === 'function') {
+          termFitAddon = new window.FitAddon.FitAddon();
+          term.loadAddon(termFitAddon);
+          termFitAddon.fit();
+        }
+      } catch (_) { }
       // Ensure keystrokes go to xterm immediately (otherwise onData won't fire until focused).
       try { term.focus(); } catch { }
       termEl.addEventListener('mousedown', () => { try { term.focus(); } catch { } });
       termEl.addEventListener('touchstart', () => { try { term.focus(); } catch { } }, { passive: true });
+      window.addEventListener('resize', () => {
+        window.requestAnimationFrame(fitTerminalViewport);
+      });
     }
 
     let ws = null;
@@ -1515,6 +1540,10 @@
       // Refresh tab-specific content
       if (keepTabId === 'terminal-tab') {
         connect(currentAgentId);
+        window.requestAnimationFrame(() => {
+          fitTerminalViewport();
+          setTimeout(fitTerminalViewport, 60);
+        });
       } else if (keepTabId === 'users-tab') {
         loadUsers(currentAgentId);
       } else if (keepTabId === 'services-tab') {
@@ -1599,6 +1628,10 @@
       connect(currentAgentId);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('terminal-tab').classList.add('active');
+      window.requestAnimationFrame(() => {
+        fitTerminalViewport();
+        setTimeout(fitTerminalViewport, 60);
+      });
     }
 
     function showUsers() {
