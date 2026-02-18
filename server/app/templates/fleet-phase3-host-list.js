@@ -80,7 +80,7 @@
           if (r.status === 'upgraded') pkgLine = `<div class="pkg-status-line"><span class="pkg-badge good">Upgraded</span> ${v}</div>`;
           else if (r.status === 'vulnerable') {
             const vv = vulnVersionInput ? `<code>${w.escapeHtml(vulnVersionInput)}</code>` : '';
-            pkgLine = `<div class="pkg-status-line"><span class="pkg-badge bad">Still vulnerable</span> ${v} ${vv ? `<span style="color:#a0aec0;">(vuln = ${vv})</span>` : ''}</div>`;
+            pkgLine = `<div class="pkg-status-line"><span class="pkg-badge bad">Still vulnerable</span> ${v} ${vv ? `<span class="status-muted">(vuln = ${vv})</span>` : ''}</div>`;
           } else if (r.status === 'installed') pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Installed</span> ${v}</div>`;
           else if (r.status === 'not-installed') pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Not installed</span></div>`;
           else pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Unknown</span></div>`;
