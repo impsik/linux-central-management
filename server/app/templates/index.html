@@ -1506,6 +1506,8 @@
       const timelineCount = document.getElementById('host-timeline-count');
       if (driftSummary) driftSummary.textContent = 'Select a host';
       if (driftList) driftList.innerHTML = '';
+      hostDriftChecksCache = [];
+      hostDriftCriticalOnly = false;
       hostTimelineItemsCache = [];
       if (timelineList) timelineList.innerHTML = '';
       if (timelineCount) timelineCount.textContent = '';
@@ -1684,6 +1686,8 @@
 
     let hostTimelineFilter = 'all';
     let hostTimelineItemsCache = [];
+    let hostDriftCriticalOnly = false;
+    let hostDriftChecksCache = [];
 
     function timelineFilterMatch(it) {
       if (hostTimelineFilter === 'all') return true;
@@ -1786,6 +1790,33 @@
       }
     }
 
+    function renderHostDriftChecks() {
+      const listEl = document.getElementById('host-drift-list');
+      const toggleBtn = document.getElementById('host-drift-critical-only');
+      if (!listEl) return;
+      if (toggleBtn) toggleBtn.classList.toggle('btn-primary', hostDriftCriticalOnly);
+
+      const checks = (hostDriftChecksCache || []).filter((c) => {
+        if (!hostDriftCriticalOnly) return true;
+        const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
+        return sev === 'critical';
+      });
+
+      if (!checks.length) {
+        listEl.innerHTML = '<div class="status-muted">No checks for selected filter.</div>';
+        return;
+      }
+
+      listEl.innerHTML = checks.map((c) => {
+        const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
+        const sevClass = sev === 'critical' ? 'status-error' : (sev === 'warn' ? 'status-warn' : 'status-ok');
+        return `<div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:flex-start;">
+          <div><b>${escapeHtml(String(c?.title || 'check'))}</b><div class="status-muted" style="font-size:0.82rem;">${escapeHtml(String(c?.detail || ''))}</div></div>
+          <span class="${sevClass}" style="font-size:0.75rem;">${escapeHtml(sev)}</span>
+        </div>`;
+      }).join('');
+    }
+
     async function loadHostDrift(agentId) {
       const sumEl = document.getElementById('host-drift-summary');
       const listEl = document.getElementById('host-drift-list');
@@ -1804,6 +1835,7 @@
             <button class="btn" id="host-drift-refresh" type="button">Re-check</button>
             <button class="btn" id="host-drift-inventory" type="button">Inventory now</button>
             <button class="btn btn-primary" id="host-drift-security" type="button">Run security campaign</button>
+            <button class="btn" id="host-drift-critical-only" type="button">Critical only</button>
           </div>
         `;
 
@@ -1856,15 +1888,14 @@
           }
         });
 
-        const checks = Array.isArray(d?.checks) ? d.checks : [];
-        listEl.innerHTML = checks.map((c) => {
-          const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
-          const sevClass = sev === 'critical' ? 'status-error' : (sev === 'warn' ? 'status-warn' : 'status-ok');
-          return `<div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:flex-start;">
-            <div><b>${escapeHtml(String(c?.title || 'check'))}</b><div class="status-muted" style="font-size:0.82rem;">${escapeHtml(String(c?.detail || ''))}</div></div>
-            <span class="${sevClass}" style="font-size:0.75rem;">${escapeHtml(sev)}</span>
-          </div>`;
-        }).join('');
+        document.getElementById('host-drift-critical-only')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          hostDriftCriticalOnly = !hostDriftCriticalOnly;
+          renderHostDriftChecks();
+        });
+
+        hostDriftChecksCache = Array.isArray(d?.checks) ? d.checks : [];
+        renderHostDriftChecks();
       } catch (e) {
         sumEl.textContent = 'Drift unavailable';
         listEl.innerHTML = `<div class="error" style="margin:0;">${escapeHtml(e?.message || String(e))}</div>`;
