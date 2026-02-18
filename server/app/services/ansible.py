@@ -11,7 +11,8 @@ from fastapi import HTTPException
 
 from ..config import settings
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+# Repo root (…/fleet_ubuntu_mvp_full). parents[2] would point to …/server.
+BASE_DIR = Path(__file__).resolve().parents[3]
 
 _ansible_setting = getattr(settings, "ansible_dir", "ansible")
 ANSIBLE_DIR = (Path(_ansible_setting) if Path(_ansible_setting).is_absolute() else (BASE_DIR / _ansible_setting)).resolve()
