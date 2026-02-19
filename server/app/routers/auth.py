@@ -1078,6 +1078,98 @@ def auth_admin_set_user_scopes(
     return {"ok": True, "username": target.username, "selector_count": len(norm)}
 
 
+def _oidc_remediation_hint(error_code: str | None) -> str | None:
+    code = (error_code or "").strip().lower()
+    if not code:
+        return None
+    hints = {
+        "invalid_state": "Retry login and verify callback URL/cookie domain settings.",
+        "missing_endpoints": "Verify issuer discovery document has token and userinfo endpoints.",
+        "token_exchange_failed": "Check client_id/client_secret/redirect_uri and IdP token endpoint reachability.",
+        "missing_access_token": "Inspect IdP token response and requested scopes.",
+        "missing_id_token": "Ensure OIDC flow returns id_token (openid scope required).",
+        "id_token_invalid": "Validate issuer/audience/JWKS and nonce handling.",
+        "userinfo_failed": "Check userinfo endpoint access and bearer token validity.",
+        "userinfo_invalid": "Ensure userinfo response is JSON object with required claims.",
+        "domain_not_allowed": "Add the user email domain to AUTH_OIDC_ALLOWED_EMAIL_DOMAINS or adjust policy.",
+        "user_inactive": "Reactivate user in admin panel or review provisioning rules.",
+    }
+    return hints.get(code)
+
+
+@router.get("/admin/oidc/events")
+def auth_admin_oidc_events(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    provider: str | None = None,
+    stage: str | None = None,
+    status: str | None = None,
+    error_code: str | None = None,
+    since_hours: int = 24,
+    db: Session = Depends(get_db),
+    admin: AppUser = Depends(require_admin_user),
+):
+    if limit < 1:
+        limit = 1
+    if limit > 200:
+        limit = 200
+    if offset < 0:
+        offset = 0
+    if since_hours < 1:
+        since_hours = 1
+    if since_hours > 24 * 30:
+        since_hours = 24 * 30
+
+    q = select(OIDCAuthEvent)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    q = q.where(OIDCAuthEvent.created_at >= cutoff)
+
+    if provider:
+        q = q.where(OIDCAuthEvent.provider == provider)
+    if stage:
+        q = q.where(OIDCAuthEvent.stage == stage)
+    if status:
+        q = q.where(OIDCAuthEvent.status == status)
+    if error_code:
+        q = q.where(OIDCAuthEvent.error_code == error_code)
+
+    total = int(db.execute(select(func.count()).select_from(q.subquery())).scalar_one() or 0)
+
+    rows = db.execute(q.order_by(OIDCAuthEvent.created_at.desc()).limit(limit).offset(offset)).scalars().all()
+
+    items = [
+        {
+            "id": str(ev.id),
+            "provider": ev.provider,
+            "stage": ev.stage,
+            "status": ev.status,
+            "error_code": ev.error_code,
+            "error_message": ev.error_message,
+            "correlation_id": ev.correlation_id,
+            "username": ev.username,
+            "email": ev.email,
+            "subject": ev.subject,
+            "meta": ev.meta if isinstance(ev.meta, dict) else {},
+            "created_at": ev.created_at.isoformat() if ev.created_at else None,
+            "remediation_hint": _oidc_remediation_hint(ev.error_code),
+        }
+        for ev in rows
+    ]
+
+    log_event(
+        db,
+        action="auth.oidc.events.list",
+        actor=admin,
+        request=request,
+        meta={"total": total, "limit": limit, "offset": offset, "since_hours": since_hours},
+    )
+    db.commit()
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset, "since_hours": since_hours}
+
+
 @router.post("/admin/oidc/map-preview")
 def auth_admin_oidc_map_preview(
     payload: OidcMapPreviewRequest,
