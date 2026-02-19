@@ -43,6 +43,10 @@ def test_jobs_preflight_and_dry_run_no_job_creation(monkeypatch):
         assert "srv-online" in pre["targeted_hosts"]
         assert "srv-unknown" in pre["offline_or_unreachable"]
 
+        before = client.get("/jobs", params={"type": "dist-upgrade", "limit": 200}, headers=headers)
+        assert before.status_code == 200, before.text
+        before_count = int(before.json().get("total", 0))
+
         r = client.post("/jobs/dist-upgrade", json={"agent_ids": ["srv-online"], "dry_run": True}, headers=headers)
         assert r.status_code == 200, r.text
         data = r.json()
@@ -50,10 +54,10 @@ def test_jobs_preflight_and_dry_run_no_job_creation(monkeypatch):
         assert data["type"] == "dist-upgrade"
         assert data["predicted_actions"][0]["agent_id"] == "srv-online"
 
-        jobs = client.get("/jobs", headers=headers)
-        assert jobs.status_code == 200, jobs.text
-        items = jobs.json().get("items", [])
-        assert all(it.get("type") != "dist-upgrade" for it in items)
+        after = client.get("/jobs", params={"type": "dist-upgrade", "limit": 200}, headers=headers)
+        assert after.status_code == 200, after.text
+        after_count = int(after.json().get("total", 0))
+        assert after_count == before_count
 
 
 def test_pkg_upgrade_dry_run_returns_predicted_packages(monkeypatch):
@@ -92,6 +96,10 @@ def test_pkg_upgrade_dry_run_returns_predicted_packages(monkeypatch):
         csrf = client.cookies.get("fleet_csrf")
         headers = {"X-CSRF-Token": csrf} if csrf else {}
 
+        before = client.get("/jobs", params={"type": "pkg-upgrade", "limit": 200}, headers=headers)
+        assert before.status_code == 200, before.text
+        before_count = int(before.json().get("total", 0))
+
         r = client.post(
             "/jobs/pkg-upgrade",
             json={"agent_ids": ["srv-001"], "packages": ["bash"], "dry_run": True},
@@ -102,6 +110,7 @@ def test_pkg_upgrade_dry_run_returns_predicted_packages(monkeypatch):
         assert data["dry_run"] is True
         assert data["predicted_actions"][0]["packages"] == ["bash"]
 
-        jobs = client.get("/jobs", headers=headers)
-        assert jobs.status_code == 200, jobs.text
-        assert all(it.get("type") != "pkg-upgrade" for it in jobs.json().get("items", []))
+        after = client.get("/jobs", params={"type": "pkg-upgrade", "limit": 200}, headers=headers)
+        assert after.status_code == 200, after.text
+        after_count = int(after.json().get("total", 0))
+        assert after_count == before_count
