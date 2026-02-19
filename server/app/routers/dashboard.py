@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 
@@ -135,6 +137,64 @@ def _median(values: list[float]) -> float | None:
     if n % 2 == 1:
         return float(vals[mid])
     return float((vals[mid - 1] + vals[mid]) / 2.0)
+
+
+def _slo_window_metrics(db: Session, *, start: datetime, end: datetime, now_for_offline: datetime) -> dict:
+    comp = db.execute(
+        select(func.count())
+        .select_from(JobRun)
+        .where(JobRun.finished_at.is_not(None), JobRun.finished_at >= start, JobRun.finished_at < end, JobRun.status.in_(["success", "failed"]))
+    ).scalar_one()
+    succ = db.execute(
+        select(func.count())
+        .select_from(JobRun)
+        .where(JobRun.finished_at.is_not(None), JobRun.finished_at >= start, JobRun.finished_at < end, JobRun.status == "success")
+    ).scalar_one()
+    success_rate = (float(succ) / float(comp) * 100.0) if comp else None
+
+    patch_rows = db.execute(
+        select(JobRun.started_at, JobRun.finished_at)
+        .join(Job, Job.id == JobRun.job_id)
+        .where(
+            Job.job_type.in_(["pkg-upgrade", "dist-upgrade"]),
+            JobRun.started_at.is_not(None),
+            JobRun.finished_at.is_not(None),
+            JobRun.finished_at >= start,
+            JobRun.finished_at < end,
+        )
+    ).all()
+    patch_durations = [max(0.0, (r[1] - r[0]).total_seconds()) for r in patch_rows if r[0] and r[1]]
+    median_patch = _median(patch_durations)
+
+    oidc_total = db.execute(
+        select(func.count()).select_from(OIDCAuthEvent).where(OIDCAuthEvent.created_at >= start, OIDCAuthEvent.created_at < end)
+    ).scalar_one()
+    oidc_err = db.execute(
+        select(func.count()).select_from(OIDCAuthEvent).where(
+            OIDCAuthEvent.created_at >= start, OIDCAuthEvent.created_at < end, OIDCAuthEvent.status == "error"
+        )
+    ).scalar_one()
+    auth_err_rate = (float(oidc_err) / float(oidc_total) * 100.0) if oidc_total else None
+
+    grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
+    online_cutoff = now_for_offline.timestamp() - grace_s
+    total_hosts = int(db.execute(select(func.count()).select_from(Host)).scalar_one() or 0)
+    online_hosts = int(
+        db.execute(
+            select(func.count())
+            .select_from(Host)
+            .where(Host.last_seen.is_not(None), func.extract("epoch", Host.last_seen) >= online_cutoff)
+        ).scalar_one()
+        or 0
+    )
+    offline_ratio = (float(max(0, total_hosts - online_hosts)) / float(total_hosts) * 100.0) if total_hosts else None
+
+    return {
+        "job_success_rate": {"value": success_rate, "sample_count": int(comp or 0)},
+        "median_patch_duration": {"value": median_patch, "sample_count": len(patch_durations)},
+        "auth_error_rate": {"value": auth_err_rate, "sample_count": int(oidc_total or 0)},
+        "offline_host_ratio": {"value": offline_ratio, "sample_count": int(total_hosts or 0)},
+    }
 
 
 @router.get("/slo")
@@ -275,6 +335,56 @@ def dashboard_slo(
             },
         },
     }
+
+
+@router.get("/slo.csv")
+def dashboard_slo_csv(
+    hours: int = Query(24 * 7, ge=1, le=24 * 90),
+    bucket_hours: int = Query(24, ge=1, le=24 * 7),
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=hours)
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow([
+        "window_start",
+        "window_end",
+        "job_success_rate_pct",
+        "job_success_rate_samples",
+        "median_patch_duration_s",
+        "median_patch_duration_samples",
+        "auth_error_rate_pct",
+        "auth_error_rate_samples",
+        "offline_host_ratio_pct",
+        "offline_host_ratio_samples",
+    ])
+
+    cur = start
+    while cur < now:
+        end = min(cur + timedelta(hours=bucket_hours), now)
+        m = _slo_window_metrics(db, start=cur, end=end, now_for_offline=end)
+        writer.writerow([
+            cur.isoformat(),
+            end.isoformat(),
+            m["job_success_rate"]["value"],
+            m["job_success_rate"]["sample_count"],
+            m["median_patch_duration"]["value"],
+            m["median_patch_duration"]["sample_count"],
+            m["auth_error_rate"]["value"],
+            m["auth_error_rate"]["sample_count"],
+            m["offline_host_ratio"]["value"],
+            m["offline_host_ratio"]["sample_count"],
+        ])
+        cur = end
+
+    return Response(
+        content=out.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=slo_{hours}h_{bucket_hours}h.csv"},
+    )
 
 
 @router.get("/maintenance-window")

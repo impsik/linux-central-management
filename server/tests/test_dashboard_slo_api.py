@@ -50,3 +50,8 @@ def test_dashboard_slo_api_smoke(monkeypatch):
         for key in ("job_success_rate", "median_patch_duration", "auth_error_rate", "offline_host_ratio"):
             assert "sample_count" in data["kpis"][key]
             assert "previous_sample_count" in data["kpis"][key]
+
+        csv_resp = client.get("/dashboard/slo.csv", params={"hours": 24, "bucket_hours": 12})
+        assert csv_resp.status_code == 200, csv_resp.text
+        assert "text/csv" in (csv_resp.headers.get("content-type") or "")
+        assert "window_start,window_end,job_success_rate_pct" in csv_resp.text
