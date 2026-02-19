@@ -914,6 +914,22 @@
               </div>
             </div>
 
+            <div class="admin-card" id="admin-rbac-explain-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>RBAC access explain</span>
+                <button class="btn" id="admin-rbac-explain-run" type="button">Explain</button>
+              </div>
+              <div class="admin-card-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                  <select id="admin-rbac-user" class="admin-input"></select>
+                  <select id="admin-rbac-host" class="admin-input"></select>
+                </div>
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin:0.75rem 0 0.35rem;">Result</label>
+                <textarea id="admin-rbac-explain-output" class="admin-input" rows="7" readonly style="width:100%;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;"></textarea>
+                <div class="admin-status" id="admin-rbac-explain-status"></div>
+              </div>
+            </div>
+
             <div class="admin-card" id="admin-oidc-map-preview-card" style="margin-top:1rem;display:none;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>OIDC mapping preview</span>
@@ -2228,6 +2244,7 @@
             <td>${escapeHtml(mfa)}</td>
             <td class="status-muted">${escapeHtml(created)}</td>
             <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end;">
+              <button class="btn" data-user-rbac-explain="${escapeHtml(uname)}" title="Explain host access for this user">Explain</button>
               <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
               <button class="btn" data-user-toggle-active="${escapeHtml(uname)}" data-user-active="${isActive ? '1' : '0'}" ${canToggleActive ? '' : 'disabled'} title="${canToggleActive ? (isActive ? 'Deactivate user' : 'Activate user') : 'Cannot change this user'}">${isActive ? 'Deactivate' : 'Activate'}</button>
             </td>
@@ -2279,6 +2296,20 @@
             } catch (err) {
               showToast(err.message || String(err), 'error', 5000);
             }
+          });
+        });
+
+        tbody.querySelectorAll('button[data-user-rbac-explain]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-rbac-explain') || '';
+            if (!uname) return;
+            const userSel = document.getElementById('admin-rbac-user');
+            if (userSel) {
+              userSel.value = uname;
+              userSel.dispatchEvent(new Event('change'));
+            }
+            document.getElementById('admin-rbac-explain-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           });
         });
 
@@ -2340,6 +2371,74 @@
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
       }
+    }
+
+    async function initRbacExplain() {
+      const runBtn = document.getElementById('admin-rbac-explain-run');
+      const userSel = document.getElementById('admin-rbac-user');
+      const hostSel = document.getElementById('admin-rbac-host');
+      const outEl = document.getElementById('admin-rbac-explain-output');
+      const statusEl = document.getElementById('admin-rbac-explain-status');
+      const card = document.getElementById('admin-rbac-explain-card');
+      if (!runBtn || !userSel || !hostSel || !outEl || !statusEl || !card) return;
+
+      card.style.display = 'block';
+
+      async function loadUsersAndHosts() {
+        try {
+          const [ur, hr] = await Promise.all([
+            fetch('/auth/admin/users', { credentials: 'include' }),
+            fetch('/hosts?online_only=false', { credentials: 'include' }),
+          ]);
+          if (ur.ok) {
+            const u = await ur.json();
+            const items = Array.isArray(u?.items) ? u.items : [];
+            userSel.innerHTML = items.map(x => `<option value="${escapeHtml(x.username || '')}">${escapeHtml(x.username || '')} (${escapeHtml(x.role || '')})</option>`).join('');
+          }
+          if (hr.ok) {
+            const h = await hr.json();
+            const items = Array.isArray(h) ? h : [];
+            hostSel.innerHTML = items.map(x => `<option value="${escapeHtml(x.id || '')}">${escapeHtml(x.hostname || x.agent_id || '')} · ${escapeHtml(x.agent_id || '')}</option>`).join('');
+          }
+        } catch (_) {}
+      }
+
+      await loadUsersAndHosts();
+
+      runBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const uname = (userSel.value || '').trim();
+        const hid = (hostSel.value || '').trim();
+        if (!uname || !hid) {
+          statusEl.textContent = 'Pick user and host first.';
+          return;
+        }
+
+        runBtn.disabled = true;
+        statusEl.textContent = 'Explaining…';
+        try {
+          const ur = await fetch('/auth/admin/users', { credentials: 'include' });
+          if (!ur.ok) throw new Error(`users list failed (${ur.status})`);
+          const ud = await ur.json();
+          const users = Array.isArray(ud?.items) ? ud.items : [];
+          const u = users.find(x => String(x.username || '') === uname);
+          if (!u?.id) throw new Error('Selected user not found');
+
+          const r = await fetch(`/auth/admin/rbac/explain?user_id=${encodeURIComponent(u.id)}&host_id=${encodeURIComponent(hid)}`, { credentials: 'include' });
+          const raw = await r.text();
+          let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+          if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `Explain failed (${r.status})`);
+
+          const summary = `${d.allowed ? 'ALLOWED' : 'DENIED'} — ${d.reason || ''}`;
+          outEl.value = `${summary}\n\n${JSON.stringify(d, null, 2)}`;
+          statusEl.textContent = 'Explain ready.';
+        } catch (err) {
+          statusEl.textContent = err.message || String(err);
+          showToast(statusEl.textContent, 'error', 5000);
+        } finally {
+          runBtn.disabled = false;
+        }
+      });
     }
 
     function initOidcMapPreview() {
@@ -4202,6 +4301,7 @@
     safeInit('initLoadTimeframeControls', initLoadTimeframeControls);
     safeInit('initPackagesSearch', initPackagesSearch);
     safeInit('initAdminPanel', initAdminPanel);
+    safeInit('initRbacExplain', initRbacExplain);
     safeInit('initOidcMapPreview', initOidcMapPreview);
     safeInit('initThemeToggle', initThemeToggle);
     safeInit('initSettingsMenu', initSettingsMenu);
