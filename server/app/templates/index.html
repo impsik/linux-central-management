@@ -196,7 +196,12 @@
                 <div style="color:var(--muted-2);font-size:0.95rem;">Live posture across your fleet. Click any tile to drill
                   down.</div>
               </div>
-              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                <select id="kpi-timeframe" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                  <option value="24" selected>KPI: 24h</option>
+                  <option value="168">KPI: 7d</option>
+                  <option value="720">KPI: 30d</option>
+                </select>
                 <button class="btn" id="overview-refresh" type="button">Refresh</button>
                 <button class="btn btn-primary" id="overview-inventory-now" type="button">Inventory now
                   (visible)</button>
@@ -207,24 +212,24 @@
 
             <div class="metrics-grid" style="margin-top:0.55rem;">
               <div class="metric-card" id="kpi-hosts-online" style="cursor:pointer;">
-                <div class="metric-label">Hosts online</div>
+                <div class="metric-label">Offline host ratio</div>
                 <div class="metric-value" id="kpi-online">–</div>
                 <div class="metric-details" id="kpi-online-details">–</div>
               </div>
               <div class="metric-card" id="kpi-security" style="cursor:pointer;">
-                <div class="metric-label">Security updates pending</div>
+                <div class="metric-label">Job success rate</div>
                 <div class="metric-value" id="kpi-sec">–</div>
                 <div class="metric-details" id="kpi-sec-details">–</div>
               </div>
               <div class="metric-card" id="kpi-updates" style="cursor:pointer;">
-                <div class="metric-label">All updates pending</div>
+                <div class="metric-label">Median patch duration</div>
                 <div class="metric-value" id="kpi-upd">–</div>
                 <div class="metric-details" id="kpi-upd-details">–</div>
               </div>
               <div class="metric-card" id="kpi-failures" style="cursor:pointer;">
-                <div class="metric-label">Failed runs (24h)</div>
+                <div class="metric-label">Auth error rate</div>
                 <div class="metric-value" id="kpi-fail">–</div>
-                <div class="metric-details" id="kpi-fail-details">Jobs / campaigns</div>
+                <div class="metric-details" id="kpi-fail-details">OIDC events</div>
               </div>
             </div>
 

@@ -36,13 +36,37 @@
       const failed24h = d?.jobs?.failed_runs_last_24h ?? 0;
       const freshest = d?.updates?.freshest_checked_at;
 
-      if (onlineEl) onlineEl.textContent = `${hostsOnline} / ${hostsTotal}`;
-      if (onlineDetailsEl) onlineDetailsEl.textContent = `${hostsOffline} offline (grace ${d?.hosts?.online_grace_seconds ?? 0}s)`;
-      if (secEl) secEl.textContent = `${secHosts} hosts`;
-      if (secDetailsEl) secDetailsEl.textContent = `${secPkgs} packages`;
-      if (updEl) updEl.textContent = `${updHosts} hosts`;
-      if (updDetailsEl) updDetailsEl.textContent = `${updPkgs} packages`;
-      if (failEl) failEl.textContent = `${failed24h}`;
+      const tfEl = document.getElementById('kpi-timeframe');
+      const kpiHours = parseInt((tfEl?.value || '24').trim(), 10) || 24;
+      const sr = await fetch(`/dashboard/slo?hours=${encodeURIComponent(kpiHours)}`, { credentials: 'include' });
+      if (!sr.ok) throw new Error(`dashboard slo failed (${sr.status})`);
+      const slo = await sr.json();
+      const k = slo?.kpis || {};
+
+      const fmtNum = (v, digits = 1, suffix = '') => (v == null || Number.isNaN(Number(v))) ? '–' : `${Number(v).toFixed(digits)}${suffix}`;
+      const trend = (v, p, invert = false) => {
+        if (v == null || p == null || Number.isNaN(Number(v)) || Number.isNaN(Number(p))) return 'n/a';
+        const delta = Number(v) - Number(p);
+        const good = invert ? delta < 0 : delta >= 0;
+        const arrow = delta === 0 ? '→' : (good ? '↑' : '↓');
+        return `${arrow} ${delta >= 0 ? '+' : ''}${delta.toFixed(1)}`;
+      };
+
+      const offline = k.offline_host_ratio || {};
+      const succ = k.job_success_rate || {};
+      const patch = k.median_patch_duration || {};
+      const auth = k.auth_error_rate || {};
+
+      if (onlineEl) onlineEl.textContent = fmtNum(offline.value, 1, '%');
+      if (onlineDetailsEl) onlineDetailsEl.textContent = `${trend(offline.value, offline.previous, true)} • n=${offline.sample_count ?? 0}`;
+      if (secEl) secEl.textContent = fmtNum(succ.value, 1, '%');
+      if (secDetailsEl) secDetailsEl.textContent = `${trend(succ.value, succ.previous)} • n=${succ.sample_count ?? 0}`;
+      if (updEl) updEl.textContent = fmtNum(patch.value, 1, 's');
+      if (updDetailsEl) updDetailsEl.textContent = `${trend(patch.value, patch.previous, true)} • n=${patch.sample_count ?? 0}`;
+      if (failEl) failEl.textContent = fmtNum(auth.value, 1, '%');
+      const authNoData = !auth.sample_count ? 'no data in window' : `${trend(auth.value, auth.previous, true)} • n=${auth.sample_count ?? 0}`;
+      const failDetailsEl = document.getElementById('kpi-fail-details');
+      if (failDetailsEl) failDetailsEl.textContent = authNoData;
       if (freshEl) freshEl.textContent = freshest ? new Date(freshest).toLocaleString() : '–';
 
       if (maintenanceEl) {
@@ -705,6 +729,7 @@
     refreshMaintenanceGuardButtons();
 
     const refreshBtn = document.getElementById('overview-refresh');
+    const kpiTimeframeEl = document.getElementById('kpi-timeframe');
     const invBtn = document.getElementById('overview-inventory-now');
     const secBtn = document.getElementById('overview-security-campaign');
     const distBtn = document.getElementById('overview-dist-upgrade');
@@ -732,6 +757,9 @@
       w.showToast('Teams morning brief sent', 'success');
     });
     w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false)]); });
+    kpiTimeframeEl?.addEventListener('change', () => {
+      ctx.loadFleetOverview(true);
+    });
 
     w.wireBusyClick(invBtn, 'Queueing…', async () => {
       const agentIds = (ctx.getLastRenderedAgentIds() || []).slice();
