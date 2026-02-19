@@ -57,7 +57,7 @@ def test_jobs_preflight_and_dry_run_no_job_creation(monkeypatch):
         after = client.get("/jobs", params={"type": "dist-upgrade", "limit": 200}, headers=headers)
         assert after.status_code == 200, after.text
         after_count = int(after.json().get("total", 0))
-        assert after_count == before_count
+        assert after_count == before_count, f"dry-run created dist-upgrade jobs (before={before_count}, after={after_count})"
 
 
 def test_pkg_upgrade_dry_run_returns_predicted_packages(monkeypatch):
