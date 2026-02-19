@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import require_admin_user, require_ui_user
-from ..models import Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun, NotificationDedupeState
+from ..models import Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun, NotificationDedupeState, OIDCAuthEvent
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import is_within_maintenance_window
@@ -123,6 +123,133 @@ def dashboard_summary(db: Session = Depends(get_db), user=Depends(require_ui_use
         },
         "jobs": {"failed_runs_last_24h": failed_runs_24h},
         "notes": [],
+    }
+
+
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    vals = sorted(values)
+    n = len(vals)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(vals[mid])
+    return float((vals[mid - 1] + vals[mid]) / 2.0)
+
+
+@router.get("/slo")
+def dashboard_slo(
+    hours: int = Query(24, ge=1, le=24 * 30),
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    now = datetime.now(timezone.utc)
+    start = now - timedelta(hours=hours)
+    prev_start = start - timedelta(hours=hours)
+
+    # Job success rate for completed runs.
+    comp_now = db.execute(
+        select(func.count())
+        .select_from(JobRun)
+        .where(JobRun.finished_at.is_not(None), JobRun.finished_at >= start, JobRun.status.in_(["success", "failed"]))
+    ).scalar_one()
+    succ_now = db.execute(
+        select(func.count())
+        .select_from(JobRun)
+        .where(JobRun.finished_at.is_not(None), JobRun.finished_at >= start, JobRun.status == "success")
+    ).scalar_one()
+
+    comp_prev = db.execute(
+        select(func.count())
+        .select_from(JobRun)
+        .where(
+            JobRun.finished_at.is_not(None),
+            JobRun.finished_at >= prev_start,
+            JobRun.finished_at < start,
+            JobRun.status.in_(["success", "failed"]),
+        )
+    ).scalar_one()
+    succ_prev = db.execute(
+        select(func.count())
+        .select_from(JobRun)
+        .where(JobRun.finished_at.is_not(None), JobRun.finished_at >= prev_start, JobRun.finished_at < start, JobRun.status == "success")
+    ).scalar_one()
+
+    success_rate_now = (float(succ_now) / float(comp_now) * 100.0) if comp_now else None
+    success_rate_prev = (float(succ_prev) / float(comp_prev) * 100.0) if comp_prev else None
+
+    # Median patch duration (seconds): pkg-upgrade + dist-upgrade runs in current/previous window.
+    patch_now_rows = db.execute(
+        select(JobRun.started_at, JobRun.finished_at)
+        .join(Job, Job.id == JobRun.job_id)
+        .where(
+            Job.job_type.in_(["pkg-upgrade", "dist-upgrade"]),
+            JobRun.started_at.is_not(None),
+            JobRun.finished_at.is_not(None),
+            JobRun.finished_at >= start,
+        )
+    ).all()
+    patch_prev_rows = db.execute(
+        select(JobRun.started_at, JobRun.finished_at)
+        .join(Job, Job.id == JobRun.job_id)
+        .where(
+            Job.job_type.in_(["pkg-upgrade", "dist-upgrade"]),
+            JobRun.started_at.is_not(None),
+            JobRun.finished_at.is_not(None),
+            JobRun.finished_at >= prev_start,
+            JobRun.finished_at < start,
+        )
+    ).all()
+
+    patch_now_durations = [max(0.0, (r[1] - r[0]).total_seconds()) for r in patch_now_rows if r[0] and r[1]]
+    patch_prev_durations = [max(0.0, (r[1] - r[0]).total_seconds()) for r in patch_prev_rows if r[0] and r[1]]
+
+    median_patch_now = _median(patch_now_durations)
+    median_patch_prev = _median(patch_prev_durations)
+
+    # Auth error rate from OIDC auth event stream.
+    oidc_total_now = db.execute(
+        select(func.count()).select_from(OIDCAuthEvent).where(OIDCAuthEvent.created_at >= start)
+    ).scalar_one()
+    oidc_err_now = db.execute(
+        select(func.count()).select_from(OIDCAuthEvent).where(OIDCAuthEvent.created_at >= start, OIDCAuthEvent.status == "error")
+    ).scalar_one()
+
+    oidc_total_prev = db.execute(
+        select(func.count()).select_from(OIDCAuthEvent).where(OIDCAuthEvent.created_at >= prev_start, OIDCAuthEvent.created_at < start)
+    ).scalar_one()
+    oidc_err_prev = db.execute(
+        select(func.count()).select_from(OIDCAuthEvent).where(
+            OIDCAuthEvent.created_at >= prev_start, OIDCAuthEvent.created_at < start, OIDCAuthEvent.status == "error"
+        )
+    ).scalar_one()
+
+    auth_err_rate_now = (float(oidc_err_now) / float(oidc_total_now) * 100.0) if oidc_total_now else None
+    auth_err_rate_prev = (float(oidc_err_prev) / float(oidc_total_prev) * 100.0) if oidc_total_prev else None
+
+    # Offline host ratio.
+    grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
+    online_cutoff = now.timestamp() - grace_s
+    total_hosts = int(db.execute(select(func.count()).select_from(Host)).scalar_one() or 0)
+    online_hosts = int(
+        db.execute(
+            select(func.count())
+            .select_from(Host)
+            .where(Host.last_seen.is_not(None), func.extract("epoch", Host.last_seen) >= online_cutoff)
+        ).scalar_one()
+        or 0
+    )
+    offline_ratio_now = (float(max(0, total_hosts - online_hosts)) / float(total_hosts) * 100.0) if total_hosts else None
+
+    return {
+        "window_hours": hours,
+        "ts": now.isoformat(),
+        "kpis": {
+            "job_success_rate": {"value": success_rate_now, "previous": success_rate_prev, "unit": "percent"},
+            "median_patch_duration": {"value": median_patch_now, "previous": median_patch_prev, "unit": "seconds"},
+            "auth_error_rate": {"value": auth_err_rate_now, "previous": auth_err_rate_prev, "unit": "percent"},
+            "offline_host_ratio": {"value": offline_ratio_now, "previous": None, "unit": "percent"},
+        },
     }
 
 
