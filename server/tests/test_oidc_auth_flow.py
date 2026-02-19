@@ -107,7 +107,7 @@ def test_oidc_callback_provisions_user_with_role_and_scope(monkeypatch):
 
     from fastapi.testclient import TestClient
     from app.db import SessionLocal
-    from app.models import AppUser, AppUserScope
+    from app.models import AppUser, AppUserScope, OIDCAuthEvent
     from sqlalchemy import select
 
     with TestClient(app) as client:
@@ -131,6 +131,11 @@ def test_oidc_callback_provisions_user_with_role_and_scope(monkeypatch):
         scopes = db.execute(select(AppUserScope).where(AppUserScope.user_id == u.id)).scalars().all()
         assert len(scopes) == 1
         assert scopes[0].selector == {"env": ["prod"]}
+
+        events = db.execute(select(OIDCAuthEvent).order_by(OIDCAuthEvent.created_at.asc())).scalars().all()
+        assert len(events) >= 1
+        assert any(ev.stage == "login_success" and ev.status == "success" for ev in events)
+        assert all(bool(getattr(ev, "correlation_id", None)) for ev in events)
     finally:
         db.close()
 
@@ -169,6 +174,9 @@ def test_oidc_callback_rejects_disallowed_email_domain(monkeypatch):
     monkeypatch.setattr(auth_mod, "_oidc_validate_id_token", lambda *a, **k: {"sub": "sub-123"})
 
     from fastapi.testclient import TestClient
+    from app.db import SessionLocal
+    from app.models import OIDCAuthEvent
+    from sqlalchemy import select
 
     with TestClient(app) as client:
         r = client.get("/auth/oidc/login", follow_redirects=False)
@@ -177,3 +185,11 @@ def test_oidc_callback_rejects_disallowed_email_domain(monkeypatch):
         bad = client.get(f"/auth/oidc/callback?code=ok&state={state}")
         assert bad.status_code == 403
         assert "domain" in bad.text.lower()
+
+    db = SessionLocal()
+    try:
+        events = db.execute(select(OIDCAuthEvent).order_by(OIDCAuthEvent.created_at.asc())).scalars().all()
+        assert len(events) >= 1
+        assert any(ev.stage == "domain_check" and ev.status == "error" for ev in events)
+    finally:
+        db.close()

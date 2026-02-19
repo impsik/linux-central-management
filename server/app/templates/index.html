@@ -909,6 +909,44 @@
               </div>
             </div>
 
+            <div class="admin-card" id="admin-oidc-events-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>OIDC diagnostics</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <select id="oidc-events-filter-hours" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="24" selected>Last 24h</option>
+                    <option value="168">Last 7d</option>
+                  </select>
+                  <select id="oidc-events-filter-status" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="">Any status</option>
+                    <option value="error">Errors only</option>
+                    <option value="success">Success only</option>
+                  </select>
+                  <button class="btn" id="admin-oidc-events-refresh" type="button">Reload</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:980px;">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Stage</th>
+                        <th>Status</th>
+                        <th>Error</th>
+                        <th>Correlation ID</th>
+                        <th>Hint</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-oidc-events-table">
+                      <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-oidc-events-status"></div>
+              </div>
+            </div>
+
             <div class="admin-card" id="admin-approvals-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>High-risk approvals</span>
@@ -2301,6 +2339,69 @@
       });
     }
 
+    async function loadAdminOidcEvents(showToastOnManual = false) {
+      const card = document.getElementById('admin-oidc-events-card');
+      const tbody = document.getElementById('admin-oidc-events-table');
+      const statusEl = document.getElementById('admin-oidc-events-status');
+      if (!card || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';
+
+      try {
+        setTableState(tbody, 6, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+
+        const sinceHours = parseInt((document.getElementById('oidc-events-filter-hours')?.value || '24').trim(), 10) || 24;
+        const status = (document.getElementById('oidc-events-filter-status')?.value || '').trim();
+
+        const qs = new URLSearchParams();
+        qs.set('limit', '100');
+        qs.set('since_hours', String(sinceHours));
+        if (status) qs.set('status', status);
+
+        const r = await fetch(`/auth/admin/oidc/events?${qs.toString()}`, { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `oidc events failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          setTableState(tbody, 6, 'empty', 'No OIDC events in selected window');
+          if (showToastOnManual) showToast('OIDC diagnostics refreshed', 'success');
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const it of items) {
+          const tr = document.createElement('tr');
+          const st = String(it?.status || '').toLowerCase();
+          const statusBadge = st === 'error'
+            ? '<span class="badge badge-danger">error</span>'
+            : '<span class="badge badge-success">success</span>';
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(formatShortTime(it.created_at || ''))}</td>
+            <td><code>${escapeHtml(it.stage || '')}</code></td>
+            <td>${statusBadge}</td>
+            <td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(it.error_code || '')}${it.error_message ? `<div class="status-muted" style="margin-top:0.25rem;">${escapeHtml(it.error_message)}</div>` : ''}</td>
+            <td><code>${escapeHtml(it.correlation_id || '')}</code></td>
+            <td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(it.remediation_hint || '')}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        if (showToastOnManual) showToast('OIDC diagnostics refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 6, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message || String(e);
+        if (showToastOnManual) showToast(e.message || String(e), 'error');
+      }
+    }
+
     async function loadAdminNotificationDedupe(showToastOnManual = false) {
       const card = document.getElementById('admin-dedupe-card');
       const tbody = document.getElementById('admin-dedupe-table');
@@ -2578,6 +2679,7 @@
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('admin-tab').classList.add('active');
       loadAdminUsers();
+      loadAdminOidcEvents();
       loadAdminApprovals();
       loadAdminNotificationDedupe();
       loadAdminAudit();
@@ -3832,6 +3934,7 @@
         maybeLoadSshKeyAdminQueue,
         loadAdminSshKeys,
         loadAdminUsers,
+        loadAdminOidcEvents,
         loadAdminApprovals,
         loadAdminNotificationDedupe,
         loadAdminAudit,

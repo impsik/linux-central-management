@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
-from ..models import AppSavedView, AppSession, AppUser, AppUserScope
+from ..models import AppSavedView, AppSession, AppUser, AppUserScope, OIDCAuthEvent
 from ..services.user_scopes import get_user_scope_selectors, user_has_scope_limits
 from ..services.audit import log_event
 from ..services.db_utils import transaction
@@ -333,6 +333,45 @@ def _oidc_username_from_claims(claims: dict) -> str:
     return (safe or "oidc_user")[:64]
 
 
+def _log_oidc_event(
+    db: Session,
+    *,
+    correlation_id: str,
+    stage: str,
+    status: str,
+    provider: str | None = None,
+    error_code: str | None = None,
+    error_message: str | None = None,
+    username: str | None = None,
+    email: str | None = None,
+    subject: str | None = None,
+    meta: dict | None = None,
+    commit: bool = False,
+) -> None:
+    try:
+        db.add(
+            OIDCAuthEvent(
+                provider=provider,
+                stage=stage,
+                status=status,
+                error_code=error_code,
+                error_message=(str(error_message)[:1000] if error_message else None),
+                correlation_id=correlation_id,
+                username=username,
+                email=email,
+                subject=(str(subject)[:128] if subject else None),
+                meta=meta or {},
+            )
+        )
+        if commit:
+            db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
 @router.get("/oidc/login")
 def auth_oidc_login():
     if not bool(getattr(settings, "auth_oidc_enabled", False)):
@@ -380,18 +419,68 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
     if not bool(getattr(settings, "auth_oidc_enabled", False)):
         raise HTTPException(404, "OIDC is disabled")
 
+    provider = str(getattr(settings, "auth_oidc_issuer", "") or "").strip().rstrip("/") or None
+    correlation_id = secrets.token_urlsafe(12)
+
     if not code:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="callback_start",
+            status="error",
+            error_code="missing_code",
+            error_message="missing authorization code",
+            commit=True,
+        )
         raise HTTPException(400, "missing authorization code")
 
     expected_state = request.cookies.get("fleet_oidc_state")
     if not expected_state or not state or state != expected_state:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="callback_start",
+            status="error",
+            error_code="invalid_state",
+            error_message="invalid OIDC state",
+            commit=True,
+        )
         raise HTTPException(400, "invalid OIDC state")
+
+    _log_oidc_event(
+        db,
+        correlation_id=correlation_id,
+        provider=provider,
+        stage="callback_start",
+        status="success",
+        meta={"has_code": True},
+    )
 
     disc = _oidc_discovery()
     token_endpoint = str(disc.get("token_endpoint") or "").strip()
     userinfo_endpoint = str(disc.get("userinfo_endpoint") or "").strip()
     if not token_endpoint or not userinfo_endpoint:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="discovery",
+            status="error",
+            error_code="missing_endpoints",
+            error_message="OIDC endpoints missing in discovery document",
+            commit=True,
+        )
         raise HTTPException(502, "OIDC endpoints missing in discovery document")
+
+    _log_oidc_event(
+        db,
+        correlation_id=correlation_id,
+        provider=provider,
+        stage="discovery",
+        status="success",
+    )
 
     try:
         token_resp = httpx.post(
@@ -407,18 +496,75 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         )
         token_resp.raise_for_status()
         token_data = token_resp.json()
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="token_exchange",
+            status="success",
+        )
     except Exception as e:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="token_exchange",
+            status="error",
+            error_code="token_exchange_failed",
+            error_message=str(e),
+            commit=True,
+        )
         raise HTTPException(502, f"OIDC token exchange failed: {e}")
 
     access_token = str((token_data or {}).get("access_token") or "").strip()
     id_token = str((token_data or {}).get("id_token") or "").strip()
     if not access_token:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="token_exchange",
+            status="error",
+            error_code="missing_access_token",
+            error_message="OIDC token response missing access_token",
+            commit=True,
+        )
         raise HTTPException(502, "OIDC token response missing access_token")
     if not id_token:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="token_exchange",
+            status="error",
+            error_code="missing_id_token",
+            error_message="OIDC token response missing id_token",
+            commit=True,
+        )
         raise HTTPException(502, "OIDC token response missing id_token")
 
     expected_nonce = request.cookies.get("fleet_oidc_nonce")
-    id_claims = _oidc_validate_id_token(disc, id_token, expected_nonce)
+    try:
+        id_claims = _oidc_validate_id_token(disc, id_token, expected_nonce)
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="id_token_validate",
+            status="success",
+        )
+    except Exception as e:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="id_token_validate",
+            status="error",
+            error_code="id_token_invalid",
+            error_message=str(e),
+            commit=True,
+        )
+        raise
 
     try:
         userinfo_resp = httpx.get(
@@ -428,10 +574,37 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         )
         userinfo_resp.raise_for_status()
         claims = userinfo_resp.json()
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="userinfo",
+            status="success",
+        )
     except Exception as e:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="userinfo",
+            status="error",
+            error_code="userinfo_failed",
+            error_message=str(e),
+            commit=True,
+        )
         raise HTTPException(502, f"OIDC userinfo fetch failed: {e}")
 
     if not isinstance(claims, dict):
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="userinfo",
+            status="error",
+            error_code="userinfo_invalid",
+            error_message="OIDC userinfo response invalid",
+            commit=True,
+        )
         raise HTTPException(502, "OIDC userinfo response invalid")
 
     # Prefer userinfo claims; fill required fields from id_token claims if missing.
@@ -444,7 +617,29 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
 
     email = str(claims.get("email") or "").strip().lower() or None
     if not _oidc_allowed_domain(email):
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="domain_check",
+            status="error",
+            error_code="domain_not_allowed",
+            error_message="OIDC email domain is not allowed",
+            email=email,
+            subject=str(claims.get("sub") or "")[:128] or None,
+            commit=True,
+        )
         raise HTTPException(403, "OIDC email domain is not allowed")
+
+    _log_oidc_event(
+        db,
+        correlation_id=correlation_id,
+        provider=provider,
+        stage="domain_check",
+        status="success",
+        email=email,
+        subject=str(claims.get("sub") or "")[:128] or None,
+    )
 
     username = _oidc_username_from_claims(claims)
     mapped_role = _oidc_role_from_claims(claims)
@@ -465,6 +660,19 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         db.add(AppUserScope(user_id=user.id, scope_type="label_selector", selector=sel))
 
     if not bool(getattr(user, "is_active", True)):
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="login_success",
+            status="error",
+            error_code="user_inactive",
+            error_message="User is inactive",
+            username=username,
+            email=email,
+            subject=str(claims.get("sub") or "")[:128] or None,
+            commit=True,
+        )
         raise HTTPException(403, "User is inactive")
 
     token = secrets.token_urlsafe(32)
@@ -497,7 +705,19 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
             "role": mapped_role,
             "groups_count": len(claims.get("groups") or []) if isinstance(claims.get("groups"), list) else 0,
             "scope_selectors": len(mapped_scopes),
+            "correlation_id": correlation_id,
         },
+    )
+    _log_oidc_event(
+        db,
+        correlation_id=correlation_id,
+        provider=provider,
+        stage="login_success",
+        status="success",
+        username=username,
+        email=email,
+        subject=str(claims.get("sub") or "")[:128] or None,
+        meta={"role": mapped_role, "scope_selectors": len(mapped_scopes)},
     )
     db.commit()
 
@@ -856,6 +1076,98 @@ def auth_admin_set_user_scopes(
         )
 
     return {"ok": True, "username": target.username, "selector_count": len(norm)}
+
+
+def _oidc_remediation_hint(error_code: str | None) -> str | None:
+    code = (error_code or "").strip().lower()
+    if not code:
+        return None
+    hints = {
+        "invalid_state": "Retry login and verify callback URL/cookie domain settings.",
+        "missing_endpoints": "Verify issuer discovery document has token and userinfo endpoints.",
+        "token_exchange_failed": "Check client_id/client_secret/redirect_uri and IdP token endpoint reachability.",
+        "missing_access_token": "Inspect IdP token response and requested scopes.",
+        "missing_id_token": "Ensure OIDC flow returns id_token (openid scope required).",
+        "id_token_invalid": "Validate issuer/audience/JWKS and nonce handling.",
+        "userinfo_failed": "Check userinfo endpoint access and bearer token validity.",
+        "userinfo_invalid": "Ensure userinfo response is JSON object with required claims.",
+        "domain_not_allowed": "Add the user email domain to AUTH_OIDC_ALLOWED_EMAIL_DOMAINS or adjust policy.",
+        "user_inactive": "Reactivate user in admin panel or review provisioning rules.",
+    }
+    return hints.get(code)
+
+
+@router.get("/admin/oidc/events")
+def auth_admin_oidc_events(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    provider: str | None = None,
+    stage: str | None = None,
+    status: str | None = None,
+    error_code: str | None = None,
+    since_hours: int = 24,
+    db: Session = Depends(get_db),
+    admin: AppUser = Depends(require_admin_user),
+):
+    if limit < 1:
+        limit = 1
+    if limit > 200:
+        limit = 200
+    if offset < 0:
+        offset = 0
+    if since_hours < 1:
+        since_hours = 1
+    if since_hours > 24 * 30:
+        since_hours = 24 * 30
+
+    q = select(OIDCAuthEvent)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+    q = q.where(OIDCAuthEvent.created_at >= cutoff)
+
+    if provider:
+        q = q.where(OIDCAuthEvent.provider == provider)
+    if stage:
+        q = q.where(OIDCAuthEvent.stage == stage)
+    if status:
+        q = q.where(OIDCAuthEvent.status == status)
+    if error_code:
+        q = q.where(OIDCAuthEvent.error_code == error_code)
+
+    total = int(db.execute(select(func.count()).select_from(q.subquery())).scalar_one() or 0)
+
+    rows = db.execute(q.order_by(OIDCAuthEvent.created_at.desc()).limit(limit).offset(offset)).scalars().all()
+
+    items = [
+        {
+            "id": str(ev.id),
+            "provider": ev.provider,
+            "stage": ev.stage,
+            "status": ev.status,
+            "error_code": ev.error_code,
+            "error_message": ev.error_message,
+            "correlation_id": ev.correlation_id,
+            "username": ev.username,
+            "email": ev.email,
+            "subject": ev.subject,
+            "meta": ev.meta if isinstance(ev.meta, dict) else {},
+            "created_at": ev.created_at.isoformat() if ev.created_at else None,
+            "remediation_hint": _oidc_remediation_hint(ev.error_code),
+        }
+        for ev in rows
+    ]
+
+    log_event(
+        db,
+        action="auth.oidc.events.list",
+        actor=admin,
+        request=request,
+        meta={"total": total, "limit": limit, "offset": offset, "since_hours": since_hours},
+    )
+    db.commit()
+
+    return {"items": items, "total": total, "limit": limit, "offset": offset, "since_hours": since_hours}
 
 
 @router.post("/admin/oidc/map-preview")

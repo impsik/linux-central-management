@@ -434,3 +434,29 @@ class AuditEvent(Base):
         Index("ix_audit_events_actor_created", "actor_user_id", "created_at"),
         Index("ix_audit_events_action_created", "action", "created_at"),
     )
+
+
+class OIDCAuthEvent(Base):
+    __tablename__ = "oidc_auth_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    provider = Column(String, nullable=True, index=True)
+    stage = Column(String, nullable=False, index=True)  # callback_start|token_exchange|id_token_validate|userinfo|domain_check|login_success
+    status = Column(String, nullable=False, index=True)  # success|error
+    error_code = Column(String, nullable=True, index=True)
+    error_message = Column(Text, nullable=True)
+    correlation_id = Column(String, nullable=False, index=True)
+
+    username = Column(String, nullable=True, index=True)
+    email = Column(String, nullable=True, index=True)
+    subject = Column(String, nullable=True, index=True)
+
+    meta = Column(JSON, nullable=False, default=dict)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("ix_oidc_auth_events_stage_created", "stage", "created_at"),
+        Index("ix_oidc_auth_events_status_created", "status", "created_at"),
+    )
