@@ -7,13 +7,14 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import HighRiskActionRequest, Host, Job, JobRun
-from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade
+from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade, JobPreflightRequest
 from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import assert_action_allowed_now
 from ..services.rbac import permissions_for
+from ..services.hosts import is_host_online
 from ..services.targets import resolve_agent_ids
 from ..services.user_scopes import filter_agent_ids_for_user, is_host_visible_to_user
 from ..services.package_names import sanitize_package_list
@@ -41,6 +42,49 @@ def _ensure_agent_visible(db: Session, user, agent_id: str) -> None:
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host or not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "unknown job run")
+
+
+def _resolve_unscoped_agent_ids(db: Session, agent_ids: list[str] | None, labels: dict | None) -> list[str]:
+    if agent_ids:
+        return sorted(list(set([str(a).strip() for a in agent_ids if str(a).strip()])))
+    if labels:
+        hosts = db.execute(select(Host)).scalars().all()
+        out: list[str] = []
+        for h in hosts:
+            ok = True
+            for k, v in labels.items():
+                if (h.labels or {}).get(k) != v:
+                    ok = False
+                    break
+            if ok:
+                out.append(h.agent_id)
+        return sorted(list(set(out)))
+    return []
+
+
+@router.post("/preflight")
+def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    base_targets = _resolve_unscoped_agent_ids(db, payload.agent_ids, payload.labels)
+    scoped_targets = filter_agent_ids_for_user(db, user, base_targets)
+
+    scoped_set = set(scoped_targets)
+    excluded_by_scope = sorted([aid for aid in base_targets if aid not in scoped_set])
+
+    hosts = db.execute(select(Host).where(Host.agent_id.in_(scoped_targets))).scalars().all() if scoped_targets else []
+    host_by_agent = {h.agent_id: h for h in hosts}
+
+    targeted_hosts: list[str] = list(scoped_targets)
+    offline_or_unreachable: list[str] = []
+    for aid in scoped_targets:
+        h = host_by_agent.get(aid)
+        if not h or not is_host_online(h):
+            offline_or_unreachable.append(aid)
+
+    return {
+        "targeted_hosts": sorted(targeted_hosts),
+        "excluded_by_scope": excluded_by_scope,
+        "offline_or_unreachable": sorted(offline_or_unreachable),
+    }
 
 
 @router.get("")
@@ -121,7 +165,7 @@ def list_jobs(
 
 
 @router.post("/pkg-upgrade")
-async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     _require_job_write_access(user)
     targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
@@ -137,6 +181,36 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends
     if not packages and not packages_by_agent:
         raise HTTPException(400, "packages or packages_by_agent is required")
 
+    preflight = preflight_targets(JobPreflightRequest(agent_ids=payload.agent_ids, labels=payload.labels), db, user)
+
+    if payload.dry_run:
+        log_event(
+            db,
+            action="jobs.pkg-upgrade.dry_run",
+            actor=user,
+            request=request,
+            target_type="job",
+            target_name="pkg-upgrade",
+            meta={
+                "mode": "DRY_RUN",
+                "target_count": len(preflight.get("targeted_hosts", [])),
+                "packages_count": len(packages),
+            },
+        )
+        return {
+            "dry_run": True,
+            "type": "pkg-upgrade",
+            "preflight": preflight,
+            "predicted_actions": [
+                {
+                    "agent_id": aid,
+                    "action": "pkg-upgrade",
+                    "packages": (packages_by_agent.get(aid) or packages) or [],
+                }
+                for aid in preflight.get("targeted_hosts", [])
+            ],
+        }
+
     with transaction(db):
         created = create_job_with_runs(
             db=db,
@@ -144,6 +218,7 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends
             payload={
                 "packages": packages,
                 "packages_by_agent": packages_by_agent,
+                "dry_run": False,
             },
             agent_ids=targets,
             commit=False,
@@ -159,7 +234,7 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends
         job_payload_builder=build,
     )
 
-    return {"job_id": created.job_key, "targets": targets}
+    return {"job_id": created.job_key, "targets": targets, "preflight": preflight}
 
 
 @router.post("/pkg-query")
@@ -277,6 +352,34 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
 
+    preflight = preflight_targets(JobPreflightRequest(agent_ids=payload.agent_ids, labels=payload.labels), db, user)
+
+    if payload.dry_run:
+        log_event(
+            db,
+            action="jobs.dist-upgrade.dry_run",
+            actor=user,
+            request=request,
+            target_type="job",
+            target_name="dist-upgrade",
+            meta={
+                "mode": "DRY_RUN",
+                "target_count": len(preflight.get("targeted_hosts", [])),
+            },
+        )
+        return {
+            "dry_run": True,
+            "type": "dist-upgrade",
+            "preflight": preflight,
+            "predicted_actions": [
+                {
+                    "agent_id": aid,
+                    "action": "dist-upgrade",
+                }
+                for aid in preflight.get("targeted_hosts", [])
+            ],
+        }
+
     if is_approval_required("dist-upgrade"):
         with transaction(db):
             req = HighRiskActionRequest(
@@ -303,13 +406,14 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
             "action": "dist-upgrade",
             "targets": targets,
             "status": "pending",
+            "preflight": preflight,
         }
 
     with transaction(db):
         created = create_job_with_runs(
             db=db,
             job_type="dist-upgrade",
-            payload={},
+            payload={"dry_run": False},
             agent_ids=targets,
             commit=False,
         )
@@ -319,7 +423,7 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
         job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "dist-upgrade"},
     )
 
-    return {"job_id": created.job_key, "targets": targets}
+    return {"job_id": created.job_key, "targets": targets, "preflight": preflight}
 
 
 @router.get("/{job_id}")
