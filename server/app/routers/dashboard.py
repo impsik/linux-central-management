@@ -245,10 +245,34 @@ def dashboard_slo(
         "window_hours": hours,
         "ts": now.isoformat(),
         "kpis": {
-            "job_success_rate": {"value": success_rate_now, "previous": success_rate_prev, "unit": "percent"},
-            "median_patch_duration": {"value": median_patch_now, "previous": median_patch_prev, "unit": "seconds"},
-            "auth_error_rate": {"value": auth_err_rate_now, "previous": auth_err_rate_prev, "unit": "percent"},
-            "offline_host_ratio": {"value": offline_ratio_now, "previous": None, "unit": "percent"},
+            "job_success_rate": {
+                "value": success_rate_now,
+                "previous": success_rate_prev,
+                "unit": "percent",
+                "sample_count": int(comp_now or 0),
+                "previous_sample_count": int(comp_prev or 0),
+            },
+            "median_patch_duration": {
+                "value": median_patch_now,
+                "previous": median_patch_prev,
+                "unit": "seconds",
+                "sample_count": len(patch_now_durations),
+                "previous_sample_count": len(patch_prev_durations),
+            },
+            "auth_error_rate": {
+                "value": auth_err_rate_now,
+                "previous": auth_err_rate_prev,
+                "unit": "percent",
+                "sample_count": int(oidc_total_now or 0),
+                "previous_sample_count": int(oidc_total_prev or 0),
+            },
+            "offline_host_ratio": {
+                "value": offline_ratio_now,
+                "previous": None,
+                "unit": "percent",
+                "sample_count": int(total_hosts or 0),
+                "previous_sample_count": None,
+            },
         },
     }
 

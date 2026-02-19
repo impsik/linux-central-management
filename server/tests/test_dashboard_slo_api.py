@@ -46,3 +46,7 @@ def test_dashboard_slo_api_smoke(monkeypatch):
         assert "median_patch_duration" in data["kpis"]
         assert "auth_error_rate" in data["kpis"]
         assert "offline_host_ratio" in data["kpis"]
+
+        for key in ("job_success_rate", "median_patch_duration", "auth_error_rate", "offline_host_ratio"):
+            assert "sample_count" in data["kpis"][key]
+            assert "previous_sample_count" in data["kpis"][key]
