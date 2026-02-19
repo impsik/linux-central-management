@@ -1046,6 +1046,41 @@ def auth_admin_get_user_scopes(username: str, request: Request, db: Session = De
     }
 
 
+def _safe_short(value, max_len: int = 80) -> str:
+    s = str(value or "")
+    return s if len(s) <= max_len else (s[:max_len] + "…")
+
+
+def _sanitize_labels(raw: dict | None, *, max_items: int = 30) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for i, (k, v) in enumerate(raw.items()):
+        if i >= max_items:
+            out["__truncated__"] = "true"
+            break
+        key = _safe_short(k, 40)
+        out[key] = _safe_short(v, 80)
+    return out
+
+
+def _sanitize_selector(raw: dict | None, *, max_keys: int = 20, max_vals: int = 20) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, list[str]] = {}
+    for i, (k, vals) in enumerate(raw.items()):
+        if i >= max_keys:
+            out["__truncated__"] = ["true"]
+            break
+        key = _safe_short(k, 40)
+        norm_vals = vals if isinstance(vals, list) else [vals]
+        safe_vals = [_safe_short(v, 60) for v in norm_vals[:max_vals]]
+        if len(norm_vals) > max_vals:
+            safe_vals.append("…")
+        out[key] = safe_vals
+    return out
+
+
 @router.get("/admin/rbac/explain")
 def auth_admin_rbac_explain(
     user_id: str,
@@ -1071,6 +1106,7 @@ def auth_admin_rbac_explain(
     role = str(getattr(target, "role", "operator") or "operator").lower()
     selectors = get_user_scope_selectors(db, target)
     labels = (getattr(host, "labels", None) or {}) if host is not None else {}
+    safe_labels = _sanitize_labels(labels)
 
     matched_selector = None
     selector_results: list[dict] = []
@@ -1087,11 +1123,15 @@ def auth_admin_rbac_explain(
             for k, allowed_vals in sel.items():
                 actual = str(labels.get(k, "")).strip()
                 if actual not in allowed_vals:
-                    misses.append({"key": k, "actual": actual, "allowed": allowed_vals})
+                    misses.append({
+                        "key": _safe_short(k, 40),
+                        "actual": _safe_short(actual, 60),
+                        "allowed": [_safe_short(v, 60) for v in (allowed_vals or [])[:20]],
+                    })
             matched = len(misses) == 0
-            selector_results.append({"selector": sel, "matched": matched, "misses": misses})
+            selector_results.append({"selector": _sanitize_selector(sel), "matched": matched, "misses": misses})
             if matched and matched_selector is None:
-                matched_selector = sel
+                matched_selector = _sanitize_selector(sel)
 
         allowed = bool(matched_selector is not None)
         reason = "matched at least one selector" if allowed else "no selector matched host labels"
@@ -1115,11 +1155,11 @@ def auth_admin_rbac_explain(
             "id": str(host.id),
             "agent_id": host.agent_id,
             "hostname": host.hostname,
-            "labels": labels,
+            "labels": safe_labels,
         },
         "scopes": {
             "count": len(selectors),
-            "selectors": selectors,
+            "selectors": [_sanitize_selector(s) for s in selectors],
             "selector_results": selector_results,
             "matched_selector": matched_selector,
         },

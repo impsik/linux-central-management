@@ -30,7 +30,11 @@ def test_admin_rbac_explain_allow_and_deny(monkeypatch):
                 "os_id": "ubuntu",
                 "os_version": "22.04",
                 "kernel": "test",
-                "labels": {"env": "prod", "team": "core"},
+                "labels": {
+                    "env": "prod",
+                    "team": "core",
+                    "secret_token": "VERY_SECRET_TOKEN_" + ("x" * 120),
+                },
             },
         )
         assert r.status_code == 200, r.text
@@ -84,6 +88,11 @@ def test_admin_rbac_explain_allow_and_deny(monkeypatch):
         assert ad["allowed"] is True
         assert ad["user"]["username"] == "op1"
         assert ad["host"]["agent_id"] == "srv-prod"
+        assert "secret_token" in ad["host"]["labels"]
+        assert len(ad["host"]["labels"]["secret_token"]) <= 81
+        assert "VERY_SECRET_TOKEN_" in ad["host"]["labels"]["secret_token"]
+        # Ensure full secret value is not returned unbounded.
+        assert len(ad["host"]["labels"]["secret_token"]) < 140
 
         deny = client.get(
             "/auth/admin/rbac/explain",
