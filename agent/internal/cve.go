@@ -23,7 +23,7 @@ func stripANSICodes(s string) string {
 // CheckCVE inspects whether this host is affected by a CVE.
 //
 // Preferred path (Ubuntu-native): `pro fix <CVE> --dry-run`.
-// Fallback path (no pro client installed): fetch and parse https://ubuntu.com/security/<CVE>.
+// Fallback path (no pro client installed): fetch and parse FROM FLEET SERVER (local DB).
 //
 // Output is JSON for stable server-side parsing.
 func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
@@ -59,15 +59,8 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 		resolvedLine := strings.Contains(low, " is resolved")
 		alreadyInstalled := strings.Contains(low, "the update is already installed")
 
-		// Extract packages first; in --dry-run output this represents the planned fix.
 		pkgs := extractAptPackagesFromProDryRun(noAnsi)
 
-		// pro output varies by version.
-		// Priority rules:
-		//  - explicit "not affected" → not affected
-		//  - "update is already installed" → resolved/not affected
-		//  - if dry-run contains an apt --only-upgrade plan → affected (fix available)
-		//  - otherwise fall back to text heuristics
 		if strings.Contains(low, "does not affect your system") || strings.Contains(low, "no affected source packages are installed") {
 			affected = false
 			summary = "not affected"
@@ -83,12 +76,9 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 			affected = true
 			summary = "affected"
 		} else if strings.Contains(low, "affected source package") && strings.Contains(low, "installed") {
-			// Example:
-			//   "1 affected source package is installed: bind9 (1/1)"
 			affected = true
 			summary = "affected"
 		} else if resolvedLine {
-			// Some pro versions print a resolved line even when no useful details are present.
 			affected = false
 			summary = "resolved"
 		}
@@ -118,101 +108,91 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 		return string(j), "", 0, ""
 	}
 
-	// Fallback: ubuntu.com CVE page parse.
-	return checkCVEViaUbuntuCom(ctx, cve)
+	// Fallback: Check via Fleet Server (Offline/Local DB)
+	return checkCVEViaFleetServer(ctx, cve)
 }
 
-type ubuntuComRow struct {
-	Package  string `json:"package"`
-	Release  string `json:"release"`  // e.g. 22.04
-	Codename string `json:"codename"` // e.g. jammy
-	Status   string `json:"status"`   // e.g. Vulnerable|Fixed|Not affected
-}
-
-func checkCVEViaUbuntuCom(ctx context.Context, cve string) (string, string, int, string) {
-	ctx2, cancel := context.WithTimeout(ctx, 25*time.Second)
+func checkCVEViaFleetServer(ctx context.Context, cve string) (string, string, int, string) {
+	ctx2, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	url := fmt.Sprintf("https://ubuntu.com/security/%s", cve)
-	req, _ := http.NewRequestWithContext(ctx2, "GET", url, nil)
-	req.Header.Set("User-Agent", "fleet-agent/0.1")
-
-	client := &http.Client{Timeout: 25 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", 1, fmt.Sprintf("ubuntu.com fetch failed: %v", err)
+	serverURL := os.Getenv("FLEET_SERVER_URL")
+	if serverURL == "" {
+		serverURL = "http://localhost:8000"
 	}
-	defer resp.Body.Close()
+	serverURL = strings.TrimRight(serverURL, "/")
 
-	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 2_500_000))
-	html := string(bodyBytes)
-	if resp.StatusCode >= 300 {
-		trim := strings.TrimSpace(html)
-		if len(trim) > 4000 {
-			trim = trim[:4000] + "\n…(truncated)"
-		}
-		return "", trim, 1, fmt.Sprintf("ubuntu.com returned %s", resp.Status)
-	}
-
-	versionID := strings.TrimSpace(readOSRelease("VERSION_ID"))
+	// Determine codename
 	codename := readOSRelease("VERSION_CODENAME")
 	if codename == "" {
 		codename = readOSRelease("UBUNTU_CODENAME")
 	}
 	codename = strings.TrimSpace(strings.ToLower(codename))
 
-	rows := parseUbuntuComCVETable(html)
-
-	matched := make([]ubuntuComRow, 0, 4)
-	for _, r := range rows {
-		if codename != "" && strings.EqualFold(r.Codename, codename) {
-			matched = append(matched, r)
-			continue
-		}
-		if versionID != "" && strings.TrimSpace(r.Release) == versionID {
-			matched = append(matched, r)
-			continue
-		}
+	url := fmt.Sprintf("%s/patching/cve/%s?distro_codename=%s", serverURL, cve, codename)
+	
+	req, _ := http.NewRequestWithContext(ctx2, "GET", url, nil)
+	// Add token if available
+	token := os.Getenv("FLEET_AGENT_TOKEN")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", 1, fmt.Sprintf("fleet server fetch failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return "", "", 1, "cve not found in local db"
+	}
+	if resp.StatusCode != 200 {
+		return "", "", 1, fmt.Sprintf("fleet server returned %s", resp.Status)
+	}
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", "", 1, "failed to decode server response"
+	}
+
+	// result: { "cve": "...", "found": true, "distro_found": true, "data": { "packages": {...} } }
+	
 	affected := false
-	unknown := false
-	affectedPkgs := []string{}
-	for _, r := range matched {
-		s := strings.ToLower(strings.TrimSpace(r.Status))
-		if strings.Contains(s, "vulnerable") || strings.Contains(s, "needed") {
-			affected = true
-			affectedPkgs = append(affectedPkgs, r.Package)
-		} else if strings.Contains(s, "unknown") || strings.Contains(s, "pending") {
-			unknown = true
+	summary := "unknown"
+	pkgs := []string{}
+	
+	if found, _ := result["found"].(bool); !found {
+		summary = "unknown (not in db)"
+	} else if distroFound, _ := result["distro_found"].(bool); !distroFound {
+		summary = "not affected (distro mismatch)"
+	} else {
+		data, _ := result["data"].(map[string]any)
+		if data != nil {
+			// simplified check: if packages list is non-empty and any status is 'released'/'needed'
+			packages, _ := data["packages"].(map[string]any)
+			if len(packages) > 0 {
+				affected = true
+				summary = "affected"
+				for p := range packages {
+					pkgs = append(pkgs, p)
+				}
+			} else {
+				summary = "not affected"
+			}
 		}
-	}
-
-	summary := "not affected"
-	if affected {
-		summary = "affected"
-	} else if unknown || len(matched) == 0 {
-		summary = "unknown"
 	}
 
 	payload := map[string]any{
 		"cve":      cve,
 		"affected": affected,
 		"summary":  summary,
-		"source":   "ubuntu.com",
-		"packages": affectedPkgs,
-		"details": map[string]any{
-			"version_id":      versionID,
-			"codename":        codename,
-			"matched_rows":    matched,
-			"affected_pkgs":   affectedPkgs,
-			"matched_row_cnt": len(matched),
-		},
+		"source":   "fleet-server-db",
+		"packages": pkgs,
+		"details":  result,
 	}
-	j, jerr := json.Marshal(payload)
-	if jerr != nil {
-		return "", "", 1, "json marshal failed"
-	}
+	j, _ := json.Marshal(payload)
 	return string(j), "", 0, ""
 }
 
@@ -240,45 +220,9 @@ func readOSRelease(key string) string {
 	return ""
 }
 
-func parseUbuntuComCVETable(html string) []ubuntuComRow {
-	rows := []ubuntuComRow{}
-
-	// Split by <tr to keep it manageable.
-	parts := strings.Split(html, "<tr")
-	currentPkg := ""
-
-	rePkg := regexp.MustCompile(`(?is)<th[^>]*rowspan="\d+"[^>]*>\s*([^<\s]+)\s*</th>`)
-	reRelease := regexp.MustCompile(`(?is)<td[^>]*>\s*([0-9]{2}\.[0-9]{2})\s*.*?<span[^>]*u-text--muted[^>]*>\s*([^<\s]+)\s*</span>`)
-	reStatus := regexp.MustCompile(`(?is)<div[^>]*>\s*(Not affected|Vulnerable|Fixed|Pending|Unknown|Ignored|Deferred|Needs triage|Needed)\s*</div>`)
-
-	for _, p := range parts {
-		if m := rePkg.FindStringSubmatch(p); len(m) == 2 {
-			currentPkg = strings.TrimSpace(m[1])
-		}
-		m2 := reRelease.FindStringSubmatch(p)
-		if len(m2) != 3 {
-			continue
-		}
-		rel := strings.TrimSpace(m2[1])
-		code := strings.TrimSpace(m2[2])
-
-		st := ""
-		if m3 := reStatus.FindStringSubmatch(p); len(m3) == 2 {
-			st = strings.TrimSpace(m3[1])
-		}
-		if currentPkg == "" || rel == "" || st == "" {
-			continue
-		}
-
-		rows = append(rows, ubuntuComRow{Package: currentPkg, Release: rel, Codename: code, Status: st})
-	}
-
-	return rows
-}
-
 func extractAptPackagesFromProDryRun(out string) []string {
 	out = strings.ReplaceAll(out, "\r\n", "\n")
-	out = strings.ReplaceAll(out, "\\\n", " ") // line continuations
+	out = strings.ReplaceAll(out, "\\\n", " ") 
 
 	seen := map[string]bool{}
 	pkgs := make([]string, 0, 8)
@@ -292,10 +236,6 @@ func extractAptPackagesFromProDryRun(out string) []string {
 		pkgs = append(pkgs, p)
 	}
 
-	// Heuristic parsing: pro fix --dry-run can embed an apt simulation/plan.
-	// Common patterns:
-	//  - "Inst <pkg> (.."
-	//  - "Upgrade <pkg> (.."
 	rePlan := regexp.MustCompile(`(?m)^\s*(?:Inst|Upgrade)\s+([a-z0-9][a-z0-9+\-\.]+)\b`)
 	for _, mm := range rePlan.FindAllStringSubmatch(out, -1) {
 		if len(mm) >= 2 {
@@ -303,23 +243,12 @@ func extractAptPackagesFromProDryRun(out string) []string {
 		}
 	}
 
-	// Also handle the newer "command suggestion" format:
-	//   { apt update && apt install --only-upgrade -y pkg1 pkg2 ... }
-	// NOTE: do NOT match generic "apt install" suggestions (e.g. ubuntu-pro-client self-update).
 	reCmd := regexp.MustCompile(`(?is)\bapt\s+install\b[^\n\}]*\s--only-upgrade\b([^\n\}]+)`)
 	if m := reCmd.FindStringSubmatch(out); len(m) == 2 {
 		rest := strings.TrimSpace(m[1])
-		// strip common options
 		toks := strings.Fields(rest)
 		for _, t := range toks {
-			if t == "&&" || t == "{" || t == "}" {
-				continue
-			}
-			if strings.HasPrefix(t, "-") {
-				continue
-			}
-			// stop if we hit another command boundary
-			if t == "apt" || t == "update" || t == "install" {
+			if t == "&&" || t == "{" || t == "}" || strings.HasPrefix(t, "-") || t == "apt" || t == "update" || t == "install" {
 				continue
 			}
 			add(t)
@@ -329,5 +258,4 @@ func extractAptPackagesFromProDryRun(out string) []string {
 	return pkgs
 }
 
-// helper for tests/other packages
 func _bytesTrim(b []byte) []byte { return bytes.TrimSpace(b) }

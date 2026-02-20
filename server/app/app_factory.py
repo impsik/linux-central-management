@@ -176,6 +176,15 @@ async def lifespan(app: FastAPI):
         logger.exception('Failed to start metrics refresh loop')
         task3 = None
 
+    # Background CVE sync loop
+    try:
+        from .services.cve_sync import cve_sync_loop
+        task4 = asyncio.create_task(cve_sync_loop(stop_event))
+        logger.info('Started CVE sync loop')
+    except Exception:
+        logger.exception('Failed to start CVE sync loop')
+        task4 = None
+
     try:
         yield
     finally:
@@ -189,6 +198,11 @@ async def lifespan(app: FastAPI):
         try:
             if task3:
                 tasks.append(task3)
+        except Exception:
+            pass
+        try:
+            if task4:
+                tasks.append(task4)
         except Exception:
             pass
 
@@ -345,10 +359,10 @@ def create_app() -> FastAPI:
             resp.headers.setdefault(
                 "Content-Security-Policy",
                 "default-src 'self'; "
-                "script-src 'self' https://cdn.jsdelivr.net 'nonce-" + str(nonce) + "'; "
-                "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
+                "script-src 'self' 'nonce-" + str(nonce) + "'; "
+                "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data:; "
-                "font-src 'self' https://cdn.jsdelivr.net data:; "
+                "font-src 'self' data:; "
                 "connect-src 'self' ws: wss:; "
                 "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
             )
