@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
-from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun
+from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
@@ -17,6 +17,7 @@ from ..services.job_wait import wait_for_job_run
 from ..services.audit import log_event
 from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
+from ..services.deb_version import is_vulnerable
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
 
@@ -430,6 +431,42 @@ def list_host_packages(
         ).scalars().all()
         updates_map = {u.name: u for u in updates}
 
+    # Fetch CVEs for these packages (if host release is supported)
+    # Determine host release codename (best effort)
+    release_codename = None
+    if host.os_version:
+        v = host.os_version.lower()
+        if "20.04" in v or "focal" in v:
+            release_codename = "focal"
+        elif "22.04" in v or "jammy" in v:
+            release_codename = "jammy"
+        elif "24.04" in v or "noble" in v:
+            release_codename = "noble"
+    
+    pkg_cves = {} # pkg_name -> [cve1, cve2]
+    if release_codename and names:
+        cve_rows = db.execute(
+            select(CVEPackage)
+            .where(
+                CVEPackage.release == release_codename,
+                CVEPackage.package_name.in_(names)
+            )
+        ).scalars().all()
+        
+        for c in cve_rows:
+            # Check version vulnerability locally
+            pkg_ver = None
+            # Find installed version
+            for r in rows:
+                if r.name == c.package_name:
+                    pkg_ver = r.version
+                    break
+            
+            if pkg_ver and is_vulnerable(pkg_ver, c.fixed_version):
+                if c.package_name not in pkg_cves:
+                    pkg_cves[c.package_name] = []
+                pkg_cves[c.package_name].append(c.cve_id)
+
     return {
         "agent_id": agent_id,
         "packages": [
@@ -444,6 +481,7 @@ def list_host_packages(
                     and updates_map.get(r.name).candidate_version != r.version
                 ),
                 "candidate_version": updates_map.get(r.name).candidate_version if updates_map.get(r.name) else None,
+                "cves": pkg_cves.get(r.name, [])
             }
             for r in rows
         ],

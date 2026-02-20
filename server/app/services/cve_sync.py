@@ -5,7 +5,8 @@ import xml.etree.ElementTree as ET
 import aiohttp
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
-from app.models import CVEDefinition
+from sqlalchemy import delete
+from app.models import CVEDefinition, CVEPackage
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ async def sync_cve_definitions(db: AsyncSession):
 
     logger.info(f"Upserting {len(master_cve_map)} CVE definitions...")
     
-    # Batch upsert
+    # 1. Update master definition blob (for legacy agent usage)
     chunk_size = 200
     items = list(master_cve_map.items())
     
@@ -70,6 +71,38 @@ async def sync_cve_definitions(db: AsyncSession):
         )
         await db.execute(stmt)
     
+    # 2. Populate lookup table (for fast UI queries)
+    # We replace data for supported releases to ensure freshness and handle removed CVEs.
+    logger.info("Populating CVE lookup table...")
+    
+    # Clear old data for these releases first
+    await db.execute(delete(CVEPackage).where(CVEPackage.release.in_(SUPPORTED_RELEASES)))
+    
+    lookup_rows = []
+    
+    for cve_id, data in master_cve_map.items():
+        for release, rel_data in data.items():
+            if release not in SUPPORTED_RELEASES:
+                continue
+            
+            packages = rel_data.get("packages", {})
+            for pkg_name, pkg_info in packages.items():
+                lookup_rows.append({
+                    "cve_id": cve_id,
+                    "package_name": pkg_name,
+                    "release": release,
+                    "fixed_version": pkg_info.get("fixed_version", "0"),
+                    "status": pkg_info.get("status", "unknown")
+                })
+                
+                # Bulk insert in chunks
+                if len(lookup_rows) >= 5000:
+                    await db.execute(insert(CVEPackage).values(lookup_rows))
+                    lookup_rows = []
+
+    if lookup_rows:
+        await db.execute(insert(CVEPackage).values(lookup_rows))
+
     await db.commit()
     logger.info("CVE sync complete.")
 
