@@ -80,34 +80,38 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
         def local_tag(tag):
             return tag.split('}')[-1] if '}' in tag else tag
 
-        # Debug logging to see what we are parsing
-        root_tag = local_tag(root.tag)
-        # logger.info(f"OVAL Root tag: {root_tag}")
-
         objects = {}
         states = {}
         tests = {}
+        variables = {}
 
-        # Pass 1: Collect Objects, States, Tests
-        # We must collect them ALL before processing definitions.
-        
-        # Iterate over all elements
+        # Pass 1: Collect Objects, States, Tests, Variables
         for elem in root.iter():
             tag = local_tag(elem.tag)
             
             if tag == "dpkginfo_object":
                 obj_id = elem.get("id")
-                # Need to find the 'name' child
+                # Look for name or reference
                 for child in elem:
-                    if local_tag(child.tag) == "name" and child.text:
-                        objects[obj_id] = child.text.strip()
+                    if local_tag(child.tag) == "name":
+                        if child.get("var_ref"):
+                            objects[obj_id] = { "type": "var", "ref": child.get("var_ref") }
+                        elif child.text:
+                            objects[obj_id] = { "type": "text", "value": child.text.strip() }
+                        break
             
+            elif tag == "constant_variable":
+                var_id = elem.get("id")
+                vals = []
+                for child in elem:
+                    if local_tag(child.tag) == "value" and child.text:
+                        vals.append(child.text.strip())
+                variables[var_id] = vals
+
             elif tag == "dpkginfo_state":
                 state_id = elem.get("id")
-                # Need to find the 'evr' child
                 for child in elem:
                     if local_tag(child.tag) == "evr" and child.text:
-                        # operation is attribute of evr
                         op = child.get("operation", "equals")
                         states[state_id] = (child.text.strip(), op)
 
@@ -116,7 +120,6 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                 obj_ref = None
                 state_ref = None
                 
-                # In OVAL, test has children <object object_ref="..."> and <state state_ref="...">
                 for child in elem:
                     ctag = local_tag(child.tag)
                     if ctag == "object":
@@ -127,9 +130,7 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                 if obj_ref and state_ref:
                     tests[test_id] = (obj_ref, state_ref)
 
-        # logger.info(f"[{codename}] Found {len(objects)} objects, {len(states)} states, {len(tests)} tests")
-
-        # Pass 2: Definitions
+        # Pass 2: Process Definitions
         count = 0
         for elem in root.iter():
             if local_tag(elem.tag) == "definition":
@@ -151,17 +152,13 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                 if not title:
                     continue
                     
-                # Title format: "CVE-2024-1234 on Ubuntu ..."
-                parts = title.strip().split(" ")
-                cve_id = parts[0]
+                cve_id = title.strip().split(" ")[0]
                 if not cve_id.startswith("CVE-"):
                     continue
 
-                # Traverse criteria to find tests
                 pkgs_for_cve = {}
                 
-                # We need a recursive helper that can access the outer scope's variables
-                # AND effectively find tests.
+                # BFS/DFS traversal of criteria
                 nodes_to_visit = [criteria_node]
                 while nodes_to_visit:
                     node = nodes_to_visit.pop(0)
@@ -174,17 +171,26 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                             t_ref = child.get("test_ref")
                             if t_ref in tests:
                                 oid, sid = tests[t_ref]
-                                pkg_name = objects.get(oid)
+                                
+                                # Resolve object to package name(s)
+                                pkg_names = []
+                                obj_info = objects.get(oid)
+                                if obj_info:
+                                    if obj_info["type"] == "var":
+                                        pkg_names = variables.get(obj_info["ref"], [])
+                                    else:
+                                        pkg_names = [obj_info["value"]]
+                                
                                 ver_info = states.get(sid)
                                 
-                                if pkg_name and ver_info:
+                                if pkg_names and ver_info:
                                     ver_str, op = ver_info
-                                    # "less than" means the installed version is < fixed_version -> Vulnerable
                                     if op == "less than":
-                                        pkgs_for_cve[pkg_name] = {
-                                            "status": "released",
-                                            "fixed_version": ver_str
-                                        }
+                                        for pkg in pkg_names:
+                                            pkgs_for_cve[pkg] = {
+                                                "status": "released",
+                                                "fixed_version": ver_str
+                                            }
                         elif ctag == "criteria":
                             nodes_to_visit.append(child)
                 
@@ -195,7 +201,6 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                     if codename not in master_cve_map[cve_id]:
                         master_cve_map[cve_id][codename] = {}
                     
-                    # Merge if multiple definitions cover same CVE (rare but possible)
                     if "packages" not in master_cve_map[cve_id][codename]:
                          master_cve_map[cve_id][codename]["packages"] = {}
                     
