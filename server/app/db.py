@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
 from .config import settings
 
@@ -44,3 +45,28 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Async support for background tasks (e.g. CVE sync)
+def _make_async_engine():
+    url = settings.database_url
+    # Replace sync driver with async driver for SQLAlchemy 2.0
+    if "postgresql+psycopg://" in url:
+        url = url.replace("postgresql+psycopg://", "postgresql+psycopg_async://")
+    elif url.startswith("sqlite"):
+        url = url.replace("sqlite://", "sqlite+aiosqlite://")
+        return create_async_engine(
+            url, 
+            connect_args={"check_same_thread": False}, 
+            poolclass=StaticPool
+        )
+    
+    return create_async_engine(
+        url,
+        pool_pre_ping=True,
+        pool_size=20,
+        max_overflow=40,
+        pool_timeout=30,
+    )
+
+async_engine = _make_async_engine()
+AsyncSessionLocal = async_sessionmaker(bind=async_engine, expire_on_commit=False)
