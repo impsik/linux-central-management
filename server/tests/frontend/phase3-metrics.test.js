@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -9,7 +9,7 @@ function loadBrowserScript(filePath, baseWindow = {}) {
     ...baseWindow,
     window: null,
     document: baseWindow.document || {},
-    console,
+    console: baseWindow.console || console,
     setTimeout,
     clearTimeout,
     setInterval,
@@ -56,7 +56,9 @@ describe('phase3 metrics rendering', () => {
     };
 
     const state = { currentMetricsAgentId: 'a-1', topProcessesInFlight: false };
+    const testConsole = { error: vi.fn(), log: vi.fn(), warn: vi.fn(), info: vi.fn() };
     const ctxObj = {
+      console: testConsole,
       document: {
         getElementById: (id) => elements[id] || null,
       },
@@ -104,5 +106,6 @@ describe('phase3 metrics rendering', () => {
     expect(elements['disk-usage'].textContent).toBe('15.8%');
     expect(elements['memory-usage'].textContent).toBe('3.5%');
     expect(elements.vcpus.textContent).toBe('4');
+    expect(testConsole.error).toHaveBeenCalled();
   });
 });
