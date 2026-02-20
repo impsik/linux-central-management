@@ -21,8 +21,8 @@ func stripANSICodes(s string) string {
 
 // CheckCVE inspects whether this host is affected by a CVE.
 //
-// Preferred path (Ubuntu-native): `pro fix <CVE> --dry-run`.
-// Fallback path (no pro client installed): fetch and parse FROM FLEET SERVER (local DB).
+// Preferred path: Ask Fleet Server (local DB).
+// Fallback path (if server is down/unknown): `pro fix <CVE> --dry-run` (Ubuntu-native).
 //
 // Output is JSON for stable server-side parsing.
 func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
@@ -31,7 +31,15 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 		return "", "", 1, "cve is required"
 	}
 
-	// Try ubuntu-pro client first (even if not attached, it can still answer).
+	// 1. Try Fleet Server first (Fast, Offline)
+	jsonResp, rawResp, code, errStr := checkCVEViaFleetServer(ctx, cve)
+	if code == 0 && jsonResp != "" {
+		// Server knew about it (either found or definitively not found)
+		// We trust the server's DB.
+		return jsonResp, rawResp, code, errStr
+	}
+
+	// 2. Fallback: Try ubuntu-pro client (Slow, External)
 	checkCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
