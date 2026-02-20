@@ -5,7 +5,6 @@ import xml.etree.ElementTree as ET
 import aiohttp
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import select, update
 from app.models import CVEDefinition
 from datetime import datetime, timezone
 
@@ -16,11 +15,6 @@ SUPPORTED_RELEASES = ["focal", "jammy", "noble"]
 OVAL_URL_TEMPLATE = "https://security-metadata.canonical.com/oval/com.ubuntu.{}.cve.oval.xml.bz2"
 
 async def sync_cve_definitions(db: AsyncSession):
-    """
-    Downloads OVAL definitions for all supported releases, parses them,
-    and updates the cve_definitions table.
-    """
-    # Map: cve_id -> { codename: { "packages": { pkg_name: { "status": "released", "fixed_version": "1.2.3" } } } }
     master_cve_map = {}
 
     async with aiohttp.ClientSession() as session:
@@ -35,14 +29,12 @@ async def sync_cve_definitions(db: AsyncSession):
                         continue
                     
                     content = await resp.read()
-                    # Decompress bz2
                     try:
                         xml_content = bz2.decompress(content)
                     except OSError as e:
                         logger.error(f"Failed to decompress {codename} OVAL: {e}")
                         continue
                     
-                    # Parse XML
                     parse_oval_xml(xml_content, codename, master_cve_map)
                     
             except Exception as e:
@@ -82,44 +74,49 @@ async def sync_cve_definitions(db: AsyncSession):
     logger.info("CVE sync complete.")
 
 def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
-    """
-    Parses Ubuntu OVAL XML and updates the master_cve_map.
-    Uses namespace-agnostic parsing to be robust against schema version changes.
-    """
     try:
         root = ET.fromstring(xml_content)
         
-        # Helper to get local tag name (ignoring {namespace})
         def local_tag(tag):
             return tag.split('}')[-1] if '}' in tag else tag
+
+        # Debug logging to see what we are parsing
+        root_tag = local_tag(root.tag)
+        # logger.info(f"OVAL Root tag: {root_tag}")
 
         objects = {}
         states = {}
         tests = {}
 
-        # Pass 1: Collect Objects, States, Tests (build lookup tables)
+        # Pass 1: Collect Objects, States, Tests
+        # We must collect them ALL before processing definitions.
+        
+        # Iterate over all elements
         for elem in root.iter():
             tag = local_tag(elem.tag)
             
             if tag == "dpkginfo_object":
                 obj_id = elem.get("id")
+                # Need to find the 'name' child
                 for child in elem:
                     if local_tag(child.tag) == "name" and child.text:
-                        objects[obj_id] = child.text
-                        break
+                        objects[obj_id] = child.text.strip()
             
             elif tag == "dpkginfo_state":
                 state_id = elem.get("id")
+                # Need to find the 'evr' child
                 for child in elem:
                     if local_tag(child.tag) == "evr" and child.text:
+                        # operation is attribute of evr
                         op = child.get("operation", "equals")
-                        states[state_id] = (child.text, op)
-                        break
+                        states[state_id] = (child.text.strip(), op)
 
             elif tag == "dpkginfo_test":
                 test_id = elem.get("id")
                 obj_ref = None
                 state_ref = None
+                
+                # In OVAL, test has children <object object_ref="..."> and <state state_ref="...">
                 for child in elem:
                     ctag = local_tag(child.tag)
                     if ctag == "object":
@@ -130,57 +127,66 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                 if obj_ref and state_ref:
                     tests[test_id] = (obj_ref, state_ref)
 
-        # Pass 2: Process Definitions (Vulnerabilities)
+        # logger.info(f"[{codename}] Found {len(objects)} objects, {len(states)} states, {len(tests)} tests")
+
+        # Pass 2: Definitions
         count = 0
         for elem in root.iter():
             if local_tag(elem.tag) == "definition":
                 if elem.get("class") != "vulnerability":
                     continue
                 
-                # Find title
-                title_text = ""
+                title = ""
                 criteria_node = None
                 
                 for child in elem:
                     ctag = local_tag(child.tag)
                     if ctag == "metadata":
-                        for mchild in child:
-                            if local_tag(mchild.tag) == "title":
-                                title_text = mchild.text
+                        for m in child:
+                            if local_tag(m.tag) == "title":
+                                title = m.text
                     elif ctag == "criteria":
                         criteria_node = child
                 
-                if not title_text or not criteria_node:
+                if not title:
                     continue
                     
-                cve_id = title_text.split(" ")[0]
+                # Title format: "CVE-2024-1234 on Ubuntu ..."
+                parts = title.strip().split(" ")
+                cve_id = parts[0]
                 if not cve_id.startswith("CVE-"):
                     continue
 
+                # Traverse criteria to find tests
                 pkgs_for_cve = {}
                 
-                # Recursive criteria check to find referenced tests
-                def check_criteria(node):
+                # We need a recursive helper that can access the outer scope's variables
+                # AND effectively find tests.
+                nodes_to_visit = [criteria_node]
+                while nodes_to_visit:
+                    node = nodes_to_visit.pop(0)
+                    if node is None: 
+                        continue
+                        
                     for child in node:
                         ctag = local_tag(child.tag)
                         if ctag == "criterion":
                             t_ref = child.get("test_ref")
                             if t_ref in tests:
                                 oid, sid = tests[t_ref]
-                                pkg = objects.get(oid)
+                                pkg_name = objects.get(oid)
                                 ver_info = states.get(sid)
-                                if pkg and ver_info:
-                                    ver, op = ver_info
-                                    # "less than" means 'ver' is the fixed version (if pkg < ver, then vulnerable)
+                                
+                                if pkg_name and ver_info:
+                                    ver_str, op = ver_info
+                                    # "less than" means the installed version is < fixed_version -> Vulnerable
                                     if op == "less than":
-                                        pkgs_for_cve[pkg] = {
+                                        pkgs_for_cve[pkg_name] = {
                                             "status": "released",
-                                            "fixed_version": ver
+                                            "fixed_version": ver_str
                                         }
                         elif ctag == "criteria":
-                            check_criteria(child)
-
-                check_criteria(criteria_node)
+                            nodes_to_visit.append(child)
                 
                 if pkgs_for_cve:
                     count += 1
@@ -188,7 +194,12 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                         master_cve_map[cve_id] = {}
                     if codename not in master_cve_map[cve_id]:
                         master_cve_map[cve_id][codename] = {}
-                    master_cve_map[cve_id][codename]["packages"] = pkgs_for_cve
+                    
+                    # Merge if multiple definitions cover same CVE (rare but possible)
+                    if "packages" not in master_cve_map[cve_id][codename]:
+                         master_cve_map[cve_id][codename]["packages"] = {}
+                    
+                    master_cve_map[cve_id][codename]["packages"].update(pkgs_for_cve)
 
         logger.info(f"Parsed {count} CVE definitions for {codename}")
 
@@ -197,12 +208,8 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
 
 
 async def cve_sync_loop(stop_event: asyncio.Event):
-    """
-    Background task to sync CVE definitions once per day (or on startup).
-    """
     from app.db import AsyncSessionLocal
     
-    # Run immediately on startup
     logger.info("Starting initial CVE sync...")
     try:
         async with AsyncSessionLocal() as db:
@@ -211,7 +218,6 @@ async def cve_sync_loop(stop_event: asyncio.Event):
         logger.exception("Initial CVE sync failed")
         
     while not stop_event.is_set():
-        # Wait 24 hours
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=86400)
         except asyncio.TimeoutError:
