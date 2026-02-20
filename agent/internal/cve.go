@@ -21,8 +21,8 @@ func stripANSICodes(s string) string {
 
 // CheckCVE inspects whether this host is affected by a CVE.
 //
-// Preferred path: Ask Fleet Server (local DB).
-// Fallback path (if server is down/unknown): `pro fix <CVE> --dry-run` (Ubuntu-native).
+// ONLY path: Ask Fleet Server (local DB).
+// The `pro fix` fallback has been completely disabled for privacy/speed.
 //
 // Output is JSON for stable server-side parsing.
 func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
@@ -31,92 +31,13 @@ func CheckCVE(ctx context.Context, cve string) (string, string, int, string) {
 		return "", "", 1, "cve is required"
 	}
 
-	// 1. Try Fleet Server first (Fast, Offline)
+	// Always ask Fleet Server (Fast, Offline)
 	jsonResp, rawResp, code, errStr := checkCVEViaFleetServer(ctx, cve)
-	if code == 0 && jsonResp != "" {
-		// Server knew about it (either found or definitively not found)
-		// We trust the server's DB.
-		return jsonResp, rawResp, code, errStr
-	}
-
-	// 2. Fallback: Try ubuntu-pro client (Slow, External)
-	checkCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(checkCtx, "pro", "fix", cve, "--dry-run")
-	b, err := cmd.CombinedOutput()
-	out := string(b)
-	code := 0
-	if err != nil {
-		code = 1
-		if ee, ok := err.(*exec.ExitError); ok {
-			code = ee.ExitCode()
-		}
-	}
-
-	// pro output contains ANSI color codes; strip them before parsing.
-	noAnsi := stripANSICodes(out)
-	low := strings.ToLower(noAnsi)
-	proMissing := strings.Contains(low, "command not found") || strings.Contains(low, "no such file")
-
-	if !proMissing {
-		affected := false
-		summary := "unknown"
-
-		resolvedLine := strings.Contains(low, " is resolved")
-		alreadyInstalled := strings.Contains(low, "the update is already installed")
-
-		pkgs := extractAptPackagesFromProDryRun(noAnsi)
-
-		if strings.Contains(low, "does not affect your system") || strings.Contains(low, "no affected source packages are installed") {
-			affected = false
-			summary = "not affected"
-			pkgs = []string{}
-		} else if alreadyInstalled {
-			affected = false
-			summary = "resolved"
-			pkgs = []string{}
-		} else if len(pkgs) > 0 {
-			affected = true
-			summary = "fix available"
-		} else if strings.Contains(low, "affects your system") {
-			affected = true
-			summary = "affected"
-		} else if strings.Contains(low, "affected source package") && strings.Contains(low, "installed") {
-			affected = true
-			summary = "affected"
-		} else if resolvedLine {
-			affected = false
-			summary = "resolved"
-		}
-
-		trimmed := strings.TrimSpace(noAnsi)
-		if len(trimmed) > 12000 {
-			trimmed = trimmed[:12000] + "\n…(truncated)"
-		}
-
-		payload := map[string]any{
-			"cve":       cve,
-			"affected":  affected,
-			"summary":   summary,
-			"source":    "pro",
-			"raw":       trimmed,
-			"exit_code": code,
-			"packages":  pkgs,
-		}
-		j, jerr := json.Marshal(payload)
-		if jerr != nil {
-			return "", out, code, "json marshal failed"
-		}
-
-		if err != nil {
-			return string(j), out, code, "pro fix failed"
-		}
-		return string(j), "", 0, ""
-	}
-
-	// Fallback: Check via Fleet Server (Offline/Local DB)
-	return checkCVEViaFleetServer(ctx, cve)
+	
+	// If server is down or returns error, we simply fail/report error.
+	// We do NOT fallback to external 'pro fix'.
+	
+	return jsonResp, rawResp, code, errStr
 }
 
 func checkCVEViaFleetServer(ctx context.Context, cve string) (string, string, int, string) {
@@ -228,6 +149,7 @@ func readOSRelease(key string) string {
 }
 
 func extractAptPackagesFromProDryRun(out string) []string {
+    // Unused if pro fix is disabled, but kept for compilation safety or future use
 	out = strings.ReplaceAll(out, "\r\n", "\n")
 	out = strings.ReplaceAll(out, "\\\n", " ") 
 
