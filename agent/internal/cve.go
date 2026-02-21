@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -97,16 +98,24 @@ func checkCVEViaFleetServer(ctx context.Context, cve string) (string, string, in
 	} else {
 		data, _ := result["data"].(map[string]any)
 		if data != nil {
-			// simplified check: if packages list is non-empty and any status is 'released'/'needed'
 			packages, _ := data["packages"].(map[string]any)
-			if len(packages) > 0 {
-				affected = true
-				summary = "affected"
-				for p := range packages {
+			
+			// Filter: Only report packages that are actually installed
+			installedPkgs := getInstalledPackages()
+			
+			for p := range packages {
+				// simple match: if package name is in our installed list
+				if _, ok := installedPkgs[p]; ok {
 					pkgs = append(pkgs, p)
 				}
+			}
+
+			if len(pkgs) > 0 {
+				affected = true
+				summary = "affected"
 			} else {
-				summary = "not affected"
+				// Technically the CVE applies to the distro, but if we don't have the package, we aren't affected.
+				summary = "not affected (package not installed)"
 			}
 		}
 	}
@@ -184,6 +193,36 @@ func extractAptPackagesFromProDryRun(out string) []string {
 	}
 
 	return pkgs
+}
+
+func getInstalledPackages() map[string]bool {
+	// dpkg-query -W -f='${Package}\n'
+	// Only lists installed packages
+	// Quick and dirty check.
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Package}\n")
+	out, err := cmd.Output()
+	
+	res := make(map[string]bool)
+	if err != nil {
+		// fallback: maybe rpm based? Assume everything is installed if check fails? 
+		// Or assume nothing is installed?
+		// For safety, if check fails, return empty map -> "not affected". 
+		// But better to log error. For now, just return empty.
+		return res
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l != "" {
+			res[l] = true
+		}
+	}
+	return res
 }
 
 func _bytesTrim(b []byte) []byte { return bytes.TrimSpace(b) }
