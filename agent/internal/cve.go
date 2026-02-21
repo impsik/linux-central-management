@@ -111,11 +111,13 @@ func checkCVEViaFleetServer(ctx context.Context, cve string) (string, string, in
 				case string:
 					neededVer = v
 				case map[string]any:
-					// Depending on how DB schema returns it
-					if s, ok := v["version"].(string); ok {
+					// Check multiple possible keys for the version
+					if s, ok := v["version"].(string); ok && s != "" {
 						neededVer = s
-					} else if _, ok := v["status"].(string); ok {
-						// e.g. status='released'
+					} else if s, ok := v["fixed_version"].(string); ok && s != "" {
+						neededVer = s
+					} else if s, ok := v["patched_version"].(string); ok && s != "" {
+						neededVer = s
 					}
 				}
 
