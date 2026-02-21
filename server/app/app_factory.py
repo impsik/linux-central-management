@@ -242,7 +242,7 @@ def create_app() -> FastAPI:
     async def auth_middleware(request: Request, call_next):
         # Agents must be able to operate without UI auth
         path = request.url.path or ""
-        if path.startswith("/agent/") or path == "/health" or path.startswith("/auth/") or path == "/login":
+        if path.startswith("/agent/") or path.startswith("/patching/cve/") or path == "/health" or path.startswith("/auth/") or path == "/login":
             return await call_next(request)
 
         # Allow unauthenticated UI shell assets and websocket upgrade endpoints.
