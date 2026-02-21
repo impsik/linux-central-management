@@ -214,14 +214,14 @@ func extractAptPackagesFromProDryRun(out string) []string {
 }
 
 func getInstalledPackages() map[string]string {
-	// dpkg-query -W -f='${Package} ${Version}\n'
+	// dpkg-query -W -f='${Package} ${Version} ${Status}\n'
 	// Returns map of pkg_name -> installed_version
+	// Filters out packages that are not installed (e.g. status='deinstall ok config-files')
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// dpkg-query -W -f='${Package} ${Version}\n'
-	cmd := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Package} ${Version}\n")
+	cmd := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Package} ${Version} ${Status}\n")
 	out, err := cmd.Output()
 	
 	res := make(map[string]string)
@@ -236,8 +236,18 @@ func getInstalledPackages() map[string]string {
 			continue
 		}
 		parts := strings.Fields(l)
-		if len(parts) >= 2 {
-			res[parts[0]] = parts[1]
+		if len(parts) >= 4 {
+			// Status field usually has 3 parts: "install ok installed"
+			// rc status: "deinstall ok config-files"
+			
+			// We only want packages that are "installed"
+			// The 3rd word in status is the key: "installed" vs "config-files" vs "half-installed"
+			
+			status := parts[len(parts)-1] // last part is status-status
+			
+			if status == "installed" {
+				res[parts[0]] = parts[1]
+			}
 		}
 	}
 	return res
