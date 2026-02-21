@@ -114,7 +114,7 @@ func checkCVEViaFleetServer(ctx context.Context, cve string) (string, string, in
 					// Depending on how DB schema returns it
 					if s, ok := v["version"].(string); ok {
 						neededVer = s
-					} else if s, ok := v["status"].(string); ok {
+					} else if _, ok := v["status"].(string); ok {
 						// e.g. status='released'
 					}
 				}
