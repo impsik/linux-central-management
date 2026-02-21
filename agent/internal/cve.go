@@ -100,13 +100,30 @@ func checkCVEViaFleetServer(ctx context.Context, cve string) (string, string, in
 		if data != nil {
 			packages, _ := data["packages"].(map[string]any)
 			
-			// Filter: Only report packages that are actually installed
+			// Filter: Only report packages that are actually installed AND older than fixed version
 			installedPkgs := getInstalledPackages()
 			
-			for p := range packages {
-				// simple match: if package name is in our installed list
-				if _, ok := installedPkgs[p]; ok {
-					pkgs = append(pkgs, p)
+			for p, statusRaw := range packages {
+				// Status in DB might be a version string OR a status code (e.g. 'needed', 'DNE')
+				
+				neededVer := ""
+				switch v := statusRaw.(type) {
+				case string:
+					neededVer = v
+				case map[string]any:
+					// Depending on how DB schema returns it
+					if s, ok := v["version"].(string); ok {
+						neededVer = s
+					} else if s, ok := v["status"].(string); ok {
+						// e.g. status='released'
+					}
+				}
+
+				if currentVer, installed := installedPkgs[p]; installed {
+					// It is installed. Is it vulnerable?
+					if isVersionAffected(currentVer, neededVer) {
+						pkgs = append(pkgs, fmt.Sprintf("%s (installed:%s < fixed:%s)", p, currentVer, neededVer))
+					}
 				}
 			}
 
@@ -114,8 +131,7 @@ func checkCVEViaFleetServer(ctx context.Context, cve string) (string, string, in
 				affected = true
 				summary = "affected"
 			} else {
-				// Technically the CVE applies to the distro, but if we don't have the package, we aren't affected.
-				summary = "not affected (package not installed)"
+				summary = "not affected (all installed packages are patched)"
 			}
 		}
 	}
@@ -195,34 +211,58 @@ func extractAptPackagesFromProDryRun(out string) []string {
 	return pkgs
 }
 
-func getInstalledPackages() map[string]bool {
-	// dpkg-query -W -f='${Package}\n'
-	// Only lists installed packages
-	// Quick and dirty check.
+func getInstalledPackages() map[string]string {
+	// dpkg-query -W -f='${Package} ${Version}\n'
+	// Returns map of pkg_name -> installed_version
 	
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Package}\n")
+	// dpkg-query -W -f='${Package} ${Version}\n'
+	cmd := exec.CommandContext(ctx, "dpkg-query", "-W", "-f=${Package} ${Version}\n")
 	out, err := cmd.Output()
 	
-	res := make(map[string]bool)
+	res := make(map[string]string)
 	if err != nil {
-		// fallback: maybe rpm based? Assume everything is installed if check fails? 
-		// Or assume nothing is installed?
-		// For safety, if check fails, return empty map -> "not affected". 
-		// But better to log error. For now, just return empty.
 		return res
 	}
 
 	lines := strings.Split(string(out), "\n")
 	for _, l := range lines {
 		l = strings.TrimSpace(l)
-		if l != "" {
-			res[l] = true
+		if l == "" {
+			continue
+		}
+		parts := strings.Fields(l)
+		if len(parts) >= 2 {
+			res[parts[0]] = parts[1]
 		}
 	}
 	return res
+}
+
+func isVersionAffected(current, needed string) bool {
+	needed = strings.TrimSpace(needed)
+	if needed == "" || needed == "released" || needed == "needed" {
+		// If DB just says 'released' without a version, we assume affected if installed.
+		return true 
+	}
+	if needed == "not-affected" || needed == "DNE" {
+		return false
+	}
+	
+	// Compare versions: `dpkg --compare-versions current lt needed`
+	// Return true if current < needed (meaning we are older/vulnerable)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	
+	cmd := exec.CommandContext(ctx, "dpkg", "--compare-versions", current, "lt", needed)
+	if err := cmd.Run(); err == nil {
+		// Exit code 0 means condition is true (current < needed)
+		return true
+	}
+	return false
 }
 
 func _bytesTrim(b []byte) []byte { return bytes.TrimSpace(b) }
