@@ -401,6 +401,10 @@ async def remove_hosts(
     if len(agent_ids) > 500:
         raise HTTPException(400, "Too many agent_ids (max 500)")
 
+    blocked_local_agent_ids: list[str] = []
+    if not include_local and "srv-001" in agent_ids:
+        blocked_local_agent_ids.append("srv-001")
+
     q = select(Host).where(Host.agent_id.in_(agent_ids))
     if not include_local:
         q = q.where(Host.agent_id != "srv-001")
@@ -408,13 +412,14 @@ async def remove_hosts(
     doomed_hosts = db.execute(q).scalars().all()
     doomed_agent_ids = [h.agent_id for h in doomed_hosts]
     doomed_host_ids = [h.id for h in doomed_hosts]
-    missing_agent_ids = [aid for aid in agent_ids if aid not in set(doomed_agent_ids)]
+    missing_agent_ids = [aid for aid in agent_ids if aid not in set(doomed_agent_ids) and aid not in set(blocked_local_agent_ids)]
 
     if dry_run:
         return {
             "requested": agent_ids,
             "found_agent_ids": doomed_agent_ids,
             "missing_agent_ids": missing_agent_ids,
+            "blocked_local_agent_ids": blocked_local_agent_ids,
             "count": len(doomed_agent_ids),
         }
 
@@ -423,6 +428,7 @@ async def remove_hosts(
             "requested": agent_ids,
             "deleted": [],
             "missing_agent_ids": missing_agent_ids,
+            "blocked_local_agent_ids": blocked_local_agent_ids,
             "counts": {},
         }
 
@@ -456,6 +462,7 @@ async def remove_hosts(
         "requested": agent_ids,
         "deleted": doomed_agent_ids,
         "missing_agent_ids": missing_agent_ids,
+        "blocked_local_agent_ids": blocked_local_agent_ids,
         "counts": counts,
     }
 

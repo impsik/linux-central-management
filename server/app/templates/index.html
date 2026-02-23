@@ -3125,15 +3125,22 @@
         const preview = await previewResp.json();
         const found = Array.isArray(preview?.found_agent_ids) ? preview.found_agent_ids : [];
         const missing = Array.isArray(preview?.missing_agent_ids) ? preview.missing_agent_ids : [];
+        const blockedLocal = Array.isArray(preview?.blocked_local_agent_ids) ? preview.blocked_local_agent_ids : [];
         if (!found.length) {
-          showToast('None of the selected hosts exist anymore', 'error');
+          if (blockedLocal.length) {
+            showToast('Selected host is protected (srv-001 local agent)', 'error');
+          } else {
+            const sample = missing.slice(0, 3).join(', ');
+            showToast(sample ? `Selected host(s) not found: ${sample}` : 'None of the selected hosts exist anymore', 'error');
+          }
           return;
         }
 
         const list = found.slice(0, 12).join('\n');
         const more = found.length > 12 ? `\n… and ${found.length - 12} more` : '';
         const missingMsg = missing.length ? `\n\nMissing: ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? '…' : ''}` : '';
-        const ok = confirm(`This will REMOVE ${found.length} host(s) from inventory:\n\n${list}${more}${missingMsg}\n\nProceed?`);
+        const blockedMsg = blockedLocal.length ? `\n\nProtected local: ${blockedLocal.join(', ')} (not removable by default)` : '';
+        const ok = confirm(`This will REMOVE ${found.length} host(s) from inventory:\n\n${list}${more}${missingMsg}${blockedMsg}\n\nProceed?`);
         if (!ok) return;
 
         const resp = await fetch('/hosts/remove', {

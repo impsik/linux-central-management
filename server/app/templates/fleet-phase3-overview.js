@@ -354,8 +354,10 @@
             if (!previewResp.ok) throw new Error(`preview failed (${previewResp.status})`);
             const preview = await previewResp.json();
             const found = Array.isArray(preview?.found_agent_ids) ? preview.found_agent_ids : [];
+            const blockedLocal = Array.isArray(preview?.blocked_local_agent_ids) ? preview.blocked_local_agent_ids : [];
             if (!found.length) {
-              w.showToast('Host no longer exists', 'error');
+              if (blockedLocal.includes(agentId)) w.showToast('Host is protected (srv-001 local agent)', 'error');
+              else w.showToast('Host no longer exists', 'error');
               return;
             }
 
