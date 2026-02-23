@@ -270,7 +270,7 @@ def cleanup_offline_hosts(
     include_local: bool = False,
     dry_run: bool = False,
     db: Session = Depends(get_db),
-    _user=Depends(require_ui_user),
+    user=Depends(require_ui_user),
 ):
     """Delete hosts that have not been seen recently.
 
@@ -282,6 +282,10 @@ def cleanup_offline_hosts(
       - include_local: whether to allow deleting the local dev agent (srv-001)
       - dry_run: if true, only report what would be deleted
     """
+
+    perms = permissions_for(user)
+    if (perms.get("role") or "operator") != "admin":
+        raise HTTPException(403, "Admin privileges required")
 
     if older_than_minutes < 1:
         raise HTTPException(400, "older_than_minutes must be >= 1")
@@ -346,6 +350,112 @@ def cleanup_offline_hosts(
         "cutoff": cutoff.isoformat(),
         "older_than_minutes": older_than_minutes,
         "deleted": doomed_agent_ids,
+        "counts": counts,
+    }
+
+
+@router.post("/remove")
+async def remove_hosts(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    """Remove specific hosts from inventory by agent_id.
+
+    Body (JSON):
+      - agent_ids: list[str] (required)
+      - include_local: bool (optional, default false)
+      - dry_run: bool (optional, default false)
+    """
+
+    perms = permissions_for(user)
+    if (perms.get("role") or "operator") != "admin":
+        raise HTTPException(403, "Admin privileges required")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "Invalid JSON body")
+
+    raw_ids = payload.get("agent_ids")
+    if not isinstance(raw_ids, list):
+        raise HTTPException(400, "agent_ids must be a JSON list")
+
+    include_local = bool(payload.get("include_local", False))
+    dry_run = bool(payload.get("dry_run", False))
+
+    seen: set[str] = set()
+    agent_ids: list[str] = []
+    for x in raw_ids:
+        s = str(x or "").strip()
+        if not s or s in seen:
+            continue
+        seen.add(s)
+        agent_ids.append(s)
+
+    if not agent_ids:
+        raise HTTPException(400, "No valid agent_ids provided")
+    if len(agent_ids) > 500:
+        raise HTTPException(400, "Too many agent_ids (max 500)")
+
+    q = select(Host).where(Host.agent_id.in_(agent_ids))
+    if not include_local:
+        q = q.where(Host.agent_id != "srv-001")
+
+    doomed_hosts = db.execute(q).scalars().all()
+    doomed_agent_ids = [h.agent_id for h in doomed_hosts]
+    doomed_host_ids = [h.id for h in doomed_hosts]
+    missing_agent_ids = [aid for aid in agent_ids if aid not in set(doomed_agent_ids)]
+
+    if dry_run:
+        return {
+            "requested": agent_ids,
+            "found_agent_ids": doomed_agent_ids,
+            "missing_agent_ids": missing_agent_ids,
+            "count": len(doomed_agent_ids),
+        }
+
+    if not doomed_agent_ids:
+        return {
+            "requested": agent_ids,
+            "deleted": [],
+            "missing_agent_ids": missing_agent_ids,
+            "counts": {},
+        }
+
+    counts: dict[str, int] = {}
+
+    with transaction(db):
+        counts["host_packages"] = db.execute(delete(HostPackage).where(HostPackage.host_id.in_(doomed_host_ids))).rowcount or 0
+        counts["host_package_updates"] = (
+            db.execute(delete(HostPackageUpdate).where(HostPackageUpdate.host_id.in_(doomed_host_ids))).rowcount or 0
+        )
+        counts["host_cve_status"] = (
+            db.execute(delete(HostCVEStatus).where(HostCVEStatus.host_id.in_(doomed_host_ids))).rowcount or 0
+        )
+        counts["host_users"] = db.execute(delete(HostUser).where(HostUser.host_id.in_(doomed_host_ids))).rowcount or 0
+
+        counts["patch_campaign_hosts"] = (
+            db.execute(delete(PatchCampaignHost).where(PatchCampaignHost.agent_id.in_(doomed_agent_ids))).rowcount or 0
+        )
+
+        counts["host_load_metrics"] = (
+            db.execute(delete(HostLoadMetric).where(HostLoadMetric.agent_id.in_(doomed_agent_ids))).rowcount or 0
+        )
+        counts["host_metrics_snapshots"] = (
+            db.execute(delete(HostMetricsSnapshot).where(HostMetricsSnapshot.agent_id.in_(doomed_agent_ids))).rowcount
+            or 0
+        )
+
+        counts["hosts"] = db.execute(delete(Host).where(Host.id.in_(doomed_host_ids))).rowcount or 0
+
+    return {
+        "requested": agent_ids,
+        "deleted": doomed_agent_ids,
+        "missing_agent_ids": missing_agent_ids,
         "counts": counts,
     }
 

@@ -512,6 +512,7 @@
             <option value="desc">Desc</option>
           </select>
           <button class="btn" id="hosts-reload" type="button">Reload</button>
+          <button class="btn btn-danger" id="hosts-remove-selected" type="button" title="Remove selected hosts from inventory">Remove selected…</button>
           <button class="btn" id="hosts-cleanup-offline" type="button" title="Delete hosts that have been offline for a while">Clean offline…</button>
           </div>
         </div>
@@ -3103,6 +3104,53 @@
         const ids = getSelectedHostAgentIds();
         if (!ids.length) return showToast('Select hosts first', 'error');
         await bulkPost('/jobs/dist-upgrade', { agent_ids: ids }, `dist-upgrade queued for ${ids.length} hosts`);
+      });
+
+      // Remove selected hosts
+      document.getElementById('hosts-remove-selected')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const ids = getSelectedHostAgentIds();
+        if (!ids.length) return showToast('Select hosts first', 'error');
+
+        const previewResp = await fetch('/hosts/remove', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: ids, dry_run: true })
+        });
+        if (!previewResp.ok) {
+          showToast(`preview failed (${previewResp.status})`, 'error');
+          return;
+        }
+        const preview = await previewResp.json();
+        const found = Array.isArray(preview?.found_agent_ids) ? preview.found_agent_ids : [];
+        const missing = Array.isArray(preview?.missing_agent_ids) ? preview.missing_agent_ids : [];
+        if (!found.length) {
+          showToast('None of the selected hosts exist anymore', 'error');
+          return;
+        }
+
+        const list = found.slice(0, 12).join('\n');
+        const more = found.length > 12 ? `\n… and ${found.length - 12} more` : '';
+        const missingMsg = missing.length ? `\n\nMissing: ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? '…' : ''}` : '';
+        const ok = confirm(`This will REMOVE ${found.length} host(s) from inventory:\n\n${list}${more}${missingMsg}\n\nProceed?`);
+        if (!ok) return;
+
+        const resp = await fetch('/hosts/remove', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: ids })
+        });
+        if (!resp.ok) {
+          showToast(`remove failed (${resp.status})`, 'error');
+          return;
+        }
+        const out = await resp.json();
+        showToast(`Removed ${out?.deleted?.length || 0} host(s)`, 'success');
+
+        await loadHosts();
+        await loadHostsTable();
       });
 
       // Cleanup offline hosts

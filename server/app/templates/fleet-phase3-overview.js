@@ -298,7 +298,13 @@
       const selectedAgentIds = (ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || new Set();
       tr.innerHTML = `
         <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
-        <td><b>${w.escapeHtml(hostName)}</b><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
+        <td>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+            <b>${w.escapeHtml(hostName)}</b>
+            <button type="button" class="btn btn-danger host-remove-btn" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.2rem 0.45rem;font-size:0.8rem;">Remove</button>
+          </div>
+          <div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div>
+        </td>
         <td>${w.escapeHtml(os)}</td>
         <td><code>${w.escapeHtml(kernel)}</code></td>
         <td style="text-align:right;"><b>${sec}</b></td>
@@ -326,6 +332,50 @@
           if (cb.checked) selected.add(aid);
           else selected.delete(aid);
           if (typeof ctx.updateUpgradeControls === 'function') ctx.updateUpgradeControls();
+        });
+      }
+
+      const removeBtn = tr.querySelector('.host-remove-btn');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const agentId = String(removeBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(removeBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+
+          try {
+            const previewResp = await fetch('/hosts/remove', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ agent_ids: [agentId], dry_run: true })
+            });
+            if (!previewResp.ok) throw new Error(`preview failed (${previewResp.status})`);
+            const preview = await previewResp.json();
+            const found = Array.isArray(preview?.found_agent_ids) ? preview.found_agent_ids : [];
+            if (!found.length) {
+              w.showToast('Host no longer exists', 'error');
+              return;
+            }
+
+            if (!confirm(`Remove host "${hostnameLabel}" (${agentId}) from inventory?`)) return;
+
+            const resp = await fetch('/hosts/remove', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ agent_ids: [agentId] })
+            });
+            if (!resp.ok) throw new Error(`remove failed (${resp.status})`);
+
+            w.showToast(`Removed host ${hostnameLabel}`, 'success');
+            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
+            else await loadHostsTable(ctx);
+            if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
         });
       }
 
