@@ -1,21 +1,45 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
-from ..models import HighRiskActionRequest, Job, JobRun
+from ..models import HighRiskActionRequest, Host, Job, JobRun
 from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventoryNow, JobCreatePkgQuery, JobCreatePkgUpgrade
 from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import assert_action_allowed_now
+from ..services.rbac import permissions_for
 from ..services.targets import resolve_agent_ids
+from ..services.user_scopes import filter_agent_ids_for_user, is_host_visible_to_user
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+def _require_job_write_access(user) -> None:
+    perms = permissions_for(user)
+    if not perms.get("can_manage_packages"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Insufficient permissions to run jobs")
+
+
+def _visible_agent_ids_for_user(db: Session, user, agent_ids: list[str]) -> set[str]:
+    perms = permissions_for(user)
+    if (perms.get("role") or "").lower() == "admin":
+        return set(agent_ids)
+    return set(filter_agent_ids_for_user(db, user, agent_ids))
+
+
+def _ensure_agent_visible(db: Session, user, agent_id: str) -> None:
+    perms = permissions_for(user)
+    if (perms.get("role") or "").lower() == "admin":
+        return
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host or not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "unknown job run")
 
 
 @router.get("")
@@ -55,6 +79,16 @@ def list_jobs(
         created_by=created_by,
     )
 
+    perms = permissions_for(user)
+    if (perms.get("role") or "").lower() != "admin":
+        all_agent_ids = db.execute(select(Host.agent_id)).scalars().all()
+        visible_ids = sorted(list(_visible_agent_ids_for_user(db, user, [str(a) for a in all_agent_ids if a])))
+        if not visible_ids:
+            return {"items": [], "total": 0, "limit": limit, "offset": offset}
+        q = q.where(
+            exists(select(1).select_from(JobRun).where(JobRun.job_id == Job.id, JobRun.agent_id.in_(visible_ids)))
+        )
+
     # total count (filters apply)
     total = db.execute(select(func.count()).select_from(q.subquery())).scalar_one()
 
@@ -87,6 +121,7 @@ def list_jobs(
 
 @router.post("/pkg-upgrade")
 async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    _require_job_write_access(user)
     targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
@@ -124,6 +159,7 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends
 
 @router.post("/pkg-query")
 async def create_pkg_query(payload: JobCreatePkgQuery, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    _require_job_write_access(user)
     targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
@@ -153,7 +189,12 @@ async def create_pkg_query(payload: JobCreatePkgQuery, db: Session = Depends(get
 
 @router.post("/inventory-now")
 async def inventory_now(payload: JobCreateInventoryNow, db: Session = Depends(get_db), user=Depends(require_ui_user)):
-    """Trigger immediate inventory refresh on targeted agents."""
+    """Trigger immediate inventory refresh on targeted agents.
+
+    Also enqueues a package-updates query with refresh=true so Security/All update
+    counts get repopulated reliably on fresh hosts.
+    """
+    _require_job_write_access(user)
 
     targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
@@ -167,18 +208,30 @@ async def inventory_now(payload: JobCreateInventoryNow, db: Session = Depends(ge
             agent_ids=targets,
             commit=False,
         )
+        created_updates = create_job_with_runs(
+            db=db,
+            job_type="query-pkg-updates",
+            payload={"refresh": True},
+            agent_ids=targets,
+            commit=False,
+        )
 
     await push_job_to_agents(
         agent_ids=targets,
         job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "inventory-now"},
     )
+    await push_job_to_agents(
+        agent_ids=targets,
+        job_payload_builder=lambda aid: {"job_id": created_updates.job_key, "type": "query-pkg-updates", "refresh": True},
+    )
 
-    return {"job_id": created.job_key, "targets": targets}
+    return {"job_id": created.job_key, "updates_job_id": created_updates.job_key, "targets": targets}
 
 
 @router.post("/cve-check")
 async def cve_check(payload: JobCreateCVECheck, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Run an Ubuntu-native CVE inspection (pro fix <CVE> --dry-run) on targeted agents."""
+    _require_job_write_access(user)
 
     cve = (payload.cve or "").strip().upper()
     if not cve.startswith("CVE-"):
@@ -208,6 +261,7 @@ async def cve_check(payload: JobCreateCVECheck, db: Session = Depends(get_db), u
 @router.post("/dist-upgrade")
 async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Run apt-get dist-upgrade/full-upgrade on targeted agents."""
+    _require_job_write_access(user)
 
     try:
         assert_action_allowed_now("dist-upgrade")
@@ -270,6 +324,10 @@ def job_status(job_id: str, db: Session = Depends(get_db), user=Depends(require_
         raise HTTPException(404, "unknown job")
 
     runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
+    visible_ids = _visible_agent_ids_for_user(db, user, [r.agent_id for r in runs if getattr(r, "agent_id", None)])
+    runs = [r for r in runs if r.agent_id in visible_ids]
+    if not runs:
+        raise HTTPException(404, "unknown job")
 
     result_data = {}
     if job.job_type in ("query-users", "query-services", "query-pkg-version", "cve-check") and runs:
@@ -321,6 +379,7 @@ def download_job_run_stdout(job_id: str, agent_id: str, db: Session = Depends(ge
     run = db.execute(select(JobRun).where(JobRun.job_id == job.id, JobRun.agent_id == agent_id)).scalar_one_or_none()
     if not run:
         raise HTTPException(404, "unknown job run")
+    _ensure_agent_visible(db, user, agent_id)
 
     return PlainTextResponse(run.stdout or "")
 
@@ -336,6 +395,7 @@ def download_job_run_stderr(job_id: str, agent_id: str, db: Session = Depends(ge
     run = db.execute(select(JobRun).where(JobRun.job_id == job.id, JobRun.agent_id == agent_id)).scalar_one_or_none()
     if not run:
         raise HTTPException(404, "unknown job run")
+    _ensure_agent_visible(db, user, agent_id)
 
     return PlainTextResponse(run.stderr or "")
 
@@ -354,6 +414,10 @@ def download_job_logs(job_id: str, db: Session = Depends(get_db), user=Depends(r
         raise HTTPException(404, "unknown job")
 
     runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
+    visible_ids = _visible_agent_ids_for_user(db, user, [r.agent_id for r in runs if getattr(r, "agent_id", None)])
+    runs = [r for r in runs if r.agent_id in visible_ids]
+    if not runs:
+        raise HTTPException(404, "unknown job")
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as z:
