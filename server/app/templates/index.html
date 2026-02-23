@@ -269,7 +269,7 @@
             </div>
 
 
-            <div class="admin-card" style="margin-top:1rem;">
+            <div class="admin-card" id="notifications-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>Notification Center</span>
                 <button class="btn" id="notifications-refresh" type="button">Reload</button>
@@ -2968,6 +2968,7 @@
 
     async function loadFailedRuns(hours = 24, showToastOnManual = false) {
       const tbody = document.getElementById('overview-failed-runs');
+      const card = document.getElementById('failed-runs-card');
       if (!tbody) return;
       try {
         setTableState(tbody, 5, 'loading', 'Loading…');
@@ -2976,9 +2977,11 @@
         const d = await r.json();
         const items = d?.items || [];
         if (!items.length) {
+          if (card) card.style.display = 'none';
           setTableState(tbody, 5, 'empty', 'No failed runs 🎯');
           return;
         }
+        if (card) card.style.display = '';
         tbody.innerHTML = '';
         for (const it of items) {
           const when = formatShortTime(it.finished_at);
@@ -3020,6 +3023,7 @@
         }
         if (showToastOnManual) showToast('Failed runs refreshed', 'success');
       } catch (e) {
+        if (card) card.style.display = '';
         setTableState(tbody, 5, 'error', e.message || String(e));
         if (showToastOnManual) showToast(e.message, 'error');
       }

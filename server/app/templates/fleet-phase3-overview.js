@@ -570,6 +570,7 @@
 
   async function loadNotifications(ctx, showToastOnManual) {
     const wrap = document.getElementById('overview-notifications');
+    const card = document.getElementById('notifications-card');
     const badge = document.getElementById('notifications-badge');
     if (!wrap) return;
     try {
@@ -602,8 +603,10 @@
       if (badge) badge.style.display = unread.length ? 'inline' : 'none';
 
       if (!items.length) {
+        if (card) card.style.display = 'none';
         wrap.innerHTML = '<div class="status-ok">No active notifications 🎯</div>';
       } else {
+        if (card) card.style.display = '';
         wrap.innerHTML = `
           <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;">
             <div style="color:var(--muted-2);display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
@@ -711,6 +714,7 @@
       }
       if (showToastOnManual) w.showToast('Notifications refreshed', 'success');
     } catch (e) {
+      if (card) card.style.display = '';
       wrap.innerHTML = `<div class="error">Notifications error: ${w.escapeHtml(e.message || String(e))}</div>`;
       if (showToastOnManual) w.showToast(`Notifications failed: ${e.message || String(e)}`, 'error');
     }
