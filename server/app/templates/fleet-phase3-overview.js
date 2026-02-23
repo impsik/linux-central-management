@@ -259,6 +259,29 @@
         }
       }
     } catch (e) {
+      // Fallback: keep KPI cards populated even if summary endpoint fails.
+      try {
+        const rf = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include' });
+        if (rf.ok) {
+          const dd = await rf.json();
+          const items = Array.isArray(dd?.items) ? dd.items : [];
+          const hostsTotal = items.length;
+          const hostsOnline = items.filter((it) => !!it.is_online).length;
+          const hostsOffline = Math.max(0, hostsTotal - hostsOnline);
+          const secHosts = items.filter((it) => Number(it.security_updates || 0) > 0).length;
+          const secPkgs = items.reduce((n, it) => n + Number(it.security_updates || 0), 0);
+          const updHosts = items.filter((it) => Number(it.updates || 0) > 0).length;
+          const updPkgs = items.reduce((n, it) => n + Number(it.updates || 0), 0);
+
+          if (onlineEl) onlineEl.textContent = `${hostsOnline} / ${hostsTotal}`;
+          if (onlineDetailsEl) onlineDetailsEl.textContent = `${hostsOffline} offline`;
+          if (secEl) secEl.textContent = `${secHosts} hosts`;
+          if (secDetailsEl) secDetailsEl.textContent = `${secPkgs} packages`;
+          if (updEl) updEl.textContent = `${updHosts} hosts`;
+          if (updDetailsEl) updDetailsEl.textContent = `${updPkgs} packages`;
+        }
+      } catch (_) { }
+
       if (attentionEl) attentionEl.textContent = `Overview error: ${e.message}`;
     }
 
