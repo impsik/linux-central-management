@@ -478,6 +478,40 @@
     renderHostsTableRows(ctx, tbody, filtered);
   }
 
+  async function updateHostsUpdatesHint() {
+    const hintEl = document.getElementById('hosts-updates-hint');
+    if (!hintEl) return;
+
+    const fmt = (iso) => {
+      if (!iso) return '–';
+      try { return new Date(iso).toLocaleString(); } catch (_) { return String(iso); }
+    };
+
+    try {
+      const [summaryRes, jobsRes] = await Promise.all([
+        fetch('/dashboard/summary', { credentials: 'include' }),
+        fetch('/jobs?type=dist-upgrade&status=success&limit=1', { credentials: 'include' }),
+      ]);
+
+      let lastCheck = null;
+      if (summaryRes.ok) {
+        const s = await summaryRes.json();
+        lastCheck = s?.updates?.freshest_checked_at || null;
+      }
+
+      let lastUpgrade = null;
+      if (jobsRes.ok) {
+        const j = await jobsRes.json();
+        const first = Array.isArray(j?.items) ? j.items[0] : null;
+        lastUpgrade = first?.created_at || null;
+      }
+
+      hintEl.textContent = `Last updates check: ${fmt(lastCheck)} • Last successful dist-upgrade: ${fmt(lastUpgrade)} • 0 means fully patched.`;
+    } catch (_) {
+      hintEl.textContent = '0 in Security/All updates usually means fully patched (possibly recently upgraded).';
+    }
+  }
+
   async function loadHostsTable(ctx) {
     const tbody = document.getElementById('hosts-table-body');
     if (!tbody) return;
@@ -496,6 +530,7 @@
       hostsTableItemsCache = Array.isArray(items) ? items : [];
       if (!hostsTableItemsCache.length) {
         if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
+        updateHostsUpdatesHint();
         return w.setTableState(tbody, 9, 'empty', 'No hosts');
       }
 
@@ -514,6 +549,7 @@
       }
 
       applyHostsTableFilters(ctx);
+      updateHostsUpdatesHint();
 
       // Legacy hidden list fallback kept for compatibility.
       const hostsEl = document.getElementById('hosts');
