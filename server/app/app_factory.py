@@ -4,11 +4,13 @@ import logging
 import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from sqlalchemy import delete, inspect, text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 # NOTE: DB schema should be managed by Alembic in production.
 
 from .db import Base, SessionLocal, engine
@@ -218,6 +220,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Fleet Ubuntu MVP", lifespan=lifespan)
+
+    # Static assets (xterm.js/css and other UI files)
+    static_dir = Path(__file__).resolve().parent / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     # CORS for separate-origin frontend. Off by default.
     from .config import settings
