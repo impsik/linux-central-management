@@ -3128,7 +3128,23 @@
         const blockedLocal = Array.isArray(preview?.blocked_local_agent_ids) ? preview.blocked_local_agent_ids : [];
         if (!found.length) {
           if (blockedLocal.length) {
-            showToast('Selected host is protected (srv-001 local agent)', 'error');
+            const force = confirm('Selected host is protected (srv-001 local agent).\n\nForce remove it from inventory?');
+            if (!force) return;
+            const forceResp = await fetch('/hosts/remove', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ agent_ids: ids, include_local: true })
+            });
+            if (!forceResp.ok) {
+              showToast(`force remove failed (${forceResp.status})`, 'error');
+              return;
+            }
+            const forceOut = await forceResp.json();
+            showToast(`Removed ${forceOut?.deleted?.length || 0} host(s)`, 'success');
+            await loadHosts();
+            await loadHostsTable();
+            return;
           } else {
             const sample = missing.slice(0, 3).join(', ');
             showToast(sample ? `Selected host(s) not found: ${sample}` : 'None of the selected hosts exist anymore', 'error');

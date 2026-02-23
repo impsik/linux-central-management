@@ -356,7 +356,22 @@
             const found = Array.isArray(preview?.found_agent_ids) ? preview.found_agent_ids : [];
             const blockedLocal = Array.isArray(preview?.blocked_local_agent_ids) ? preview.blocked_local_agent_ids : [];
             if (!found.length) {
-              if (blockedLocal.includes(agentId)) w.showToast('Host is protected (srv-001 local agent)', 'error');
+              if (blockedLocal.includes(agentId)) {
+                const force = confirm('Host is protected (srv-001 local agent).\n\nForce remove it from inventory?');
+                if (!force) return;
+                const forceResp = await fetch('/hosts/remove', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ agent_ids: [agentId], include_local: true })
+                });
+                if (!forceResp.ok) throw new Error(`force remove failed (${forceResp.status})`);
+                w.showToast(`Removed host ${hostnameLabel}`, 'success');
+                if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
+                else await loadHostsTable(ctx);
+                if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
+                return;
+              }
               else w.showToast('Host no longer exists', 'error');
               return;
             }
