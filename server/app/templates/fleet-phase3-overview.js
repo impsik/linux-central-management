@@ -14,14 +14,30 @@
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
     try {
+      // First hydrate update KPIs from hosts report (more resilient than summary-only path).
+      try {
+        const rr0 = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include' });
+        if (rr0.ok) {
+          const report0 = await rr0.json();
+          const items0 = Array.isArray(report0?.items) ? report0.items : [];
+          const secHosts0 = items0.filter((it) => Number(it.security_updates || 0) > 0).length;
+          const secPkgs0 = items0.reduce((n, it) => n + Number(it.security_updates || 0), 0);
+          const updHosts0 = items0.filter((it) => Number(it.updates || 0) > 0).length;
+          const updPkgs0 = items0.reduce((n, it) => n + Number(it.updates || 0), 0);
+          if (secEl) secEl.textContent = `${secHosts0} hosts`;
+          if (secDetailsEl) secDetailsEl.textContent = `${secPkgs0} packages`;
+          if (updEl) updEl.textContent = `${updHosts0} hosts`;
+          if (updDetailsEl) updDetailsEl.textContent = `${updPkgs0} packages`;
+        }
+      } catch (_) { }
+
       const r = await fetch('/dashboard/summary', { credentials: 'include' });
       if (!r.ok) {
         if (r.status === 403) {
-          // Expected transient state during MFA gating; avoid flashing scary errors.
+          // MFA/login transient; refresh auth state but continue with report-based fallbacks.
           if (typeof w.loadAuthInfo === 'function') {
             try { await w.loadAuthInfo(); } catch (_) {}
           }
-          return;
         }
         throw new Error(`dashboard summary failed (${r.status})`);
       }
