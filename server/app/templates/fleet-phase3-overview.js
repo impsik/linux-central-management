@@ -10,6 +10,7 @@
     const freshEl = document.getElementById('kpi-fresh');
     const attentionEl = document.getElementById('overview-attention');
     const morningBriefEl = document.getElementById('overview-morning-brief');
+    const nextCronEl = document.getElementById('overview-next-cronjobs');
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
     try {
@@ -159,6 +160,37 @@
           });
         } catch (briefErr) {
           morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
+        }
+      }
+
+      if (nextCronEl) {
+        nextCronEl.innerHTML = '<div class="loading">Loading cronjobs…</div>';
+        try {
+          const rc = await fetch('/cronjobs', { credentials: 'include' });
+          if (!rc.ok) throw new Error(`cronjobs failed (${rc.status})`);
+          const cron = await rc.json();
+          const items = Array.isArray(cron?.items) ? cron.items : [];
+          const upcoming = items
+            .filter((it) => (it?.status || '') === 'scheduled' && !!it?.run_at)
+            .sort((a, b) => {
+              const ta = Date.parse(a.run_at || '') || 0;
+              const tb = Date.parse(b.run_at || '') || 0;
+              return ta - tb;
+            })
+            .slice(0, 5);
+
+          if (!upcoming.length) {
+            nextCronEl.innerHTML = '<div class="status-muted">No scheduled cronjobs.</div>';
+          } else {
+            nextCronEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:0.3rem;">${upcoming.map((it, idx) => {
+              const when = it?.run_at ? new Date(it.run_at).toLocaleString() : '–';
+              const action = w.escapeHtml(String(it?.action || 'job'));
+              const name = w.escapeHtml(String(it?.name || action));
+              return `<div><b>${idx + 1}.</b> ${name} <span style="color:var(--muted-2);">(${action})</span><br/><span style="color:var(--muted-2);font-size:0.9rem;">${w.escapeHtml(when)}</span></div>`;
+            }).join('')}</div>`;
+          }
+        } catch (ec) {
+          nextCronEl.innerHTML = `<div class="error">Cronjobs unavailable: ${w.escapeHtml(ec.message || String(ec))}</div>`;
         }
       }
 
@@ -689,6 +721,7 @@
     const navHosts = document.getElementById('nav-hosts');
     const navCronjobs = document.getElementById('nav-cronjobs');
     const navSshKeys = document.getElementById('nav-sshkeys');
+    const nextCronjobsOpenBtn = document.getElementById('overview-next-cronjobs-open');
     const containerEl = document.querySelector('.container');
 
     function setGuardedButtonState(btn, blocked, message) {
@@ -767,6 +800,7 @@
     navHosts?.addEventListener('click', (e) => { e.preventDefault(); showHostsTab(); });
     navCronjobs?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
     navSshKeys?.addEventListener('click', (e) => { e.preventDefault(); showSshKeysTab(); });
+    nextCronjobsOpenBtn?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
 
     showOverviewTab();
     refreshMaintenanceGuardButtons();
