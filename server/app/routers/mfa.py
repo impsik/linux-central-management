@@ -168,12 +168,16 @@ def admin_reset(payload: AdminResetPayload, request: Request, db: Session = Depe
     if str(getattr(u, "id", "")) == str(getattr(admin, "id", "")):
         raise HTTPException(400, "cannot reset your own MFA via admin reset")
 
+    # Prepare a fresh enrollment so next login presents a new QR + recovery codes flow.
+    new_secret = new_totp_secret()
+    new_secret_enc = encrypt_secret(new_secret)
+
     with transaction(db):
         u.mfa_enabled = False
         u.totp_secret_enc = None
-        u.totp_secret_pending_enc = None
+        u.totp_secret_pending_enc = new_secret_enc
         u.mfa_enrolled_at = None
-        u.mfa_pending_at = None
+        u.mfa_pending_at = now_utc()
         u.recovery_codes = []
 
         # Force fresh login and re-verification after reset.

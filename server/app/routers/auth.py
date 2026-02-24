@@ -116,10 +116,13 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     log_event(db, action="auth.login", actor=user, request=request)
     db.commit()
 
+    mfa_enabled = bool(getattr(user, "mfa_enabled", False))
+    has_pending_enroll = bool(getattr(user, "totp_secret_pending_enc", None))
+
     body: dict = {"ok": True, "username": user.username}
-    if require_mfa:
-        body["mfa_setup_required"] = not bool(getattr(user, "mfa_enabled", False))
-        body["mfa_required"] = bool(getattr(user, "mfa_enabled", False))
+    if require_mfa or has_pending_enroll:
+        body["mfa_setup_required"] = bool((require_mfa and not mfa_enabled) or has_pending_enroll)
+        body["mfa_required"] = bool(require_mfa and mfa_enabled)
 
     resp = JSONResponse(body)
 
@@ -1216,6 +1219,7 @@ def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Dep
     role = (perms.get("role") or "operator").lower()
     require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
     mfa_enabled = bool(getattr(user, "mfa_enabled", False))
+    has_pending_enroll = bool(getattr(user, "totp_secret_pending_enc", None))
 
     sess_res = get_current_session_from_request(request, db)
     mfa_verified = False
@@ -1233,7 +1237,7 @@ def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Dep
                 "required": require_mfa,
                 "enabled": mfa_enabled,
                 "verified": mfa_verified,
-                "setup_required": bool(require_mfa and not mfa_enabled),
+                "setup_required": bool((require_mfa and not mfa_enabled) or has_pending_enroll),
                 "verify_required": bool(require_mfa and mfa_enabled and not mfa_verified),
             },
             "scope": {
