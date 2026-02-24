@@ -98,11 +98,26 @@ async def _dispatch_one(db: Session, cj: CronJob) -> None:
                     agent_ids=agent_ids,
                     commit=False,
                 )
+                created_updates = create_job_with_runs(
+                    db=db,
+                    job_type="query-pkg-updates",
+                    payload={"refresh": True},
+                    agent_ids=agent_ids,
+                    commit=False,
+                )
                 run.job_key = created.job_key
 
             await push_job_to_agents(
                 agent_ids=agent_ids,
                 job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "inventory-now"},
+            )
+            await push_job_to_agents(
+                agent_ids=agent_ids,
+                job_payload_builder=lambda aid: {
+                    "job_id": created_updates.job_key,
+                    "type": "query-pkg-updates",
+                    "refresh": True,
+                },
             )
 
         elif action == "security-campaign":

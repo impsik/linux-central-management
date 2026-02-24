@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
-from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage
+from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage, CronJob
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
@@ -80,6 +80,21 @@ async def reboot_host(
         job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "reboot"},
     )
 
+    # Queue a delayed post-reboot refresh so reboot_required and pending updates are re-collected.
+    refresh_run_at = datetime.now(timezone.utc) + timedelta(minutes=3)
+    with transaction(db):
+        refresh_cron = CronJob(
+            user_id=getattr(user, "id"),
+            name=f"post-reboot refresh {agent_id}",
+            run_at=refresh_run_at,
+            action="inventory-now",
+            payload={"schedule": {"kind": "once", "timezone": "UTC"}},
+            selector={"agent_ids": [agent_id]},
+            status="scheduled",
+        )
+        db.add(refresh_cron)
+        db.flush()
+
     try:
         log_event(
             db,
@@ -87,12 +102,25 @@ async def reboot_host(
             actor=getattr(user, "username", None),
             target_type="host",
             target_name=agent_id,
-            meta={"job_id": created.job_key},
+            meta={
+                "job_id": created.job_key,
+                "refresh_cron_id": str(getattr(refresh_cron, "id", "")),
+                "refresh_run_at": refresh_run_at.isoformat(),
+            },
         )
     except Exception:
         pass
 
-    return {"job_id": created.job_key, "agent_id": agent_id, "status": "queued"}
+    return {
+        "job_id": created.job_key,
+        "agent_id": agent_id,
+        "status": "queued",
+        "refresh": {
+            "cron_id": str(getattr(refresh_cron, "id", "")),
+            "run_at": refresh_run_at,
+            "action": "inventory-now",
+        },
+    }
 
 
 @router.get("/{agent_id}/timeline")
