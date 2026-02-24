@@ -254,6 +254,8 @@
     const wrapDom = document.getElementById('cron-dom-wrap');
     const wrapTime = document.getElementById('cron-time-wrap');
     const runAtWrap = document.getElementById('cron-run-at')?.parentElement;
+    const actionEl = document.getElementById('cron-action');
+    const nameEl = document.getElementById('cron-name');
 
     function apply() {
       const kind = kindEl?.value || 'once';
@@ -263,7 +265,18 @@
       if (runAtWrap) runAtWrap.style.display = (kind === 'once') ? 'block' : 'none';
     }
 
+    function maybeSyncCronNameToAction() {
+      if (!actionEl || !nameEl) return;
+      const nextAction = String(actionEl.value || '').trim();
+      const currentName = String(nameEl.value || '').trim();
+      const knownActions = new Set(['dist-upgrade', 'inventory-now', 'security-campaign']);
+      if (!currentName || knownActions.has(currentName)) {
+        nameEl.value = nextAction;
+      }
+    }
+
     if (kindEl) kindEl.addEventListener('change', apply);
+    if (actionEl) actionEl.addEventListener('change', maybeSyncCronNameToAction);
     apply();
   }
 
@@ -430,7 +443,7 @@
       const left = document.createElement('div');
       left.style.display = 'flex';
       left.style.flexDirection = 'column';
-      left.innerHTML = '<b>' + esc(name) + '</b><span class="status-muted" style="font-size:0.85rem;">' + esc(aid) + (os ? ' • ' + esc(os) : '') + '</span>';
+      left.innerHTML = '<b>' + esc(name) + '</b><span class="status-muted" style="font-size:0.85rem;">' + esc(aid) + (ip ? ' • ' + esc(ip) : '') + (os ? ' • ' + esc(os) : '') + '</span>';
 
       const cb = document.createElement('input');
       cb.type = 'checkbox';

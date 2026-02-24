@@ -46,6 +46,55 @@ def list_hosts(online_only: bool = False, db: Session = Depends(get_db), user=De
     ]
 
 
+@router.post("/{agent_id}/reboot")
+async def reboot_host(
+    agent_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_packages"):
+        raise HTTPException(403, "Insufficient permissions to reboot hosts")
+
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host or not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    if not is_host_online(host):
+        t = seconds_since_seen(host)
+        if t is not None:
+            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
+        raise HTTPException(503, "Agent appears offline")
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="reboot",
+            payload={},
+            agent_ids=[agent_id],
+            commit=False,
+        )
+
+    await push_job_to_agents(
+        agent_ids=[agent_id],
+        job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "reboot"},
+    )
+
+    try:
+        log_event(
+            db,
+            action="hosts.reboot",
+            actor=getattr(user, "username", None),
+            target_type="host",
+            target_name=agent_id,
+            meta={"job_id": created.job_key},
+        )
+    except Exception:
+        pass
+
+    return {"job_id": created.job_key, "agent_id": agent_id, "status": "queued"}
+
+
 @router.get("/{agent_id}/timeline")
 def host_timeline(
     agent_id: str,

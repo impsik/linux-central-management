@@ -893,12 +893,11 @@
                         <th>Active</th>
                         <th>MFA</th>
                         <th>Created</th>
-                        <th>Scope selectors</th>
                         <th></th>
                       </tr>
                     </thead>
                     <tbody id="admin-users-table">
-                      <tr><td colspan="7" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                      <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -906,7 +905,7 @@
               </div>
             </div>
 
-            <div class="admin-card" id="admin-oidc-map-preview-card" style="margin-top:1rem;">
+            <div class="admin-card" id="admin-oidc-map-preview-card" style="margin-top:1rem;display:none;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>OIDC mapping preview</span>
                 <button class="btn" id="admin-oidc-preview-run" type="button">Run preview</button>
@@ -920,7 +919,7 @@
               </div>
             </div>
 
-            <div class="admin-card" id="admin-oidc-events-card" style="margin-top:1rem;">
+            <div class="admin-card" id="admin-oidc-events-card" style="margin-top:1rem;display:none;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>OIDC diagnostics</span>
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
@@ -958,7 +957,7 @@
               </div>
             </div>
 
-            <div class="admin-card" id="admin-approvals-card" style="margin-top:1rem;">
+            <div class="admin-card" id="admin-approvals-card" style="margin-top:1rem;display:none;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>High-risk approvals</span>
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
@@ -1005,7 +1004,7 @@
               </div>
             </div>
 
-            <div class="admin-card" id="admin-dedupe-card" style="margin-top:1rem;">
+            <div class="admin-card" id="admin-dedupe-card" style="margin-top:1rem;display:none;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>Notification dedupe state</span>
                 <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
@@ -2153,7 +2152,7 @@
       if (!tbody) return;
 
       try {
-        setTableState(tbody, 7, 'loading', 'Loading…');
+        setTableState(tbody, 6, 'loading', 'Loading…');
         if (statusEl) statusEl.textContent = '';
         const r = await fetch('/auth/admin/users', { credentials: 'include' });
         const raw = await r.text();
@@ -2162,7 +2161,7 @@
 
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
-          setTableState(tbody, 7, 'empty', 'No users');
+          setTableState(tbody, 6, 'empty', 'No users');
           return;
         }
         tbody.innerHTML = '';
@@ -2184,10 +2183,6 @@
             <td>${escapeHtml(active)}</td>
             <td>${escapeHtml(mfa)}</td>
             <td class="status-muted">${escapeHtml(created)}</td>
-            <td>
-              <textarea class="admin-input" rows="2" data-user-scope="${escapeHtml(uname)}" placeholder='[{"env":["prod"],"team":["core"]}]' style="min-width:260px;"></textarea>
-              <div style="margin-top:0.35rem;"><button class="btn" data-user-scope-save="${escapeHtml(uname)}">Save scope</button></div>
-            </td>
             <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end;">
               <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
               <button class="btn" data-user-toggle-active="${escapeHtml(uname)}" data-user-active="${isActive ? '1' : '0'}" ${canToggleActive ? '' : 'disabled'} title="${canToggleActive ? (isActive ? 'Deactivate user' : 'Activate user') : 'Cannot change this user'}">${isActive ? 'Deactivate' : 'Activate'}</button>
@@ -2196,7 +2191,7 @@
           tbody.appendChild(tr);
         }
 
-        // Load per-user scope selectors into textareas.
+        // Scope selectors removed from Admin view.
         const scopeAreas = Array.from(tbody.querySelectorAll('textarea[data-user-scope]'));
         for (const ta of scopeAreas) {
           const uname = ta.getAttribute('data-user-scope') || '';
@@ -2297,7 +2292,7 @@
 
         if (showToastOnManual) showToast('Users refreshed', 'success');
       } catch (e) {
-        setTableState(tbody, 7, 'error', e.message || String(e));
+        setTableState(tbody, 6, 'error', e.message || String(e));
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
       }
@@ -2690,9 +2685,6 @@
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('admin-tab').classList.add('active');
       loadAdminUsers();
-      loadAdminOidcEvents();
-      loadAdminApprovals();
-      loadAdminNotificationDedupe();
       loadAdminAudit();
     }
 

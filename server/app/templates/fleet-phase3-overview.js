@@ -361,7 +361,9 @@
       const sec = Number(it.security_updates || 0);
       const all = Number(it.updates || 0);
       const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
-      const reboot = it.reboot_required ? '<span class="status-warn">required</span>' : '<span class="status-muted">no</span>';
+      const reboot = it.reboot_required
+        ? ('<span class="status-warn">required</span> <button type="button" class="btn host-reboot-btn" data-agent-id="' + w.escapeHtml(it.agent_id || '') + '" data-hostname="' + w.escapeHtml(hostName) + '" style="margin-left:0.4rem;padding:0.15rem 0.4rem;font-size:0.78rem;">Reboot</button>')
+        : '<span class="status-muted">no</span>';
       const lastSeen = ctx.formatShortTime(it.last_seen);
 
       const tr = document.createElement('tr');
@@ -461,6 +463,32 @@
             if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
             else await loadHostsTable(ctx);
             if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
+      const rebootBtn = tr.querySelector('.host-reboot-btn');
+      if (rebootBtn) {
+        rebootBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const agentId = String(rebootBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(rebootBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          if (!confirm(`Reboot host "${hostnameLabel}" (${agentId})?`)) return;
+          try {
+            const resp = await fetch(`/hosts/${encodeURIComponent(agentId)}/reboot`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            let data = null;
+            try { data = await resp.json(); } catch (_) { data = null; }
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `reboot failed (${resp.status})`);
+            }
+            w.showToast(`Reboot queued for ${hostnameLabel}`, 'success');
           } catch (err) {
             w.showToast(err?.message || String(err), 'error');
           }
