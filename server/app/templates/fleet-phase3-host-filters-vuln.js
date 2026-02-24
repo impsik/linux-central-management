@@ -409,6 +409,28 @@
       }
     }
 
+    async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {
+      const resp = await fetch('/jobs/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_ids: agentIds })
+      });
+      if (!resp.ok) throw new Error(`preflight failed (${resp.status})`);
+      const pre = await resp.json();
+      const targeted = Array.isArray(pre?.targeted_hosts) ? pre.targeted_hosts : [];
+      const excluded = Array.isArray(pre?.excluded_by_scope) ? pre.excluded_by_scope : [];
+      const offline = Array.isArray(pre?.offline_or_unreachable) ? pre.offline_or_unreachable : [];
+      if (!targeted.length) throw new Error('No targeted hosts after preflight');
+      const msg = `${actionLabel}\n\nTargeted: ${targeted.length}\nExcluded by scope: ${excluded.length}\nOffline/unreachable: ${offline.length}`;
+      if (targeted.length > threshold) {
+        const typed = prompt(`${msg}\n\nType APPLY to continue:`);
+        if ((typed || '').trim().toUpperCase() !== 'APPLY') return { ok: false, preflight: pre };
+      } else if (!confirm(`${msg}\n\nProceed?`)) {
+        return { ok: false, preflight: pre };
+      }
+      return { ok: true, preflight: pre };
+    }
+
     async function upgradeSelected() {
       const pkgName = normalizePackageToken(pkgEl?.value || '');
       const vulnVersion = (verEl?.value || '').trim();
@@ -451,6 +473,12 @@
       if (upgradeBtn) upgradeBtn.disabled = true;
 
       try {
+        const check = await confirmBlastRadius(agentIds, 'pkg-upgrade preflight');
+        if (!check.ok) {
+          if (upgradeStatusEl) upgradeStatusEl.textContent = 'Cancelled.';
+          return;
+        }
+
         const body = isCveMode
           ? { agent_ids: agentIds, packages_by_agent: packagesByAgent }
           : { agent_ids: agentIds, packages: [pkgName] };
