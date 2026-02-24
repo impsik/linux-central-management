@@ -8,6 +8,7 @@ function openMfaModal(mode, otpauthUri = '') {
       statusEl.textContent = '';
       statusEl.classList.remove('error', 'success');
       detachMfaVerifyEnterHandler();
+      window.__mfaModalMode = mode || '';
 
       if (mode === 'setup') {
         titleEl.textContent = 'Set up MFA (required)';
@@ -137,6 +138,7 @@ function openMfaModal(mode, otpauthUri = '') {
       modal.classList.remove('open');
       modal.setAttribute('aria-hidden', 'true');
       modal.hidden = true;
+      window.__mfaModalMode = '';
     }
 
     async function mfaEnrollStart() {

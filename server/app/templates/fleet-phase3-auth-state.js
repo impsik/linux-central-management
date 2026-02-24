@@ -38,6 +38,11 @@ function setAdminStatus(message, state) {
       titleEl.textContent = isAdmin ? 'SSH Keys' : 'My keys';
     }
 
+    function isMfaModalOpen() {
+      const modal = document.getElementById('mfa-modal');
+      return !!(modal && !modal.hidden && modal.classList.contains('open'));
+    }
+
     async function loadAuthInfo() {
       const userEl = document.getElementById('current-user');
       const logoutBtn = document.getElementById('logout-btn');
@@ -75,13 +80,21 @@ function setAdminStatus(message, state) {
       const isAdmin = (currentPermissions && String(currentPermissions.role||'').toLowerCase() === 'admin') || !!currentPermissions.can_manage_users || !!(meUser && admin && meUser === admin);
 
       // Forced MFA flow (for admin/operator).
+      // Important: do NOT re-open/rebuild MFA modal on every background poll,
+      // otherwise the code input gets reset every few seconds.
       try {
         const mfa = window.__mfa || null;
+        const mfaOpen = isMfaModalOpen();
+        const mode = (window.__mfaModalMode || '');
+
         if (mfa && mfa.setup_required) {
-          // Start enrollment (QR) and force modal open.
-          await mfaEnrollStart();
+          if (!mfaOpen || mode !== 'setup') {
+            await mfaEnrollStart();
+          }
         } else if (mfa && mfa.verify_required) {
-          openMfaModal('verify');
+          if (!mfaOpen || mode !== 'verify') {
+            openMfaModal('verify');
+          }
         }
       } catch {}
       if (adminMenuItem) {
