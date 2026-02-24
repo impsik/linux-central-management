@@ -300,6 +300,26 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
                 # host-level reboot flag
                 if hasattr(host, "reboot_required"):
                     host.reboot_required = bool(data.get("reboot_required") or False)
+
+                updates = data.get("updates", []) or []
+                db.execute(delete(HostPackageUpdate).where(HostPackageUpdate.host_id == host.id))
+                for u in updates:
+                    if not isinstance(u, dict):
+                        continue
+                    name = str(u.get("name") or "").strip()
+                    if not name:
+                        continue
+                    db.add(
+                        HostPackageUpdate(
+                            host_id=host.id,
+                            name=name,
+                            installed_version=u.get("installed_version"),
+                            candidate_version=u.get("candidate_version"),
+                            is_security=bool(u.get("is_security") or False),
+                            update_available=True,
+                            checked_at=checked_at,
+                        )
+                    )
         except Exception:
             # Best-effort caching
             pass
@@ -360,29 +380,6 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
                 db.rollback()
             except Exception:
                 pass
-
-                updates = data.get("updates", []) or []
-                db.execute(delete(HostPackageUpdate).where(HostPackageUpdate.host_id == host.id))
-                for u in updates:
-                    if not isinstance(u, dict):
-                        continue
-                    name = str(u.get("name") or "").strip()
-                    if not name:
-                        continue
-                    db.add(
-                        HostPackageUpdate(
-                            host_id=host.id,
-                            name=name,
-                            installed_version=u.get("installed_version"),
-                            candidate_version=u.get("candidate_version"),
-                            is_security=bool(u.get("is_security") or False),
-                            update_available=True,
-                            checked_at=checked_at,
-                        )
-                    )
-        except Exception:
-            # best-effort
-            pass
 
     db.commit()
     return {"ok": True}
