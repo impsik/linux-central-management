@@ -177,13 +177,45 @@ function openMfaModal(mode, otpauthUri = '') {
           `;
 
           document.getElementById('mfa-recovery-copy')?.addEventListener('click', async () => {
+            const text = (codes || '');
+            const ta = document.getElementById('mfa-recovery-codes');
+
+            // Modern clipboard API first (works in secure contexts/user gesture).
             try {
-              const text = (codes || '');
-              await navigator.clipboard.writeText(text);
-              showToast('Recovery codes copied', 'success');
-            } catch (e) {
-              showToast('Copy failed (browser blocked clipboard). Select and copy manually.', 'error', 4500);
+              if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(text);
+                showToast('Recovery codes copied', 'success');
+                return;
+              }
+            } catch (_) {
+              // Fall through to legacy/manual fallback.
             }
+
+            // Legacy fallback via textarea selection + execCommand.
+            try {
+              if (ta && typeof ta.focus === 'function' && typeof ta.select === 'function') {
+                ta.focus();
+                ta.select();
+                ta.setSelectionRange(0, ta.value.length);
+                const ok = document.execCommand && document.execCommand('copy');
+                if (ok) {
+                  showToast('Recovery codes copied', 'success');
+                  return;
+                }
+              }
+            } catch (_) {
+              // Final manual fallback below.
+            }
+
+            // Final fallback: preselect so user can Ctrl/Cmd+C quickly.
+            try {
+              if (ta && typeof ta.focus === 'function' && typeof ta.select === 'function') {
+                ta.focus();
+                ta.select();
+                ta.setSelectionRange(0, ta.value.length);
+              }
+            } catch (_) {}
+            showToast('Clipboard blocked. Codes selected — press Ctrl/Cmd+C.', 'error', 5000);
           });
 
           document.getElementById('mfa-recovery-done')?.addEventListener('click', async () => {
