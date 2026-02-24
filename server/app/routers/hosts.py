@@ -17,6 +17,7 @@ from ..services.job_wait import wait_for_job_run
 from ..services.audit import log_event
 from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
+from ..services.package_names import sanitize_package_list
 from ..services.deb_version import is_vulnerable
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
@@ -867,9 +868,9 @@ async def host_packages_action(
         raise HTTPException(400, "Invalid action. Must be upgrade, reinstall, or remove.")
     if not isinstance(packages, list) or not packages:
         raise HTTPException(400, "packages must be a non-empty list")
-    packages = [str(p).strip() for p in packages if str(p).strip()]
+    packages = sanitize_package_list(packages)
     if not packages:
-        raise HTTPException(400, "packages must be a non-empty list")
+        raise HTTPException(400, "packages must contain valid package names")
 
     job_type = {"upgrade": "pkg-upgrade", "reinstall": "pkg-reinstall", "remove": "pkg-remove"}[action]
 

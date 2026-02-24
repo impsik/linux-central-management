@@ -26,6 +26,17 @@
     function st() { return getState() || {}; }
     function setPatch(patch) { setState(patch || {}); }
 
+    function normalizePackageToken(raw) {
+      let s = String(raw || '').trim();
+      if (!s) return '';
+      if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) s = s.slice(1, -1).trim();
+      const annIdx = s.indexOf(' (');
+      if (annIdx > 0) s = s.slice(0, annIdx).trim();
+      if (/\s/.test(s)) return '';
+      if (!/^[a-z0-9][a-z0-9+.:~-]*$/i.test(s)) return '';
+      return s;
+    }
+
     function renderCvePackagesPanel(cve) {
       const state = st();
       if (!cvePackagesPanel || !cvePackagesList) return;
@@ -163,8 +174,10 @@
             try {
               const j = JSON.parse(r.stdout);
               const affected = !!(j && j.affected === true);
-              const pkgs = Array.isArray(j?.packages) ? j.packages.filter(Boolean) : [];
-              resultsByAgentId[r.agent_id] = { affected: affected, packages: pkgs };
+              const pkgs = Array.isArray(j?.packages)
+                ? j.packages.map(normalizePackageToken).filter(Boolean)
+                : [];
+              resultsByAgentId[r.agent_id] = { affected: affected, packages: Array.from(new Set(pkgs)) };
               if (affected) affectedIds.push(r.agent_id);
             } catch (_) { }
           }
@@ -397,7 +410,7 @@
     }
 
     async function upgradeSelected() {
-      const pkgName = (pkgEl?.value || '').trim();
+      const pkgName = normalizePackageToken(pkgEl?.value || '');
       const vulnVersion = (verEl?.value || '').trim();
       const cve = (cveEl?.value || '').trim().toUpperCase();
       const state = st();

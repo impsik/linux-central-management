@@ -16,6 +16,7 @@ from ..services.maintenance import assert_action_allowed_now
 from ..services.rbac import permissions_for
 from ..services.targets import resolve_agent_ids
 from ..services.user_scopes import filter_agent_ids_for_user, is_host_visible_to_user
+from ..services.package_names import sanitize_package_list
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -126,8 +127,12 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, db: Session = Depends
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
 
-    packages = payload.packages or []
-    packages_by_agent = payload.packages_by_agent or {}
+    packages = sanitize_package_list(payload.packages or [])
+    packages_by_agent = {
+        str(aid): sanitize_package_list(pkgs)
+        for aid, pkgs in (payload.packages_by_agent or {}).items()
+        if sanitize_package_list(pkgs)
+    }
 
     if not packages and not packages_by_agent:
         raise HTTPException(400, "packages or packages_by_agent is required")

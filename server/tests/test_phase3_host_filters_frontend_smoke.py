@@ -29,3 +29,8 @@ def test_phase3_vuln_upgrade_status_copy_smoke():
     assert 'Starting upgrade of ' in vuln_js
     assert 'Selected: ' in vuln_js
     assert 'Run CVE check to see affected packages.' in vuln_js
+
+    # Package tokens from CVE output must be normalized before UI selection/job payload.
+    assert 'function normalizePackageToken' in vuln_js
+    assert 'j.packages.map(normalizePackageToken).filter(Boolean)' in vuln_js
+    assert "const pkgName = normalizePackageToken(pkgEl?.value || '')" in vuln_js
