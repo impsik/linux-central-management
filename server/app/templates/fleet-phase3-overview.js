@@ -342,7 +342,7 @@
     const total = Array.isArray(hostsTableItemsCache) ? hostsTableItemsCache.length : 0;
     if (!items.length) {
       if (counterEl) counterEl.textContent = `0 / ${total} hosts shown`;
-      w.setTableState(tbody, 9, 'empty', 'No hosts match current filters');
+      w.setTableState(tbody, 10, 'empty', 'No hosts match current filters');
       if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
       return;
     }
@@ -361,9 +361,10 @@
       const sec = Number(it.security_updates || 0);
       const all = Number(it.updates || 0);
       const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
-      const reboot = it.reboot_required
-        ? ('<span class="status-warn">required</span> <button type="button" class="btn host-reboot-btn" data-agent-id="' + w.escapeHtml(it.agent_id || '') + '" data-hostname="' + w.escapeHtml(hostName) + '" style="margin-left:0.4rem;padding:0.15rem 0.4rem;font-size:0.78rem;">Reboot</button>')
-        : '<span class="status-muted">no</span>';
+      const reboot = it.reboot_required ? '<span class="status-warn">required</span>' : '<span class="status-muted">no</span>';
+      const rebootAction = it.reboot_required
+        ? ('<button type="button" class="btn host-reboot-btn" data-agent-id="' + w.escapeHtml(it.agent_id || '') + '" data-hostname="' + w.escapeHtml(hostName) + '" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Reboot</button>')
+        : '<span class="status-muted">—</span>';
       const lastSeen = ctx.formatShortTime(it.last_seen);
 
       const tr = document.createElement('tr');
@@ -385,6 +386,7 @@
         <td>${reboot}</td>
         <td>${online}</td>
         <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
+        <td style="text-align:right;">${rebootAction}</td>
       `;
 
       tr.addEventListener('click', () => {
@@ -549,7 +551,7 @@
     const order = orderSel?.value || 'asc';
 
     try {
-      w.setTableState(tbody, 9, 'loading', 'Loading…');
+      w.setTableState(tbody, 10, 'loading', 'Loading…');
       const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include' });
       if (!r.ok) throw new Error(`hosts report failed (${r.status})`);
@@ -559,7 +561,7 @@
       if (!hostsTableItemsCache.length) {
         if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
         updateHostsUpdatesHint();
-        return w.setTableState(tbody, 9, 'empty', 'No hosts');
+        return w.setTableState(tbody, 10, 'empty', 'No hosts');
       }
 
       // Keep host metadata hydrated for filter options and host detail panel.
@@ -619,7 +621,7 @@
         });
       }
     } catch (e) {
-      w.setTableState(tbody, 9, 'error', `Hosts table error: ${e.message || String(e)}`);
+      w.setTableState(tbody, 10, 'error', `Hosts table error: ${e.message || String(e)}`);
     }
   }
 

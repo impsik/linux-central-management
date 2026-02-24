@@ -548,11 +548,12 @@
                 <th>Reboot</th>
                 <th>Online</th>
                 <th class="sortable-col" id="hosts-th-last" title="Sort by last seen" tabindex="0" role="button">Last seen <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th style="text-align:right;">Actions</th>
               </tr>
             </thead>
             <tbody id="hosts-table-body">
               <tr>
-                <td colspan="9" style="text-align:center;" class="status-muted">Loading…</td>
+                <td colspan="10" style="text-align:center;" class="status-muted">Loading…</td>
               </tr>
             </tbody>
           </table>
@@ -2299,50 +2300,8 @@
     }
 
     function initOidcMapPreview() {
-      const runBtn = document.getElementById('admin-oidc-preview-run');
-      const inEl = document.getElementById('admin-oidc-preview-input');
-      const outEl = document.getElementById('admin-oidc-preview-output');
-      const statusEl = document.getElementById('admin-oidc-preview-status');
       const card = document.getElementById('admin-oidc-map-preview-card');
-      if (!runBtn || !inEl || !outEl || !statusEl || !card) return;
-
-      card.style.display = 'block';
-
-      runBtn.addEventListener('click', async (e) => {
-        e.preventDefault();
-        let claims = {};
-        try {
-          const raw = (inEl.value || '').trim() || '{}';
-          const parsed = JSON.parse(raw);
-          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Claims must be a JSON object');
-          claims = parsed;
-        } catch (err) {
-          statusEl.textContent = err.message || String(err);
-          showToast(statusEl.textContent, 'error');
-          return;
-        }
-
-        runBtn.disabled = true;
-        statusEl.textContent = 'Running preview…';
-        try {
-          const r = await fetch('/auth/admin/oidc/map-preview', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
-            body: JSON.stringify({ claims }),
-          });
-          const raw = await r.text();
-          let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
-          if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `Preview failed (${r.status})`);
-          outEl.value = JSON.stringify(d || {}, null, 2);
-          statusEl.textContent = 'Preview ready.';
-        } catch (err) {
-          statusEl.textContent = err.message || String(err);
-          showToast(statusEl.textContent, 'error', 5000);
-        } finally {
-          runBtn.disabled = false;
-        }
-      });
+      if (card) card.style.display = 'none';
     }
 
     async function loadAdminOidcEvents(showToastOnManual = false) {
