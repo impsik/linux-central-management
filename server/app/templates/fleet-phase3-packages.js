@@ -17,7 +17,6 @@
     const interactiveEl = document.getElementById('pkg-interactive-terminal');
     const upgradeBtn = document.getElementById('pkg-upgrade-selected');
     const reinstallBtn = document.getElementById('pkg-reinstall-selected');
-    const removeBtn = document.getElementById('pkg-remove-selected');
     const statusEl = document.getElementById('pkg-actions-status');
     if (!el) return;
 
@@ -29,7 +28,6 @@
       const st = getState(ctx);
       const totalSelected = (st.selectedPackages instanceof Set) ? st.selectedPackages.size : 0;
       if (reinstallBtn) reinstallBtn.disabled = totalSelected === 0;
-      if (removeBtn) removeBtn.disabled = totalSelected === 0;
       if (upgradeBtn) upgradeBtn.disabled = totalSelected === 0;
       if (statusEl) statusEl.textContent = totalSelected ? `Selected: ${totalSelected} package(s).` : '';
     }
@@ -180,7 +178,6 @@
 
     upgradeBtn?.addEventListener('click', (e) => { e.preventDefault(); void runPackageAction('upgrade'); });
     reinstallBtn?.addEventListener('click', (e) => { e.preventDefault(); void runPackageAction('reinstall'); });
-    removeBtn?.addEventListener('click', (e) => { e.preventDefault(); void runPackageAction('remove'); });
 
     w.__updatePkgActionControls = updatePkgActionControls;
     updatePkgActionControls();
