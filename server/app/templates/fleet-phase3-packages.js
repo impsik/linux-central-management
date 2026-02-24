@@ -14,6 +14,7 @@
     const clearBtn = document.getElementById('packages-search-clear');
     const updatesOnlyEl = document.getElementById('packages-updates-only');
     const cvesOnlyEl = document.getElementById('packages-cves-only');
+    const sortEl = document.getElementById('packages-sort');
     const selectVisibleEl = document.getElementById('select-visible-packages');
     const interactiveEl = document.getElementById('pkg-interactive-terminal');
     const upgradeBtn = document.getElementById('pkg-upgrade-selected');
@@ -75,6 +76,14 @@
       setState(ctx, { packagesCvesOnly: !!cvesOnlyEl.checked, currentPackageName: null });
       const infoEl = document.getElementById('package-info');
       if (infoEl) infoEl.innerHTML = '';
+      if (st.currentAgentId && document.getElementById('packages-tab')?.classList.contains('active')) {
+        void loadPackages(ctx, st.currentAgentId);
+      }
+    });
+
+    sortEl?.addEventListener('change', () => {
+      const st = getState(ctx);
+      setState(ctx, { packagesSortBy: sortEl.value || 'name' });
       if (st.currentAgentId && document.getElementById('packages-tab')?.classList.contains('active')) {
         void loadPackages(ctx, st.currentAgentId);
       }
@@ -226,6 +235,23 @@
       if (st.packagesCvesOnly) {
         pkgs = pkgs.filter((p) => Array.isArray(p && p.cves) && p.cves.length > 0);
       }
+      if (st.packagesSortBy === 'cve-desc') {
+        pkgs = [...pkgs].sort((a, b) => {
+          const ac = Array.isArray(a && a.cves) ? a.cves.length : 0;
+          const bc = Array.isArray(b && b.cves) ? b.cves.length : 0;
+          if (bc !== ac) return bc - ac;
+          return String(a?.name || '').localeCompare(String(b?.name || ''));
+        });
+      } else if (st.packagesSortBy === 'cve-asc') {
+        pkgs = [...pkgs].sort((a, b) => {
+          const ac = Array.isArray(a && a.cves) ? a.cves.length : 0;
+          const bc = Array.isArray(b && b.cves) ? b.cves.length : 0;
+          if (ac !== bc) return ac - bc;
+          return String(a?.name || '').localeCompare(String(b?.name || ''));
+        });
+      } else {
+        pkgs = [...pkgs].sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+      }
       const total = data.total ?? pkgs.length;
       const collectedAt = data.collected_at;
       const updatesCheckedAt = data.updates_checked_at;
@@ -331,7 +357,12 @@
       const candidate = data.candidate_version ? `<code>${w.escapeHtml(data.candidate_version)}</code>` : '<code>n/a</code>';
       const summary = w.escapeHtml(data.summary || '');
       const desc = w.escapeHtml(data.description || '');
-      infoEl.innerHTML = `<h3>${name}</h3><p>${summary}</p><div>Installed: ${installed}</div><div><b>Candidate:</b> <b>${candidate}</b></div><pre>${desc}</pre>`;
+      const row = Array.isArray(w.__lastPackagesList) ? w.__lastPackagesList.find((p) => p && p.name === pkgName) : null;
+      const cves = Array.isArray(row && row.cves) ? row.cves : [];
+      const cveHtml = cves.length
+        ? `<div style="margin-top:0.45rem;"><b>Linked CVEs:</b> ${cves.map((c) => `<code>${w.escapeHtml(c)}</code>`).join(' ')}</div>`
+        : '<div style="margin-top:0.45rem;color:var(--muted-2);">Linked CVEs: none</div>';
+      infoEl.innerHTML = `<h3>${name}</h3><p>${summary}</p><div>Installed: ${installed}</div><div><b>Candidate:</b> <b>${candidate}</b></div>${cveHtml}<pre>${desc}</pre>`;
     } catch (e) {
       infoEl.innerHTML = `<div class="error">${w.escapeHtml(e.message || String(e))}</div>`;
     }
