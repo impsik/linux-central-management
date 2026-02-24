@@ -257,16 +257,16 @@ async def cve_sync_loop(stop_event: asyncio.Event):
         
     while not stop_event.is_set():
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=86400)
+            await asyncio.wait_for(stop_event.wait(), timeout=43200)
         except asyncio.TimeoutError:
             pass
-            
+
         if stop_event.is_set():
             break
-            
-        logger.info("Starting daily CVE sync...")
+
+        logger.info("Starting scheduled CVE sync (12h interval)...")
         try:
             async with AsyncSessionLocal() as db:
                 await sync_cve_definitions(db)
         except Exception:
-            logger.exception("Daily CVE sync failed")
+            logger.exception("Scheduled CVE sync failed")

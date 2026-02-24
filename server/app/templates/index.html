@@ -1108,6 +1108,10 @@
             <input type="checkbox" id="packages-updates-only" />
             Updates only
           </label>
+          <label class="vuln-inline" style="margin:0;">
+            <input type="checkbox" id="packages-cves-only" />
+            Only packages with CVEs
+          </label>
           <div id="packages-meta" style="font-size:0.85rem;color:var(--muted-2);"></div>
         </div>
         <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;margin-bottom:1rem;">
@@ -1474,6 +1478,7 @@
     let packagesSearchQuery = '';
     let packagesSearchTimer = null;
     let packagesUpdatesOnly = false;
+    let packagesCvesOnly = false;
     let pkgInteractiveTerminal = false;
     let selectedPackages = new Set();
     let currentPackageName = null;
@@ -1568,8 +1573,11 @@
 
       // Reset per-host package filters so they don't leak across hosts
       packagesUpdatesOnly = false;
+      packagesCvesOnly = false;
       const updatesOnlyEl = document.getElementById('packages-updates-only');
       if (updatesOnlyEl) updatesOnlyEl.checked = false;
+      const cvesOnlyEl = document.getElementById('packages-cves-only');
+      if (cvesOnlyEl) cvesOnlyEl.checked = false;
 
       // Reset package selection when switching hosts (prevents stale selections and enables CVE pre-select)
       selectedPackages = new Set();
@@ -2815,6 +2823,7 @@
           packagesSearchQuery,
           packagesSearchTimer,
           packagesUpdatesOnly,
+          packagesCvesOnly,
           pkgInteractiveTerminal,
           selectedPackages,
           currentPackageName,
@@ -2824,6 +2833,7 @@
           if (Object.prototype.hasOwnProperty.call(patch, 'packagesSearchQuery')) packagesSearchQuery = patch.packagesSearchQuery || '';
           if (Object.prototype.hasOwnProperty.call(patch, 'packagesSearchTimer')) packagesSearchTimer = patch.packagesSearchTimer || null;
           if (Object.prototype.hasOwnProperty.call(patch, 'packagesUpdatesOnly')) packagesUpdatesOnly = !!patch.packagesUpdatesOnly;
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesCvesOnly')) packagesCvesOnly = !!patch.packagesCvesOnly;
           if (Object.prototype.hasOwnProperty.call(patch, 'pkgInteractiveTerminal')) pkgInteractiveTerminal = !!patch.pkgInteractiveTerminal;
           if (Object.prototype.hasOwnProperty.call(patch, 'selectedPackages')) selectedPackages = (patch.selectedPackages instanceof Set) ? patch.selectedPackages : new Set();
           if (Object.prototype.hasOwnProperty.call(patch, 'currentPackageName')) currentPackageName = patch.currentPackageName || null;

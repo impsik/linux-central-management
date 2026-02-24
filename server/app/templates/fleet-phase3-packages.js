@@ -13,6 +13,7 @@
     const checkBtn = document.getElementById('packages-check-updates');
     const clearBtn = document.getElementById('packages-search-clear');
     const updatesOnlyEl = document.getElementById('packages-updates-only');
+    const cvesOnlyEl = document.getElementById('packages-cves-only');
     const selectVisibleEl = document.getElementById('select-visible-packages');
     const interactiveEl = document.getElementById('pkg-interactive-terminal');
     const upgradeBtn = document.getElementById('pkg-upgrade-selected');
@@ -62,6 +63,16 @@
     updatesOnlyEl?.addEventListener('change', () => {
       const st = getState(ctx);
       setState(ctx, { packagesUpdatesOnly: !!updatesOnlyEl.checked, currentPackageName: null });
+      const infoEl = document.getElementById('package-info');
+      if (infoEl) infoEl.innerHTML = '';
+      if (st.currentAgentId && document.getElementById('packages-tab')?.classList.contains('active')) {
+        void loadPackages(ctx, st.currentAgentId);
+      }
+    });
+
+    cvesOnlyEl?.addEventListener('change', () => {
+      const st = getState(ctx);
+      setState(ctx, { packagesCvesOnly: !!cvesOnlyEl.checked, currentPackageName: null });
       const infoEl = document.getElementById('package-info');
       if (infoEl) infoEl.innerHTML = '';
       if (st.currentAgentId && document.getElementById('packages-tab')?.classList.contains('active')) {
@@ -212,6 +223,9 @@
           return !!cand && cand !== inst;
         });
       }
+      if (st.packagesCvesOnly) {
+        pkgs = pkgs.filter((p) => Array.isArray(p && p.cves) && p.cves.length > 0);
+      }
       const total = data.total ?? pkgs.length;
       const collectedAt = data.collected_at;
       const updatesCheckedAt = data.updates_checked_at;
@@ -233,12 +247,13 @@
         const up = !!p.update_available;
         const cand = p.candidate_version ? w.escapeHtml(p.candidate_version) : '';
         const checked = selected.has(p.name);
+        const cveCount = Array.isArray(p.cves) ? p.cves.length : 0;
         return `
           <div class="package-card ${isActive ? 'active' : ''} ${up ? 'upgradable' : ''}" data-pkg="${name}">
             <div class="package-select-wrap">
               <input class="package-checkbox" type="checkbox" data-pkg="${name}" ${checked ? 'checked' : ''} />
               <div style="min-width:0;">
-                <div class="package-name">${name}${up ? `<span class="pkg-up-arrow">↑</span>` : ''}</div>
+                <div class="package-name">${name}${up ? `<span class="pkg-up-arrow">↑</span>` : ''}${cveCount ? `<button type="button" class="btn" style="margin-left:0.4rem;padding:0.08rem 0.35rem;font-size:0.72rem;line-height:1.2;vertical-align:middle;" title="${cveCount} linked CVE(s)">CVE ${cveCount}</button>` : ''}</div>
                 <div class="package-meta">${version}${cand ? ` → ${cand}` : ''}${arch ? ` • ${arch}` : ''}</div>
               </div>
             </div>
