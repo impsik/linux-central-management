@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -17,8 +18,8 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
-from ..models import AppSavedView, AppSession, AppUser, AppUserScope, OIDCAuthEvent
-from ..services.user_scopes import get_user_scope_selectors, user_has_scope_limits
+from ..models import AppSavedView, AppSession, AppUser, AppUserScope, Host, OIDCAuthEvent
+from ..services.user_scopes import get_user_scope_selectors, is_host_visible_to_user, user_has_scope_limits
 from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.rbac import permissions_for
@@ -1043,6 +1044,100 @@ def auth_admin_get_user_scopes(username: str, request: Request, db: Session = De
         "username": target.username,
         "selectors": [r.selector if isinstance(r.selector, dict) else {} for r in rows],
     }
+
+
+@router.get("/admin/rbac/explain")
+def auth_admin_rbac_explain(
+    user_id: str,
+    host_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AppUser = Depends(require_admin_user),
+):
+    try:
+        uid = uuid.UUID(str(user_id))
+        hid = uuid.UUID(str(host_id))
+    except Exception:
+        raise HTTPException(400, "user_id and host_id must be UUIDs")
+
+    target = db.execute(select(AppUser).where(AppUser.id == uid)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "user not found")
+
+    host = db.execute(select(Host).where(Host.id == hid)).scalar_one_or_none()
+    if not host:
+        raise HTTPException(404, "host not found")
+
+    role = str(getattr(target, "role", "operator") or "operator").lower()
+    selectors = get_user_scope_selectors(db, target)
+    labels = (getattr(host, "labels", None) or {}) if host is not None else {}
+
+    matched_selector = None
+    selector_results: list[dict] = []
+
+    if role == "admin":
+        allowed = True
+        reason = "admin role grants host visibility"
+    elif not selectors:
+        allowed = True
+        reason = "no scope limits configured for user"
+    else:
+        for sel in selectors:
+            misses = []
+            for k, allowed_vals in sel.items():
+                actual = str(labels.get(k, "")).strip()
+                if actual not in allowed_vals:
+                    misses.append({"key": k, "actual": actual, "allowed": allowed_vals})
+            matched = len(misses) == 0
+            selector_results.append({"selector": sel, "matched": matched, "misses": misses})
+            if matched and matched_selector is None:
+                matched_selector = sel
+
+        allowed = bool(matched_selector is not None)
+        reason = "matched at least one selector" if allowed else "no selector matched host labels"
+
+    # Double-check with canonical helper to prevent drift.
+    helper_allowed = is_host_visible_to_user(db, target, host)
+    if helper_allowed != allowed:
+        allowed = helper_allowed
+        reason = f"helper override: {reason}"
+
+    out = {
+        "allowed": allowed,
+        "reason": reason,
+        "user": {
+            "id": str(target.id),
+            "username": target.username,
+            "role": role,
+            "active": bool(getattr(target, "is_active", True)),
+        },
+        "host": {
+            "id": str(host.id),
+            "agent_id": host.agent_id,
+            "hostname": host.hostname,
+            "labels": labels,
+        },
+        "scopes": {
+            "count": len(selectors),
+            "selectors": selectors,
+            "selector_results": selector_results,
+            "matched_selector": matched_selector,
+        },
+    }
+
+    log_event(
+        db,
+        action="auth.admin.rbac.explain",
+        actor=admin,
+        request=request,
+        target_type="app_user",
+        target_id=str(target.id),
+        target_name=target.username,
+        meta={"host_id": str(host.id), "allowed": bool(allowed), "scope_count": len(selectors)},
+    )
+    db.commit()
+
+    return out
 
 
 @router.post("/admin/users/{username}/scopes")
