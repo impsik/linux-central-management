@@ -30,6 +30,7 @@ class PackageUpdatesInventory(BaseModel):
 class JobCreatePkgUpgrade(BaseModel):
     agent_ids: Optional[List[str]] = None
     labels: Optional[Dict[str,str]] = None
+    dry_run: bool = False
     # Either provide a global package list (applies to all targets), or a per-agent mapping.
     packages: Optional[List[str]] = None
     packages_by_agent: Optional[Dict[str, List[str]]] = None
@@ -48,6 +49,12 @@ class JobCreateInventoryNow(BaseModel):
 class JobCreateDistUpgrade(BaseModel):
     agent_ids: Optional[List[str]] = None
     labels: Optional[Dict[str,str]] = None
+    dry_run: bool = False
+
+
+class JobPreflightRequest(BaseModel):
+    agent_ids: Optional[List[str]] = None
+    labels: Optional[Dict[str, str]] = None
 
 class JobEvent(BaseModel):
     agent_id: str
