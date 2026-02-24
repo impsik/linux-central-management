@@ -282,7 +282,10 @@
             <div class="admin-card" id="failed-runs-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>Failed runs (24h)</span>
-                <button class="btn" id="failed-runs-refresh" type="button">Reload</button>
+                <div style="display:flex;gap:0.5rem;align-items:center;">
+                  <button class="btn" id="failed-runs-copy-visible" type="button">Copy visible</button>
+                  <button class="btn" id="failed-runs-refresh" type="button">Reload</button>
+                </div>
               </div>
               <div class="admin-card-body">
                 <div style="overflow-x:auto;">
@@ -1277,6 +1280,22 @@
         <textarea id="approval-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
         <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
           <button class="btn" id="approval-detail-modal-copy" type="button">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="failed-run-detail-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="failed-run-detail-modal-title" style="width:min(1100px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="failed-run-detail-modal-title">Failed run details</div>
+        <button class="btn modal-close" id="failed-run-detail-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="failed-run-detail-modal-meta"></div>
+        <textarea id="failed-run-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
+        <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
+          <button class="btn" id="failed-run-detail-modal-copy" type="button">Copy</button>
         </div>
       </div>
     </div>
@@ -2958,44 +2977,91 @@
         }
         if (card) card.style.display = '';
         tbody.innerHTML = '';
+        const detailsByRunId = {};
         for (const it of items) {
           const when = formatShortTime(it.finished_at);
           const host = it.agent_id || '–';
           const job = `${it.job_type || 'job'}${it.job_key ? ' • ' + it.job_key : ''}`.trim();
           const exit = (it.exit_code === null || it.exit_code === undefined) ? '–' : String(it.exit_code);
           const err = (it.error || (it.stderr || '').split('\n').slice(-1)[0] || '').trim();
+          const runId = String(it.run_id || it.id || `${host}|${job}|${it.finished_at || ''}`);
+
+          const detail = [
+            `Host: ${host}`,
+            `Job: ${job}`,
+            it.finished_at ? `When: ${new Date(it.finished_at).toLocaleString()}` : '',
+            (it.exit_code === null || it.exit_code === undefined) ? '' : `Exit: ${it.exit_code}`,
+            '',
+            '--- error ---',
+            (it.error || ''),
+            '',
+            '--- stderr ---',
+            (it.stderr || ''),
+            '',
+            '--- stdout ---',
+            (it.stdout || ''),
+          ].filter(Boolean).join('\n');
+          detailsByRunId[runId] = detail;
 
           const tr = document.createElement('tr');
           tr.style.cursor = 'pointer';
+          tr.setAttribute('data-failed-run-id', runId);
+          tr.setAttribute('data-failed-run-detail', detail);
           tr.innerHTML = `
             <td class="status-muted">${escapeHtml(when)}</td>
             <td><b>${escapeHtml(host)}</b></td>
             <td>${escapeHtml(job)}</td>
             <td style="text-align:right;">${escapeHtml(exit)}</td>
-            <td class="status-error">${escapeHtml(err || 'failed')}</td>
+            <td class="status-error">${escapeHtml(err || 'failed')} <button class="btn" data-copy-failed-run="${escapeHtml(runId)}" type="button" style="margin-left:0.4rem;padding:0.12rem 0.4rem;">Copy</button></td>
           `;
 
           tr.addEventListener('click', () => {
-            const detail = [
-              `Host: ${host}`,
-              `Job: ${job}`,
-              it.finished_at ? `When: ${new Date(it.finished_at).toLocaleString()}` : '',
-              (it.exit_code === null || it.exit_code === undefined) ? '' : `Exit: ${it.exit_code}`,
-              '',
-              '--- error ---',
-              (it.error || ''),
-              '',
-              '--- stderr ---',
-              (it.stderr || ''),
-              '',
-              '--- stdout ---',
-              (it.stdout || ''),
-            ].filter(Boolean).join('\n');
-            alert(detail);
+            if (typeof window.openFailedRunDetailModal === 'function') {
+              window.openFailedRunDetailModal(detail, `${host} • ${job}`);
+            }
+          });
+
+          const copyBtn = tr.querySelector('button[data-copy-failed-run]');
+          copyBtn?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(detail);
+              showToast('Failed run detail copied', 'success');
+            } catch {
+              if (typeof window.openFailedRunDetailModal === 'function') {
+                window.openFailedRunDetailModal(detail, `${host} • ${job}`);
+              }
+              showToast('Clipboard blocked. Opened detail view for manual copy.', 'error', 3800);
+            }
           });
 
           tbody.appendChild(tr);
         }
+
+        const copyVisibleBtn = document.getElementById('failed-runs-copy-visible');
+        copyVisibleBtn?.replaceWith(copyVisibleBtn.cloneNode(true));
+        const copyVisibleBtn2 = document.getElementById('failed-runs-copy-visible');
+        copyVisibleBtn2?.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const rows = Array.from(tbody.querySelectorAll('tr[data-failed-run-id]'));
+          const chunks = rows.map((row, idx) => {
+            const detail = row.getAttribute('data-failed-run-detail') || '';
+            return `#${idx + 1}\n${detail}`;
+          }).filter(Boolean);
+          const text = chunks.join('\n\n');
+          if (!text) return;
+          try {
+            await navigator.clipboard.writeText(text);
+            showToast('Visible failed runs copied', 'success');
+          } catch {
+            if (typeof window.openFailedRunDetailModal === 'function') {
+              window.openFailedRunDetailModal(text, `Visible failed runs (${rows.length})`);
+            }
+            showToast('Clipboard blocked. Opened detail view for manual copy.', 'error', 3800);
+          }
+        });
+
         if (showToastOnManual) showToast('Failed runs refreshed', 'success');
       } catch (e) {
         if (card) card.style.display = '';
@@ -3965,6 +4031,47 @@
       });
     }
 
+    function initFailedRunDetailModalControls() {
+      const modal = document.getElementById('failed-run-detail-modal');
+      const closeBtn = document.getElementById('failed-run-detail-modal-close');
+      const copyBtn = document.getElementById('failed-run-detail-modal-copy');
+      const outEl = document.getElementById('failed-run-detail-modal-output');
+      const metaEl = document.getElementById('failed-run-detail-modal-meta');
+      if (!modal || !outEl) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'failed-run-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl.value || '';
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast('Copied', 'success');
+        } catch {
+          outEl.focus();
+          outEl.select();
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+
+      window.openFailedRunDetailModal = (text, meta) => {
+        outEl.value = text || '';
+        if (metaEl) metaEl.textContent = meta || '';
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        modal.classList.add('open');
+        setTimeout(() => { try { outEl.focus(); } catch { } }, 0);
+      };
+    }
+
     function initApprovalsFilterControls() {
       const ids = ['approvals-filter-action', 'approvals-filter-requester', 'approvals-filter-age', 'approvals-filter-mode', 'approvals-filter-sort'];
       ids.forEach((id) => {
@@ -4054,6 +4161,7 @@
     safeInit('initHostActionControls', initHostActionControls);
     safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
     safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
+    safeInit('initFailedRunDetailModalControls', initFailedRunDetailModalControls);
     safeInit('initApprovalsFilterControls', initApprovalsFilterControls);
     safeInit('bindDiskCardClick', () => {
       const diskCard = document.getElementById('disk-card');
