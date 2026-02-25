@@ -763,6 +763,12 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
     # Backup verification policy alerts
     policy = db.execute(select(BackupVerificationPolicy).order_by(BackupVerificationPolicy.created_at.asc()).limit(1)).scalar_one_or_none()
     latest_verify = db.execute(select(BackupVerificationRun).order_by(BackupVerificationRun.finished_at.desc()).limit(1)).scalar_one_or_none()
+    latest_verified = db.execute(
+        select(BackupVerificationRun)
+        .where(BackupVerificationRun.status == "verified")
+        .order_by(BackupVerificationRun.finished_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
     if policy and policy.enabled:
         if latest_verify and latest_verify.status == "failed" and policy.alert_on_failure:
             ts = latest_verify.finished_at.isoformat() if latest_verify.finished_at else now.isoformat()
@@ -778,7 +784,7 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
 
         if policy.alert_on_stale and policy.stale_after_hours:
             stale_cutoff = now - timedelta(hours=int(policy.stale_after_hours))
-            latest_ts = latest_verify.finished_at if latest_verify else None
+            latest_ts = latest_verified.finished_at if latest_verified else None
             if latest_ts is not None and latest_ts.tzinfo is None:
                 latest_ts = latest_ts.replace(tzinfo=timezone.utc)
             if latest_ts is None or latest_ts < stale_cutoff:
