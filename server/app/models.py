@@ -253,6 +253,9 @@ class PatchCampaign(Base):
     reboot_if_needed = Column(Boolean, nullable=False, default=False)
     include_kernel = Column(Boolean, nullable=False, default=False)
 
+    # Rollout controls/state (wave progression, pause/resume, auto-pause threshold)
+    rollout_meta = Column(JSON, nullable=False, default=dict)
+
     status = Column(String, nullable=False, default="scheduled", index=True)  # scheduled|running|success|failed|canceled
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
