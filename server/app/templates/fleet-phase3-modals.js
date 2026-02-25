@@ -115,7 +115,50 @@ function openSshKeyDeployApprovalModal(it) {
           kv('Password status', info.password_status),
           kv('Last login', info.last_login),
           sudoRules ? `<details style="margin-top:0.5rem;"><summary>Sudo check output</summary><pre class="pkg-raw" style="margin-top:0.4rem;">${safe(sudoRules)}</pre></details>` : '',
+          '<div id="user-modal-timeline" style="margin-top:0.8rem;"></div>',
         ].join('');
+
+        const timelineEl = document.getElementById('user-modal-timeline');
+        if (timelineEl) {
+          timelineEl.innerHTML = '<div class="loading">Loading recent user timeline…</div>';
+          try {
+            const tr = await fetch(`/hosts/${encodeURIComponent(agentId)}/timeline?limit=120`, { credentials: 'include' });
+            if (!tr.ok) throw new Error(`timeline failed (${tr.status})`);
+            const td = await tr.json();
+            const items = Array.isArray(td?.items) ? td.items : [];
+            const uname = String(info.username || username || '').trim();
+            const userTypes = new Set(['query-user-details', 'user-lock', 'user-unlock']);
+            const filtered = items.filter((it) => {
+              const jt = String(it?.job_type || '').toLowerCase();
+              if (!userTypes.has(jt)) return false;
+              const pUser = String(it?.payload_username || '').trim();
+              return pUser && pUser === uname;
+            }).slice(0, 12);
+            if (!filtered.length) {
+              timelineEl.innerHTML = '<div class="status-muted" style="font-size:0.85rem;">No recent timeline entries for this user.</div>';
+            } else {
+              timelineEl.innerHTML = [
+                '<div class="kv-row" style="margin-top:0.4rem;"><strong>Recent timeline</strong></div>',
+                '<div style="display:grid;gap:0.35rem;">',
+                filtered.map((it) => {
+                  const t = it?.time ? new Date(it.time).toLocaleString() : 'n/a';
+                  const st = String(it?.status || 'unknown');
+                  const cls = st === 'success' ? 'status-ok' : (st === 'failed' ? 'status-error' : 'status-muted');
+                  return `<div style="border:1px solid var(--border);border-radius:8px;padding:0.35rem 0.5rem;background:var(--panel-2);display:flex;justify-content:space-between;gap:0.4rem;align-items:center;">
+                    <div style="font-size:0.82rem;">
+                      <div><b>${safe(String(it?.job_type || 'job'))}</b></div>
+                      <div class="status-muted">${safe(t)}</div>
+                    </div>
+                    <span class="${cls}" style="font-size:0.76rem;">${safe(st)}</span>
+                  </div>`;
+                }).join(''),
+                '</div>',
+              ].join('');
+            }
+          } catch (te) {
+            timelineEl.innerHTML = `<div class="status-muted" style="font-size:0.85rem;">${safe(te?.message || String(te))}</div>`;
+          }
+        }
       } catch (e) {
         outEl.innerHTML = `<div class="error">${safe(e.message || String(e))}</div>`;
       }

@@ -151,6 +151,7 @@ def host_timeline(
     items = []
     for run, job in rows:
         ts = run.finished_at or run.started_at or job.created_at
+        payload = job.payload if isinstance(job.payload, dict) else {}
         items.append({
             "time": ts,
             "job_id": job.job_key,
@@ -160,6 +161,7 @@ def host_timeline(
             "started_at": run.started_at,
             "finished_at": run.finished_at,
             "created_by": job.created_by,
+            "payload_username": payload.get("username"),
             "logs_zip": f"/jobs/{job.job_key}/logs.zip",
             "stdout": f"/jobs/{job.job_key}/runs/{agent_id}/stdout.txt",
             "stderr": f"/jobs/{job.job_key}/runs/{agent_id}/stderr.txt",

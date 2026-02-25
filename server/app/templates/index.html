@@ -141,6 +141,8 @@
                     <button class="btn" id="timeline-filter-security" type="button">Security</button>
                     <button class="btn" id="timeline-filter-package" type="button">Package</button>
                     <button class="btn" id="timeline-filter-service" type="button">Service</button>
+                    <button class="btn" id="timeline-export-json" type="button">Export JSON</button>
+                    <button class="btn" id="timeline-export-csv" type="button">Export CSV</button>
                   </div>
                 </div>
                 <div class="admin-card-body">
@@ -1913,9 +1915,59 @@
       });
     }
 
+    function hostTimelineFilteredItems() {
+      return (hostTimelineItemsCache || []).filter(timelineFilterMatch);
+    }
+
+    function downloadHostTimeline(kind) {
+      const items = hostTimelineFilteredItems();
+      if (!items.length) {
+        showToast('No timeline entries to export', 'error', 2200);
+        return;
+      }
+      const now = new Date();
+      const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
+      const base = `host-timeline-${hostTimelineFilter}-${stamp}`;
+      let blob;
+      let filename;
+      if (kind === 'csv') {
+        const esc = (v) => {
+          const s = String(v == null ? '' : v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const headers = ['time','job_id','job_type','status','exit_code','started_at','finished_at','created_by'];
+        const rows = [headers.join(',')].concat(items.map((it) => headers.map((h) => esc(it?.[h] ?? '')).join(',')));
+        blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+        filename = `${base}.csv`;
+      } else {
+        blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json;charset=utf-8' });
+        filename = `${base}.json`;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${items.length} timeline entr${items.length === 1 ? 'y' : 'ies'}`, 'success', 2000);
+    }
+
     async function loadHostTimeline(agentId) {
       const el = document.getElementById('host-timeline-list');
       if (!el || !agentId) return;
+      const jsonBtn = document.getElementById('timeline-export-json');
+      const csvBtn = document.getElementById('timeline-export-csv');
+      if (jsonBtn && jsonBtn.dataset.boundTimelineExport !== '1') {
+        jsonBtn.addEventListener('click', (e) => { e.preventDefault(); downloadHostTimeline('json'); });
+        jsonBtn.dataset.boundTimelineExport = '1';
+      }
+      if (csvBtn && csvBtn.dataset.boundTimelineExport !== '1') {
+        csvBtn.addEventListener('click', (e) => { e.preventDefault(); downloadHostTimeline('csv'); });
+        csvBtn.dataset.boundTimelineExport = '1';
+      }
+
       el.innerHTML = '<div class="loading" style="padding:0.5rem;">Loading timeline…</div>';
       try {
         const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/timeline?limit=50`, { credentials: 'include' });
