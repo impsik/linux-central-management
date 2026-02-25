@@ -787,7 +787,13 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
             latest_ts = latest_verified.finished_at if latest_verified else None
             if latest_ts is not None and latest_ts.tzinfo is None:
                 latest_ts = latest_ts.replace(tzinfo=timezone.utc)
-            if latest_ts is None or latest_ts < stale_cutoff:
+
+            stale = latest_ts is None or latest_ts < stale_cutoff
+            if latest_verify is not None and latest_verify.status != "verified":
+                # If the latest run is not verified, keep stale signal active as well.
+                stale = True
+
+            if stale:
                 candidates.append({
                     "id": f"backup-verify-stale:{int(stale_cutoff.timestamp())}",
                     "dedupe_key": "backup_verification:stale",
