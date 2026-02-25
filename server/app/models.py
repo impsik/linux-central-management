@@ -521,3 +521,32 @@ class BackupVerificationRun(Base):
     started_at = Column(DateTime(timezone=True), nullable=False, index=True)
     finished_at = Column(DateTime(timezone=True), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+class BackupVerificationPolicy(Base):
+    __tablename__ = "backup_verification_policy"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enabled = Column(Boolean, nullable=False, default=True)
+
+    backup_path = Column(String, nullable=False)
+    expected_sha256 = Column(String)
+    expected_schema_version = Column(Integer)
+
+    schedule_kind = Column(String, nullable=False, default="daily")  # daily|weekly
+    timezone = Column(String, nullable=False, default="UTC")
+    time_hhmm = Column(String, nullable=False, default="03:00")
+    weekday = Column(Integer)
+
+    stale_after_hours = Column(Integer, nullable=False, default=36)
+    alert_on_failure = Column(Boolean, nullable=False, default=True)
+    alert_on_stale = Column(Boolean, nullable=False, default=True)
+
+    next_run_at = Column(DateTime(timezone=True), index=True)
+    last_run_at = Column(DateTime(timezone=True), index=True)
+    last_status = Column(String)
+    last_error = Column(String)
+    last_alert_at = Column(DateTime(timezone=True), index=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
