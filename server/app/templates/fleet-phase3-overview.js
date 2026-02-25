@@ -216,45 +216,60 @@
             if (Number.isFinite(parsed) && parsed > 0) staleHours = parsed;
           } catch (_) {}
 
-          const rv = await fetch('/backup-verification/latest', { credentials: 'include' });
+          const getCsrf = () => {
+            try {
+              const m = document.cookie.match(/(?:^|; )fleet_csrf=([^;]+)/);
+              return m ? decodeURIComponent(m[1]) : '';
+            } catch (_) { return ''; }
+          };
 
-          if (rv.status === 404) {
-            backupVerificationEl.innerHTML = '<div class="status-warn">No backup verification runs yet.</div>';
-          } else if (!rv.ok) {
-            throw new Error(`backup verification failed (${rv.status})`);
-          } else {
-            const latest = await rv.json();
-            const finishedAt = latest?.finished_at ? Date.parse(latest.finished_at) : NaN;
-            const ageMs = Number.isFinite(finishedAt) ? (Date.now() - finishedAt) : NaN;
-            const staleMs = staleHours * 60 * 60 * 1000;
+          const renderBackupCard = (latest, policy = {}) => {
+            let statusLine = '<div class="status-warn">No backup verification runs yet.</div>';
+            let detailsBtn = '';
 
-            let badge = 'Verified';
-            let cls = 'status-ok';
-            if (String(latest?.status || '').toLowerCase() !== 'verified') {
-              badge = 'Failed';
-              cls = 'status-error';
-            } else if (!Number.isFinite(ageMs) || ageMs > staleMs) {
-              badge = 'Stale';
-              cls = 'status-warn';
-            }
+            if (latest) {
+              const finishedAt = latest?.finished_at ? Date.parse(latest.finished_at) : NaN;
+              const ageMs = Number.isFinite(finishedAt) ? (Date.now() - finishedAt) : NaN;
+              const staleMs = staleHours * 60 * 60 * 1000;
 
-            const whenText = latest?.finished_at ? new Date(latest.finished_at).toLocaleString() : 'Unknown';
-            const ageHours = Number.isFinite(ageMs) ? Math.floor(ageMs / (60 * 60 * 1000)) : null;
-            const detailsUrl = `/backup-verification/runs/${encodeURIComponent(String(latest?.id || ''))}`;
+              let badge = 'Verified';
+              let cls = 'status-ok';
+              if (String(latest?.status || '').toLowerCase() !== 'verified') {
+                badge = 'Failed';
+                cls = 'status-error';
+              } else if (!Number.isFinite(ageMs) || ageMs > staleMs) {
+                badge = 'Stale';
+                cls = 'status-warn';
+              }
 
-            backupVerificationEl.innerHTML = `
-              <div style="display:flex;flex-direction:column;gap:0.35rem;">
+              const whenText = latest?.finished_at ? new Date(latest.finished_at).toLocaleString() : 'Unknown';
+              const ageHours = Number.isFinite(ageMs) ? Math.floor(ageMs / (60 * 60 * 1000)) : null;
+              statusLine = `
                 <div>
                   <span class="${cls}" style="display:inline-block;padding:0.1rem 0.45rem;border-radius:999px;font-weight:600;">${w.escapeHtml(badge)}</span>
                   <span style="color:var(--muted-2);margin-left:0.5rem;">Updated: ${w.escapeHtml(whenText)}</span>
                 </div>
                 <div style="color:var(--muted-2);font-size:0.9rem;">${ageHours == null ? 'Age unavailable' : `Age: ${ageHours}h • Stale after ${staleHours}h`}</div>
+              `;
+              const detailsUrl = `/backup-verification/runs/${encodeURIComponent(String(latest?.id || ''))}`;
+              detailsBtn = `<a class="btn" href="${detailsUrl}" target="_blank" rel="noopener">Open details</a>`;
+            }
+
+            backupVerificationEl.innerHTML = `
+              <div style="display:flex;flex-direction:column;gap:0.45rem;">
+                ${statusLine}
                 <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                  <a class="btn" href="${detailsUrl}" target="_blank" rel="noopener">Open details</a>
+                  ${detailsBtn}
                   <label style="color:var(--muted-2);font-size:0.85rem;">Stale after (h)
                     <input id="backup-verification-stale-hours" type="number" min="1" value="${staleHours}" style="width:64px;margin-left:0.25rem;" />
                   </label>
                   <button class="btn" id="backup-verification-stale-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
+                </div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                  <input id="backup-verification-policy-path" type="text" placeholder="/path/to/backup.file" value="${w.escapeHtml(String(policy.backup_path || ''))}" style="min-width:260px;flex:1;" />
+                  <input id="backup-verification-policy-schema" type="number" min="0" placeholder="schema (optional)" value="${policy.expected_schema_version == null ? '' : Number(policy.expected_schema_version)}" style="width:130px;" />
+                  <button class="btn" id="backup-verification-policy-save" type="button">Configure policy</button>
+                  <button class="btn" id="backup-verification-policy-run-now" type="button">Run now</button>
                 </div>
               </div>
             `;
@@ -270,6 +285,70 @@
                 if (typeof w.showToast === 'function') w.showToast('Failed to save threshold', 'error');
               }
             });
+
+            document.getElementById('backup-verification-policy-save')?.addEventListener('click', async () => {
+              const path = String(document.getElementById('backup-verification-policy-path')?.value || '').trim();
+              const schemaRaw = String(document.getElementById('backup-verification-policy-schema')?.value || '').trim();
+              if (!path) {
+                if (typeof w.showToast === 'function') w.showToast('Backup path is required', 'error');
+                return;
+              }
+              const body = {
+                enabled: true,
+                backup_path: path,
+                schedule_kind: String(policy?.schedule_kind || 'daily'),
+                timezone: String(policy?.timezone || 'UTC'),
+                time_hhmm: String(policy?.time_hhmm || '03:00'),
+                weekday: Number.isFinite(Number(policy?.weekday)) ? Number(policy.weekday) : 0,
+                stale_after_hours: Number.isFinite(Number(policy?.stale_after_hours)) ? Number(policy.stale_after_hours) : 36,
+                alert_on_failure: policy?.alert_on_failure !== false,
+                alert_on_stale: policy?.alert_on_stale !== false,
+              };
+              if (schemaRaw !== '') body.expected_schema_version = Number(schemaRaw);
+              const rp = await fetch('/backup-verification/policy', {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
+                body: JSON.stringify(body),
+              });
+              if (!rp.ok) {
+                const txt = await rp.text();
+                if (typeof w.showToast === 'function') w.showToast(`Policy save failed (${rp.status}) ${txt || ''}`.trim(), 'error');
+                return;
+              }
+              if (typeof w.showToast === 'function') w.showToast('Backup verification policy saved', 'success');
+            });
+
+            document.getElementById('backup-verification-policy-run-now')?.addEventListener('click', async () => {
+              const rr = await fetch('/backup-verification/policy/run-now', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'X-CSRF-Token': getCsrf() },
+              });
+              if (!rr.ok) {
+                const txt = await rr.text();
+                if (typeof w.showToast === 'function') w.showToast(`Run failed (${rr.status}) ${txt || ''}`.trim(), 'error');
+                return;
+              }
+              if (typeof w.showToast === 'function') w.showToast('Backup verification run started', 'success');
+              if (typeof ctx.loadFleetOverview === 'function') ctx.loadFleetOverview(false);
+            });
+          };
+
+          let policy = {};
+          try {
+            const rp = await fetch('/backup-verification/policy', { credentials: 'include' });
+            if (rp.ok) policy = await rp.json();
+          } catch (_) {}
+
+          const rv = await fetch('/backup-verification/latest', { credentials: 'include' });
+          if (rv.status === 404) {
+            renderBackupCard(null, policy);
+          } else if (!rv.ok) {
+            throw new Error(`backup verification failed (${rv.status})`);
+          } else {
+            const latest = await rv.json();
+            renderBackupCard(latest, policy);
           }
         } catch (ev) {
           backupVerificationEl.innerHTML = `<div class="error">Backup verification unavailable: ${w.escapeHtml(ev.message || String(ev))}</div>`;
