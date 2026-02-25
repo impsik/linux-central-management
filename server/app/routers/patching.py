@@ -13,7 +13,7 @@ from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.high_risk_approval import is_approval_required
 from ..services.maintenance import assert_action_allowed_now
-from ..services.patching import create_patch_campaign
+from ..services.patching import build_security_wave_plan, create_patch_campaign
 from ..services.targets import resolve_agent_ids
 
 router = APIRouter(prefix="/patching", tags=["patching"])
@@ -196,6 +196,32 @@ def create_security_updates_campaign(
         )
 
     return {"campaign_id": c.campaign_key, "status": c.status}
+
+
+@router.post("/campaigns/security-updates/preview")
+def preview_security_updates_campaign_wave_plan(
+    payload: dict,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    labels = payload.get("labels")
+    agent_ids = payload.get("agent_ids")
+    wave_plan = payload.get("wave_plan")
+    if wave_plan is not None and not isinstance(wave_plan, dict):
+        raise HTTPException(400, "wave_plan must be an object")
+
+    try:
+        plan = build_security_wave_plan(
+            db=db,
+            labels=labels,
+            agent_ids=agent_ids,
+            wave_plan=wave_plan,
+            user=user,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return plan
 
 
 @router.get("/campaigns/{campaign_id}")

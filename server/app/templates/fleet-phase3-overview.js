@@ -34,6 +34,7 @@
       const r = await fetch('/dashboard/summary', { credentials: 'include' });
       if (!r.ok) {
         if (r.status === 403) {
+          // Expected transient state during MFA gating.
           // MFA/login transient; refresh auth state but continue with report-based fallbacks.
           if (typeof w.loadAuthInfo === 'function') {
             try { await w.loadAuthInfo(); } catch (_) {}

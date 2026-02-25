@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import secrets
 from contextlib import suppress
@@ -31,6 +32,67 @@ def _now() -> datetime:
 
 def _new_key(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(12)}"
+
+
+def _stable_agent_sort_key(agent_id: str) -> tuple[str, str]:
+    aid = str(agent_id or "").strip()
+    digest = hashlib.sha256(aid.encode("utf-8")).hexdigest()
+    return digest, aid
+
+
+def _as_positive_int(value: Any, field_name: str) -> int:
+    try:
+        parsed = int(value)
+    except Exception as exc:
+        raise ValueError(f"{field_name} must be a positive integer") from exc
+    if parsed < 1:
+        raise ValueError(f"{field_name} must be a positive integer")
+    return parsed
+
+
+def build_security_wave_plan(
+    *,
+    db: Session,
+    labels: dict | None,
+    agent_ids: list[str] | None,
+    wave_plan: dict | None,
+    user: Any | None = None,
+) -> dict[str, Any]:
+    """Build a deterministic canary/batch wave plan for security campaigns."""
+
+    resolved_targets = resolve_agent_ids(db, agent_ids, labels, user=user)
+    unique_targets = sorted({str(t).strip() for t in (resolved_targets or []) if str(t).strip()}, key=_stable_agent_sort_key)
+    if not unique_targets:
+        raise ValueError("No targets resolved within your scope")
+
+    cfg = wave_plan if isinstance(wave_plan, dict) else {}
+    canary_size = _as_positive_int(cfg.get("canary_size", 1), "wave_plan.canary_size")
+    batch_size = _as_positive_int(cfg.get("batch_size", 25), "wave_plan.batch_size")
+
+    if canary_size > len(unique_targets):
+        canary_size = len(unique_targets)
+
+    canary_agents = unique_targets[:canary_size]
+    remaining = unique_targets[canary_size:]
+
+    waves: list[dict[str, Any]] = []
+    waves.append({"index": 0, "name": "canary", "agent_ids": list(canary_agents), "size": len(canary_agents)})
+
+    for idx, start in enumerate(range(0, len(remaining), batch_size), start=1):
+        batch_agents = remaining[start : start + batch_size]
+        waves.append({"index": idx, "name": f"batch-{idx}", "agent_ids": list(batch_agents), "size": len(batch_agents)})
+
+    rings = [{"name": wave["name"], "agent_ids": list(wave.get("agent_ids") or [])} for wave in waves if (wave.get("agent_ids") or [])]
+
+    return {
+        "model": "canary-batch-v1",
+        "selector": {"labels": labels or None, "agent_ids": agent_ids or None},
+        "resolved_agent_ids": unique_targets,
+        "total_hosts": len(unique_targets),
+        "config": {"canary_size": canary_size, "batch_size": batch_size},
+        "waves": waves,
+        "rings": rings,
+    }
 
 
 def _audit(db: Session, *, actor: str | None, action: str, entity_type: str, entity_key: str | None, detail: dict) -> None:
