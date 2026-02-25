@@ -493,3 +493,31 @@ class CVEPackage(Base):
     __table_args__ = (
         Index("ix_cve_packages_lookup", "release", "package_name"),
     )
+
+
+class BackupVerificationRun(Base):
+    __tablename__ = "backup_verification_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    status = Column(String, nullable=False, index=True)  # verified|failed
+    backup_path = Column(String, nullable=False)
+
+    checksum_algorithm = Column(String, nullable=False, default="sha256")
+    checksum_actual = Column(String, nullable=False)
+    checksum_expected = Column(String)
+
+    integrity_ok = Column(Boolean, nullable=False, default=False)
+    restore_ok = Column(Boolean, nullable=False, default=False)
+    compatibility_ok = Column(Boolean, nullable=False, default=False)
+
+    schema_version = Column(Integer)
+    expected_schema_version = Column(Integer)
+
+    artifact_path = Column(String, nullable=False)
+    detail = Column(JSON, nullable=False, default=dict)
+
+    created_by = Column(String, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    finished_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
