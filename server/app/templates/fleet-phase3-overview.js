@@ -261,13 +261,13 @@
                 <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
                   ${detailsBtn}
                   <label style="color:var(--muted-2);font-size:0.85rem;">Stale after (h)
-                    <input id="backup-verification-stale-hours" type="number" min="1" value="${staleHours}" style="width:64px;margin-left:0.25rem;" />
+                    <input id="backup-verification-stale-hours" class="host-search" type="number" min="1" value="${staleHours}" style="width:64px;margin-left:0.25rem;padding:0.25rem 0.4rem;" />
                   </label>
                   <button class="btn" id="backup-verification-stale-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
                 </div>
                 <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                  <input id="backup-verification-policy-path" type="text" placeholder="/path/to/backup.file" value="${w.escapeHtml(String(policy.backup_path || ''))}" style="min-width:260px;flex:1;" />
-                  <input id="backup-verification-policy-schema" type="number" min="0" placeholder="schema (optional)" value="${policy.expected_schema_version == null ? '' : Number(policy.expected_schema_version)}" style="width:130px;" />
+                  <input id="backup-verification-policy-path" class="host-search" type="text" placeholder="/path/to/backup.file" value="${w.escapeHtml(String(policy.backup_path || ''))}" style="min-width:260px;flex:1;" />
+                  <input id="backup-verification-policy-schema" class="host-search" type="number" min="0" placeholder="schema (optional)" value="${policy.expected_schema_version == null ? '' : Number(policy.expected_schema_version)}" style="width:130px;" />
                   <button class="btn" id="backup-verification-policy-save" type="button">Configure policy</button>
                   <button class="btn" id="backup-verification-policy-run-now" type="button">Run now</button>
                 </div>
