@@ -34,6 +34,8 @@ def test_backup_verification_happy_path(monkeypatch, tmp_path):
     with TestClient(app) as client:
         r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
         assert r.status_code == 200, r.text
+        csrf = client.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
 
         run = client.post(
             "/backup-verification/runs",
@@ -41,6 +43,7 @@ def test_backup_verification_happy_path(monkeypatch, tmp_path):
                 "backup_path": str(db_path),
                 "expected_schema_version": 2,
             },
+            headers=headers,
         )
         assert run.status_code == 200, run.text
         data = run.json()
@@ -71,6 +74,8 @@ def test_backup_verification_schema_mismatch_fails(monkeypatch, tmp_path):
     with TestClient(app) as client:
         r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
         assert r.status_code == 200, r.text
+        csrf = client.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
 
         run = client.post(
             "/backup-verification/runs",
@@ -78,6 +83,7 @@ def test_backup_verification_schema_mismatch_fails(monkeypatch, tmp_path):
                 "backup_path": str(db_path),
                 "expected_schema_version": 2,
             },
+            headers=headers,
         )
         assert run.status_code == 200, run.text
         data = run.json()
