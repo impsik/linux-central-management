@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import require_admin_user, require_ui_user
-from ..models import Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun, NotificationDedupeState, OIDCAuthEvent
+from ..models import BackupVerificationPolicy, BackupVerificationRun, Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun, NotificationDedupeState, OIDCAuthEvent
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import is_within_maintenance_window
@@ -759,6 +759,36 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
             "detail": f"{int(sec_count or 0)} security updates pending",
             "ts": now.isoformat(),
         })
+
+    # Backup verification policy alerts
+    policy = db.execute(select(BackupVerificationPolicy).order_by(BackupVerificationPolicy.created_at.asc()).limit(1)).scalar_one_or_none()
+    latest_verify = db.execute(select(BackupVerificationRun).order_by(BackupVerificationRun.finished_at.desc()).limit(1)).scalar_one_or_none()
+    if policy and policy.enabled:
+        if latest_verify and latest_verify.status == "failed" and policy.alert_on_failure:
+            ts = latest_verify.finished_at.isoformat() if latest_verify.finished_at else now.isoformat()
+            candidates.append({
+                "id": f"backup-verify-failed:{latest_verify.id}",
+                "dedupe_key": "backup_verification:failed",
+                "severity": "high",
+                "kind": "backup_verification_failed",
+                "title": "Backup verification failed",
+                "detail": f"Latest run {latest_verify.id} ended in failed status",
+                "ts": ts,
+            })
+
+        if policy.alert_on_stale and policy.stale_after_hours:
+            stale_cutoff = now - timedelta(hours=int(policy.stale_after_hours))
+            latest_ts = latest_verify.finished_at if latest_verify else None
+            if latest_ts is None or latest_ts < stale_cutoff:
+                candidates.append({
+                    "id": f"backup-verify-stale:{int(stale_cutoff.timestamp())}",
+                    "dedupe_key": "backup_verification:stale",
+                    "severity": "high",
+                    "kind": "backup_verification_stale",
+                    "title": "Backup verification is stale",
+                    "detail": f"No successful verification within {int(policy.stale_after_hours)}h",
+                    "ts": (latest_ts.isoformat() if latest_ts else now.isoformat()),
+                })
 
     candidates.sort(key=lambda x: (x.get("severity") != "high", x.get("ts") or ""), reverse=True)
 

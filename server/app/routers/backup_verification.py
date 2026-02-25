@@ -1,23 +1,19 @@
 from __future__ import annotations
 
-import hashlib
-import json
-import shutil
-import sqlite3
-import tarfile
-import tempfile
 import uuid
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import require_ui_user
-from ..models import BackupVerificationRun
+from ..deps import require_admin_user, require_ui_user
+from ..models import BackupVerificationPolicy, BackupVerificationRun
+from ..services.audit import log_event
+from ..services.backup_verification import run_and_persist_backup_verification
+from ..services.db_utils import transaction
 
 router = APIRouter(prefix="/backup-verification", tags=["backup-verification"])
 
@@ -44,157 +40,65 @@ class BackupVerificationResponse(BaseModel):
     expected_schema_version: int | None = None
 
 
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as f:
-        while True:
-            chunk = f.read(1024 * 1024)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _detect_sqlite_file(path: Path) -> Path | None:
-    if path.suffix.lower() in {".sqlite", ".db", ".sqlite3"}:
-        return path
-    return None
-
-
-def _rehearse_restore(path: Path, expected_schema_version: int | None) -> tuple[bool, bool, int | None, str]:
-    """Restore rehearsal + version compatibility check.
-
-    Returns: restore_ok, compatibility_ok, schema_version, detail
-    """
-    sqlite_candidate = _detect_sqlite_file(path)
-
-    with tempfile.TemporaryDirectory(prefix="lcm-backup-verify-") as tmp:
-        tmpdir = Path(tmp)
-
-        if tarfile.is_tarfile(path):
-            with tarfile.open(path, "r:*") as tf:
-                tf.extractall(tmpdir)
-            # best-effort: first sqlite-like file found
-            for ext in ("*.sqlite", "*.db", "*.sqlite3"):
-                found = list(tmpdir.rglob(ext))
-                if found:
-                    sqlite_candidate = found[0]
-                    break
-
-        if sqlite_candidate is None or not sqlite_candidate.exists():
-            # vertical-slice limitation: restore rehearsal currently sqlite-focused
-            return True, True, None, "No sqlite payload found; extraction rehearsal succeeded"
-
-        rehearse_copy = tmpdir / "rehearsal.sqlite"
-        shutil.copy2(sqlite_candidate, rehearse_copy)
-
-        conn = sqlite3.connect(str(rehearse_copy))
-        try:
-            cur = conn.cursor()
-            row = cur.execute("PRAGMA integrity_check;").fetchone()
-            if not row or str(row[0]).lower() != "ok":
-                return False, False, None, f"SQLite integrity_check failed: {row}"
-            schema_row = cur.execute("PRAGMA user_version;").fetchone()
-            schema_version = int(schema_row[0] if schema_row else 0)
-        finally:
-            conn.close()
-
-        compatibility_ok = True
-        if expected_schema_version is not None and schema_version < expected_schema_version:
-            compatibility_ok = False
-
-        return True, compatibility_ok, schema_version, "SQLite restore rehearsal passed"
+class BackupVerificationPolicyPayload(BaseModel):
+    enabled: bool = True
+    backup_path: str
+    expected_sha256: str | None = None
+    expected_schema_version: int | None = Field(default=None, ge=0)
+    schedule_kind: str = Field(default="daily")  # daily|weekly
+    timezone: str = Field(default="UTC")
+    time_hhmm: str = Field(default="03:00")
+    weekday: int | None = Field(default=0, ge=0, le=6)
+    stale_after_hours: int = Field(default=36, ge=1, le=24 * 30)
+    alert_on_failure: bool = True
+    alert_on_stale: bool = True
 
 
 @router.post("/runs", response_model=BackupVerificationResponse)
 def run_backup_verification(
     payload: BackupVerificationRequest,
+    request: Request,
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
-    started_at = datetime.now(timezone.utc)
+    from pathlib import Path
 
     backup_path = Path(payload.backup_path).expanduser().resolve()
     if not backup_path.exists() or not backup_path.is_file():
         raise HTTPException(400, "backup_path must be an existing file")
 
-    checksum_actual = _sha256_file(backup_path)
-    checksum_expected = (payload.expected_sha256 or "").strip().lower() or None
-    integrity_ok = bool((checksum_expected is None) or (checksum_actual.lower() == checksum_expected))
-
-    restore_ok, compatibility_ok, schema_version, detail = _rehearse_restore(
-        backup_path,
-        payload.expected_schema_version,
-    )
-
-    status = "verified" if (integrity_ok and restore_ok and compatibility_ok) else "failed"
-    finished_at = datetime.now(timezone.utc)
-
-    report = {
-        "run_id": None,  # set after model exists
-        "status": status,
-        "backup_path": str(backup_path),
-        "integrity": {
-            "ok": integrity_ok,
-            "algorithm": "sha256",
-            "actual": checksum_actual,
-            "expected": checksum_expected,
-        },
-        "restore_rehearsal": {
-            "ok": restore_ok,
-            "detail": detail,
-        },
-        "compatibility": {
-            "ok": compatibility_ok,
-            "schema_version": schema_version,
-            "expected_schema_version": payload.expected_schema_version,
-        },
-        "started_at": started_at.isoformat(),
-        "finished_at": finished_at.isoformat(),
-    }
-
-    report_dir = Path("/tmp/lcm-backup-verification-reports")
-    report_dir.mkdir(parents=True, exist_ok=True)
-    run_id = uuid.uuid4()
-    report["run_id"] = str(run_id)
-    artifact_path = report_dir / f"{run_id}.json"
-    artifact_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-
-    row = BackupVerificationRun(
-        id=run_id,
-        status=status,
-        backup_path=str(backup_path),
-        checksum_algorithm="sha256",
-        checksum_actual=checksum_actual,
-        checksum_expected=checksum_expected,
-        integrity_ok=integrity_ok,
-        restore_ok=restore_ok,
-        compatibility_ok=compatibility_ok,
-        schema_version=schema_version,
-        expected_schema_version=payload.expected_schema_version,
-        artifact_path=str(artifact_path),
-        detail={"restore_detail": detail},
-        started_at=started_at,
-        finished_at=finished_at,
-        created_by=getattr(user, "username", None),
-    )
-    db.add(row)
-    db.commit()
+    with transaction(db):
+        row = run_and_persist_backup_verification(
+            db,
+            backup_path=str(backup_path),
+            expected_sha256=payload.expected_sha256,
+            expected_schema_version=payload.expected_schema_version,
+            created_by=getattr(user, "username", None),
+        )
+        log_event(
+            db,
+            action="backup_verification.run",
+            actor=user,
+            request=request,
+            target_type="backup_verification_run",
+            target_id=str(row.id),
+            meta={"status": row.status, "trigger": "manual"},
+        )
 
     return BackupVerificationResponse(
-        id=str(run_id),
-        status=status,
-        started_at=started_at,
-        finished_at=finished_at,
-        backup_path=str(backup_path),
-        artifact_path=str(artifact_path),
-        integrity_ok=integrity_ok,
-        restore_ok=restore_ok,
-        compatibility_ok=compatibility_ok,
-        checksum_actual=checksum_actual,
-        checksum_expected=checksum_expected,
-        schema_version=schema_version,
-        expected_schema_version=payload.expected_schema_version,
+        id=str(row.id),
+        status=row.status,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        backup_path=row.backup_path,
+        artifact_path=row.artifact_path,
+        integrity_ok=bool(row.integrity_ok),
+        restore_ok=bool(row.restore_ok),
+        compatibility_ok=bool(row.compatibility_ok),
+        checksum_actual=row.checksum_actual,
+        checksum_expected=row.checksum_expected,
+        schema_version=row.schema_version,
+        expected_schema_version=row.expected_schema_version,
     )
 
 
@@ -226,6 +130,123 @@ def get_backup_verification_run(run_id: str, db: Session = Depends(get_db), user
     row = db.execute(select(BackupVerificationRun).where(BackupVerificationRun.id == uuid.UUID(run_id))).scalar_one_or_none()
     if not row:
         raise HTTPException(404, "Run not found")
+
+    return BackupVerificationResponse(
+        id=str(row.id),
+        status=row.status,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+        backup_path=row.backup_path,
+        artifact_path=row.artifact_path,
+        integrity_ok=bool(row.integrity_ok),
+        restore_ok=bool(row.restore_ok),
+        compatibility_ok=bool(row.compatibility_ok),
+        checksum_actual=row.checksum_actual,
+        checksum_expected=row.checksum_expected,
+        schema_version=row.schema_version,
+        expected_schema_version=row.expected_schema_version,
+    )
+
+
+@router.get("/policy")
+def get_backup_verification_policy(db: Session = Depends(get_db), user=Depends(require_admin_user)):
+    p = db.execute(select(BackupVerificationPolicy).order_by(BackupVerificationPolicy.created_at.asc()).limit(1)).scalar_one_or_none()
+    if not p:
+        return {"configured": False}
+    return {
+        "configured": True,
+        "enabled": bool(p.enabled),
+        "backup_path": p.backup_path,
+        "expected_sha256": p.expected_sha256,
+        "expected_schema_version": p.expected_schema_version,
+        "schedule_kind": p.schedule_kind,
+        "timezone": p.timezone,
+        "time_hhmm": p.time_hhmm,
+        "weekday": p.weekday,
+        "stale_after_hours": p.stale_after_hours,
+        "alert_on_failure": bool(p.alert_on_failure),
+        "alert_on_stale": bool(p.alert_on_stale),
+        "next_run_at": p.next_run_at.isoformat() if p.next_run_at else None,
+        "last_run_at": p.last_run_at.isoformat() if p.last_run_at else None,
+        "last_status": p.last_status,
+        "last_error": p.last_error,
+        "last_alert_at": p.last_alert_at.isoformat() if p.last_alert_at else None,
+    }
+
+
+@router.put("/policy")
+def upsert_backup_verification_policy(
+    payload: BackupVerificationPolicyPayload,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_admin_user),
+):
+    now = datetime.now(timezone.utc)
+    next_run = now + timedelta(minutes=1)
+    with transaction(db):
+        p = db.execute(select(BackupVerificationPolicy).order_by(BackupVerificationPolicy.created_at.asc()).limit(1)).scalar_one_or_none()
+        if not p:
+            p = BackupVerificationPolicy()
+            db.add(p)
+        p.enabled = bool(payload.enabled)
+        p.backup_path = payload.backup_path
+        p.expected_sha256 = (payload.expected_sha256 or "").strip().lower() or None
+        p.expected_schema_version = payload.expected_schema_version
+        p.schedule_kind = payload.schedule_kind
+        p.timezone = payload.timezone
+        p.time_hhmm = payload.time_hhmm
+        p.weekday = payload.weekday
+        p.stale_after_hours = payload.stale_after_hours
+        p.alert_on_failure = bool(payload.alert_on_failure)
+        p.alert_on_stale = bool(payload.alert_on_stale)
+        p.next_run_at = next_run if p.enabled else None
+        log_event(
+            db,
+            action="backup_verification.policy.updated",
+            actor=user,
+            request=request,
+            target_type="backup_verification_policy",
+            meta={"enabled": bool(payload.enabled), "schedule_kind": payload.schedule_kind},
+        )
+    return {"ok": True, "next_run_at": next_run.isoformat() if payload.enabled else None}
+
+
+@router.post("/policy/run-now", response_model=BackupVerificationResponse)
+def run_backup_verification_policy_now(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_admin_user),
+):
+    p = db.execute(select(BackupVerificationPolicy).order_by(BackupVerificationPolicy.created_at.asc()).limit(1)).scalar_one_or_none()
+    if not p or not p.backup_path:
+        raise HTTPException(400, "Backup verification policy is not configured")
+
+    from pathlib import Path
+
+    bpath = Path(p.backup_path).expanduser().resolve()
+    if not bpath.exists() or not bpath.is_file():
+        raise HTTPException(400, "configured backup_path does not exist")
+
+    with transaction(db):
+        row = run_and_persist_backup_verification(
+            db,
+            backup_path=str(bpath),
+            expected_sha256=p.expected_sha256,
+            expected_schema_version=p.expected_schema_version,
+            created_by=getattr(user, "username", None),
+        )
+        p.last_run_at = row.finished_at
+        p.last_status = row.status
+        p.last_error = None if row.status == "verified" else "verification failed"
+        log_event(
+            db,
+            action="backup_verification.run",
+            actor=user,
+            request=request,
+            target_type="backup_verification_run",
+            target_id=str(row.id),
+            meta={"status": row.status, "trigger": "policy_run_now"},
+        )
 
     return BackupVerificationResponse(
         id=str(row.id),

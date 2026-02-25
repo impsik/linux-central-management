@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
 from ..models import CronJob, CronJobRun
+from .backup_verification_policy import run_policy_tick_once
 from .db_utils import transaction
 from .jobs import create_job_with_runs, push_job_to_agents
 
@@ -33,6 +34,9 @@ async def _run_tick() -> None:
     now = datetime.now(timezone.utc)
 
     with SessionLocal() as db:
+        # Backup verification policy scheduler piggybacks on cron tick loop.
+        run_policy_tick_once(db)
+
         # Find due scheduled jobs
         due = (
             db.execute(
