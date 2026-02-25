@@ -281,6 +281,22 @@
               </div>
             </div>
 
+            <div class="admin-card" id="rollout-controls-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Rollout controls</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <input id="rollout-campaign-id" class="host-search" type="text" placeholder="campaign id (pc-...)" style="width:220px;max-width:100%;" />
+                  <button class="btn" id="rollout-load" type="button">Load</button>
+                  <button class="btn" id="rollout-pause" type="button">Pause</button>
+                  <button class="btn" id="rollout-resume" type="button">Resume</button>
+                  <button class="btn btn-primary" id="rollout-approve-next" type="button">Approve next wave</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div id="rollout-summary" class="status-muted">Paste a campaign id and click Load.</div>
+                <div id="rollout-status" class="status-muted" style="margin-top:0.45rem;"></div>
+              </div>
+            </div>
 
             <div class="admin-card" id="notifications-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
