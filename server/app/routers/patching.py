@@ -13,7 +13,13 @@ from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.high_risk_approval import is_approval_required
 from ..services.maintenance import assert_action_allowed_now
-from ..services.patching import build_security_wave_plan, create_patch_campaign
+from ..services.patching import (
+    build_security_wave_plan,
+    create_patch_campaign,
+    get_rollout_meta,
+    get_rollout_summary,
+    set_rollout_meta,
+)
 from ..services.targets import resolve_agent_ids
 
 router = APIRouter(prefix="/patching", tags=["patching"])
@@ -139,6 +145,7 @@ def create_security_updates_campaign(
     rings = payload.get("rings")
     labels = payload.get("labels")
     agent_ids = payload.get("agent_ids")
+    rollout_controls = payload.get("rollout_controls") if isinstance(payload.get("rollout_controls"), dict) else None
 
     scoped_targets = resolve_agent_ids(db, agent_ids, labels, user=user)
     if not scoped_targets:
@@ -158,6 +165,7 @@ def create_security_updates_campaign(
                     "concurrency": concurrency,
                     "reboot_if_needed": bool(payload.get("reboot_if_needed") or False),
                     "include_kernel": bool(payload.get("include_kernel") or False),
+                    "rollout_controls": rollout_controls,
                 },
                 status="pending",
             )
@@ -193,6 +201,7 @@ def create_security_updates_campaign(
             concurrency=concurrency,
             reboot_if_needed=bool(payload.get("reboot_if_needed") or False),
             include_kernel=bool(payload.get("include_kernel") or False),
+            rollout_controls=rollout_controls,
         )
 
     return {"campaign_id": c.campaign_key, "status": c.status}
@@ -250,6 +259,7 @@ def get_campaign(campaign_id: str, db: Session = Depends(get_db)):
         "concurrency": c.concurrency,
         "reboot_if_needed": c.reboot_if_needed,
         "include_kernel": c.include_kernel,
+        "rollout": get_rollout_meta(c),
         "status": c.status,
         "created_at": c.created_at,
         "started_at": c.started_at,
@@ -270,6 +280,106 @@ def get_campaign(campaign_id: str, db: Session = Depends(get_db)):
             for h in hosts
         ],
     }
+
+@router.get("/campaigns/{campaign_id}/rollout")
+def get_campaign_rollout(campaign_id: str, db: Session = Depends(get_db), _=Depends(require_ui_user)):
+    c = db.execute(select(PatchCampaign).where(PatchCampaign.campaign_key == campaign_id)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, "unknown campaign")
+    return get_rollout_summary(db, c)
+
+
+@router.post("/campaigns/{campaign_id}/pause")
+def pause_campaign_rollout(campaign_id: str, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    c = db.execute(select(PatchCampaign).where(PatchCampaign.campaign_key == campaign_id)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, "unknown campaign")
+    if c.status not in ("scheduled", "running"):
+        raise HTTPException(409, f"campaign not active (status={c.status})")
+
+    meta = get_rollout_meta(c)
+    meta["paused"] = True
+    meta["pause_reason"] = str((request.query_params.get("reason") or "Paused by operator")).strip()[:500]
+    meta["paused_at"] = datetime.now(timezone.utc).isoformat()
+    meta["paused_by"] = getattr(user, "username", None)
+    meta["manual_resume_required"] = False
+    set_rollout_meta(c, meta)
+
+    log_event(
+        db,
+        action="patch_campaign.paused",
+        actor=user,
+        request=request,
+        target_type="patch_campaign",
+        target_id=str(c.id),
+        target_name=c.campaign_key,
+        meta={"campaign_id": c.campaign_key, "reason": meta.get("pause_reason")},
+    )
+    db.commit()
+    return get_rollout_summary(db, c)
+
+
+@router.post("/campaigns/{campaign_id}/resume")
+def resume_campaign_rollout(campaign_id: str, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    c = db.execute(select(PatchCampaign).where(PatchCampaign.campaign_key == campaign_id)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, "unknown campaign")
+    if c.status not in ("scheduled", "running"):
+        raise HTTPException(409, f"campaign not active (status={c.status})")
+
+    meta = get_rollout_meta(c)
+    meta["paused"] = False
+    meta["pause_reason"] = None
+    meta["paused_at"] = None
+    meta["manual_resume_required"] = False
+    meta["paused_by"] = getattr(user, "username", None)
+    set_rollout_meta(c, meta)
+
+    log_event(
+        db,
+        action="patch_campaign.resumed",
+        actor=user,
+        request=request,
+        target_type="patch_campaign",
+        target_id=str(c.id),
+        target_name=c.campaign_key,
+        meta={"campaign_id": c.campaign_key},
+    )
+    db.commit()
+    return get_rollout_summary(db, c)
+
+
+@router.post("/campaigns/{campaign_id}/approve-next")
+def approve_next_wave(campaign_id: str, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    c = db.execute(select(PatchCampaign).where(PatchCampaign.campaign_key == campaign_id)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(404, "unknown campaign")
+
+    meta = get_rollout_meta(c)
+    if not bool(meta.get("progressive")):
+        raise HTTPException(409, "campaign is not in progressive rollout mode")
+
+    max_ring = max(0, len(c.rings or []) - 1)
+    approved = int(meta.get("approved_through_ring") or 0)
+    if approved >= max_ring:
+        raise HTTPException(409, "all rings already approved")
+
+    meta["approved_through_ring"] = approved + 1
+    set_rollout_meta(c, meta)
+
+    log_event(
+        db,
+        action="patch_campaign.approve_next_wave",
+        actor=user,
+        request=request,
+        target_type="patch_campaign",
+        target_id=str(c.id),
+        target_name=c.campaign_key,
+        meta={"campaign_id": c.campaign_key, "approved_through_ring": approved + 1},
+    )
+    db.commit()
+    return get_rollout_summary(db, c)
+
 
 @router.get("/cve/{cve_id}")
 def get_cve(cve_id: str, distro_codename: str | None = None, db: Session = Depends(get_db)):
