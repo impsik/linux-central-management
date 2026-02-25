@@ -53,13 +53,18 @@ def _make_async_engine():
     if "postgresql+psycopg://" in url:
         url = url.replace("postgresql+psycopg://", "postgresql+psycopg_async://")
     elif url.startswith("sqlite"):
-        url = url.replace("sqlite://", "sqlite+aiosqlite://")
+        # Handle both sqlite:// and sqlite+pysqlite:// URLs.
+        if "://" in url:
+            _, rest = url.split("://", 1)
+            url = f"sqlite+aiosqlite://{rest}"
+        else:
+            url = "sqlite+aiosqlite:///:memory:"
         return create_async_engine(
-            url, 
-            connect_args={"check_same_thread": False}, 
-            poolclass=StaticPool
+            url,
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
         )
-    
+
     return create_async_engine(
         url,
         pool_pre_ping=True,
