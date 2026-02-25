@@ -16,6 +16,8 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Fleet overview + “Attention required” (offline, high disk, high load, security updates, etc.)
 - **Morning Brief** card with quick drill-down actions
 - **Notification Center** (unread badge, mark-read, snooze by alert kind)
+- **Backup verification** status card (verified/stale/failed), latest timestamp, details link, configurable stale threshold
+- **Failed run details** modal copy helper with robust clipboard fallback (clipboard API → legacy copy → manual Ctrl/Cmd+C)
 - **Saved Views** for host filters (per-user, shared/team views, default startup view)
 - **Create cron from current view** + run-now/runbook quick actions
 - Per-host:
@@ -27,6 +29,10 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Admin:
   - users list + create/reset/deactivate users
   - audit log (who did what: auth, user lifecycle, MFA, package actions, etc.)
+- Patching rollout controls:
+  - campaign rollout summary (per-wave)
+  - pause/resume rollout
+  - approve-next wave for progressive rollout
 
 ### API
 - `/health` for health checks
@@ -35,6 +41,18 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - `/dashboard/notifications` for in-app notification feed
 - `/auth/views` for saved views (user/shared)
 - `/dashboard/alerts/teams/*` for Teams test + morning brief push
+- `/backup-verification/*` for verification runs + policy:
+  - `POST /backup-verification/runs`
+  - `GET /backup-verification/latest`
+  - `GET /backup-verification/runs/{id}`
+  - `GET /backup-verification/policy`
+  - `PUT /backup-verification/policy`
+  - `POST /backup-verification/policy/run-now`
+- rollout control APIs:
+  - `GET /patching/campaigns/{campaign_id}/rollout`
+  - `POST /patching/campaigns/{campaign_id}/pause`
+  - `POST /patching/campaigns/{campaign_id}/resume`
+  - `POST /patching/campaigns/{campaign_id}/approve-next`
 
 ---
 ![Screenshot](docs/image.png)
@@ -200,6 +218,23 @@ For local development only, you can bypass this requirement by setting:
 - `ALLOW_INSECURE_NO_AGENT_TOKEN=true`
 
 Do **not** use that on anything exposed beyond a trusted LAN.
+
+### Token/env checklist (what to set, where)
+No new secret tokens were introduced for backup verification or rollout controls.
+Use the existing env/token wiring below:
+
+**Server (`deploy/docker/.env`)**
+- `BOOTSTRAP_PASSWORD` (required)
+- `AGENT_SHARED_TOKEN` (required)
+- `MFA_ENCRYPTION_KEY` (required when MFA is enabled)
+- `AGENT_TERMINAL_TOKEN` (only if terminal feature is enabled)
+- `TEAMS_WEBHOOK_URL` + `TEAMS_ALERTS_ENABLED=true` (optional Teams alerts)
+
+**Agent host (systemd/ENV)**
+- `FLEET_AGENT_TOKEN` = same value as server `AGENT_SHARED_TOKEN`
+- `FLEET_TERMINAL_TOKEN` = same value as server `AGENT_TERMINAL_TOKEN` (if terminal enabled)
+
+If token values do not match between server and agent, registration/job polling/terminal proxy calls will fail.
 
 ### Terminal feature (high risk)
 The agent has an optional websocket PTY feature.
