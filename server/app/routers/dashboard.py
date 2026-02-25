@@ -779,6 +779,8 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
         if policy.alert_on_stale and policy.stale_after_hours:
             stale_cutoff = now - timedelta(hours=int(policy.stale_after_hours))
             latest_ts = latest_verify.finished_at if latest_verify else None
+            if latest_ts is not None and latest_ts.tzinfo is None:
+                latest_ts = latest_ts.replace(tzinfo=timezone.utc)
             if latest_ts is None or latest_ts < stale_cutoff:
                 candidates.append({
                     "id": f"backup-verify-stale:{int(stale_cutoff.timestamp())}",
