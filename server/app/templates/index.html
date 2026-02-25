@@ -4185,6 +4185,41 @@
       }
     }
 
+    async function copyTextWithFallback(text, selectableEl) {
+      const value = String(text || '');
+      if (!value) return false;
+
+      // Modern async clipboard API (requires secure context/permissions)
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(value);
+          return true;
+        }
+      } catch {}
+
+      // Legacy fallback for locked-down environments
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand && document.execCommand('copy');
+        ta.remove();
+        if (ok) return true;
+      } catch {}
+
+      if (selectableEl && typeof selectableEl.focus === 'function') {
+        selectableEl.focus();
+        if (typeof selectableEl.select === 'function') selectableEl.select();
+      }
+      return false;
+    }
+
     function initAuditDetailModalControls() {
       const modal = document.getElementById('audit-detail-modal');
       const closeBtn = document.getElementById('audit-detail-modal-close');
@@ -4205,14 +4240,10 @@
       copyBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
         const text = outEl ? (outEl.value || '') : '';
-        try {
-          await navigator.clipboard.writeText(text);
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
           showToast('Copied', 'success');
-        } catch {
-          if (outEl) {
-            outEl.focus();
-            outEl.select();
-          }
+        } else {
           showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
         }
       });
@@ -4238,14 +4269,10 @@
       copyBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
         const text = outEl ? (outEl.value || '') : '';
-        try {
-          await navigator.clipboard.writeText(text);
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
           showToast('Copied', 'success');
-        } catch {
-          if (outEl) {
-            outEl.focus();
-            outEl.select();
-          }
+        } else {
           showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
         }
       });
@@ -4272,12 +4299,10 @@
       copyBtn?.addEventListener('click', async (e) => {
         e.preventDefault();
         const text = outEl.value || '';
-        try {
-          await navigator.clipboard.writeText(text);
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
           showToast('Copied', 'success');
-        } catch {
-          outEl.focus();
-          outEl.select();
+        } else {
           showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
         }
       });
