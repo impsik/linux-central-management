@@ -10,6 +10,7 @@
     const freshEl = document.getElementById('kpi-fresh');
     const attentionEl = document.getElementById('overview-attention');
     const morningBriefEl = document.getElementById('overview-morning-brief');
+    const backupVerificationEl = document.getElementById('overview-backup-verification');
     const nextCronEl = document.getElementById('overview-next-cronjobs');
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
@@ -201,6 +202,77 @@
           });
         } catch (briefErr) {
           morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
+        }
+      }
+
+      if (backupVerificationEl) {
+        backupVerificationEl.innerHTML = '<div class="loading">Loading backup verification status…</div>';
+        try {
+          const thresholdKey = 'fleet_backup_verification_stale_hours_v1';
+          let staleHours = 24;
+          try {
+            const raw = localStorage.getItem(thresholdKey);
+            const parsed = Number(raw);
+            if (Number.isFinite(parsed) && parsed > 0) staleHours = parsed;
+          } catch (_) {}
+
+          const rv = await fetch('/backup-verification/latest', { credentials: 'include' });
+
+          if (rv.status === 404) {
+            backupVerificationEl.innerHTML = '<div class="status-warn">No backup verification runs yet.</div>';
+          } else if (!rv.ok) {
+            throw new Error(`backup verification failed (${rv.status})`);
+          } else {
+            const latest = await rv.json();
+            const finishedAt = latest?.finished_at ? Date.parse(latest.finished_at) : NaN;
+            const ageMs = Number.isFinite(finishedAt) ? (Date.now() - finishedAt) : NaN;
+            const staleMs = staleHours * 60 * 60 * 1000;
+
+            let badge = 'Verified';
+            let cls = 'status-ok';
+            if (String(latest?.status || '').toLowerCase() !== 'verified') {
+              badge = 'Failed';
+              cls = 'status-error';
+            } else if (!Number.isFinite(ageMs) || ageMs > staleMs) {
+              badge = 'Stale';
+              cls = 'status-warn';
+            }
+
+            const whenText = latest?.finished_at ? new Date(latest.finished_at).toLocaleString() : 'Unknown';
+            const ageHours = Number.isFinite(ageMs) ? Math.floor(ageMs / (60 * 60 * 1000)) : null;
+            const detailsUrl = `/backup-verification/runs/${encodeURIComponent(String(latest?.id || ''))}`;
+
+            backupVerificationEl.innerHTML = `
+              <div style="display:flex;flex-direction:column;gap:0.35rem;">
+                <div>
+                  <span class="${cls}" style="display:inline-block;padding:0.1rem 0.45rem;border-radius:999px;font-weight:600;">${w.escapeHtml(badge)}</span>
+                  <span style="color:var(--muted-2);margin-left:0.5rem;">Updated: ${w.escapeHtml(whenText)}</span>
+                </div>
+                <div style="color:var(--muted-2);font-size:0.9rem;">${ageHours == null ? 'Age unavailable' : `Age: ${ageHours}h • Stale after ${staleHours}h`}</div>
+                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+                  <a class="btn" href="${detailsUrl}" target="_blank" rel="noopener">Open details</a>
+                  <label style="color:var(--muted-2);font-size:0.85rem;">Stale after (h)
+                    <input id="backup-verification-stale-hours" type="number" min="1" value="${staleHours}" style="width:64px;margin-left:0.25rem;" />
+                  </label>
+                  <button class="btn" id="backup-verification-stale-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
+                </div>
+              </div>
+            `;
+
+            document.getElementById('backup-verification-stale-save')?.addEventListener('click', () => {
+              const n = Number(document.getElementById('backup-verification-stale-hours')?.value || 24);
+              const next = Number.isFinite(n) && n > 0 ? n : 24;
+              try {
+                localStorage.setItem(thresholdKey, String(next));
+                if (typeof w.showToast === 'function') w.showToast('Backup verification threshold saved', 'success');
+                if (typeof ctx.loadFleetOverview === 'function') ctx.loadFleetOverview(false);
+              } catch (_) {
+                if (typeof w.showToast === 'function') w.showToast('Failed to save threshold', 'error');
+              }
+            });
+          }
+        } catch (ev) {
+          backupVerificationEl.innerHTML = `<div class="error">Backup verification unavailable: ${w.escapeHtml(ev.message || String(ev))}</div>`;
         }
       }
 
