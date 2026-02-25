@@ -1020,6 +1020,84 @@
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
     const teamsBriefBtn = document.getElementById('teams-send-brief');
+    const rolloutCampaignIdEl = document.getElementById('rollout-campaign-id');
+    const rolloutLoadBtn = document.getElementById('rollout-load');
+    const rolloutPauseBtn = document.getElementById('rollout-pause');
+    const rolloutResumeBtn = document.getElementById('rollout-resume');
+    const rolloutApproveNextBtn = document.getElementById('rollout-approve-next');
+    const rolloutSummaryEl = document.getElementById('rollout-summary');
+    const rolloutStatusEl = document.getElementById('rollout-status');
+
+    function renderRolloutSummary(data) {
+      if (!rolloutSummaryEl) return;
+      if (!data) {
+        rolloutSummaryEl.textContent = 'No rollout data.';
+        return;
+      }
+      const waves = Array.isArray(data?.waves) ? data.waves : [];
+      const status = String(data?.status || 'unknown');
+      const paused = !!data?.rollout?.paused;
+      const approved = Number(data?.rollout?.approved_through_ring || 0);
+      const done = Number(data?.hosts_done || 0);
+      const total = Number(data?.hosts_total || 0);
+      const failed = Number(data?.hosts_failed || 0);
+      const pauseReason = data?.rollout?.pause_reason ? ` • reason: ${w.escapeHtml(String(data.rollout.pause_reason))}` : '';
+      rolloutSummaryEl.innerHTML = `
+        <div><b>${w.escapeHtml(String(data?.campaign_id || ''))}</b> • status: <b>${w.escapeHtml(status)}</b> • paused: <b>${paused ? 'yes' : 'no'}</b>${pauseReason}</div>
+        <div class="status-muted" style="margin-top:0.3rem;">Progress: ${done}/${total} done • failed: ${failed} • approved ring: ${approved}</div>
+        <div style="margin-top:0.45rem;overflow:auto;">
+          <table class="process-table" style="min-width:520px;">
+            <thead><tr><th>Wave</th><th style="text-align:right;">Hosts</th><th style="text-align:right;">Failed</th></tr></thead>
+            <tbody>
+              ${waves.length ? waves.map((wv) => `<tr><td>${w.escapeHtml(String(wv?.name || `ring-${wv?.index || 0}`))}</td><td style="text-align:right;">${Number(wv?.size || 0)}</td><td style="text-align:right;">${Number(wv?.failed || 0)}</td></tr>`).join('') : '<tr><td colspan="3" class="status-muted" style="text-align:center;">No wave data</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    async function loadRolloutSummary(showToastOnError) {
+      const campaignId = (rolloutCampaignIdEl?.value || '').trim();
+      if (!campaignId) {
+        if (rolloutStatusEl) rolloutStatusEl.textContent = 'Campaign id is required.';
+        return null;
+      }
+      if (rolloutStatusEl) rolloutStatusEl.textContent = 'Loading rollout…';
+      const r = await fetch(`/patching/campaigns/${encodeURIComponent(campaignId)}/rollout`, { credentials: 'include' });
+      const raw = await r.text();
+      let d = null;
+      try { d = raw ? JSON.parse(raw) : null; } catch (_) { d = null; }
+      if (!r.ok) {
+        const msg = (d && (d.detail || d.error)) || raw || `rollout load failed (${r.status})`;
+        if (rolloutStatusEl) rolloutStatusEl.textContent = msg;
+        if (showToastOnError) w.showToast(msg, 'error');
+        return null;
+      }
+      renderRolloutSummary(d);
+      if (rolloutStatusEl) rolloutStatusEl.textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
+      return d;
+    }
+
+    async function rolloutAction(action) {
+      const campaignId = (rolloutCampaignIdEl?.value || '').trim();
+      if (!campaignId) return w.showToast('Campaign id is required', 'error');
+      const endpoint = action === 'approve-next' ? 'approve-next' : action;
+      const r = await fetch(`/patching/campaigns/${encodeURIComponent(campaignId)}/${endpoint}`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      const raw = await r.text();
+      let d = null;
+      try { d = raw ? JSON.parse(raw) : null; } catch (_) { d = null; }
+      if (!r.ok) {
+        const msg = (d && (d.detail || d.error)) || raw || `${action} failed (${r.status})`;
+        if (rolloutStatusEl) rolloutStatusEl.textContent = msg;
+        return w.showToast(msg, 'error');
+      }
+      renderRolloutSummary(d);
+      if (rolloutStatusEl) rolloutStatusEl.textContent = `${action} ok • ${new Date().toLocaleTimeString()}`;
+      w.showToast(`Rollout ${action} OK`, 'success');
+    }
 
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
     w.wireBusyClick(notificationsRefreshBtn, 'Refreshing…', async () => { await loadNotifications(ctx, true); });
@@ -1039,6 +1117,13 @@
       }
       w.showToast('Teams morning brief sent', 'success');
     });
+
+    w.wireBusyClick(rolloutLoadBtn, 'Loading…', async () => {
+      await loadRolloutSummary(true);
+    });
+    w.wireBusyClick(rolloutPauseBtn, 'Pausing…', async () => { await rolloutAction('pause'); });
+    w.wireBusyClick(rolloutResumeBtn, 'Resuming…', async () => { await rolloutAction('resume'); });
+    w.wireBusyClick(rolloutApproveNextBtn, 'Approving…', async () => { await rolloutAction('approve-next'); });
     w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false)]); });
     kpiTimeframeEl?.addEventListener('change', () => {
       ctx.loadFleetOverview(true);
@@ -1070,7 +1155,11 @@
       if (d && d.approval_required) {
         return w.showToast(`Approval required (security-campaign): ${d.request_id}`, 'info', 5000);
       }
+      if (rolloutCampaignIdEl && d?.campaign_id) rolloutCampaignIdEl.value = String(d.campaign_id);
       w.showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
+      if (d?.campaign_id) {
+        try { await loadRolloutSummary(false); } catch (_) { }
+      }
     });
 
     w.wireBusyClick(distBtn, 'Queueing…', async () => {
