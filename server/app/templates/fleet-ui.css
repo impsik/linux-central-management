@@ -1786,3 +1786,253 @@ body {
     overflow-x: auto;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Linux Central dashboard redesign (layout + visual polish, no JS hook changes)
+--------------------------------------------------------------------------- */
+
+:root {
+  --app-surface: #f4f7fb;
+  --app-sidebar: #0b1424;
+  --app-sidebar-border: #1e2c43;
+  --app-sidebar-text: #dbe6f7;
+  --app-sidebar-muted: #9db0cc;
+  --app-sidebar-active: #1e3a8a;
+  --app-shell-border: #d9e3f0;
+  --app-shell-shadow: 0 14px 32px rgba(8, 15, 31, 0.08);
+}
+
+:root[data-theme="dark"] {
+  --app-surface: #0a111d;
+  --app-sidebar: #040914;
+  --app-sidebar-border: #1c2a3d;
+  --app-sidebar-text: #d7e4f9;
+  --app-sidebar-muted: #a2b4cf;
+  --app-sidebar-active: #1d4ed8;
+  --app-shell-border: #1f2937;
+  --app-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+body {
+  font-family: "IBM Plex Sans", "Noto Sans", "Helvetica Neue", sans-serif;
+  background:
+    radial-gradient(circle at 5% -10%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 42%),
+    radial-gradient(circle at 98% -15%, color-mix(in srgb, #0ea5e9 13%, transparent), transparent 40%),
+    var(--app-surface);
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid var(--app-shell-border);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.06);
+}
+
+.container {
+  display: block;
+  padding: 1rem;
+  max-width: 1840px;
+  margin: 0 auto;
+}
+
+.main-content {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start !important;
+}
+
+.fleet-sidebar-shell {
+  position: sticky;
+  top: calc(1rem + 70px);
+  align-self: start;
+}
+
+#fleet-actions {
+  margin: 0 !important;
+  padding: 0.9rem !important;
+  border-radius: 16px;
+  border: 1px solid var(--app-sidebar-border);
+  background:
+    linear-gradient(175deg, color-mix(in srgb, var(--app-sidebar) 94%, #121f36), var(--app-sidebar));
+  box-shadow: var(--app-shell-shadow);
+  flex-direction: column;
+  gap: 0.4rem !important;
+}
+
+#fleet-actions .btn {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.62rem 0.78rem;
+  border-radius: 11px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--app-sidebar-text);
+  text-align: left;
+  font-weight: 700;
+}
+
+#fleet-actions .btn:hover {
+  background: color-mix(in srgb, var(--app-sidebar-active) 26%, transparent);
+  border-color: color-mix(in srgb, var(--app-sidebar-active) 55%, transparent);
+}
+
+#fleet-actions .btn:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+
+.container:has(#server-info-tab.active) #nav-overview,
+.container:has(#hosts-table-tab.active) #nav-hosts,
+.container:has(#cronjobs-tab.active) #nav-cronjobs,
+.container:has(#sshkeys-tab.active) #nav-sshkeys {
+  background: color-mix(in srgb, var(--app-sidebar-active) 32%, transparent);
+  border-color: color-mix(in srgb, var(--app-sidebar-active) 60%, transparent);
+  color: #fff;
+}
+
+.fleet-main-shell {
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--app-shell-border);
+  border-radius: 18px;
+  box-shadow: var(--app-shell-shadow);
+  overflow: clip;
+}
+
+#host-actions {
+  margin: 0 !important;
+  padding: 0.85rem 1.1rem 0.7rem !important;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+#host-actions .btn {
+  border-radius: 999px;
+}
+
+.server-info-content,
+.admin-content,
+.users-content,
+.services-content,
+.packages-content {
+  padding: 1.1rem 1.2rem 1.4rem;
+}
+
+.metrics-grid {
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.metric-card,
+.admin-card,
+.load-graph-container,
+.filter-section,
+.package-info-panel,
+.package-card,
+.user-card,
+.service-card {
+  border-radius: 14px;
+}
+
+.metric-card {
+  border-color: color-mix(in srgb, var(--border) 82%, #93c5fd 18%);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  padding: 1.1rem;
+}
+
+.metric-value {
+  letter-spacing: -0.02em;
+}
+
+.admin-card {
+  border-color: color-mix(in srgb, var(--border) 82%, #93c5fd 18%);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+}
+
+.admin-card-title {
+  margin-bottom: 0.3rem;
+}
+
+.hosts-top-filters {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border-bottom: 1px solid var(--border);
+  box-shadow: none;
+  padding: 0.2rem 0 0.65rem 0;
+}
+
+.host-search,
+.admin-input {
+  border-radius: 10px;
+}
+
+.process-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.process-table th,
+.process-table td {
+  border-bottom-color: color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+@media (max-width: 1260px) {
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-sidebar-shell {
+    position: static;
+  }
+
+  #fleet-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.45rem !important;
+  }
+
+  #fleet-actions .btn {
+    width: auto;
+    flex: 1 1 180px;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 900px) {
+  .container {
+    padding: 0.7rem;
+  }
+
+  .header {
+    padding: 0.75rem 0.9rem;
+  }
+
+  .server-info-content,
+  .admin-content,
+  .users-content,
+  .services-content,
+  .packages-content {
+    padding: 0.9rem;
+  }
+
+  #host-actions {
+    padding: 0.7rem 0.75rem !important;
+  }
+
+  #fleet-actions .btn {
+    flex: 1 1 140px;
+    font-size: 0.84rem;
+  }
+}

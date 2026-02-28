@@ -66,12 +66,16 @@
     </div>
 
     <div class="main-content">
+      <aside class="fleet-sidebar-shell">
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.35rem;">
         <button class="btn" id="nav-overview" type="button">Overview <span id="notifications-badge" style="display:none;margin-left:6px;color:#ef4444;font-weight:900;">•</span><span id="approvals-badge" title="Pending high-risk approvals" style="display:none;margin-left:6px;color:#f59e0b;font-weight:900;">⚠</span></button>
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
         <button class="btn" id="nav-cronjobs" type="button">Cronjobs</button>
         <button class="btn" id="nav-sshkeys" type="button">SSH Keys <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
       </div>
+      </aside>
+
+      <div class="fleet-main-shell">
 
       <div class="host-actions" id="host-actions" style="display: none; padding-top: 0; margin-top: -0.35rem; margin-bottom: 0.75rem;">
         <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button">Terminal</button>
@@ -1190,6 +1194,7 @@
           <div id="package-info" class="package-info-panel"></div>
         </div>
       </div>
+    </div>
     </div>
   </div>
   </div>
