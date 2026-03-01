@@ -172,12 +172,14 @@ async def ansible_run(
             run.log_path = result.get("log_path")
             run.finished_at = datetime.now(timezone.utc)
         return {"run_id": run_id, **result}
-    except HTTPException:
+    except HTTPException as e:
+        detail = getattr(e, "detail", None)
+        detail_text = str(detail) if detail is not None else "HTTPException"
         with transaction(db):
             run = get_run_by_key(db, run_id)
             run.status = "failed"
             run.rc = 1
-            run.stderr = "HTTPException"
+            run.stderr = detail_text
             run.finished_at = datetime.now(timezone.utc)
         raise
     except Exception as e:

@@ -1,5 +1,6 @@
 import os
 import importlib
+from fastapi import HTTPException
 from sqlalchemy import select
 
 
@@ -121,6 +122,24 @@ def test_job_flow_sqlite(monkeypatch):
         r = client.get(f"/ansible/runs/{run_id}/log")
         assert r.status_code == 200, r.text
         assert "hello log" in r.text
+
+        # HTTPException path should keep actionable error detail in persisted run record.
+        def fake_run_playbook_httperr(playbook, agent_ids, extra_vars, *args, **kwargs):
+            raise HTTPException(status_code=404, detail="Playbook not found")
+
+        monkeypatch.setattr(ansible_mod, "run_playbook", fake_run_playbook_httperr)
+        monkeypatch.setattr(ansible_router, "run_playbook", fake_run_playbook_httperr)
+
+        r = client.post("/ansible/run", json={"playbook": "missing.yml", "agent_ids": ["srv-001"]}, headers=headers)
+        assert r.status_code == 404, r.text
+        fail_runs = client.get("/ansible/runs", params={"status": "failed", "limit": 10, "offset": 0})
+        assert fail_runs.status_code == 200, fail_runs.text
+        failed_item = next((it for it in fail_runs.json().get("items", []) if it.get("playbook") == "missing.yml"), None)
+        assert failed_item is not None
+
+        fr = client.get(f"/ansible/runs/{failed_item['run_id']}")
+        assert fr.status_code == 200, fr.text
+        assert fr.json().get("stderr") == "Playbook not found"
 
 
 def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
