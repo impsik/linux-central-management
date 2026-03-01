@@ -1867,6 +1867,26 @@
       return timelineJobCategory(it) === hostTimelineFilter;
     }
 
+    function timelineJobEffect(it) {
+      const jtRaw = String(it?.job_type || '').toLowerCase();
+      const jt = jtRaw.replace(/[_\s]+/g, '-');
+      if (jt === 'query-pkg-updates' || jt === 'query-pkg-version' || jt === 'query-pkg-info' || jt === 'inventory-now') {
+        return {
+          kind: 'info',
+          label: 'Read-only check',
+          detail: 'Collects inventory/update status. Does not install packages.',
+        };
+      }
+      if (jt === 'pkg-upgrade' || jt === 'dist-upgrade' || jt === 'security-campaign') {
+        return {
+          kind: 'warn',
+          label: 'Installs/changes packages',
+          detail: 'This action can modify installed packages on the host.',
+        };
+      }
+      return null;
+    }
+
     function renderHostTimeline() {
       const el = document.getElementById('host-timeline-list');
       const countEl = document.getElementById('host-timeline-count');
@@ -1903,11 +1923,14 @@
         const stdout = it?.stdout ? `<a class="status-link" href="${escapeHtml(String(it.stdout))}" target="_blank" rel="noopener">stdout</a>` : '';
         const stderr = it?.stderr ? `<a class="status-link" href="${escapeHtml(String(it.stderr))}" target="_blank" rel="noopener">stderr</a>` : '';
         const links = [stdout, stderr].filter(Boolean).join(' • ');
+        const effect = timelineJobEffect(it);
+        const effectTone = effect?.kind === 'warn' ? 'var(--warn)' : 'var(--muted-2)';
         return `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.55rem;background:var(--panel-2);">
           <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
             <b>${jobType}</b>
             <span class="${stClass}" style="font-size:0.8rem;">${escapeHtml(st)}</span>
           </div>
+          ${effect ? `<div style="font-size:0.78rem;margin-top:0.18rem;color:${effectTone};">${escapeHtml(effect.label)} — ${escapeHtml(effect.detail)}</div>` : ''}
           <div class="status-muted" style="font-size:0.82rem;margin-top:0.2rem;display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;">
             <span>${escapeHtml(t)} • <code>${jobId}</code></span>
             <button class="btn" data-copy-job-id="${jobId}" type="button" style="padding:0.16rem 0.45rem;">Copy job id</button>
