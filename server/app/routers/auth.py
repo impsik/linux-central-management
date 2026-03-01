@@ -29,6 +29,54 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _compute_session_expiry(now: datetime) -> datetime:
+    expires = now + timedelta(days=int(getattr(settings, "ui_session_days", 1) or 1))
+    max_hours = int(getattr(settings, "ui_session_max_hours", 24) or 0)
+    if max_hours > 0:
+        cap = now + timedelta(hours=max_hours)
+        if cap < expires:
+            expires = cap
+    return expires
+
+
+def _cookie_expiry(now: datetime, session_expires: datetime) -> datetime:
+    idle_minutes = int(getattr(settings, "ui_session_idle_minutes", 60) or 0)
+    if idle_minutes > 0:
+        idle_exp = now + timedelta(minutes=idle_minutes)
+        if idle_exp < session_expires:
+            return idle_exp
+    return session_expires
+
+
+def _set_auth_cookies(resp, *, token: str, session_expires: datetime, csrf: str | None = None) -> None:
+    now = datetime.now(timezone.utc)
+    cookie_expires = _cookie_expiry(now, session_expires)
+    max_age = max(1, int((cookie_expires - now).total_seconds()))
+
+    resp.set_cookie(
+        key=SESSION_COOKIE,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        expires=int(cookie_expires.timestamp()),
+        max_age=max_age,
+        path="/",
+    )
+
+    csrf_val = csrf or secrets.token_urlsafe(32)
+    resp.set_cookie(
+        key=CSRF_COOKIE,
+        value=csrf_val,
+        httponly=False,
+        samesite="lax",
+        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        expires=int(cookie_expires.timestamp()),
+        max_age=max_age,
+        path="/",
+    )
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -97,7 +145,7 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     token = secrets.token_urlsafe(32)
     token_hash = sha256_hex(token)
     now = datetime.now(timezone.utc)
-    expires = now + timedelta(days=int(getattr(settings, "ui_session_days", 30)))
+    expires = _compute_session_expiry(now)
 
     # Cleanup expired sessions (best-effort)
     try:
@@ -127,28 +175,9 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
 
     resp = JSONResponse(body)
 
-    resp.set_cookie(
-        key=SESSION_COOKIE,
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
-        expires=int(expires.timestamp()),
-        path="/",
-    )
-
     # CSRF protection: double-submit cookie.
     # Frontend must echo this value in X-CSRF-Token for state-changing requests.
-    csrf = secrets.token_urlsafe(32)
-    resp.set_cookie(
-        key=CSRF_COOKIE,
-        value=csrf,
-        httponly=False,
-        samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
-        expires=int(expires.timestamp()),
-        path="/",
-    )
+    _set_auth_cookies(resp, token=token, session_expires=expires)
 
     return resp
 
@@ -682,7 +711,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
     token = secrets.token_urlsafe(32)
     token_hash = sha256_hex(token)
     now = datetime.now(timezone.utc)
-    expires = now + timedelta(days=int(getattr(settings, "ui_session_days", 30)))
+    expires = _compute_session_expiry(now)
 
     # Cleanup expired sessions (best-effort)
     try:
@@ -728,25 +757,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
     from fastapi.responses import RedirectResponse
 
     redirect = RedirectResponse(url="/", status_code=302)
-    redirect.set_cookie(
-        key=SESSION_COOKIE,
-        value=token,
-        httponly=True,
-        samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
-        expires=int(expires.timestamp()),
-        path="/",
-    )
-    csrf = secrets.token_urlsafe(32)
-    redirect.set_cookie(
-        key=CSRF_COOKIE,
-        value=csrf,
-        httponly=False,
-        samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
-        expires=int(expires.timestamp()),
-        path="/",
-    )
+    _set_auth_cookies(redirect, token=token, session_expires=expires)
     redirect.delete_cookie("fleet_oidc_state", path="/")
     redirect.delete_cookie("fleet_oidc_nonce", path="/")
     return redirect
@@ -908,6 +919,7 @@ def auth_logout(request: Request, db: Session = Depends(get_db)):
         db.commit()
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(SESSION_COOKIE, path="/")
+    resp.delete_cookie(CSRF_COOKIE, path="/")
     return resp
 
 
@@ -1382,8 +1394,18 @@ def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Dep
         }
     )
 
-    # Ensure CSRF cookie exists for older sessions / upgraded deployments.
-    if not request.cookies.get(CSRF_COOKIE):
+    # Keep rolling idle timeout alive while user is active.
+    token = request.cookies.get(SESSION_COOKIE)
+    if token and sess_res:
+        sess, _u = sess_res
+        _set_auth_cookies(
+            resp,
+            token=token,
+            session_expires=sess.expires_at,
+            csrf=(request.cookies.get(CSRF_COOKIE) or None),
+        )
+    elif not request.cookies.get(CSRF_COOKIE):
+        # Backward-compat for older sessions missing CSRF cookie.
         csrf = secrets.token_urlsafe(32)
         resp.set_cookie(
             key=CSRF_COOKIE,
