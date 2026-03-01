@@ -12,10 +12,19 @@ from ..config import settings
 
 
 def _fernet() -> Fernet:
-    key = getattr(settings, "mfa_encryption_key", None)
-    if not key:
+    raw_key = getattr(settings, "mfa_encryption_key", None)
+    if not raw_key:
         raise RuntimeError("MFA_ENCRYPTION_KEY is not set")
-    return Fernet(key.encode("utf-8"))
+
+    key = str(raw_key).strip()
+    # Be tolerant of accidentally quoted env values, e.g. "<fernet-key>".
+    if len(key) >= 2 and key[0] == key[-1] and key[0] in {'"', "'"}:
+        key = key[1:-1].strip()
+
+    try:
+        return Fernet(key.encode("utf-8"))
+    except Exception as e:
+        raise RuntimeError("MFA_ENCRYPTION_KEY is invalid (must be a 32-byte urlsafe base64 Fernet key)") from e
 
 
 def encrypt_secret(secret_b32: str) -> str:
