@@ -142,8 +142,8 @@ TERM_TOKEN="${TERM_TOKEN:-}"
 killall -9 fleet-agent >/dev/null 2>&1 || true
 
 # Local dev agent (optional): requires AGENT_TOKEN/TERM_TOKEN in env
-if [ -n "$AGENT_TOKEN" ]; then
-  FLEET_SERVER_URL=http://localhost:8000 FLEET_AGENT_ID=srv-001 FLEET_LABELS=env=prod,role=postgres FLEET_AGENT_TOKEN="$AGENT_TOKEN" FLEET_TERMINAL_TOKEN="$TERM_TOKEN" nohup ./fleet-agent >/tmp/fleet-agent.log 2>&1 &
-else
-  echo "AGENT_TOKEN not set; skipping local agent start"
-fi
+#if [ -n "$AGENT_TOKEN" ]; then
+#  FLEET_SERVER_URL=http://localhost:8000 FLEET_AGENT_ID=srv-001 FLEET_LABELS=env=prod,role=postgres FLEET_AGENT_TOKEN="$AGENT_TOKEN" FLEET_TERMINAL_TOKEN="$TERM_TOKEN" nohup ./fleet-agent >/tmp/fleet-agent.log 2>&1 &
+#else
+#  echo "AGENT_TOKEN not set; skipping local agent start"
+#fi
