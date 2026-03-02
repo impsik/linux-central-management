@@ -2,14 +2,133 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DOCKER_ENV_FILE="$ROOT_DIR/deploy/docker/.env"
+ROOT_ENV_FILE="$ROOT_DIR/.env"
+
+log_info() { echo "[INFO] $*"; }
+log_warn() { echo "[WARN] $*"; }
+log_error() { echo "[ERROR] $*"; }
+
+require_cmd() {
+  local cmd="$1"
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    log_error "Required command not found: $cmd"
+    exit 1
+  fi
+}
+
+secure_random_hex() {
+  local bytes="${1:-32}"
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex "$bytes"
+  else
+    # shellcheck disable=SC2005
+    echo "$(head -c "$bytes" /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  fi
+}
+
+secure_random_alnum() {
+  local len="${1:-32}"
+  python3 -c 'import secrets, string, sys; n=int(sys.argv[1]); alpha=string.ascii_letters+string.digits; print("".join(secrets.choice(alpha) for _ in range(n)))' "$len"
+}
+
+fernet_key() {
+  # 32 random bytes, URL-safe base64 (44 chars incl. padding)
+  python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+}
+
+ensure_file_from_template() {
+  local file="$1"
+  local template="$2"
+  if [ ! -f "$file" ]; then
+    cp "$template" "$file"
+    log_info "Created $file from template"
+  else
+    log_info "Found existing $file"
+  fi
+}
+
+get_env_value() {
+  local file="$1"
+  local key="$2"
+  awk -F= -v key="$key" '$0 !~ /^[[:space:]]*#/ && $1 == key {print substr($0, index($0, "=") + 1); exit}' "$file"
+}
+
+set_env_value_if_missing() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local current
+  current="$(get_env_value "$file" "$key" || true)"
+
+  if grep -qE "^[[:space:]]*${key}=" "$file"; then
+    if [ -n "$current" ]; then
+      log_info "Preserved $key in $(basename "$file")"
+      return 0
+    fi
+    sed -i -E "s|^[[:space:]]*${key}=.*$|${key}=${value}|" "$file"
+    log_info "Set empty $key in $(basename "$file")"
+  else
+    printf "\n%s=%s\n" "$key" "$value" >> "$file"
+    log_info "Added $key to $(basename "$file")"
+  fi
+}
+
+set_env_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+
+  if grep -qE "^[[:space:]]*${key}=" "$file"; then
+    sed -i -E "s|^[[:space:]]*${key}=.*$|${key}=${value}|" "$file"
+  else
+    printf "\n%s=%s\n" "$key" "$value" >> "$file"
+  fi
+}
+
+# --- Preflight ---
+require_cmd ansible
+require_cmd go
+require_cmd python3
+if [ "${RUN_SERVER:-1}" = "1" ]; then
+  require_cmd docker
+fi
+
+# --- Ensure env files exist ---
+ensure_file_from_template "$DOCKER_ENV_FILE" "$ROOT_DIR/deploy/docker/env.example"
+ensure_file_from_template "$ROOT_ENV_FILE" "$ROOT_DIR/env.example"
+
+# --- Generate/preserve server-side secrets ---
+set_env_value_if_missing "$DOCKER_ENV_FILE" "BOOTSTRAP_PASSWORD" "$(secure_random_alnum 28)"
+set_env_value_if_missing "$DOCKER_ENV_FILE" "AGENT_SHARED_TOKEN" "$(secure_random_hex 32)"
+set_env_value_if_missing "$DOCKER_ENV_FILE" "AGENT_TERMINAL_TOKEN" "$(secure_random_hex 32)"
+set_env_value_if_missing "$DOCKER_ENV_FILE" "MFA_ENCRYPTION_KEY" "$(fernet_key)"
+
+# Mirror server token values to root .env defaults, but keep user-provided values if present.
+DOCKER_SHARED_TOKEN="$(get_env_value "$DOCKER_ENV_FILE" "AGENT_SHARED_TOKEN")"
+DOCKER_TERM_TOKEN="$(get_env_value "$DOCKER_ENV_FILE" "AGENT_TERMINAL_TOKEN")"
+
+set_env_value_if_missing "$ROOT_ENV_FILE" "AGENT_TOKEN" "$DOCKER_SHARED_TOKEN"
+set_env_value_if_missing "$ROOT_ENV_FILE" "TERM_TOKEN" "$DOCKER_TERM_TOKEN"
+set_env_value_if_missing "$ROOT_ENV_FILE" "SERVER_URL" "http://192.168.100.240:8000"
+
+chmod 600 "$DOCKER_ENV_FILE" "$ROOT_ENV_FILE"
+log_info "Applied secure permissions (chmod 600) to env files"
 
 # Load local env defaults if present.
 # NOTE: This script relies on environment variables (SERVER_URL, AGENT_TOKEN, TERM_TOKEN).
-# The repository contains a "$ROOT_DIR/.env" for convenience, but bash won't load it automatically.
-if [ -f "$ROOT_DIR/.env" ]; then
+if [ -f "$ROOT_ENV_FILE" ]; then
   set -a
   # shellcheck disable=SC1090
-  . "$ROOT_DIR/.env"
+  . "$ROOT_ENV_FILE"
+  set +a
+fi
+
+# Also load docker env so AGENT_SHARED_TOKEN/AGENT_TERMINAL_TOKEN are available if needed.
+if [ -f "$DOCKER_ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$DOCKER_ENV_FILE"
   set +a
 fi
 
@@ -31,21 +150,15 @@ RUN_SERVER="${RUN_SERVER:-1}"
 if [ "$RUN_SERVER" = "1" ]; then
   cd "$ROOT_DIR/deploy/docker"
 
-  # Docker Compose expects a .env next to docker-compose.yml.
-  if [ ! -f .env ]; then
-    echo "[ERROR] $ROOT_DIR/deploy/docker/.env not found."
-    echo "Create it first: cd deploy/docker && cp .env.example .env (or cp env.example .env)"
-    echo "Then edit it and set BOOTSTRAP_PASSWORD, AGENT_SHARED_TOKEN, (optional) AGENT_TERMINAL_TOKEN."
-    exit 1
-  fi
-
   # Rebuild/restart services without destroying the database container/volume.
   # NOTE: `docker compose down` would remove the DB container; while the volume persists now,
   # keeping the containers up avoids unnecessary churn.
+  log_info "Starting/updating Docker services"
   docker compose up -d --build --remove-orphans
 fi
 
 cd "$ROOT_DIR/agent"
+log_info "Building fleet-agent binary"
 go build -o fleet-agent ./cmd/fleet-agent
 
 # Deploy the freshly built agent binary to the remote host(s)
@@ -68,11 +181,11 @@ ANSIBLE_COMMON_ARGS+=("--ssh-common-args=-o StrictHostKeyChecking=no")
 
 # Ensure install dir exists
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m file -a "path=/opt/fleet-agent state=directory mode=0755" \
-  || echo "[WARN] Agent deploy: could not reach some hosts (dir create step)"
+  || log_warn "Agent deploy: could not reach some hosts (dir create step)"
 
 # Copy agent binary
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" \
-  || echo "[WARN] Agent deploy: could not reach some hosts (copy step)"
+  || log_warn "Agent deploy: could not reach some hosts (copy step)"
 
 # Optional: bootstrap a systemd service on targets.
 # Provide at least SERVER_URL + AGENT_TOKEN for a working agent:
@@ -83,7 +196,7 @@ REMOTE_TERMINAL_TOKEN="${TERM_TOKEN:-}"
 REMOTE_LABELS="${AGENT_LABELS:-env=prod,role=host}"
 
 if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
-  echo "[INFO] Installing/updating fleet-agent systemd service on targets"
+  log_info "Installing/updating fleet-agent systemd service on targets"
 
   # Write env file on the REMOTE host (so hostname is correct)
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"\$(hostname -s)\"; SERVER_URL=\"$SERVER_URL\"; LABELS=\"$REMOTE_LABELS\"; TOKEN=\"$REMOTE_AGENT_TOKEN\"; TERM_TOKEN=\"$REMOTE_TERMINAL_TOKEN\"; cat > /etc/fleet-agent.env <<EOF
@@ -92,7 +205,7 @@ FLEET_AGENT_ID=\$HOSTID
 FLEET_LABELS=\$LABELS
 FLEET_AGENT_TOKEN=\$TOKEN
 FLEET_TERMINAL_TOKEN=\$TERM_TOKEN
-EOF" || echo "[WARN] Agent deploy: could not reach some hosts (env file step)"
+EOF" || log_warn "Agent deploy: could not reach some hosts (env file step)"
 
   # Write systemd unit (use shell heredoc; ad-hoc copy module is awkward with spaces/newlines)
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "cat > /etc/systemd/system/fleet-agent.service <<'EOF'
@@ -122,22 +235,21 @@ RestartSec=2
 WantedBy=multi-user.target
 EOF
 chmod 0644 /etc/systemd/system/fleet-agent.service" \
-    || echo "[WARN] Agent deploy: could not reach some hosts (systemd unit step)"
+    || log_warn "Agent deploy: could not reach some hosts (systemd unit step)"
 
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl is-active fleet-agent" \
-    || echo "[WARN] Agent deploy: could not reach some hosts (systemd enable/restart step)"
+    || log_warn "Agent deploy: could not reach some hosts (systemd enable/restart step)"
 else
-  echo "[WARN] SERVER_URL and/or AGENT_TOKEN not set; skipping systemd service setup. Binary copied only."
+  log_warn "SERVER_URL and/or AGENT_TOKEN not set; skipping systemd service setup. Binary copied only."
 fi
 
 # Kill any stray user-run agent instances (to avoid duplicate heartbeats / confusion)
 # (Don't use pkill -f with a pattern that appears in our own command line.)
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "pkill -x fleet-agent || true" \
-  || echo "[WARN] Agent deploy: could not reach some hosts (pkill step)"
+  || log_warn "Agent deploy: could not reach some hosts (pkill step)"
 
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 TERM_TOKEN="${TERM_TOKEN:-}"
-
 
 killall -9 fleet-agent >/dev/null 2>&1 || true
 
