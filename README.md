@@ -62,7 +62,7 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Docker + Docker Compose
 - If needed:
 ```bash
-sudo apt install docker.io docker-compose-v2 ansible-core -y
+sudo apt install docker.io docker-compose-v2 ansible-core golang-go -y
 sudo usermod $USER -a -G docker # log out and log in again.
 ```
 
@@ -105,7 +105,6 @@ Login with the bootstrap user you set in `deploy/docker/.env`.
 ### 1) Build (or copy the binary)
 ```bash
 cd ../../agent
-sudo apt  install golang-go
 go build -o fleet-agent ./cmd/fleet-agent
 ssh-copy-id $USER@<to agent IP address/FQDN>
 scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
