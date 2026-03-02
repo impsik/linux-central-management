@@ -231,9 +231,6 @@
     const security = document.getElementById('kpi-security');
     if (security) security.addEventListener('click', function (e) { e.preventDefault(); jumpToHostsSorted('security_updates', 'desc'); });
 
-    const updates = document.getElementById('kpi-updates');
-    if (updates) updates.addEventListener('click', function (e) { e.preventDefault(); jumpToHostsSorted('updates', 'desc'); });
-
     const failures = document.getElementById('kpi-failures');
     if (failures) {
       failures.addEventListener('click', function (e) {

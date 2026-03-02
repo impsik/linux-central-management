@@ -17,7 +17,7 @@
     if (!selectEl) return;
     try {
       if (statusEl) statusEl.textContent = 'Loading playbooks...';
-      const resp = await fetch('/ansible/playbooks', { credentials: 'include' });
+      const resp = await ansibleApiFetch('/ansible/playbooks');
       if (!resp.ok) throw new Error(resp.statusText);
       const data = await resp.json();
       const list = Array.isArray(data)
@@ -130,13 +130,33 @@
     const started = Date.now();
     let last = null;
     while (Date.now() - started < timeoutMs) {
-      const r = await fetch(`/jobs/${encodeURIComponent(jobId)}`, { credentials: 'include' });
+      const r = await ansibleApiFetch(`/jobs/${encodeURIComponent(jobId)}`);
       if (!r.ok) throw new Error(`Job status fetch failed (${r.status})`);
       last = await r.json();
       if (last && last.done) return last;
       await new Promise(res => setTimeout(res, 1500));
     }
     return last || { job_id: jobId, done: false, runs: [] };
+  }
+
+  function getCookie(name) {
+    const v = `; ${document.cookie || ''}`;
+    const parts = v.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return '';
+  }
+
+  async function ansibleApiFetch(url, init) {
+    const opts = init ? { ...init } : {};
+    const method = String(opts.method || 'GET').toUpperCase();
+    const headers = new Headers(opts.headers || {});
+    if (!('credentials' in opts)) opts.credentials = 'include';
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      const csrf = getCookie('fleet_csrf');
+      if (csrf && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', csrf);
+    }
+    opts.headers = headers;
+    return fetch(url, opts);
   }
 
   async function runAnsiblePlaybook(ctx) {
@@ -174,7 +194,7 @@
     if (logsListEl) logsListEl.innerHTML = '';
     outputEl.textContent = '';
     try {
-      const resp = await fetch('/ansible/run', {
+      const resp = await ansibleApiFetch('/ansible/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playbook: playbookName, agent_ids: targets, extra_vars: extraVars }),
@@ -187,7 +207,14 @@
         } catch (_) { }
       }
       if (!resp.ok || !data?.ok) {
-        statusEl.textContent = data?.stderr || data?.detail || rawText || 'Playbook failed.';
+        const detail = data?.stderr || data?.detail || rawText || '';
+        if (resp.status === 401) {
+          statusEl.textContent = 'Run failed: session expired. Please sign in again and retry.';
+        } else if (resp.status === 403) {
+          statusEl.textContent = `Run failed: access denied${detail ? ` (${detail})` : ' (check CSRF token/permissions).'}`;
+        } else {
+          statusEl.textContent = `Run failed${resp.status ? ` (${resp.status})` : ''}: ${detail || 'Playbook execution failed.'}`;
+        }
         statusEl.classList.add('error');
       } else {
         statusEl.textContent = 'Completed successfully.';
@@ -201,7 +228,12 @@
       const combined = [data?.stdout || '', data?.stderr || ''].filter(Boolean).join('\n');
       outputEl.textContent = combined || '(no output)';
     } catch (e) {
-      statusEl.textContent = `Run failed: ${e.message}`;
+      const msg = String(e?.message || e || 'Unknown error');
+      if (/failed to fetch/i.test(msg)) {
+        statusEl.textContent = 'Run failed: cannot reach API endpoint (/ansible/run). Check network, reverse proxy, login session, and browser console.';
+      } else {
+        statusEl.textContent = `Run failed: ${msg}`;
+      }
       statusEl.classList.add('error');
     } finally {
       runBtn.disabled = false;
@@ -215,7 +247,7 @@
     logsStatusEl.textContent = 'Loading logs...';
     logsListEl.innerHTML = '';
     try {
-      const resp = await fetch('/ansible/logs?limit=5');
+      const resp = await ansibleApiFetch('/ansible/logs?limit=5');
       if (!resp.ok) throw new Error(resp.statusText);
       const data = await resp.json();
       if (!Array.isArray(data) || data.length === 0) {

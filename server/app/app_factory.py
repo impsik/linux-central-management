@@ -272,6 +272,7 @@ def create_app() -> FastAPI:
             # Allow the UI shell and static assets so the user can complete MFA enrollment/verification flows.
             role = (getattr(user, "role", "operator") or "operator").lower()
             require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+            sess_res = None
             if require_mfa:
                 # Always allow static assets and login shell.
                 if path.startswith("/assets/") or path.startswith("/static/") or path in ("/", "/terminal"):
@@ -291,7 +292,28 @@ def create_app() -> FastAPI:
                 if not mfa_verified:
                     return JSONResponse(status_code=403, content={"detail": "MFA verification required"})
 
-            return await call_next(request)
+            response = await call_next(request)
+
+            # Keep rolling idle timeout alive for authenticated UI traffic.
+            token = request.cookies.get("fleet_session")
+            if token:
+                if sess_res is None:
+                    from .deps import get_current_session_from_request
+
+                    sess_res = get_current_session_from_request(request, db)
+                if sess_res:
+                    from .deps import CSRF_COOKIE
+                    from .routers.auth import _set_auth_cookies
+
+                    sess, _u = sess_res
+                    _set_auth_cookies(
+                        response,
+                        token=token,
+                        session_expires=sess.expires_at,
+                        csrf=(request.cookies.get(CSRF_COOKIE) or None),
+                    )
+
+            return response
         finally:
             db.close()
 

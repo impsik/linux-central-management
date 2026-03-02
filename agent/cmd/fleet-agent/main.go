@@ -1706,8 +1706,7 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 		svc.Enabled = false
 		if err == nil {
 			enabledState := strings.TrimSpace(string(enabledOut))
-			// "enabled" or "enabled-runtime" means enabled
-			svc.Enabled = enabledState == "enabled" || enabledState == "enabled-runtime"
+			svc.Enabled = isEnabledState(enabledState)
 		}
 		// If command fails (e.g., service not found), Enabled remains false
 	}
@@ -1727,6 +1726,15 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 	}
 
 	return string(jsonOut), "", 0, ""
+}
+
+func isEnabledState(state string) bool {
+	switch strings.TrimSpace(state) {
+	case "enabled", "enabled-runtime", "alias", "static", "indirect", "linked", "linked-runtime", "generated", "transient":
+		return true
+	default:
+		return false
+	}
 }
 
 func querySystemMetrics(ctx context.Context) (string, string, int, string) {

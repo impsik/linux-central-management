@@ -115,7 +115,9 @@ scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
 cd ../
 cp hosts.example hosts
 # edit hosts
-SERVER_URL=http://<SERVER_IP>:8000 AGENT_TOKEN=<AGENT_SHARED_TOKEN> TERM_TOKEN=<AGENT_TERMINAL_TOKEN> TARGETS=all ./script.sh
+# script.sh now auto-creates .env files and secure tokens on first run.
+# You can still override values explicitly via env vars when needed.
+SERVER_URL=http://<SERVER_IP>:8000 TARGETS=all ./script.sh
 ```
 
 ### 2) Run (foreground)

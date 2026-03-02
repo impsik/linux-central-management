@@ -66,12 +66,16 @@
     </div>
 
     <div class="main-content">
+      <aside class="fleet-sidebar-shell">
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.35rem;">
         <button class="btn" id="nav-overview" type="button">Overview <span id="notifications-badge" style="display:none;margin-left:6px;color:#ef4444;font-weight:900;">•</span><span id="approvals-badge" title="Pending high-risk approvals" style="display:none;margin-left:6px;color:#f59e0b;font-weight:900;">⚠</span></button>
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
         <button class="btn" id="nav-cronjobs" type="button">Cronjobs</button>
         <button class="btn" id="nav-sshkeys" type="button">SSH Keys <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
       </div>
+      </aside>
+
+      <div class="fleet-main-shell">
 
       <div class="host-actions" id="host-actions" style="display: none; padding-top: 0; margin-top: -0.35rem; margin-bottom: 0.75rem;">
         <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button">Terminal</button>
@@ -213,29 +217,24 @@
             </div>
 
             <div class="metrics-grid" style="margin-top:0.55rem;">
-              <div class="metric-card" id="kpi-hosts-online" style="cursor:pointer;">
+              <div class="metric-card" id="kpi-hosts-online" style="cursor:pointer;" title="Shows how many hosts are currently offline out of all known hosts (offline/total), plus the offline percentage trend for the selected KPI window.">
                 <div class="metric-label">Offline host ratio</div>
                 <div class="metric-value" id="kpi-online">–</div>
                 <div class="metric-details" id="kpi-online-details">–</div>
               </div>
-              <div class="metric-card" id="kpi-security" style="cursor:pointer;">
+              <div class="metric-card" id="kpi-security" style="cursor:pointer;" title="Shows successful job executions as a percentage in the selected KPI window, with trend vs the previous equal window.">
                 <div class="metric-label">Job success rate</div>
                 <div class="metric-value" id="kpi-sec">–</div>
                 <div class="metric-details" id="kpi-sec-details">–</div>
               </div>
-              <div class="metric-card" id="kpi-updates" style="cursor:pointer;">
-                <div class="metric-label">Median patch duration</div>
-                <div class="metric-value" id="kpi-upd">–</div>
-                <div class="metric-details" id="kpi-upd-details">–</div>
-              </div>
-              <div class="metric-card" id="kpi-failures" style="cursor:pointer;">
+              <div class="metric-card" id="kpi-failures" style="cursor:pointer;" title="Shows authentication error rate (%) from OIDC events in the selected KPI window, with trend vs the previous equal window.">
                 <div class="metric-label">Auth error rate</div>
                 <div class="metric-value" id="kpi-fail">–</div>
                 <div class="metric-details" id="kpi-fail-details">OIDC events</div>
               </div>
             </div>
 
-            <div class="overview-cards-grid" style="margin-top:0.55rem;">
+            <div class="overview-cards-grid" style="margin-top:0.55rem;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.8rem;">
               <div class="admin-card" style="margin:0;height:100%;">
                 <div class="admin-card-title">Attention required</div>
                 <div class="admin-card-body">
@@ -265,12 +264,6 @@
                 </div>
               </div>
               <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title">Backup verification</div>
-                <div class="admin-card-body">
-                  <div id="overview-backup-verification" class="status-muted">Loading…</div>
-                </div>
-              </div>
-              <div class="admin-card" style="margin:0;height:100%;">
                 <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
                   <span>Next 5 cronjobs</span>
                   <button class="btn" id="overview-next-cronjobs-open" type="button" style="padding:0.2rem 0.45rem;">Open</button>
@@ -281,22 +274,6 @@
               </div>
             </div>
 
-            <div class="admin-card" id="rollout-controls-card" style="margin-top:1rem;">
-              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-                <span>Rollout controls</span>
-                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
-                  <input id="rollout-campaign-id" class="host-search" type="text" placeholder="campaign id (pc-...)" style="width:220px;max-width:100%;" />
-                  <button class="btn" id="rollout-load" type="button">Load</button>
-                  <button class="btn" id="rollout-pause" type="button">Pause</button>
-                  <button class="btn" id="rollout-resume" type="button">Resume</button>
-                  <button class="btn btn-primary" id="rollout-approve-next" type="button">Approve next wave</button>
-                </div>
-              </div>
-              <div class="admin-card-body">
-                <div id="rollout-summary" class="status-muted">Paste a campaign id and click Load.</div>
-                <div id="rollout-status" class="status-muted" style="margin-top:0.45rem;"></div>
-              </div>
-            </div>
 
             <div class="admin-card" id="notifications-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
@@ -1191,6 +1168,7 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
   </div>
 
@@ -1862,6 +1840,26 @@
       return timelineJobCategory(it) === hostTimelineFilter;
     }
 
+    function timelineJobEffect(it) {
+      const jtRaw = String(it?.job_type || '').toLowerCase();
+      const jt = jtRaw.replace(/[_\s]+/g, '-');
+      if (jt === 'query-pkg-updates' || jt === 'query-pkg-version' || jt === 'query-pkg-info' || jt === 'inventory-now') {
+        return {
+          kind: 'info',
+          label: 'Read-only check',
+          detail: 'Collects inventory/update status. Does not install packages.',
+        };
+      }
+      if (jt === 'pkg-upgrade' || jt === 'dist-upgrade' || jt === 'security-campaign') {
+        return {
+          kind: 'warn',
+          label: 'Installs/changes packages',
+          detail: 'This action can modify installed packages on the host.',
+        };
+      }
+      return null;
+    }
+
     function renderHostTimeline() {
       const el = document.getElementById('host-timeline-list');
       const countEl = document.getElementById('host-timeline-count');
@@ -1898,11 +1896,14 @@
         const stdout = it?.stdout ? `<a class="status-link" href="${escapeHtml(String(it.stdout))}" target="_blank" rel="noopener">stdout</a>` : '';
         const stderr = it?.stderr ? `<a class="status-link" href="${escapeHtml(String(it.stderr))}" target="_blank" rel="noopener">stderr</a>` : '';
         const links = [stdout, stderr].filter(Boolean).join(' • ');
+        const effect = timelineJobEffect(it);
+        const effectTone = effect?.kind === 'warn' ? 'var(--warn)' : 'var(--muted-2)';
         return `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.55rem;background:var(--panel-2);">
           <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
             <b>${jobType}</b>
             <span class="${stClass}" style="font-size:0.8rem;">${escapeHtml(st)}</span>
           </div>
+          ${effect ? `<div style="font-size:0.78rem;margin-top:0.18rem;color:${effectTone};">${escapeHtml(effect.label)} — ${escapeHtml(effect.detail)}</div>` : ''}
           <div class="status-muted" style="font-size:0.82rem;margin-top:0.2rem;display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;">
             <span>${escapeHtml(t)} • <code>${jobId}</code></span>
             <button class="btn" data-copy-job-id="${jobId}" type="button" style="padding:0.16rem 0.45rem;">Copy job id</button>

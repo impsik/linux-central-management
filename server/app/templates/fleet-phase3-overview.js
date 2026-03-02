@@ -4,13 +4,10 @@
     const onlineDetailsEl = document.getElementById('kpi-online-details');
     const secEl = document.getElementById('kpi-sec');
     const secDetailsEl = document.getElementById('kpi-sec-details');
-    const updEl = document.getElementById('kpi-upd');
-    const updDetailsEl = document.getElementById('kpi-upd-details');
     const failEl = document.getElementById('kpi-fail');
     const freshEl = document.getElementById('kpi-fresh');
     const attentionEl = document.getElementById('overview-attention');
     const morningBriefEl = document.getElementById('overview-morning-brief');
-    const backupVerificationEl = document.getElementById('overview-backup-verification');
     const nextCronEl = document.getElementById('overview-next-cronjobs');
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
@@ -23,12 +20,8 @@
           const items0 = Array.isArray(report0?.items) ? report0.items : [];
           const secHosts0 = items0.filter((it) => Number(it.security_updates || 0) > 0).length;
           const secPkgs0 = items0.reduce((n, it) => n + Number(it.security_updates || 0), 0);
-          const updHosts0 = items0.filter((it) => Number(it.updates || 0) > 0).length;
-          const updPkgs0 = items0.reduce((n, it) => n + Number(it.updates || 0), 0);
           if (secEl) secEl.textContent = `${secHosts0} hosts`;
           if (secDetailsEl) secDetailsEl.textContent = `${secPkgs0} packages`;
-          if (updEl) updEl.textContent = `${updHosts0} hosts`;
-          if (updDetailsEl) updDetailsEl.textContent = `${updPkgs0} packages`;
         }
       } catch (_) { }
 
@@ -50,8 +43,6 @@
       const hostsOffline = d?.hosts?.offline ?? Math.max(0, hostsTotal - hostsOnline);
       const secHosts = d?.updates?.hosts_with_security_updates ?? 0;
       const secPkgs = d?.updates?.security_total ?? 0;
-      const updHosts = d?.updates?.hosts_with_updates ?? 0;
-      const updPkgs = d?.updates?.total ?? 0;
       const failed24h = d?.jobs?.failed_runs_last_24h ?? 0;
       const freshest = d?.updates?.freshest_checked_at;
 
@@ -73,15 +64,12 @@
 
       const offline = k.offline_host_ratio || {};
       const succ = k.job_success_rate || {};
-      const patch = k.median_patch_duration || {};
       const auth = k.auth_error_rate || {};
 
-      if (onlineEl) onlineEl.textContent = fmtNum(offline.value, 1, '%');
-      if (onlineDetailsEl) onlineDetailsEl.textContent = `${trend(offline.value, offline.previous, true)} • n=${offline.sample_count ?? 0}`;
+      if (onlineEl) onlineEl.textContent = `${hostsOffline}/${hostsTotal}`;
+      if (onlineDetailsEl) onlineDetailsEl.textContent = `${fmtNum(offline.value, 1, '%')} offline • ${trend(offline.value, offline.previous, true)} • n=${offline.sample_count ?? 0}`;
       if (secEl) secEl.textContent = fmtNum(succ.value, 1, '%');
       if (secDetailsEl) secDetailsEl.textContent = `${trend(succ.value, succ.previous)} • n=${succ.sample_count ?? 0}`;
-      if (updEl) updEl.textContent = fmtNum(patch.value, 1, 's');
-      if (updDetailsEl) updDetailsEl.textContent = `${trend(patch.value, patch.previous, true)} • n=${patch.sample_count ?? 0}`;
       if (failEl) failEl.textContent = fmtNum(auth.value, 1, '%');
       const authNoData = !auth.sample_count ? 'no data in window' : `${trend(auth.value, auth.previous, true)} • n=${auth.sample_count ?? 0}`;
       const failDetailsEl = document.getElementById('kpi-fail-details');
@@ -202,156 +190,6 @@
           });
         } catch (briefErr) {
           morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
-        }
-      }
-
-      if (backupVerificationEl) {
-        backupVerificationEl.innerHTML = '<div class="loading">Loading backup verification status…</div>';
-        try {
-          const thresholdKey = 'fleet_backup_verification_stale_hours_v1';
-          let staleHours = 24;
-          try {
-            const raw = localStorage.getItem(thresholdKey);
-            const parsed = Number(raw);
-            if (Number.isFinite(parsed) && parsed > 0) staleHours = parsed;
-          } catch (_) {}
-
-          const getCsrf = () => {
-            try {
-              const m = document.cookie.match(/(?:^|; )fleet_csrf=([^;]+)/);
-              return m ? decodeURIComponent(m[1]) : '';
-            } catch (_) { return ''; }
-          };
-
-          const renderBackupCard = (latest, policy = {}) => {
-            let statusLine = '<div class="status-warn">No backup verification runs yet.</div>';
-            let detailsBtn = '';
-
-            if (latest) {
-              const finishedAt = latest?.finished_at ? Date.parse(latest.finished_at) : NaN;
-              const ageMs = Number.isFinite(finishedAt) ? (Date.now() - finishedAt) : NaN;
-              const staleMs = staleHours * 60 * 60 * 1000;
-
-              let badge = 'Verified';
-              let cls = 'status-ok';
-              if (String(latest?.status || '').toLowerCase() !== 'verified') {
-                badge = 'Failed';
-                cls = 'status-error';
-              } else if (!Number.isFinite(ageMs) || ageMs > staleMs) {
-                badge = 'Stale';
-                cls = 'status-warn';
-              }
-
-              const whenText = latest?.finished_at ? new Date(latest.finished_at).toLocaleString() : 'Unknown';
-              const ageHours = Number.isFinite(ageMs) ? Math.floor(ageMs / (60 * 60 * 1000)) : null;
-              statusLine = `
-                <div>
-                  <span class="${cls}" style="display:inline-block;padding:0.1rem 0.45rem;border-radius:999px;font-weight:600;">${w.escapeHtml(badge)}</span>
-                  <span style="color:var(--muted-2);margin-left:0.5rem;">Updated: ${w.escapeHtml(whenText)}</span>
-                </div>
-                <div style="color:var(--muted-2);font-size:0.9rem;">${ageHours == null ? 'Age unavailable' : `Age: ${ageHours}h • Stale after ${staleHours}h`}</div>
-              `;
-              const detailsUrl = `/backup-verification/runs/${encodeURIComponent(String(latest?.id || ''))}`;
-              detailsBtn = `<a class="btn" href="${detailsUrl}" target="_blank" rel="noopener">Open details</a>`;
-            }
-
-            backupVerificationEl.innerHTML = `
-              <div style="display:flex;flex-direction:column;gap:0.45rem;">
-                ${statusLine}
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                  ${detailsBtn}
-                  <label style="color:var(--muted-2);font-size:0.85rem;">Stale after (h)
-                    <input id="backup-verification-stale-hours" class="host-search" type="number" min="1" value="${staleHours}" style="width:64px;margin-left:0.25rem;padding:0.25rem 0.4rem;" />
-                  </label>
-                  <button class="btn" id="backup-verification-stale-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
-                </div>
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                  <input id="backup-verification-policy-path" class="host-search" type="text" placeholder="/path/to/backup.file" value="${w.escapeHtml(String(policy.backup_path || ''))}" style="min-width:260px;flex:1;" />
-                  <input id="backup-verification-policy-schema" class="host-search" type="number" min="0" placeholder="schema (optional)" value="${policy.expected_schema_version == null ? '' : Number(policy.expected_schema_version)}" style="width:130px;" />
-                  <button class="btn" id="backup-verification-policy-save" type="button">Configure policy</button>
-                  <button class="btn" id="backup-verification-policy-run-now" type="button">Run now</button>
-                </div>
-              </div>
-            `;
-
-            document.getElementById('backup-verification-stale-save')?.addEventListener('click', () => {
-              const n = Number(document.getElementById('backup-verification-stale-hours')?.value || 24);
-              const next = Number.isFinite(n) && n > 0 ? n : 24;
-              try {
-                localStorage.setItem(thresholdKey, String(next));
-                if (typeof w.showToast === 'function') w.showToast('Backup verification threshold saved', 'success');
-                if (typeof ctx.loadFleetOverview === 'function') ctx.loadFleetOverview(false);
-              } catch (_) {
-                if (typeof w.showToast === 'function') w.showToast('Failed to save threshold', 'error');
-              }
-            });
-
-            document.getElementById('backup-verification-policy-save')?.addEventListener('click', async () => {
-              const path = String(document.getElementById('backup-verification-policy-path')?.value || '').trim();
-              const schemaRaw = String(document.getElementById('backup-verification-policy-schema')?.value || '').trim();
-              if (!path) {
-                if (typeof w.showToast === 'function') w.showToast('Backup path is required', 'error');
-                return;
-              }
-              const body = {
-                enabled: true,
-                backup_path: path,
-                schedule_kind: String(policy?.schedule_kind || 'daily'),
-                timezone: String(policy?.timezone || 'UTC'),
-                time_hhmm: String(policy?.time_hhmm || '03:00'),
-                weekday: Number.isFinite(Number(policy?.weekday)) ? Number(policy.weekday) : 0,
-                stale_after_hours: Number.isFinite(Number(policy?.stale_after_hours)) ? Number(policy.stale_after_hours) : 36,
-                alert_on_failure: policy?.alert_on_failure !== false,
-                alert_on_stale: policy?.alert_on_stale !== false,
-              };
-              if (schemaRaw !== '') body.expected_schema_version = Number(schemaRaw);
-              const rp = await fetch('/backup-verification/policy', {
-                method: 'PUT',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCsrf() },
-                body: JSON.stringify(body),
-              });
-              if (!rp.ok) {
-                const txt = await rp.text();
-                if (typeof w.showToast === 'function') w.showToast(`Policy save failed (${rp.status}) ${txt || ''}`.trim(), 'error');
-                return;
-              }
-              if (typeof w.showToast === 'function') w.showToast('Backup verification policy saved', 'success');
-            });
-
-            document.getElementById('backup-verification-policy-run-now')?.addEventListener('click', async () => {
-              const rr = await fetch('/backup-verification/policy/run-now', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'X-CSRF-Token': getCsrf() },
-              });
-              if (!rr.ok) {
-                const txt = await rr.text();
-                if (typeof w.showToast === 'function') w.showToast(`Run failed (${rr.status}) ${txt || ''}`.trim(), 'error');
-                return;
-              }
-              if (typeof w.showToast === 'function') w.showToast('Backup verification run started', 'success');
-              if (typeof ctx.loadFleetOverview === 'function') ctx.loadFleetOverview(false);
-            });
-          };
-
-          let policy = {};
-          try {
-            const rp = await fetch('/backup-verification/policy', { credentials: 'include' });
-            if (rp.ok) policy = await rp.json();
-          } catch (_) {}
-
-          const rv = await fetch('/backup-verification/latest', { credentials: 'include' });
-          if (rv.status === 404) {
-            renderBackupCard(null, policy);
-          } else if (!rv.ok) {
-            throw new Error(`backup verification failed (${rv.status})`);
-          } else {
-            const latest = await rv.json();
-            renderBackupCard(latest, policy);
-          }
-        } catch (ev) {
-          backupVerificationEl.innerHTML = `<div class="error">Backup verification unavailable: ${w.escapeHtml(ev.message || String(ev))}</div>`;
         }
       }
 
@@ -1099,85 +937,6 @@
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
     const teamsBriefBtn = document.getElementById('teams-send-brief');
-    const rolloutCampaignIdEl = document.getElementById('rollout-campaign-id');
-    const rolloutLoadBtn = document.getElementById('rollout-load');
-    const rolloutPauseBtn = document.getElementById('rollout-pause');
-    const rolloutResumeBtn = document.getElementById('rollout-resume');
-    const rolloutApproveNextBtn = document.getElementById('rollout-approve-next');
-    const rolloutSummaryEl = document.getElementById('rollout-summary');
-    const rolloutStatusEl = document.getElementById('rollout-status');
-
-    function renderRolloutSummary(data) {
-      if (!rolloutSummaryEl) return;
-      if (!data) {
-        rolloutSummaryEl.textContent = 'No rollout data.';
-        return;
-      }
-      const waves = Array.isArray(data?.waves) ? data.waves : [];
-      const status = String(data?.status || 'unknown');
-      const paused = !!data?.rollout?.paused;
-      const approved = Number(data?.rollout?.approved_through_ring || 0);
-      const done = Number(data?.hosts_done || 0);
-      const total = Number(data?.hosts_total || 0);
-      const failed = Number(data?.hosts_failed || 0);
-      const pauseReason = data?.rollout?.pause_reason ? ` • reason: ${w.escapeHtml(String(data.rollout.pause_reason))}` : '';
-      rolloutSummaryEl.innerHTML = `
-        <div><b>${w.escapeHtml(String(data?.campaign_id || ''))}</b> • status: <b>${w.escapeHtml(status)}</b> • paused: <b>${paused ? 'yes' : 'no'}</b>${pauseReason}</div>
-        <div class="status-muted" style="margin-top:0.3rem;">Progress: ${done}/${total} done • failed: ${failed} • approved ring: ${approved}</div>
-        <div style="margin-top:0.45rem;overflow:auto;">
-          <table class="process-table" style="min-width:520px;">
-            <thead><tr><th>Wave</th><th style="text-align:right;">Hosts</th><th style="text-align:right;">Failed</th></tr></thead>
-            <tbody>
-              ${waves.length ? waves.map((wv) => `<tr><td>${w.escapeHtml(String(wv?.name || `ring-${wv?.index || 0}`))}</td><td style="text-align:right;">${Number(wv?.size || 0)}</td><td style="text-align:right;">${Number(wv?.failed || 0)}</td></tr>`).join('') : '<tr><td colspan="3" class="status-muted" style="text-align:center;">No wave data</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      `;
-    }
-
-    async function loadRolloutSummary(showToastOnError) {
-      const campaignId = (rolloutCampaignIdEl?.value || '').trim();
-      if (!campaignId) {
-        if (rolloutStatusEl) rolloutStatusEl.textContent = 'Campaign id is required.';
-        return null;
-      }
-      if (rolloutStatusEl) rolloutStatusEl.textContent = 'Loading rollout…';
-      const r = await fetch(`/patching/campaigns/${encodeURIComponent(campaignId)}/rollout`, { credentials: 'include' });
-      const raw = await r.text();
-      let d = null;
-      try { d = raw ? JSON.parse(raw) : null; } catch (_) { d = null; }
-      if (!r.ok) {
-        const msg = (d && (d.detail || d.error)) || raw || `rollout load failed (${r.status})`;
-        if (rolloutStatusEl) rolloutStatusEl.textContent = msg;
-        if (showToastOnError) w.showToast(msg, 'error');
-        return null;
-      }
-      renderRolloutSummary(d);
-      if (rolloutStatusEl) rolloutStatusEl.textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
-      return d;
-    }
-
-    async function rolloutAction(action) {
-      const campaignId = (rolloutCampaignIdEl?.value || '').trim();
-      if (!campaignId) return w.showToast('Campaign id is required', 'error');
-      const endpoint = action === 'approve-next' ? 'approve-next' : action;
-      const r = await fetch(`/patching/campaigns/${encodeURIComponent(campaignId)}/${endpoint}`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-      const raw = await r.text();
-      let d = null;
-      try { d = raw ? JSON.parse(raw) : null; } catch (_) { d = null; }
-      if (!r.ok) {
-        const msg = (d && (d.detail || d.error)) || raw || `${action} failed (${r.status})`;
-        if (rolloutStatusEl) rolloutStatusEl.textContent = msg;
-        return w.showToast(msg, 'error');
-      }
-      renderRolloutSummary(d);
-      if (rolloutStatusEl) rolloutStatusEl.textContent = `${action} ok • ${new Date().toLocaleTimeString()}`;
-      w.showToast(`Rollout ${action} OK`, 'success');
-    }
-
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
     w.wireBusyClick(notificationsRefreshBtn, 'Refreshing…', async () => { await loadNotifications(ctx, true); });
     w.wireBusyClick(teamsTestBtn, 'Sending…', async () => {
@@ -1197,12 +956,6 @@
       w.showToast('Teams morning brief sent', 'success');
     });
 
-    w.wireBusyClick(rolloutLoadBtn, 'Loading…', async () => {
-      await loadRolloutSummary(true);
-    });
-    w.wireBusyClick(rolloutPauseBtn, 'Pausing…', async () => { await rolloutAction('pause'); });
-    w.wireBusyClick(rolloutResumeBtn, 'Resuming…', async () => { await rolloutAction('resume'); });
-    w.wireBusyClick(rolloutApproveNextBtn, 'Approving…', async () => { await rolloutAction('approve-next'); });
     w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false)]); });
     kpiTimeframeEl?.addEventListener('change', () => {
       ctx.loadFleetOverview(true);
@@ -1234,11 +987,7 @@
       if (d && d.approval_required) {
         return w.showToast(`Approval required (security-campaign): ${d.request_id}`, 'info', 5000);
       }
-      if (rolloutCampaignIdEl && d?.campaign_id) rolloutCampaignIdEl.value = String(d.campaign_id);
       w.showToast(`Security campaign scheduled: ${d.campaign_id}`, 'success');
-      if (d?.campaign_id) {
-        try { await loadRolloutSummary(false); } catch (_) { }
-      }
     });
 
     w.wireBusyClick(distBtn, 'Queueing…', async () => {
