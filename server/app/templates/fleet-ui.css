@@ -1786,3 +1786,74 @@ body {
     overflow-x: auto;
   }
 }
+
+/* UI v2 dark dashboard prototype overrides */
+:root[data-theme="dark"] {
+  --bg: #050b16;
+  --panel: #0a1322;
+  --panel-2: #0d1a2e;
+  --border: #1b2b44;
+  --text: #d8e8ff;
+  --muted-2: #89a4c7;
+  --primary: #12b3ff;
+  --primary-2: #0891d1;
+}
+
+.linuxcm-brand {
+  margin: 0 0 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid #1b3655;
+  border-radius: 14px;
+  background: linear-gradient(160deg, #071225 0%, #0b1e36 100%);
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+.linuxcm-brand-mark {
+  width: 32px; height: 32px; border-radius: 10px;
+  background: radial-gradient(circle at 30% 30%, #5df2ff, #13b5ff);
+  color: #05233b; display:grid; place-items:center; font-weight: 900;
+  box-shadow: 0 0 16px rgba(16, 185, 255, 0.45);
+}
+.linuxcm-brand-title { font-weight: 800; color: #dcf7ff; }
+.linuxcm-brand-subtitle { font-size: 0.75rem; color: #84a7cc; }
+
+#fleet-actions .btn {
+  border-radius: 10px;
+}
+#fleet-actions .btn.side-nav-placeholder { opacity: 0.6; }
+#fleet-actions .btn.side-nav-placeholder:disabled { cursor: default; }
+
+.container:has(#server-info-tab.active) #nav-overview,
+.container:has(#hosts-table-tab.active) #nav-hosts,
+.container:has(#cronjobs-tab.active) #nav-cronjobs,
+.container:has(#sshkeys-tab.active) #nav-sshkeys {
+  box-shadow: inset 0 0 0 1px rgba(89, 206, 255, 0.7), 0 0 18px rgba(18, 179, 255, 0.35);
+}
+
+#server-info-placeholder .metric-card {
+  background: linear-gradient(160deg, #0a1324 0%, #0e1f38 100%);
+  border: 1px solid #1c3b5d;
+}
+#server-info-placeholder .metric-value { color: #dff6ff; }
+
+.overview-side-panels .alert-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 0.6rem;
+  font-size: 0.84rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0b1629;
+}
+.alert-row.sev-critical { border-color: #a9364a; color: #ff9ab0; }
+.alert-row.sev-high { border-color: #9d6a1f; color: #ffd38f; }
+.alert-row.sev-medium { border-color: #206a95; color: #9fdfff; }
+
+.compliance-item { display: grid; gap: 0.3rem; font-size: 0.85rem; }
+.compliance-item + .compliance-item { margin-top: 0.35rem; }
+
+@media (max-width: 980px) {
+  .overview-side-panels { grid-template-columns: 1fr !important; }
+}
