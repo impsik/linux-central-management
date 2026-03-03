@@ -1871,11 +1871,9 @@ body {
 }
 
 .fleet-main-shell {
-  display: grid;
-  grid-template-columns: 226px minmax(0, 1fr);
-  gap: 0.78rem;
+  /* Sidebar is rendered separately; this container should hold only main content. */
+  display: block;
   min-height: calc(100vh - 74px);
-  align-items: start;
 }
 
 .fleet-sidebar-shell {
