@@ -1859,88 +1859,134 @@ body {
 }
 
 /* ---- Dashboard v2 fidelity pass ---- */
+:root[data-theme="dark"] {
+  --bg: #040b18;
+  --panel: #0a1527;
+  --panel-2: #0d1a2e;
+  --border: #1a2e47;
+  --text: #d6e7ff;
+  --muted-2: #7f9abb;
+  --primary: #1bb8ff;
+  --primary-2: #0a8ac7;
+}
+
+.fleet-main-shell {
+  display: grid;
+  grid-template-columns: 226px minmax(0, 1fr);
+  gap: 0.78rem;
+  min-height: calc(100vh - 74px);
+  align-items: start;
+}
+
 .fleet-sidebar-shell {
-  min-height: calc(100vh - 130px);
+  min-height: calc(100vh - 88px);
+  padding: 0.52rem 0.42rem 0.42rem;
+  border-right: 1px solid rgba(48, 73, 103, 0.72);
+  background: linear-gradient(180deg, rgba(8, 18, 35, 0.64) 0%, rgba(8, 17, 33, 0.32) 100%);
+}
+
+#fleet-actions {
+  margin-bottom: 0 !important;
+  gap: 0.34rem !important;
 }
 
 .linuxcm-brand {
-  margin: 0 0 0.45rem;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid #1b304a;
-  border-radius: 10px;
-  background: #081423;
+  margin: 0 0 0.38rem;
+  padding: 0.48rem 0.5rem;
+  border: 1px solid #1a3048;
+  border-radius: 8px;
+  background: rgba(10, 22, 40, 0.76);
+  box-shadow: none;
 }
 
 .linuxcm-brand-mark {
-  width: 24px;
-  height: 24px;
-  font-size: 0.74rem;
-  border-radius: 7px;
+  width: 21px;
+  height: 21px;
+  font-size: 0.66rem;
+  border-radius: 6px;
+  box-shadow: 0 0 9px rgba(30, 182, 244, 0.34);
 }
 
 .linuxcm-brand-title {
-  font-size: 0.9rem;
-  letter-spacing: 0.02em;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.015em;
 }
 
 .linuxcm-brand-subtitle {
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
 }
 
 #fleet-actions .btn {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  font-size: 0.84rem;
-  line-height: 1.05rem;
-  padding: 0.56rem 0.66rem;
+  gap: 0.48rem;
+  font-size: 0.79rem;
+  line-height: 1rem;
+  letter-spacing: 0.01em;
+  font-weight: 600;
+  padding: 0.43rem 0.52rem;
+  border-radius: 8px;
+  box-shadow: none;
 }
 
 #fleet-actions .btn .side-ico {
-  width: 14px;
+  width: 12px;
   display: inline-flex;
   justify-content: center;
-  color: #9bb7d4;
-  font-size: 0.78rem;
+  color: #90abcd;
+  font-size: 0.74rem;
+}
+
+#fleet-actions .btn.side-nav-placeholder {
+  opacity: 0.46;
 }
 
 .container:has(#server-info-tab.active) #nav-overview {
-  background: linear-gradient(90deg, rgba(16, 131, 184, 0.82), rgba(10, 94, 150, 0.85));
-  border-color: rgba(122, 223, 255, 0.85);
-  box-shadow: inset 0 0 0 1px rgba(170, 243, 255, 0.75), 0 0 20px rgba(40, 194, 255, 0.4);
+  background: linear-gradient(90deg, rgba(9, 92, 138, 0.88), rgba(8, 65, 119, 0.9));
+  color: #d9f7ff;
+  border-color: rgba(123, 223, 255, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(169, 241, 255, 0.74), 0 0 15px rgba(28, 181, 241, 0.32);
+}
+
+#server-info-tab .server-info-content {
+  padding: 0.46rem 0.82rem 0.82rem;
 }
 
 .dashboard-v2 {
-  color: #d4e6ff;
-  padding: 0.3rem 0 0.15rem !important;
+  color: #d2e5ff;
+  padding: 0 !important;
+  margin-top: 0 !important;
 }
 
 .dashboard-v2-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
   flex-wrap: wrap;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.56rem;
 }
 
 .dashboard-v2-header h2 {
   margin: 0;
-  font-size: 1.36rem;
-  letter-spacing: 0.01em;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.006em;
 }
 
 .dashboard-v2-subtitle {
-  margin-top: 0.28rem;
-  color: #7f99bb;
-  font-size: 0.87rem;
+  margin-top: 0.2rem;
+  color: #758fb0;
+  font-size: 0.79rem;
+  line-height: 1.3;
 }
 
 .dashboard-v2-toolbar {
   display: flex;
-  gap: 0.45rem;
+  gap: 0.38rem;
   flex-wrap: wrap;
   align-items: center;
 }
@@ -1948,97 +1994,152 @@ body {
 .dashboard-kpis {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.7rem;
-  margin-bottom: 0.7rem;
+  gap: 0.55rem;
+  margin-bottom: 0.58rem;
 }
 
 .dashboard-kpis .metric-card {
-  background: #0b1a2f;
-  border: 1px solid #1f3856;
-  min-height: 112px;
-  padding: 0.86rem;
+  background: linear-gradient(170deg, #0a1a30 0%, #0d2038 100%);
+  border: 1px solid #1d3554;
+  min-height: 100px;
+  height: 100%;
+  padding: 0.72rem;
+  position: relative;
 }
 
-.dashboard-kpis .metric-label { font-size: 0.76rem; color: #88a4c6; }
-.dashboard-kpis .metric-value { font-size: 1.24rem; color: #e9f4ff; }
-.dashboard-kpis .metric-details { font-size: 0.77rem; color: #6d88ab; }
+.dashboard-kpis .metric-card::before {
+  content: "";
+  position: absolute;
+  inset: -1px auto auto -1px;
+  width: 36%;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(33, 214, 255, 0.84), rgba(33, 214, 255, 0));
+}
+
+.dashboard-kpis .metric-label { font-size: 0.69rem; font-weight: 600; letter-spacing: 0.045em; color: #82a0c3; text-transform: uppercase; }
+.dashboard-kpis .metric-value { font-size: 1.16rem; line-height: 1.1; color: #e7f5ff; }
+.dashboard-kpis .metric-details { font-size: 0.73rem; color: #6684a7; }
 
 .dashboard-main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(285px, 0.9fr);
-  gap: 0.72rem;
+  grid-template-columns: minmax(0, 1.72fr) minmax(280px, 0.9fr);
+  gap: 0.58rem;
 }
 
 .host-inventory-card,
 .dashboard-right-stack .admin-card {
-  background: #0a172b;
-  border: 1px solid #1a314d;
+  background: #091728;
+  border: 1px solid #192f49;
+}
+
+.host-inventory-card .admin-card-title,
+.dashboard-right-stack .admin-card-title {
+  margin-bottom: 0.58rem;
+  font-size: 0.79rem;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: #99b6d8;
+}
+
+.host-inventory-card .admin-card-body,
+.dashboard-right-stack .admin-card-body {
+  gap: 0.5rem;
 }
 
 .dashboard-right-stack {
   display: grid;
-  gap: 0.72rem;
+  gap: 0.58rem;
   align-content: start;
 }
 
 .dashboard-inventory-table {
-  font-size: 0.79rem;
+  font-size: 0.76rem;
 }
 
 .dashboard-inventory-table th {
-  background: #0c1c33;
-  color: #9fb7d7;
-  border-bottom: 1px solid #223c5a;
+  background: #0a1a2f;
+  color: #8eaacb;
+  border-bottom: 1px solid #1d3654;
   text-transform: uppercase;
-  font-size: 0.68rem;
-  letter-spacing: 0.05em;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  padding: 0.34rem 0.48rem;
 }
 
 .dashboard-inventory-table td {
-  border-bottom: 1px solid #172c44;
-  color: #caddf5;
-  padding: 0.42rem 0.58rem;
+  border-bottom: 1px solid #142a41;
+  color: #c6dbf5;
+  padding: 0.33rem 0.48rem;
+  line-height: 1.12;
+}
+
+.dashboard-inventory-table tr:last-child td {
+  border-bottom: 0;
 }
 
 .mini-bar {
-  width: 78px;
-  height: 5px;
-  border-radius: 10px;
-  background: #14263d;
+  width: 72px;
+  height: 4px;
+  border-radius: 8px;
+  background: #13263d;
   overflow: hidden;
 }
 
 .mini-bar span {
   display: block;
   height: 100%;
-  border-radius: 10px;
-  background: linear-gradient(90deg, #2bd4ff, #1687c8);
+  border-radius: 8px;
+  background: linear-gradient(90deg, #30d8ff, #1a86c3 76%);
 }
 
 .alert-row {
-  grid-template-columns: 84px 1fr !important;
+  grid-template-columns: 74px 1fr !important;
   border-width: 1px;
-  padding: 0.44rem 0.5rem;
+  padding: 0.34rem 0.42rem;
+  font-size: 0.75rem;
+  line-height: 1.26;
+}
+
+.alert-row.sev-critical { border-color: #7a2a3a; color: #f6a7ba; background: rgba(86, 28, 43, 0.32); }
+.alert-row.sev-high { border-color: #7e5a23; color: #f6cd8e; background: rgba(89, 62, 20, 0.3); }
+.alert-row.sev-medium { border-color: #235f83; color: #9edaff; background: rgba(20, 55, 78, 0.32); }
+
+.compliance-item {
+  display: grid;
+  gap: 0.25rem;
   font-size: 0.8rem;
 }
+
+.compliance-item + .compliance-item { margin-top: 0.22rem; }
 
 .compliance-row {
   display: flex;
   justify-content: space-between;
-  font-size: 0.79rem;
-  color: #b9d1ee;
+  font-size: 0.76rem;
+  color: #b7d0ec;
+}
+
+.compliance-row span:last-child {
+  min-width: 38px;
+  text-align: right;
+  color: #d6ebff;
+  font-weight: 700;
 }
 
 .compliance-item .metric-bar {
-  height: 6px;
-  background: #15273d;
+  height: 5px;
+  background: #13253a;
 }
 
 .compliance-item .metric-bar-fill {
-  background: linear-gradient(90deg, #36d6ff, #1f8bbf);
+  background: linear-gradient(90deg, #37d9ff, #1d89be);
 }
 
 @media (max-width: 1180px) {
+  .fleet-main-shell { grid-template-columns: 1fr; }
+  .fleet-sidebar-shell { min-height: auto; border-right: none; padding-right: 0; background: transparent; }
   .dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-main-grid { grid-template-columns: 1fr; }
 }
