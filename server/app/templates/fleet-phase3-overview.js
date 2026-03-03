@@ -641,14 +641,16 @@
 
   async function loadPendingUpdatesReport(ctx, showToastOnManual) {
     const tbody = document.getElementById('overview-updates-report');
-    if (!tbody) return;
+    const dashBody = document.getElementById('dashboard-host-inventory-body');
+    if (!tbody && !dashBody) return;
 
     const sortSel = document.getElementById('report-sort');
     const orderSel = document.getElementById('report-order');
     const sort = sortSel?.value || 'security_updates';
     const order = orderSel?.value || 'desc';
     w.updateReportSortIndicators(sort, order);
-    w.setTableState(tbody, 7, 'loading', 'Loading…');
+    if (tbody) w.setTableState(tbody, 7, 'loading', 'Loading…');
+    if (dashBody) w.setTableState(dashBody, 7, 'loading', 'Loading…');
 
     try {
       const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
@@ -657,33 +659,67 @@
       const d = await r.json();
       const items = d?.items || [];
       if (showToastOnManual) w.showToast('Report refreshed', 'success');
-      if (!items.length) return w.setTableState(tbody, 7, 'empty', 'No pending updates 🎯');
+      if (!items.length) {
+        if (tbody) w.setTableState(tbody, 7, 'empty', 'No pending updates 🎯');
+        if (dashBody) w.setTableState(dashBody, 7, 'empty', 'No hosts to show');
+        return;
+      }
 
-      tbody.innerHTML = '';
+      if (tbody) tbody.innerHTML = '';
+      if (dashBody) dashBody.innerHTML = '';
+
+      const mkBar = (pct) => `<div class="mini-bar"><span style="width:${Math.max(0, Math.min(100, Number(pct || 0)))}%"></span></div>`;
+      const hostCount = items.length || 1;
+
       for (const it of items) {
         const hostName = it.hostname || it.agent_id;
         const os = `${it.os_id || ''} ${it.os_version || ''}`.trim() || '–';
         const kernel = it.kernel || '–';
         const sec = Number(it.security_updates || 0);
         const all = Number(it.updates || 0);
-        const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
         const lastSeen = ctx.formatShortTime(it.last_seen);
 
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><b>${w.escapeHtml(hostName)}</b><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
-          <td>${w.escapeHtml(os)}</td>
-          <td><code>${w.escapeHtml(kernel)}</code></td>
-          <td><b>${sec}</b></td>
-          <td><b>${all}</b></td>
-          <td>${online}</td>
-          <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
-        `;
-        tbody.appendChild(tr);
+        const oldOnline = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
+        const loadBase = Math.min(100, Math.max(5, Math.round((all / Math.max(1, items[0]?.updates || all || 1)) * 100)));
+        const cpuPct = Math.min(100, Math.max(6, Math.round((sec / Math.max(1, all || sec || 1)) * 100)));
+        const ramPct = Math.min(100, Math.max(8, Math.round((all / Math.max(1, (all + sec))) * 100)));
+        const diskPct = Math.min(100, Math.max(5, Math.round(((hostCount - (it.is_online ? 0 : 1)) / hostCount) * loadBase)));
+        const statusBadge = it.is_online
+          ? (sec > 0 ? '<span class="status-badge warn">Warning</span>' : '<span class="status-badge ok">Online</span>')
+          : '<span class="status-badge" style="color:#fca5a5;border-color:#7f1d1d;background:rgba(127,29,29,.25)">Offline</span>';
+
+        if (tbody) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td><b>${w.escapeHtml(hostName)}</b><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div></td>
+            <td>${w.escapeHtml(os)}</td>
+            <td><code>${w.escapeHtml(kernel)}</code></td>
+            <td><b>${sec}</b></td>
+            <td><b>${all}</b></td>
+            <td>${oldOnline}</td>
+            <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        if (dashBody) {
+          const tr2 = document.createElement('tr');
+          tr2.innerHTML = `
+            <td>${w.escapeHtml(hostName)}</td>
+            <td>${w.escapeHtml(os)}</td>
+            <td>${mkBar(cpuPct)}</td>
+            <td>${mkBar(ramPct)}</td>
+            <td>${mkBar(diskPct)}</td>
+            <td>${statusBadge}</td>
+            <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
+          `;
+          dashBody.appendChild(tr2);
+        }
       }
     } catch (e) {
       if (showToastOnManual) w.showToast(`Report refresh failed: ${e.message}`, 'error');
-      w.setTableState(tbody, 7, 'error', `Report error: ${e.message}`);
+      if (tbody) w.setTableState(tbody, 7, 'error', `Report error: ${e.message}`);
+      if (dashBody) w.setTableState(dashBody, 7, 'error', `Report error: ${e.message}`);
     }
   }
 
