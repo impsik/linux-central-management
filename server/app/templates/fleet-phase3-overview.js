@@ -653,7 +653,7 @@
     if (dashBody) w.setTableState(dashBody, 7, 'loading', 'Loading…');
 
     try {
-      const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
+      const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include' });
       if (!r.ok) throw new Error(`report failed (${r.status})`);
       const d = await r.json();
