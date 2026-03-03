@@ -668,8 +668,11 @@
       if (tbody) tbody.innerHTML = '';
       if (dashBody) dashBody.innerHTML = '';
 
-      const mkBar = (pct) => `<div class="mini-bar"><span style="width:${Math.max(0, Math.min(100, Number(pct || 0)))}%"></span></div>`;
-      const hostCount = items.length || 1;
+      const mkBar = (pct) => {
+        const n = Number(pct);
+        if (!Number.isFinite(n)) return '<span class="status-muted">–</span>';
+        return `<div class="mini-bar"><span style="width:${Math.max(0, Math.min(100, n))}%"></span></div>`;
+      };
 
       for (const it of items) {
         const hostName = it.hostname || it.agent_id;
@@ -680,10 +683,9 @@
         const lastSeen = ctx.formatShortTime(it.last_seen);
 
         const oldOnline = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
-        const loadBase = Math.min(100, Math.max(5, Math.round((all / Math.max(1, items[0]?.updates || all || 1)) * 100)));
-        const cpuPct = Math.min(100, Math.max(6, Math.round((sec / Math.max(1, all || sec || 1)) * 100)));
-        const ramPct = Math.min(100, Math.max(8, Math.round((all / Math.max(1, (all + sec))) * 100)));
-        const diskPct = Math.min(100, Math.max(5, Math.round(((hostCount - (it.is_online ? 0 : 1)) / hostCount) * loadBase)));
+        const cpuPct = Number(it.cpu_percent_used);
+        const ramPct = Number(it.mem_percent_used);
+        const diskPct = Number(it.disk_percent_used);
         const statusBadge = it.is_online
           ? (sec > 0 ? '<span class="status-badge warn">Warning</span>' : '<span class="status-badge ok">Online</span>')
           : '<span class="status-badge" style="color:#fca5a5;border-color:#7f1d1d;background:rgba(127,29,29,.25)">Offline</span>';

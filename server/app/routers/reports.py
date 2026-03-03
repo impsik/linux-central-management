@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import get_db
 from ..deps import require_ui_user
-from ..models import Host, HostPackageUpdate
+from ..models import Host, HostMetricsSnapshot, HostPackageUpdate
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -124,6 +124,65 @@ def hosts_updates_report(
 
     rows = db.execute(q.limit(limit).offset(offset)).all()
 
+    # Attach latest lightweight metrics snapshot per agent (if available)
+    agent_ids = [str(r.agent_id) for r in rows if getattr(r, "agent_id", None)]
+    metrics_by_agent: dict[str, dict] = {}
+    if agent_ids:
+        latest_subq = (
+            select(
+                HostMetricsSnapshot.agent_id,
+                func.max(HostMetricsSnapshot.recorded_at).label("max_t"),
+            )
+            .where(HostMetricsSnapshot.agent_id.in_(agent_ids))
+            .group_by(HostMetricsSnapshot.agent_id)
+            .subquery()
+        )
+        snaps = db.execute(
+            select(HostMetricsSnapshot)
+            .join(
+                latest_subq,
+                and_(
+                    HostMetricsSnapshot.agent_id == latest_subq.c.agent_id,
+                    HostMetricsSnapshot.recorded_at == latest_subq.c.max_t,
+                ),
+            )
+        ).scalars().all()
+
+        for s in snaps:
+            disk_pct = None
+            mem_pct = None
+            cpu_pct = None
+            try:
+                if s.disk_percent_used is not None:
+                    disk_pct = float(s.disk_percent_used)
+            except Exception:
+                disk_pct = None
+            try:
+                if s.mem_percent_used is not None:
+                    mem_pct = float(s.mem_percent_used)
+            except Exception:
+                mem_pct = None
+            try:
+                if s.load_1min is not None and s.vcpus:
+                    v = int(s.vcpus)
+                    if v > 0:
+                        cpu_pct = (float(s.load_1min) / float(v)) * 100.0
+            except Exception:
+                cpu_pct = None
+            if cpu_pct is not None:
+                cpu_pct = max(0.0, min(100.0, cpu_pct))
+            if disk_pct is not None:
+                disk_pct = max(0.0, min(100.0, disk_pct))
+            if mem_pct is not None:
+                mem_pct = max(0.0, min(100.0, mem_pct))
+
+            metrics_by_agent[str(s.agent_id)] = {
+                "cpu_percent_used": cpu_pct,
+                "mem_percent_used": mem_pct,
+                "disk_percent_used": disk_pct,
+                "metrics_recorded_at": s.recorded_at,
+            }
+
     items = []
     for r in rows:
         # online hint
@@ -134,6 +193,7 @@ def hosts_updates_report(
             except Exception:
                 is_online = False
 
+        m = metrics_by_agent.get(str(r.agent_id), {})
         items.append(
             {
                 "agent_id": r.agent_id,
@@ -149,6 +209,10 @@ def hosts_updates_report(
                 "reboot_required": bool(getattr(r, "reboot_required", False)),
                 "updates": int(r.updates or 0),
                 "security_updates": int(r.security_updates or 0),
+                "cpu_percent_used": m.get("cpu_percent_used"),
+                "mem_percent_used": m.get("mem_percent_used"),
+                "disk_percent_used": m.get("disk_percent_used"),
+                "metrics_recorded_at": m.get("metrics_recorded_at"),
             }
         )
 
