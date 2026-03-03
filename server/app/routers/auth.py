@@ -40,6 +40,11 @@ def _compute_session_expiry(now: datetime) -> datetime:
 
 
 def _cookie_expiry(now: datetime, session_expires: datetime) -> datetime:
+    # SQLite/in-memory test paths can surface naive datetimes from ORM rows.
+    # Normalize to UTC-aware for safe comparisons with timezone-aware `now`.
+    if session_expires.tzinfo is None:
+        session_expires = session_expires.replace(tzinfo=timezone.utc)
+
     idle_minutes = int(getattr(settings, "ui_session_idle_minutes", 60) or 0)
     if idle_minutes > 0:
         idle_exp = now + timedelta(minutes=idle_minutes)
