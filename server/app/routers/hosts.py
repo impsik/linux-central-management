@@ -19,8 +19,20 @@ from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
 from ..services.package_names import sanitize_package_list
 from ..services.deb_version import is_vulnerable
+from ..schemas import HostMetadataUpdate
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
+
+
+def _clean_optional_str(value: str | None, *, field: str, max_len: int = 255) -> str | None:
+    if value is None:
+        return None
+    out = str(value).strip()
+    if not out:
+        return ""
+    if len(out) > max_len:
+        raise HTTPException(400, f"{field} too long (max {max_len})")
+    return out
 
 
 @router.get("")
@@ -45,6 +57,63 @@ def list_hosts(online_only: bool = False, db: Session = Depends(get_db), user=De
         if is_host_visible_to_user(db, user, h)
         if (not online_only or is_host_online(h, now))
     ]
+
+
+@router.patch("/{agent_id}/metadata")
+def update_host_metadata(
+    agent_id: str,
+    payload: HostMetadataUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_users"):
+        raise HTTPException(403, "Admin privileges required")
+
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host or not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    next_hostname = _clean_optional_str(payload.hostname, field="hostname")
+    next_role = _clean_optional_str(payload.role, field="role")
+
+    next_env: dict[str, str] | None = None
+    if payload.env is not None:
+        next_env = {}
+        for k, v in (payload.env or {}).items():
+            kk = str(k or "").strip()
+            vv = str(v or "").strip()
+            if not kk:
+                continue
+            if len(kk) > 128:
+                raise HTTPException(400, "env key too long (max 128)")
+            if len(vv) > 2048:
+                raise HTTPException(400, f"env value too long for key '{kk}' (max 2048)")
+            next_env[kk] = vv
+
+    labels = dict(host.labels or {}) if isinstance(host.labels, dict) else {}
+
+    if next_hostname is not None and next_hostname != "":
+        host.hostname = next_hostname
+    if next_role is not None:
+        labels["role"] = next_role
+    if next_env is not None:
+        prev_env = labels.get("env_vars")
+        env_vars = dict(prev_env) if isinstance(prev_env, dict) else {}
+        env_vars.update(next_env)
+        labels["env_vars"] = env_vars
+
+    host.labels = labels
+    db.commit()
+
+    return {
+        "ok": True,
+        "host": {
+            "agent_id": host.agent_id,
+            "hostname": host.hostname,
+            "labels": host.labels or {},
+        },
+    }
 
 
 @router.post("/{agent_id}/reboot")

@@ -93,6 +93,19 @@
                 <h2 id="server-info-hostname">Server Name</h2>
                 <div id="server-info-details" class="server-info-details"></div>
                 <div id="server-info-labels" class="label-badges"></div>
+                <div class="admin-card" style="margin-top:0.6rem;max-width:760px;">
+                  <div class="admin-card-title">Agent metadata</div>
+                  <div class="admin-card-body" style="display:grid;gap:0.45rem;">
+                    <input id="host-meta-name" class="host-search" type="text" placeholder="Agent display name / hostname" />
+                    <input id="host-meta-role" class="host-search" type="text" placeholder="Role (e.g. web, db, worker)" />
+                    <div id="host-meta-env-list" style="display:grid;gap:0.35rem;"></div>
+                    <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
+                      <button class="btn" id="host-meta-env-add" type="button">Add env entry</button>
+                      <button class="btn btn-primary" id="host-meta-save" type="button">Save metadata</button>
+                      <span id="host-meta-status" class="status-muted" style="font-size:0.85rem;"></span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1694,6 +1707,12 @@
         if (role) parts.push(`<span class="label-badge">role: <code>${escapeHtml(role)}</code></span>`);
         labelsEl.innerHTML = parts.length ? parts.join('') : `<span class="label-badge">env: <code>n/a</code></span><span class="label-badge">role: <code>n/a</code></span>`;
       }
+      try {
+        const hostActionsMod = window.phase3HostActions;
+        if (hostActionsMod && typeof hostActionsMod.populateHostMetadataEditor === 'function') {
+          hostActionsMod.populateHostMetadataEditor(hostObj || { agent_id: agentId, hostname });
+        }
+      } catch (_) { }
 
       // Switch to the appropriate tab:
       // - If user is in Terminal/Users/Services/Packages, keep that tab when switching hosts.
@@ -4340,6 +4359,25 @@
       }
     }
 
+    function initHostMetadataEditor() {
+      const mod = window.phase3HostActions;
+      if (mod && typeof mod.initHostMetadataEditor === 'function') {
+        return mod.initHostMetadataEditor({
+          getCurrentAgentId: () => currentAgentId,
+          onMetadataSaved: (updatedHost) => {
+            if (!updatedHost || !updatedHost.agent_id) return;
+            const idx = (allHosts || []).findIndex(h => h.agent_id === updatedHost.agent_id);
+            if (idx >= 0) {
+              const prev = allHosts[idx] || {};
+              allHosts[idx] = { ...prev, hostname: updatedHost.hostname || prev.hostname, labels: updatedHost.labels || prev.labels || {} };
+            }
+            rebuildLabelFilterOptions(allHosts);
+            applyHostFilters();
+          }
+        });
+      }
+    }
+
     function getSshUiCtx() {
       return {
         loadSshKeys,
@@ -4406,6 +4444,7 @@
     safeInit('initThemeToggle', initThemeToggle);
     safeInit('initSettingsMenu', initSettingsMenu);
     safeInit('initHostActionControls', initHostActionControls);
+    safeInit('initHostMetadataEditor', initHostMetadataEditor);
     safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
     safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
     safeInit('initFailedRunDetailModalControls', initFailedRunDetailModalControls);

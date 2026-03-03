@@ -76,3 +76,9 @@ class JobCreateCVECheck(BaseModel):
     agent_ids: Optional[List[str]] = None
     labels: Optional[Dict[str, str]] = None
     cve: str
+
+
+class HostMetadataUpdate(BaseModel):
+    hostname: Optional[str] = None
+    role: Optional[str] = None
+    env: Optional[Dict[str, str]] = None
