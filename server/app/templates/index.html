@@ -75,17 +75,17 @@
         </div>
       </div>
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.35rem;">
-        <button class="btn" id="nav-overview" type="button">Dashboard <span id="notifications-badge" style="display:none;margin-left:6px;color:#ef4444;font-weight:900;">•</span><span id="approvals-badge" title="Pending high-risk approvals" style="display:none;margin-left:6px;color:#f59e0b;font-weight:900;">⚠</span></button>
-        <button class="btn" id="nav-hosts" type="button">Hosts</button>
-        <button class="btn side-nav-placeholder" type="button" disabled>Configuration</button>
-        <button class="btn" id="nav-sshkeys" type="button">Security <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
-        <button class="btn side-nav-placeholder" type="button" disabled>Automation</button>
-        <button class="btn" id="nav-cronjobs" type="button">Jobs</button>
-        <button class="btn side-nav-placeholder" type="button" disabled>Packages</button>
-        <button class="btn side-nav-placeholder" type="button" disabled>Monitoring</button>
-        <button class="btn side-nav-placeholder" type="button" disabled>API</button>
-        <button class="btn side-nav-placeholder" type="button" disabled>Backup</button>
-        <button class="btn side-nav-placeholder" type="button" disabled>Reports</button>
+        <button class="btn" id="nav-overview" type="button"><span class="side-ico">⌂</span><span>Dashboard</span> <span id="notifications-badge" style="display:none;margin-left:auto;color:#ef4444;font-weight:900;">•</span><span id="approvals-badge" title="Pending high-risk approvals" style="display:none;margin-left:6px;color:#f59e0b;font-weight:900;">⚠</span></button>
+        <button class="btn" id="nav-hosts" type="button"><span class="side-ico">◫</span><span>Hosts</span></button>
+        <button class="btn side-nav-placeholder" type="button" disabled><span class="side-ico">⚙</span><span>Configuration</span></button>
+        <button class="btn" id="nav-sshkeys" type="button"><span class="side-ico">⛨</span><span>Security</span> <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
+        <button class="btn side-nav-placeholder" type="button" disabled><span class="side-ico">⋯</span><span>Automation</span></button>
+        <button class="btn" id="nav-cronjobs" type="button"><span class="side-ico">◷</span><span>Jobs</span></button>
+        <button class="btn side-nav-placeholder" type="button" disabled><span class="side-ico">◨</span><span>Packages</span></button>
+        <button class="btn side-nav-placeholder" type="button" disabled><span class="side-ico">◉</span><span>Monitoring</span></button>
+        <button class="btn side-nav-placeholder" type="button" disabled><span class="side-ico">⌁</span><span>API</span></button>
+        <button class="btn side-nav-placeholder" type="button" disabled><span class="side-ico">⎘</span><span>Backup</span></button>
+        <button class="btn side-nav-placeholder" type="button" disabled><span class="side-ico">▤</span><span>Reports</span></button>
       </div>
       </aside>
 
@@ -222,194 +222,83 @@
             </div>
           </div>
 
-          <div id="server-info-placeholder" class="empty-state" style="text-align:left;max-width:none;">
-            <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+          <div id="server-info-placeholder" class="empty-state dashboard-v2" style="text-align:left;max-width:none;">
+            <div class="dashboard-v2-header">
               <div>
-                <h2 style="margin:0 0 0.25rem 0;">System Overview</h2>
-                <div style="color:var(--muted-2);font-size:0.95rem;">Fleet telemetry and operational posture across your LinuxCM environment.</div>
+                <h2>System Overview</h2>
+                <div class="dashboard-v2-subtitle">Fleet telemetry and operational posture across your LinuxCM environment.</div>
               </div>
-              <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+              <div class="dashboard-v2-toolbar">
                 <select id="kpi-timeframe" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
                   <option value="24" selected>KPI: 24h</option>
                   <option value="168">KPI: 7d</option>
                   <option value="720">KPI: 30d</option>
                 </select>
                 <button class="btn" id="overview-refresh" type="button">Refresh</button>
-                <button class="btn btn-primary" id="overview-inventory-now" type="button">Inventory now
-                  (visible)</button>
+                <button class="btn btn-primary" id="overview-inventory-now" type="button">Inventory now</button>
                 <button class="btn btn-primary" id="overview-security-campaign" type="button">Security campaign</button>
-                <button class="btn" id="overview-dist-upgrade" type="button">Full upgrade (dist-upgrade)</button>
+                <button class="btn" id="overview-dist-upgrade" type="button">Full upgrade</button>
               </div>
             </div>
 
-            <div class="metrics-grid" style="margin-top:0.55rem;">
-              <div class="metric-card" id="kpi-hosts-online" style="cursor:pointer;" title="Shows how many hosts are currently offline out of all known hosts (offline/total), plus the offline percentage trend for the selected KPI window.">
-                <div class="metric-label">Offline host ratio</div>
-                <div class="metric-value" id="kpi-online">–</div>
-                <div class="metric-details" id="kpi-online-details">–</div>
-              </div>
-              <div class="metric-card" id="kpi-security" style="cursor:pointer;" title="Shows successful job executions as a percentage in the selected KPI window, with trend vs the previous equal window.">
-                <div class="metric-label">Job success rate</div>
-                <div class="metric-value" id="kpi-sec">–</div>
-                <div class="metric-details" id="kpi-sec-details">–</div>
-              </div>
-              <div class="metric-card" id="kpi-failures" style="cursor:pointer;" title="Shows authentication error rate (%) from OIDC events in the selected KPI window, with trend vs the previous equal window.">
-                <div class="metric-label">Auth error rate</div>
-                <div class="metric-value" id="kpi-fail">–</div>
-                <div class="metric-details" id="kpi-fail-details">OIDC events</div>
-              </div>
-              <div class="metric-card" id="kpi-compliance" style="cursor:default;">
-                <div class="metric-label">Compliance score</div>
-                <div class="metric-value" id="kpi-compliance-value">94%</div>
-                <div class="metric-details" id="kpi-compliance-details">Policy baseline adherence</div>
-              </div>
+            <div class="dashboard-kpis">
+              <div class="metric-card" id="kpi-hosts-online"><div class="metric-label">Offline host ratio</div><div class="metric-value" id="kpi-online">–</div><div class="metric-details" id="kpi-online-details">–</div></div>
+              <div class="metric-card" id="kpi-security"><div class="metric-label">Job success rate</div><div class="metric-value" id="kpi-sec">–</div><div class="metric-details" id="kpi-sec-details">–</div></div>
+              <div class="metric-card" id="kpi-failures"><div class="metric-label">Auth error rate</div><div class="metric-value" id="kpi-fail">–</div><div class="metric-details" id="kpi-fail-details">OIDC events</div></div>
+              <div class="metric-card" id="kpi-compliance"><div class="metric-label">Compliance score</div><div class="metric-value" id="kpi-compliance-value">94%</div><div class="metric-details" id="kpi-compliance-details">Policy baseline adherence</div></div>
             </div>
 
-            <div class="overview-cards-grid" style="margin-top:0.55rem;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.8rem;">
-              <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title">Attention required</div>
-                <div class="admin-card-body">
-                  <div id="overview-attention" class="status-muted">Loading…</div>
+            <div class="dashboard-main-grid">
+              <div class="admin-card host-inventory-card" style="margin:0;">
+                <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+                  <span>Host Inventory</span>
+                  <div style="display:flex;gap:0.45rem;align-items:center;">
+                    <label style="color:var(--muted-2);font-size:0.84rem;">Sort</label>
+                    <select id="report-sort" class="host-search" style="width:auto;padding:0.3rem 0.45rem;">
+                      <option value="security_updates" selected>Security</option><option value="updates">Updates</option><option value="os_version">OS</option><option value="hostname">Hostname</option><option value="last_seen">Last seen</option>
+                    </select>
+                    <select id="report-order" class="host-search" style="width:auto;padding:0.3rem 0.45rem;"><option value="desc" selected>Desc</option><option value="asc">Asc</option></select>
+                    <button class="btn" id="report-refresh" type="button">Reload</button>
+                  </div>
                 </div>
-              </div>
-              <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title">Data freshness</div>
                 <div class="admin-card-body">
-                  <div style="display:flex;flex-direction:column;gap:0.35rem;">
-                    <div><span class="status-muted">Last updates check:</span> <span id="kpi-fresh">–</span></div>
-                    <div style="color:var(--muted-2);font-size:0.9rem;">Online is based on last_seen within grace window.</div>
-                    <div style="color:var(--muted-2);font-size:0.9rem;">Reboot-required is not yet centralized
-                      (per-host/campaign).</div>
-                    <div id="maintenance-window-status" style="color:var(--muted-2);font-size:0.9rem;">Maintenance window: checking…</div>
-                    <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.3rem;">
-                      <button class="btn" id="teams-test-alert" type="button">Teams: Send test</button>
-                      <button class="btn" id="teams-send-brief" type="button">Teams: Send morning brief</button>
-                    </div>
+                  <div style="overflow-x:auto;">
+                    <table class="process-table dashboard-inventory-table" style="min-width:860px;">
+                      <thead><tr><th id="th-host" class="sortable-col" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th><th id="th-os" class="sortable-col" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th><th>CPU</th><th>RAM</th><th>DISK</th><th>Status</th><th>Last seen</th></tr></thead>
+                      <tbody>
+                        <tr><td>edge-node-01</td><td>Ubuntu 24.04</td><td><div class="mini-bar"><span style="width:42%"></span></div></td><td><div class="mini-bar"><span style="width:65%"></span></div></td><td><div class="mini-bar"><span style="width:51%"></span></div></td><td><span class="status-badge ok">Online</span></td><td>2m ago</td></tr>
+                        <tr><td>db-core-02</td><td>Debian 12</td><td><div class="mini-bar"><span style="width:78%"></span></div></td><td><div class="mini-bar"><span style="width:72%"></span></div></td><td><div class="mini-bar"><span style="width:84%"></span></div></td><td><span class="status-badge warn">Warning</span></td><td>6m ago</td></tr>
+                        <tr><td>api-west-03</td><td>Ubuntu 22.04</td><td><div class="mini-bar"><span style="width:33%"></span></div></td><td><div class="mini-bar"><span style="width:49%"></span></div></td><td><div class="mini-bar"><span style="width:47%"></span></div></td><td><span class="status-badge ok">Online</span></td><td>1m ago</td></tr>
+                        <tr><td>legacy-proxy-04</td><td>CentOS 9</td><td><div class="mini-bar"><span style="width:57%"></span></div></td><td><div class="mini-bar"><span style="width:68%"></span></div></td><td><div class="mini-bar"><span style="width:91%"></span></div></td><td><span class="status-badge" style="color:#fca5a5;border-color:#7f1d1d;background:rgba(127,29,29,.25)">Offline</span></td><td>42m ago</td></tr>
+                      </tbody>
+                    </table>
+                    <table style="display:none;"><tbody id="overview-updates-report"><tr><td colspan="7" class="status-muted">Loading…</td></tr></tbody></table>
                   </div>
                 </div>
               </div>
-              <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title">Morning brief</div>
-                <div class="admin-card-body">
-                  <div id="overview-morning-brief" class="status-muted">Loading…</div>
+
+              <div class="dashboard-right-stack">
+                <div class="admin-card" style="margin:0;">
+                  <div class="admin-card-title">Active Alerts</div>
+                  <div class="admin-card-body" id="dashboard-active-alerts">
+                    <div class="alert-row sev-critical"><span>Critical</span><span>Kernel exploit mitigation pending</span></div>
+                    <div class="alert-row sev-high"><span>High</span><span>SSH key rotation overdue</span></div>
+                    <div class="alert-row sev-medium"><span>Medium</span><span>3 hosts stale inventory (&gt;24h)</span></div>
+                  </div>
                 </div>
-              </div>
-              <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
-                  <span>Next 5 cronjobs</span>
-                  <button class="btn" id="overview-next-cronjobs-open" type="button" style="padding:0.2rem 0.45rem;">Open</button>
-                </div>
-                <div class="admin-card-body">
-                  <div id="overview-next-cronjobs" class="status-muted">Loading…</div>
+                <div class="admin-card" style="margin:0;">
+                  <div class="admin-card-title">Compliance Status</div>
+                  <div class="admin-card-body">
+                    <div class="compliance-item"><div class="compliance-row"><span>CIS Baseline</span><span>96%</span></div><div class="metric-bar"><div class="metric-bar-fill" style="width:96%"></div></div></div>
+                    <div class="compliance-item"><div class="compliance-row"><span>Patch SLA</span><span>91%</span></div><div class="metric-bar"><div class="metric-bar-fill" style="width:91%"></div></div></div>
+                    <div class="compliance-item"><div class="compliance-row"><span>MFA Coverage</span><span>88%</span></div><div class="metric-bar"><div class="metric-bar-fill" style="width:88%"></div></div></div>
+                  </div>
                 </div>
               </div>
             </div>
 
-
-            <div class="overview-side-panels" style="margin-top:0.8rem;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.8rem;">
-              <div class="admin-card" style="margin:0;">
-                <div class="admin-card-title">Active Alerts</div>
-                <div class="admin-card-body" id="dashboard-active-alerts">
-                  <div class="alert-row sev-critical"><span>Critical</span><span>Kernel exploit mitigation pending</span></div>
-                  <div class="alert-row sev-high"><span>High</span><span>SSH key rotation overdue</span></div>
-                  <div class="alert-row sev-medium"><span>Medium</span><span>3 hosts stale inventory (&gt;24h)</span></div>
-                </div>
-              </div>
-              <div class="admin-card" style="margin:0;">
-                <div class="admin-card-title">Compliance Status</div>
-                <div class="admin-card-body">
-                  <div class="compliance-item"><div style="display:flex;justify-content:space-between;"><span>CIS Baseline</span><span>96%</span></div><div class="metric-bar"><div class="metric-bar-fill" style="width:96%"></div></div></div>
-                  <div class="compliance-item"><div style="display:flex;justify-content:space-between;"><span>Patch SLA</span><span>91%</span></div><div class="metric-bar"><div class="metric-bar-fill" style="width:91%"></div></div></div>
-                  <div class="compliance-item"><div style="display:flex;justify-content:space-between;"><span>MFA Coverage</span><span>88%</span></div><div class="metric-bar"><div class="metric-bar-fill" style="width:88%"></div></div></div>
-                </div>
-              </div>
-            </div>
-
-            <div class="admin-card" id="notifications-card" style="margin-top:1rem;">
-              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-                <span>Notification Center</span>
-                <button class="btn" id="notifications-refresh" type="button">Reload</button>
-              </div>
-              <div class="admin-card-body">
-                <div id="overview-notifications" class="status-muted">Loading…</div>
-              </div>
-            </div>
-
-            <div class="admin-card" id="failed-runs-card" style="margin-top:1rem;">
-              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-                <span>Failed runs (24h)</span>
-                <div style="display:flex;gap:0.5rem;align-items:center;">
-                  <button class="btn" id="failed-runs-copy-visible" type="button">Copy visible</button>
-                  <button class="btn" id="failed-runs-refresh" type="button">Reload</button>
-                </div>
-              </div>
-              <div class="admin-card-body">
-                <div style="overflow-x:auto;">
-                  <table class="process-table" style="min-width:900px;">
-                    <thead>
-                      <tr>
-                        <th>When</th>
-                        <th>Host</th>
-                        <th>Job</th>
-                        <th style="text-align:right;">Exit</th>
-                        <th>Error</th>
-                      </tr>
-                    </thead>
-                    <tbody id="overview-failed-runs">
-                      <tr><td colspan="5" style="text-align:center;" class="status-muted">Loading…</td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div class="admin-note" style="margin-top:0.5rem;">Click a row to view stderr/stdout.</div>
-              </div>
-            </div>
-            <div class="admin-card" style="margin-top:1rem;">
-              <div class="admin-card-title"
-                style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
-                <span>Pending updates report</span>
-                <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                  <label style="color:var(--muted-2);font-size:0.9rem;">Sort</label>
-                  <select id="report-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
-                    <option value="security_updates" selected>Security updates</option>
-                    <option value="updates">All updates</option>
-                    <option value="os_version">OS version</option>
-                    <option value="hostname">Hostname</option>
-                    <option value="last_seen">Last seen</option>
-                  </select>
-                  <select id="report-order" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
-                    <option value="desc" selected>Desc</option>
-                    <option value="asc">Asc</option>
-                  </select>
-                  <a class="btn" id="report-download-html" href="/reports/hosts-updates.html" target="_blank"
-                    rel="noopener">Download HTML</a>
-                  <button class="btn" id="report-refresh" type="button">Reload report</button>
-                </div>
-              </div>
-              <div class="admin-card-body">
-                <div style="overflow-x:auto;">
-                  <table class="process-table" style="min-width:900px;">
-                    <thead>
-                      <tr>
-                        <th id="th-host" class="sortable-col" title="Sort by host" aria-sort="none" tabindex="0" role="button">
-                          Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                        <th id="th-os" class="sortable-col" title="Sort by OS" aria-sort="none" tabindex="0" role="button">
-                          OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                        <th>Kernel</th>
-                        <th>Security</th>
-                        <th id="th-updates" class="sortable-col" title="Sort by all updates" aria-sort="none" tabindex="0" role="button">
-                          All updates <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                        <th>Online</th>
-                        <th>Last seen</th>
-                      </tr>
-                    </thead>
-                    <tbody id="overview-updates-report">
-                      <tr>
-                        <td colspan="7" style="text-align:center;" class="status-muted">Loading…</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+            <div style="display:none;">
+              <div id="overview-attention"></div><div id="kpi-fresh"></div><div id="overview-morning-brief"></div><div id="overview-next-cronjobs"></div><button id="overview-next-cronjobs-open" type="button"></button><button id="teams-test-alert" type="button"></button><button id="teams-send-brief" type="button"></button><div id="maintenance-window-status"></div><div id="notifications-card"><button id="notifications-refresh" type="button"></button><div id="overview-notifications"></div></div><div id="failed-runs-card"><button id="failed-runs-copy-visible" type="button"></button><button id="failed-runs-refresh" type="button"></button><table><tbody id="overview-failed-runs"></tbody></table></div><a id="report-download-html" href="/reports/hosts-updates.html"></a>
             </div>
           </div>
         </div>

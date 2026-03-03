@@ -1857,3 +1857,188 @@ body {
 @media (max-width: 980px) {
   .overview-side-panels { grid-template-columns: 1fr !important; }
 }
+
+/* ---- Dashboard v2 fidelity pass ---- */
+.fleet-sidebar-shell {
+  min-height: calc(100vh - 130px);
+}
+
+.linuxcm-brand {
+  margin: 0 0 0.45rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #1b304a;
+  border-radius: 10px;
+  background: #081423;
+}
+
+.linuxcm-brand-mark {
+  width: 24px;
+  height: 24px;
+  font-size: 0.74rem;
+  border-radius: 7px;
+}
+
+.linuxcm-brand-title {
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+}
+
+.linuxcm-brand-subtitle {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+#fleet-actions .btn {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.84rem;
+  line-height: 1.05rem;
+  padding: 0.56rem 0.66rem;
+}
+
+#fleet-actions .btn .side-ico {
+  width: 14px;
+  display: inline-flex;
+  justify-content: center;
+  color: #9bb7d4;
+  font-size: 0.78rem;
+}
+
+.container:has(#server-info-tab.active) #nav-overview {
+  background: linear-gradient(90deg, rgba(16, 131, 184, 0.82), rgba(10, 94, 150, 0.85));
+  border-color: rgba(122, 223, 255, 0.85);
+  box-shadow: inset 0 0 0 1px rgba(170, 243, 255, 0.75), 0 0 20px rgba(40, 194, 255, 0.4);
+}
+
+.dashboard-v2 {
+  color: #d4e6ff;
+  padding: 0.3rem 0 0.15rem !important;
+}
+
+.dashboard-v2-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.dashboard-v2-header h2 {
+  margin: 0;
+  font-size: 1.36rem;
+  letter-spacing: 0.01em;
+}
+
+.dashboard-v2-subtitle {
+  margin-top: 0.28rem;
+  color: #7f99bb;
+  font-size: 0.87rem;
+}
+
+.dashboard-v2-toolbar {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.dashboard-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 0.7rem;
+}
+
+.dashboard-kpis .metric-card {
+  background: #0b1a2f;
+  border: 1px solid #1f3856;
+  min-height: 112px;
+  padding: 0.86rem;
+}
+
+.dashboard-kpis .metric-label { font-size: 0.76rem; color: #88a4c6; }
+.dashboard-kpis .metric-value { font-size: 1.24rem; color: #e9f4ff; }
+.dashboard-kpis .metric-details { font-size: 0.77rem; color: #6d88ab; }
+
+.dashboard-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(285px, 0.9fr);
+  gap: 0.72rem;
+}
+
+.host-inventory-card,
+.dashboard-right-stack .admin-card {
+  background: #0a172b;
+  border: 1px solid #1a314d;
+}
+
+.dashboard-right-stack {
+  display: grid;
+  gap: 0.72rem;
+  align-content: start;
+}
+
+.dashboard-inventory-table {
+  font-size: 0.79rem;
+}
+
+.dashboard-inventory-table th {
+  background: #0c1c33;
+  color: #9fb7d7;
+  border-bottom: 1px solid #223c5a;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+}
+
+.dashboard-inventory-table td {
+  border-bottom: 1px solid #172c44;
+  color: #caddf5;
+  padding: 0.42rem 0.58rem;
+}
+
+.mini-bar {
+  width: 78px;
+  height: 5px;
+  border-radius: 10px;
+  background: #14263d;
+  overflow: hidden;
+}
+
+.mini-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #2bd4ff, #1687c8);
+}
+
+.alert-row {
+  grid-template-columns: 84px 1fr !important;
+  border-width: 1px;
+  padding: 0.44rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.compliance-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.79rem;
+  color: #b9d1ee;
+}
+
+.compliance-item .metric-bar {
+  height: 6px;
+  background: #15273d;
+}
+
+.compliance-item .metric-bar-fill {
+  background: linear-gradient(90deg, #36d6ff, #1f8bbf);
+}
+
+@media (max-width: 1180px) {
+  .dashboard-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-main-grid { grid-template-columns: 1fr; }
+}
