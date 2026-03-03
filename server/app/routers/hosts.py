@@ -98,10 +98,9 @@ def update_host_metadata(
     if next_role is not None:
         labels["role"] = next_role
     if next_env is not None:
-        prev_env = labels.get("env_vars")
-        env_vars = dict(prev_env) if isinstance(prev_env, dict) else {}
-        env_vars.update(next_env)
-        labels["env_vars"] = env_vars
+        # Replace env_vars with what UI sends (supports true deletes from UI row removal).
+        labels["env_vars"] = dict(next_env)
+
         # Back-compat for existing UI/filtering paths that read labels.env directly.
         env_direct = None
         for k, v in next_env.items():
@@ -110,6 +109,8 @@ def update_host_metadata(
                 break
         if env_direct:
             labels["env"] = env_direct
+        else:
+            labels.pop("env", None)
 
     host.labels = labels
     db.commit()

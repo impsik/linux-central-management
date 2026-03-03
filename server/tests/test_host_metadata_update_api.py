@@ -58,7 +58,7 @@ def test_update_host_metadata_name_role_env_and_preserve_existing(monkeypatch):
         assert body["host"]["labels"]["env_vars"] == {"FOO": "bar", "X": "1"}
 
 
-def test_update_host_metadata_role_when_missing_and_env_merge_idempotent(monkeypatch):
+def test_update_host_metadata_role_when_missing_and_env_replace_idempotent(monkeypatch):
     app = _boot_app(monkeypatch)
     _seed_host(labels={"team": "ops", "env_vars": {"FOO": "old", "UNCHANGED": "yes"}})
 
@@ -75,4 +75,26 @@ def test_update_host_metadata_role_when_missing_and_env_merge_idempotent(monkeyp
         labels = second.json()["host"]["labels"]
         assert labels["role"] == "db"
         assert labels["team"] == "ops"
-        assert labels["env_vars"] == {"FOO": "new", "UNCHANGED": "yes", "BAR": "2"}
+        assert labels["env_vars"] == {"FOO": "new", "BAR": "2"}
+
+
+def test_update_host_metadata_env_key_sets_legacy_env_and_clears_on_remove(monkeypatch):
+    app = _boot_app(monkeypatch)
+    _seed_host(labels={"team": "ops", "env_vars": {"env": "test"}, "env": "test"})
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        headers = _login(client)
+
+        set_resp = client.patch("/hosts/agent-1/metadata", json={"env": {"env": "prelive"}}, headers=headers)
+        assert set_resp.status_code == 200, set_resp.text
+        set_labels = set_resp.json()["host"]["labels"]
+        assert set_labels["env_vars"] == {"env": "prelive"}
+        assert set_labels["env"] == "prelive"
+
+        clear_resp = client.patch("/hosts/agent-1/metadata", json={"env": {}}, headers=headers)
+        assert clear_resp.status_code == 200, clear_resp.text
+        clear_labels = clear_resp.json()["host"]["labels"]
+        assert clear_labels["env_vars"] == {}
+        assert "env" not in clear_labels
