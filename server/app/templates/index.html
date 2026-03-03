@@ -1700,7 +1700,8 @@
       const labelsEl = document.getElementById('server-info-labels');
       if (labelsEl) {
         const labels = (hostObj && hostObj.labels && typeof hostObj.labels === 'object') ? hostObj.labels : {};
-        const env = labels.env ? String(labels.env) : '';
+        const envVars = (labels.env_vars && typeof labels.env_vars === 'object') ? labels.env_vars : {};
+        const env = labels.env ? String(labels.env) : (envVars.env ? String(envVars.env) : '');
         const role = labels.role ? String(labels.role) : '';
         const parts = [];
         if (env) parts.push(`<span class="label-badge">env: <code>${escapeHtml(env)}</code></span>`);

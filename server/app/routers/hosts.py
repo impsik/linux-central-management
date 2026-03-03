@@ -102,6 +102,14 @@ def update_host_metadata(
         env_vars = dict(prev_env) if isinstance(prev_env, dict) else {}
         env_vars.update(next_env)
         labels["env_vars"] = env_vars
+        # Back-compat for existing UI/filtering paths that read labels.env directly.
+        env_direct = None
+        for k, v in next_env.items():
+            if str(k).strip().lower() == "env":
+                env_direct = str(v).strip()
+                break
+        if env_direct:
+            labels["env"] = env_direct
 
     host.labels = labels
     db.commit()
