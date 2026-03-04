@@ -37,7 +37,7 @@
         <div class="header-subtitle" style="text-transform:uppercase;letter-spacing:.2em;font-size:10px;opacity:.7;">Control Plane</div>
       </div>
       <div class="guardian-top-search" style="display:flex;align-items:center;gap:.5rem;min-width:320px;max-width:560px;flex:1;">
-        <input class="host-search" type="text" placeholder="Search hosts, jobs, packages..." aria-label="Global search" style="margin:0;height:34px;" />
+        <input id="global-search" class="host-search" type="text" placeholder="Search hosts, jobs, packages..." aria-label="Global search" style="margin:0;height:34px;" />
       </div>
     </div>
     <div class="header-actions">
@@ -4436,6 +4436,35 @@
       }
     }
 
+    function initGlobalSearch() {
+      const globalSearchEl = document.getElementById('global-search');
+      if (!globalSearchEl) return;
+
+      let timer = null;
+      const runSearch = () => {
+        const query = String(globalSearchEl.value || '').trim();
+        const navHosts = document.getElementById('nav-hosts');
+        const hostSearchEl = document.getElementById('host-search');
+        if (!hostSearchEl) return;
+
+        if (navHosts) navHosts.click();
+        hostSearchEl.value = query;
+        hostSearchEl.dispatchEvent(new Event('input', { bubbles: true }));
+        hostSearchEl.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+
+      globalSearchEl.addEventListener('input', () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(runSearch, 180);
+      });
+
+      globalSearchEl.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        runSearch();
+      });
+    }
+
 // Load hosts on page load
     function safeInit(name, fn) {
       try { if (typeof fn === 'function') fn(); }
@@ -4446,6 +4475,7 @@
     loadAuthInfo().catch((e) => console.error('[loadAuthInfo failed]', e));
 
     safeInit('initHostFilters', initHostFilters);
+    safeInit('initGlobalSearch', initGlobalSearch);
     safeInit('initFleetOverviewControls', initFleetOverviewControls);
     safeInit('initHostsTableControls', initHostsTableControls);
     safeInit('initCronjobsControls', initCronjobsControls);
