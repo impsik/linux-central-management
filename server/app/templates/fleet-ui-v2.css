@@ -114,6 +114,7 @@ body {
 #nav-hosts::before { content: "⛁"; }
 #nav-sshkeys::before { content: "◈"; }
 #nav-cronjobs::before { content: "⚙"; }
+#nav-reports::before { content: "▤"; }
 
 #fleet-actions .btn:hover {
   background: color-mix(in srgb, var(--app-sidebar-active) 24%, transparent);
@@ -128,7 +129,8 @@ body {
 .container:has(#server-info-tab.active) #nav-overview,
 .container:has(#hosts-table-tab.active) #nav-hosts,
 .container:has(#cronjobs-tab.active) #nav-cronjobs,
-.container:has(#sshkeys-tab.active) #nav-sshkeys {
+.container:has(#sshkeys-tab.active) #nav-sshkeys,
+.container:has(#reports-tab.active) #nav-reports {
   background: color-mix(in srgb, #14b8a6 24%, transparent);
   border-color: color-mix(in srgb, #14b8a6 65%, transparent);
   color: #dffdfa;

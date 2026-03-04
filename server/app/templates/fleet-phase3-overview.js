@@ -810,6 +810,7 @@
     const navHosts = document.getElementById('nav-hosts');
     const navCronjobs = document.getElementById('nav-cronjobs');
     const navSshKeys = document.getElementById('nav-sshkeys');
+    const navReports = document.getElementById('nav-reports');
     const nextCronjobsOpenBtn = document.getElementById('overview-next-cronjobs-open');
     const containerEl = document.querySelector('.container');
 
@@ -885,10 +886,18 @@
       ctx.loadAdminSshKeys();
     }
 
+    function showReportsTab() {
+      ctx.clearCurrentHostSelection();
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('reports-tab')?.classList.add('active');
+      if (containerEl) containerEl.classList.add('sidebar-collapsed');
+    }
+
     navOverview?.addEventListener('click', (e) => { e.preventDefault(); showOverviewTab(); });
     navHosts?.addEventListener('click', (e) => { e.preventDefault(); showHostsTab(); });
     navCronjobs?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
     navSshKeys?.addEventListener('click', (e) => { e.preventDefault(); showSshKeysTab(); });
+    navReports?.addEventListener('click', (e) => { e.preventDefault(); showReportsTab(); });
     nextCronjobsOpenBtn?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
 
     showOverviewTab();

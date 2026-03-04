@@ -79,6 +79,7 @@
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
         <button class="btn" id="nav-sshkeys" type="button">Security <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
         <button class="btn" id="nav-cronjobs" type="button">Automation</button>
+        <button class="btn" id="nav-reports" type="button">Reports</button>
       </div>
       </aside>
 
@@ -577,6 +578,21 @@
       </div>
     </div>
 
+
+    <div class="tab-content-custom" id="reports-tab">
+      <div class="admin-content">
+        <div class="section-title">Reports</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Export and open generated fleet reports.</div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Hosts updates report</div>
+          <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
+            <a class="btn btn-primary" href="/reports/hosts-updates.html" target="_blank" rel="noopener">Open HTML report</a>
+            <a class="btn" href="/dashboard/slo.csv?hours=24&bucket_hours=6" target="_blank" rel="noopener">Export SLO CSV</a>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <div class="tab-content-custom" id="cronjobs-tab">
       <div class="admin-content">
