@@ -56,15 +56,15 @@ body {
 
 .container {
   display: block;
-  padding: 1rem;
+  padding: .85rem;
   max-width: 1840px;
   margin: 0 auto;
 }
 
 .main-content {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 1rem;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: .85rem;
   align-items: start !important;
 }
 
@@ -76,20 +76,20 @@ body {
 
 #fleet-actions {
   margin: 0 !important;
-  padding: 0.9rem !important;
-  border-radius: 14px;
+  padding: 0.78rem !important;
+  border-radius: 12px;
   border: 1px solid var(--app-sidebar-border);
-  background: linear-gradient(175deg, color-mix(in srgb, var(--app-sidebar) 90%, #0b2031), var(--app-sidebar));
+  background: linear-gradient(175deg, color-mix(in srgb, var(--app-sidebar) 92%, #0b2031), var(--app-sidebar));
   box-shadow: var(--app-shell-shadow);
   flex-direction: column;
-  gap: 0.4rem !important;
+  gap: 0.3rem !important;
 }
 
 #fleet-actions .btn {
   width: 100%;
   justify-content: flex-start;
-  padding: 0.62rem 0.78rem;
-  border-radius: 10px;
+  padding: 0.58rem 0.74rem;
+  border-radius: 9px;
   border-color: transparent;
   background: transparent;
   color: var(--app-sidebar-text);
@@ -127,9 +127,9 @@ body {
 
 .fleet-main-shell {
   min-width: 0;
-  background: color-mix(in srgb, var(--panel) 93%, #020617);
+  background: color-mix(in srgb, var(--panel) 95%, #020617);
   border: 1px solid var(--app-shell-border);
-  border-radius: 16px;
+  border-radius: 12px;
   box-shadow: var(--app-shell-shadow);
   overflow: clip;
 }
@@ -179,7 +179,8 @@ body {
 
 #server-info-placeholder h2 {
   font-family: "JetBrains Mono", monospace;
-  font-size: 1.55rem;
+  font-size: 1.9rem;
+  font-weight: 600;
   margin-bottom: .2rem;
 }
 
@@ -189,8 +190,8 @@ body {
 }
 
 #server-info-placeholder .metric-card {
-  min-height: 118px;
-  border-radius: 12px;
+  min-height: 108px;
+  border-radius: 10px;
   background: linear-gradient(180deg, color-mix(in srgb, #0f172a 86%, var(--panel)), color-mix(in srgb, #020617 94%, var(--panel))) !important;
 }
 
@@ -202,8 +203,14 @@ body {
 }
 
 #server-info-placeholder .metric-card .metric-value {
-  font-size: 1.75rem;
+  font-size: 1.55rem;
   line-height: 1.05;
+}
+
+#server-info-placeholder .metric-card .metric-details {
+  margin-top: .25rem;
+  font-size: .78rem;
+  opacity: .88;
 }
 
 #server-info-placeholder .overview-cards-grid {
@@ -220,6 +227,7 @@ body {
 #server-info-placeholder .overview-cards-grid > .admin-card:nth-child(4) { display: none; }
 
 #notifications-card,
+#pending-updates-report-card,
 #overview-updates-report,
 #overview-updates-report.closest-card {
   display: none;
@@ -227,6 +235,22 @@ body {
 
 #failed-runs-card .admin-card-title {
   font-family: "JetBrains Mono", monospace;
+}
+
+#server-info-placeholder .btn,
+#server-info-placeholder .host-search {
+  height: 30px;
+  padding-top: .2rem;
+  padding-bottom: .2rem;
+  border-radius: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+#server-info-placeholder .admin-card-title {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  letter-spacing: .03em;
 }
 
 @media (max-width: 1100px) {
