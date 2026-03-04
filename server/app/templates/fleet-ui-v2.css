@@ -47,6 +47,13 @@ body {
   letter-spacing: 0.01em;
 }
 
+.guardian-top-search .host-search {
+  border-radius: 10px;
+  border-color: color-mix(in srgb, #14b8a6 38%, var(--border));
+  background: color-mix(in srgb, #0b1220 78%, var(--panel));
+  font-family: "JetBrains Mono", monospace;
+}
+
 .container {
   display: block;
   padding: 1rem;
@@ -89,7 +96,20 @@ body {
   text-align: left;
   font-weight: 700;
   font-family: "JetBrains Mono", monospace;
+  position: relative;
+  padding-left: 1.95rem;
 }
+
+#fleet-actions .btn::before {
+  position: absolute;
+  left: .7rem;
+  opacity: .75;
+}
+
+#nav-overview::before { content: "⌂"; }
+#nav-hosts::before { content: "⛁"; }
+#nav-cronjobs::before { content: "⚙"; }
+#nav-sshkeys::before { content: "◈"; }
 
 #fleet-actions .btn:hover {
   background: color-mix(in srgb, var(--app-sidebar-active) 24%, transparent);
@@ -171,11 +191,33 @@ body {
 #server-info-placeholder .metric-card {
   min-height: 118px;
   border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, #0f172a 86%, var(--panel)), color-mix(in srgb, #020617 94%, var(--panel))) !important;
+}
+
+#server-info-placeholder .metric-card .metric-label {
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: .12em;
+  color: #8bb8d7;
+}
+
+#server-info-placeholder .metric-card .metric-value {
+  font-size: 1.75rem;
+  line-height: 1.05;
 }
 
 #server-info-placeholder .overview-cards-grid {
   grid-template-columns: 2fr 1fr !important;
+  grid-template-areas:
+    "inventory alerts"
+    "inventory quality";
+  gap: .7rem !important;
 }
+
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(1) { grid-area: inventory; }
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(2) { grid-area: alerts; }
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(3) { grid-area: quality; }
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(4) { display: none; }
 
 #notifications-card,
 #overview-updates-report,
