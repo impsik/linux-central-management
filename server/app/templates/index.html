@@ -261,23 +261,13 @@
               <div class="admin-card" style="margin:0;height:100%;">
                 <div class="admin-card-title">Active Alerts</div>
                 <div class="admin-card-body">
-                  <div style="display:flex;flex-direction:column;gap:0.35rem;">
-                    <div><span class="status-muted">Last updates check:</span> <span id="kpi-fresh">–</span></div>
-                    <div style="color:var(--muted-2);font-size:0.9rem;">Online is based on last_seen within grace window.</div>
-                    <div style="color:var(--muted-2);font-size:0.9rem;">Reboot-required is not yet centralized
-                      (per-host/campaign).</div>
-                    <div id="maintenance-window-status" style="color:var(--muted-2);font-size:0.9rem;">Maintenance window: checking…</div>
-                    <div style="display:flex;gap:0.45rem;flex-wrap:wrap;margin-top:0.3rem;">
-                      <button class="btn" id="teams-test-alert" type="button">Teams: Send test</button>
-                      <button class="btn" id="teams-send-brief" type="button">Teams: Send morning brief</button>
-                    </div>
-                  </div>
+                  <div id="overview-active-alerts" class="status-muted">Loading…</div>
                 </div>
               </div>
               <div class="admin-card" style="margin:0;height:100%;">
                 <div class="admin-card-title">Operational quality</div>
                 <div class="admin-card-body">
-                  <div id="overview-morning-brief" class="status-muted">Loading…</div>
+                  <div id="overview-operational-quality" class="status-muted">Loading…</div>
                 </div>
               </div>
               <div class="admin-card" style="margin:0;height:100%;">

@@ -26,7 +26,7 @@
     const failEl = document.getElementById('kpi-fail');
     const freshEl = document.getElementById('kpi-fresh');
     const attentionEl = document.getElementById('overview-attention');
-    const morningBriefEl = document.getElementById('overview-morning-brief');
+    const operationalQualityEl = document.getElementById('overview-operational-quality');
     const nextCronEl = document.getElementById('overview-next-cronjobs');
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
@@ -122,102 +122,26 @@
         } catch (_) { }
       }
 
-      if (morningBriefEl) {
-        morningBriefEl.innerHTML = '<div class="loading">Building brief…</div>';
-        try {
-          const reportUrl = `/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500`;
-          const rr = await fetch(reportUrl, { credentials: 'include' });
-          if (!rr.ok) throw await buildHttpError(rr, 'hosts-updates failed');
-          const report = await rr.json();
-          const items = Array.isArray(report?.items) ? report.items : [];
+      if (operationalQualityEl) {
+        const onlineRatio = hostsTotal > 0 ? (hostsOnline / hostsTotal) * 100 : 0;
+        const patchHygiene = hostsTotal > 0 ? ((hostsTotal - secHosts) / hostsTotal) * 100 : 0;
+        const successRate = Number(succ.value || 0);
 
-          const rebootRequired = items.filter((it) => !!it.reboot_required).length;
-          const heavySecurity = items.filter((it) => Number(it.security_updates || 0) >= 10).length;
-          const staleHosts = items.filter((it) => {
-            const last = it?.last_seen ? Date.parse(it.last_seen) : NaN;
-            if (!Number.isFinite(last)) return true;
-            return (Date.now() - last) > (24 * 60 * 60 * 1000);
-          }).length;
+        const qualityRow = (label, score, detail) => {
+          const s = Math.max(0, Math.min(100, Number(score || 0)));
+          const cls = s >= 95 ? 'status-ok' : s >= 85 ? 'status-warn' : 'status-error';
+          return `<div style="display:flex;flex-direction:column;gap:.2rem;">
+            <div style="display:flex;justify-content:space-between;gap:.6rem;"><span>${label}</span><b class="${cls}">${s.toFixed(1)}%</b></div>
+            <div style="height:6px;border-radius:6px;background:var(--panel-2);overflow:hidden;"><div style="height:100%;width:${s}%;background:linear-gradient(90deg,#14b8a6,#22c55e);"></div></div>
+            <div class="status-muted" style="font-size:.78rem;">${detail}</div>
+          </div>`;
+        };
 
-          const thresholdsKey = 'fleet_brief_thresholds_v1';
-          let th = { offline: 1, failed: 1, secPkgs: 20 };
-          try {
-            const raw = localStorage.getItem(thresholdsKey);
-            const parsed = raw ? JSON.parse(raw) : null;
-            if (parsed && typeof parsed === 'object') {
-              th = {
-                offline: Number(parsed.offline || 1),
-                failed: Number(parsed.failed || 1),
-                secPkgs: Number(parsed.secPkgs || 20),
-              };
-            }
-          } catch (_) { }
-
-          const alerts = [];
-          if (hostsOffline >= th.offline) alerts.push(`offline hosts (${hostsOffline} ≥ ${th.offline})`);
-          if (failed24h >= th.failed) alerts.push(`failed runs (${failed24h} ≥ ${th.failed})`);
-          if (secPkgs >= th.secPkgs) alerts.push(`security backlog (${secPkgs} ≥ ${th.secPkgs})`);
-
-          morningBriefEl.innerHTML = `
-            <div style="display:flex;flex-direction:column;gap:0.35rem;">
-              <div><span style="color:var(--muted-2);">Offline hosts:</span> <b>${hostsOffline}</b> <button class="btn" data-brief-action="offline" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:var(--muted-2);">Security backlog:</span> <b>${secPkgs}</b> packages on <b>${secHosts}</b> hosts</div>
-              <div><span style="color:var(--muted-2);">Reboot required:</span> <b>${rebootRequired}</b> hosts</div>
-              <div><span style="color:var(--muted-2);">Failed runs (24h):</span> <b>${failed24h}</b> <button class="btn" data-brief-action="failed" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:var(--muted-2);">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b> <button class="btn" data-brief-action="heavy-security" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:var(--muted-2);">Stale inventory (&gt;24h):</span> <b>${staleHosts}</b></div>
-
-              <div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid var(--border);display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">
-                <span style="color:var(--muted-2);font-size:0.82rem;">Alerts:</span>
-                <label style="font-size:0.8rem;color:var(--muted-2);">Offline ≥ <input id="brief-th-offline" type="number" min="0" value="${th.offline}" style="width:58px;" /></label>
-                <label style="font-size:0.8rem;color:var(--muted-2);">Failed ≥ <input id="brief-th-failed" type="number" min="0" value="${th.failed}" style="width:58px;" /></label>
-                <label style="font-size:0.8rem;color:var(--muted-2);">Sec pkgs ≥ <input id="brief-th-sec" type="number" min="0" value="${th.secPkgs}" style="width:64px;" /></label>
-                <button class="btn" id="brief-th-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
-              </div>
-              <div style="font-size:0.85rem;" class="${alerts.length ? 'status-error' : 'status-ok'}">${alerts.length ? ('Attention: ' + alerts.join(' • ')) : 'No alert thresholds exceeded.'}</div>
-            </div>
-          `;
-
-          morningBriefEl.querySelectorAll('[data-brief-action]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-              e.preventDefault();
-              const action = btn.getAttribute('data-brief-action') || '';
-              if (action === 'failed') {
-                const el = document.getElementById('failed-runs-card');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                return;
-              }
-
-              document.getElementById('nav-hosts')?.click();
-              const sortSel = document.getElementById('hosts-sort');
-              const orderSel = document.getElementById('hosts-order');
-
-              if (action === 'offline') {
-                if (sortSel) sortSel.value = 'last_seen';
-                if (orderSel) orderSel.value = 'asc';
-              } else if (action === 'heavy-security') {
-                if (sortSel) sortSel.value = 'security_updates';
-                if (orderSel) orderSel.value = 'desc';
-              }
-
-              sortSel?.dispatchEvent(new Event('change'));
-            });
-          });
-
-          document.getElementById('brief-th-save')?.addEventListener('click', () => {
-            const offlineN = Number(document.getElementById('brief-th-offline')?.value || 0);
-            const failedN = Number(document.getElementById('brief-th-failed')?.value || 0);
-            const secN = Number(document.getElementById('brief-th-sec')?.value || 0);
-            try {
-              localStorage.setItem('fleet_brief_thresholds_v1', JSON.stringify({ offline: offlineN, failed: failedN, secPkgs: secN }));
-              if (typeof w.showToast === 'function') w.showToast('Morning brief thresholds saved', 'success');
-            } catch (_) {
-              if (typeof w.showToast === 'function') w.showToast('Failed to save thresholds', 'error');
-            }
-          });
-        } catch (briefErr) {
-          morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
-        }
+        operationalQualityEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:.55rem;">
+          ${qualityRow('Online host ratio', onlineRatio, `${hostsOnline}/${hostsTotal} hosts online`) }
+          ${qualityRow('Patch hygiene', patchHygiene, `${secHosts} hosts with security updates`) }
+          ${qualityRow('Job success rate', successRate, `SLO window ${kpiHours}h`) }
+        </div>`;
       }
 
       if (nextCronEl) {
@@ -712,13 +636,14 @@
   }
 
   async function loadNotifications(ctx, showToastOnManual) {
-    const wrap = document.getElementById('overview-notifications');
+    const wrap = document.getElementById('overview-active-alerts') || document.getElementById('overview-notifications');
     const card = document.getElementById('notifications-card');
     const badge = document.getElementById('notifications-badge');
     if (!wrap) return;
     try {
-      wrap.innerHTML = '<div class="loading">Loading notifications…</div>';
-      const r = await fetch('/dashboard/notifications?limit=30', { credentials: 'include' });
+      const compactMode = wrap.id === 'overview-active-alerts';
+      wrap.innerHTML = '<div class="loading">Loading alerts…</div>';
+      const r = await fetch(`/dashboard/notifications?limit=${compactMode ? 8 : 30}`, { credentials: 'include' });
       if (!r.ok) {
         if (r.status === 403) return; // MFA transient
         throw await buildHttpError(r, 'notifications failed');
@@ -747,10 +672,18 @@
 
       if (!items.length) {
         if (card) card.style.display = 'none';
-        wrap.innerHTML = '<div class="status-ok">No active notifications 🎯</div>';
+        wrap.innerHTML = '<div class="status-ok">No active alerts.</div>';
       } else {
-        if (card) card.style.display = '';
-        wrap.innerHTML = `
+        if (card && !compactMode) card.style.display = '';
+        wrap.innerHTML = compactMode
+          ? `<div style="display:flex;flex-direction:column;gap:0.4rem;">${items.map((it) => `<div style="border:1px solid var(--border);border-radius:8px;padding:0.38rem 0.5rem;background:var(--panel-2);">
+              <div style="display:flex;justify-content:space-between;gap:0.45rem;align-items:center;">
+                <b>${w.escapeHtml(it.title || '')}</b>
+                <span style="font-size:0.72rem;" class="${it.severity==='high' ? 'status-error' : 'status-warn'}">${w.escapeHtml(it.severity || 'info')}</span>
+              </div>
+              <div class="status-muted" style="font-size:0.8rem;">${w.escapeHtml(it.detail || '')}</div>
+            </div>`).join('')}</div>`
+          : `
           <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;">
             <div style="color:var(--muted-2);display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
               <span>Unread: <b>${unread.length}</b> / ${items.length}</span>
