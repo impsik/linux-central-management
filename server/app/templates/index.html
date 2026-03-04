@@ -74,10 +74,18 @@
     <div class="main-content">
       <aside class="fleet-sidebar-shell">
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.35rem;">
+        <div style="padding:.15rem .45rem .35rem;color:var(--muted-2);font-size:10px;letter-spacing:.18em;text-transform:uppercase;">Operations</div>
         <button class="btn" id="nav-overview" type="button">Dashboard <span id="notifications-badge" style="display:none;margin-left:6px;color:#ef4444;font-weight:900;">•</span><span id="approvals-badge" title="Pending high-risk approvals" style="display:none;margin-left:6px;color:#f59e0b;font-weight:900;">⚠</span></button>
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
-        <button class="btn" id="nav-cronjobs" type="button">Automation</button>
+        <button class="btn" id="nav-configuration" type="button" disabled title="Coming soon">Configuration</button>
         <button class="btn" id="nav-sshkeys" type="button">Security <span id="sshkeys-approval-indicator" title="Pending approvals" style="display:none;color:#ef4444;font-weight:900;margin-left:6px;">!</span></button>
+        <button class="btn" id="nav-cronjobs" type="button">Automation</button>
+        <button class="btn" id="nav-jobs" type="button" disabled title="Coming soon">Jobs</button>
+        <button class="btn" id="nav-packages" type="button" disabled title="Coming soon">Packages</button>
+        <button class="btn" id="nav-monitoring" type="button" disabled title="Coming soon">Monitoring</button>
+        <button class="btn" id="nav-api" type="button" disabled title="Coming soon">API</button>
+        <button class="btn" id="nav-backup" type="button" disabled title="Coming soon">Backup</button>
+        <button class="btn" id="nav-reports" type="button" disabled title="Coming soon">Reports</button>
       </div>
       </aside>
 

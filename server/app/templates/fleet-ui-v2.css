@@ -112,12 +112,24 @@ body {
 
 #nav-overview::before { content: "⌂"; }
 #nav-hosts::before { content: "⛁"; }
-#nav-cronjobs::before { content: "⚙"; }
+#nav-configuration::before { content: "☰"; }
 #nav-sshkeys::before { content: "◈"; }
+#nav-cronjobs::before { content: "⚙"; }
+#nav-jobs::before { content: "◷"; }
+#nav-packages::before { content: "◫"; }
+#nav-monitoring::before { content: "◉"; }
+#nav-api::before { content: "⋇"; }
+#nav-backup::before { content: "⛃"; }
+#nav-reports::before { content: "▤"; }
 
 #fleet-actions .btn:hover {
   background: color-mix(in srgb, var(--app-sidebar-active) 24%, transparent);
   border-color: color-mix(in srgb, var(--app-sidebar-active) 55%, transparent);
+}
+
+#fleet-actions .btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
 }
 
 .container:has(#server-info-tab.active) #nav-overview,
