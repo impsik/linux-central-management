@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.orm import Session
 
 from ..db import get_db
@@ -154,7 +154,7 @@ def hosts_updates_html(
 async def user_presence_html(
     username: str = Query(..., min_length=1, max_length=128),
     exact: bool = True,
-    live_scan: bool = True,
+    live_scan: bool = False,
     max_hosts: int = Query(120, ge=1, le=500),
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
@@ -208,6 +208,27 @@ async def user_presence_html(
         try:
             data = await query_host_users(h.agent_id)
             users = data.get("users") or []
+
+            # Refresh cached host_users snapshot for this host (fast reports next time).
+            with transaction(db):
+                db.execute(delete(HostUser).where(HostUser.host_id == h.id))
+                for item in users:
+                    uname = str(item.get("username") or "").strip()
+                    if not uname:
+                        continue
+                    db.add(
+                        HostUser(
+                            host_id=h.id,
+                            username=uname,
+                            uid=(int(item.get("uid")) if str(item.get("uid") or "").isdigit() else None),
+                            gid=(int(item.get("gid")) if str(item.get("gid") or "").isdigit() else None),
+                            home=(item.get("home") or "")[:512],
+                            shell=(item.get("shell") or "")[:128],
+                            has_sudo=bool(item.get("has_sudo", False)),
+                            is_locked=bool(item.get("is_locked", False)),
+                        )
+                    )
+
             for item in users:
                 uname = str(item.get("username") or "").strip()
                 if not uname:

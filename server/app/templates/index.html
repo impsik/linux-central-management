@@ -602,6 +602,9 @@
             <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
               <input id="reports-user-presence-exact" type="checkbox" checked /> Exact match
             </label>
+            <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
+              <input id="reports-user-presence-live" type="checkbox" /> Refresh live before report
+            </label>
             <button class="btn btn-primary" id="reports-user-presence-open" type="button">Open HTML report</button>
           </div>
         </div>
@@ -4517,11 +4520,12 @@
         e.preventDefault();
         const u = String(document.getElementById('reports-user-presence-username')?.value || '').trim();
         const exact = !!document.getElementById('reports-user-presence-exact')?.checked;
+        const liveScan = !!document.getElementById('reports-user-presence-live')?.checked;
         if (!u) {
           if (typeof showToast === 'function') showToast('Enter username', 'error');
           return;
         }
-        const qs = new URLSearchParams({ username: u, exact: String(exact) }).toString();
+        const qs = new URLSearchParams({ username: u, exact: String(exact), live_scan: String(liveScan) }).toString();
         window.open(`/reports/user-presence.html?${qs}`, '_blank', 'noopener');
       });
     }
