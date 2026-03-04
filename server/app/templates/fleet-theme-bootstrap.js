@@ -15,11 +15,20 @@
     document.documentElement.dataset.uiVersion = isV2 ? 'v2' : 'v1';
 
     if (isV2) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = '/assets/fleet-ui-v2.css?v=__ASSET_VERSION__';
-      link.setAttribute('data-ui-v2-style', '1');
-      document.head.appendChild(link);
+      const attachV2Styles = () => {
+        if (document.querySelector('link[data-ui-v2-style="1"]')) return;
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = '/assets/fleet-ui-v2.css?v=__ASSET_VERSION__';
+        link.setAttribute('data-ui-v2-style', '1');
+        document.head.appendChild(link);
+      };
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', attachV2Styles, { once: true });
+      } else {
+        attachV2Styles();
+      }
     }
   } catch (_) {
     document.documentElement.dataset.uiVersion = 'v2';
