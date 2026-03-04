@@ -1,4 +1,23 @@
 (function (w) {
+  function formatDateSafe(value) {
+    if (!value) return '–';
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+  }
+
+  async function buildHttpError(resp, label) {
+    let detail = '';
+    try {
+      const data = await resp.clone().json();
+      detail = data?.detail || data?.error || '';
+    } catch (_) {
+      try {
+        detail = (await resp.text() || '').slice(0, 180);
+      } catch (_) { }
+    }
+    return new Error(`${label} (${resp.status}${detail ? `: ${detail}` : ''})`);
+  }
+
   async function loadFleetOverview(ctx, forceLive) {
     const onlineEl = document.getElementById('kpi-online');
     const onlineDetailsEl = document.getElementById('kpi-online-details');
@@ -34,7 +53,7 @@
             try { await w.loadAuthInfo(); } catch (_) {}
           }
         }
-        throw new Error(`dashboard summary failed (${r.status})`);
+        throw await buildHttpError(r, 'dashboard summary failed');
       }
       const d = await r.json();
 
@@ -49,7 +68,7 @@
       const tfEl = document.getElementById('kpi-timeframe');
       const kpiHours = parseInt((tfEl?.value || '24').trim(), 10) || 24;
       const sr = await fetch(`/dashboard/slo?hours=${encodeURIComponent(kpiHours)}`, { credentials: 'include' });
-      if (!sr.ok) throw new Error(`dashboard slo failed (${sr.status})`);
+      if (!sr.ok) throw await buildHttpError(sr, 'dashboard slo failed');
       const slo = await sr.json();
       const k = slo?.kpis || {};
 
@@ -74,7 +93,7 @@
       const authNoData = !auth.sample_count ? 'no data in window' : `${trend(auth.value, auth.previous, true)} • n=${auth.sample_count ?? 0}`;
       const failDetailsEl = document.getElementById('kpi-fail-details');
       if (failDetailsEl) failDetailsEl.textContent = authNoData;
-      if (freshEl) freshEl.textContent = freshest ? new Date(freshest).toLocaleString() : '–';
+      if (freshEl) freshEl.textContent = formatDateSafe(freshest);
 
       if (maintenanceEl) {
         try {
@@ -100,7 +119,7 @@
         try {
           const reportUrl = `/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500`;
           const rr = await fetch(reportUrl, { credentials: 'include' });
-          if (!rr.ok) throw new Error(`hosts-updates failed (${rr.status})`);
+          if (!rr.ok) throw await buildHttpError(rr, 'hosts-updates failed');
           const report = await rr.json();
           const items = Array.isArray(report?.items) ? report.items : [];
 
@@ -197,7 +216,7 @@
         nextCronEl.innerHTML = '<div class="loading">Loading cronjobs…</div>';
         try {
           const rc = await fetch('/cronjobs', { credentials: 'include' });
-          if (!rc.ok) throw new Error(`cronjobs failed (${rc.status})`);
+          if (!rc.ok) throw await buildHttpError(rc, 'cronjobs failed');
           const cron = await rc.json();
           const items = Array.isArray(cron?.items) ? cron.items : [];
           const upcoming = items
@@ -213,7 +232,7 @@
             nextCronEl.innerHTML = '<div class="status-muted">No scheduled cronjobs.</div>';
           } else {
             nextCronEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:0.3rem;">${upcoming.map((it, idx) => {
-              const when = it?.run_at ? new Date(it.run_at).toLocaleString() : '–';
+              const when = formatDateSafe(it?.run_at);
               const action = w.escapeHtml(String(it?.action || 'job'));
               const name = w.escapeHtml(String(it?.name || action));
               return `<div><b>${idx + 1}.</b> ${name} <span style="color:var(--muted-2);">(${action})</span><br/><span style="color:var(--muted-2);font-size:0.9rem;">${w.escapeHtml(when)}</span></div>`;
@@ -228,7 +247,7 @@
         attentionEl.innerHTML = '<div class="loading">Loading attention list…</div>';
         try {
           const r2 = await fetch(`/dashboard/attention?limit=200&include_live=true&force_live=${forceLive ? 'true' : 'false'}`, { credentials: 'include' });
-          if (!r2.ok) throw new Error(`attention failed (${r2.status})`);
+          if (!r2.ok) throw await buildHttpError(r2, 'attention failed');
           const a = await r2.json();
           const rows = a?.items || [];
           if (!rows.length) {
@@ -526,10 +545,7 @@
     const hintEl = document.getElementById('hosts-updates-hint');
     if (!hintEl) return;
 
-    const fmt = (iso) => {
-      if (!iso) return '–';
-      try { return new Date(iso).toLocaleString(); } catch (_) { return String(iso); }
-    };
+    const fmt = (iso) => formatDateSafe(iso);
 
     try {
       const [summaryRes, jobsRes] = await Promise.all([
@@ -568,7 +584,7 @@
       w.setTableState(tbody, 10, 'loading', 'Loading…');
       const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include' });
-      if (!r.ok) throw new Error(`hosts report failed (${r.status})`);
+      if (!r.ok) throw await buildHttpError(r, 'hosts report failed');
       const d = await r.json();
       const items = d?.items || [];
       hostsTableItemsCache = Array.isArray(items) ? items : [];
@@ -653,7 +669,7 @@
     try {
       const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
       const r = await fetch(url, { credentials: 'include' });
-      if (!r.ok) throw new Error(`report failed (${r.status})`);
+      if (!r.ok) throw await buildHttpError(r, 'report failed');
       const d = await r.json();
       const items = d?.items || [];
       if (showToastOnManual) w.showToast('Report refreshed', 'success');
@@ -697,7 +713,7 @@
       const r = await fetch('/dashboard/notifications?limit=30', { credentials: 'include' });
       if (!r.ok) {
         if (r.status === 403) return; // MFA transient
-        throw new Error(`notifications failed (${r.status})`);
+        throw await buildHttpError(r, 'notifications failed');
       }
       const d = await r.json();
       const itemsRaw = Array.isArray(d?.items) ? d.items : [];
