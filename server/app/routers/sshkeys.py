@@ -141,12 +141,14 @@ def create_deploy_request(payload: DeployRequestCreate, db: Session = Depends(ge
     if not k:
         raise HTTPException(404, "unknown key")
 
+    normalized_profile = "N" if bool(payload.grant_sudo) is False else "B"
+
     with transaction(db):
         req = SSHKeyDeploymentRequest(
             user_id=user.id,
             key_id=k.id,
             agent_ids=scoped_agent_ids,
-            sudo_profile="B" if payload.grant_sudo else "N",
+            sudo_profile=normalized_profile,
             status="pending",
         )
         db.add(req)
@@ -311,7 +313,8 @@ async def admin_approve(req_id: str, db: Session = Depends(get_db), admin: AppUs
             r.finished_at = datetime.now(timezone.utc)
         return {"id": str(r.id), "status": "failed", "error": msg}
 
-    sudo_profile = "B" if str(getattr(r, "sudo_profile", "B")).upper() == "B" else "N"
+    raw_profile = str(getattr(r, "sudo_profile", "B") or "B").strip().upper()
+    sudo_profile = "N" if raw_profile in {"N", "NO", "FALSE", "0"} else "B"
 
     with transaction(db):
         r.status = "approved"
