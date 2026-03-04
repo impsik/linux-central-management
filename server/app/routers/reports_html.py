@@ -11,6 +11,11 @@ from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostUser
 from ..routers.reports import hosts_updates_report
+from ..services.db import transaction
+from ..services.hosts import is_host_online
+from ..services.job_wait import wait_for_job_run
+from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.json_utils import loads_or
 from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -146,9 +151,11 @@ def hosts_updates_html(
 
 
 @router.get("/user-presence.html", response_class=HTMLResponse)
-def user_presence_html(
+async def user_presence_html(
     username: str = Query(..., min_length=1, max_length=128),
     exact: bool = True,
+    live_scan: bool = True,
+    max_hosts: int = Query(120, ge=1, le=500),
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
@@ -165,56 +172,121 @@ def user_presence_html(
         )
 
     u = (username or "").strip()
-    if exact:
-        stmt = (
-            select(HostUser, Host)
-            .join(Host, Host.id == HostUser.host_id)
-            .where(func.lower(HostUser.username) == u.lower())
-            .order_by(Host.hostname.asc(), Host.agent_id.asc())
-            .limit(5000)
-        )
-    else:
-        stmt = (
-            select(HostUser, Host)
-            .join(Host, Host.id == HostUser.host_id)
-            .where(func.lower(HostUser.username).like(f"%{u.lower()}%"))
-            .order_by(Host.hostname.asc(), Host.agent_id.asc())
-            .limit(5000)
-        )
+    hosts = db.execute(select(Host).order_by(Host.hostname.asc(), Host.agent_id.asc()).limit(max_hosts)).scalars().all()
+    visible_hosts = [h for h in hosts if is_host_visible_to_user(db, user, h)]
 
-    rows = db.execute(stmt).all()
-    filtered: list[tuple[HostUser, Host]] = []
-    for hu, h in rows:
-        if is_host_visible_to_user(db, user, h):
-            filtered.append((hu, h))
+    rows: list[dict] = []
+    skipped_offline = 0
+    failed_hosts = 0
+
+    async def query_host_users(agent_id: str) -> dict:
+        with transaction(db):
+            created = create_job_with_runs(
+                db=db,
+                job_type="query-users",
+                payload={},
+                agent_ids=[agent_id],
+                commit=False,
+            )
+        await push_job_to_agents(
+            agent_ids=[agent_id],
+            job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "query-users"},
+        )
+        res = await wait_for_job_run(job_id=created.job.id, agent_id=agent_id, timeout_s=10, poll_interval_s=0.25)
+        if not res.run:
+            raise TimeoutError("query-users timeout")
+        if res.run.status == "failed":
+            raise RuntimeError(res.run.error or res.run.stderr or "query-users failed")
+        return loads_or(res.run.stdout, {}) if getattr(res.run, "stdout", None) else {}
+
+    for h in visible_hosts:
+        if not live_scan:
+            break
+        if not is_host_online(h):
+            skipped_offline += 1
+            continue
+        try:
+            data = await query_host_users(h.agent_id)
+            users = data.get("users") or []
+            for item in users:
+                uname = str(item.get("username") or "").strip()
+                if not uname:
+                    continue
+                if exact and uname.lower() != u.lower():
+                    continue
+                if (not exact) and (u.lower() not in uname.lower()):
+                    continue
+                rows.append(
+                    {
+                        "host": h,
+                        "username": uname,
+                        "shell": item.get("shell") or "",
+                        "home": item.get("home") or "",
+                        "has_sudo": bool(item.get("has_sudo", False)),
+                        "is_locked": bool(item.get("is_locked", False)),
+                    }
+                )
+        except Exception:
+            failed_hosts += 1
+
+    # Fallback to cached table if no rows from live scan.
+    if not rows:
+        if exact:
+            stmt = (
+                select(HostUser, Host)
+                .join(Host, Host.id == HostUser.host_id)
+                .where(func.lower(HostUser.username) == u.lower())
+                .order_by(Host.hostname.asc(), Host.agent_id.asc())
+                .limit(5000)
+            )
+        else:
+            stmt = (
+                select(HostUser, Host)
+                .join(Host, Host.id == HostUser.host_id)
+                .where(func.lower(HostUser.username).like(f"%{u.lower()}%"))
+                .order_by(Host.hostname.asc(), Host.agent_id.asc())
+                .limit(5000)
+            )
+        for hu, h in db.execute(stmt).all():
+            if not is_host_visible_to_user(db, user, h):
+                continue
+            rows.append(
+                {
+                    "host": h,
+                    "username": hu.username,
+                    "shell": hu.shell or "",
+                    "home": hu.home or "",
+                    "has_sudo": bool(getattr(hu, "has_sudo", False)),
+                    "is_locked": bool(getattr(hu, "is_locked", False)),
+                }
+            )
 
     html_rows: list[str] = []
-    for hu, h in filtered:
+    for r in rows:
+        h = r["host"]
         host = esc(h.hostname or h.agent_id or "")
         agent_id = esc(h.agent_id or "")
         ip = esc(h.ip_address or "")
         os_name = esc(((h.os_id or "") + " " + (h.os_version or "")).strip() or "-")
         last_seen = esc(h.last_seen.isoformat() if getattr(h, "last_seen", None) else "")
-        user_last_seen = esc(hu.last_seen.isoformat() if getattr(hu, "last_seen", None) else "")
-        shell = esc(hu.shell or "")
-        home = esc(hu.home or "")
-        sudo = "yes" if bool(getattr(hu, "has_sudo", False)) else "no"
-        locked = "yes" if bool(getattr(hu, "is_locked", False)) else "no"
+        shell = esc(r.get("shell") or "")
+        home = esc(r.get("home") or "")
+        sudo = "yes" if bool(r.get("has_sudo", False)) else "no"
+        locked = "yes" if bool(r.get("is_locked", False)) else "no"
 
         html_rows.append(
             f"<tr>"
             f"<td><b>{host}</b><div class='muted'>{agent_id}{(' • ' + ip) if ip else ''}</div></td>"
-            f"<td><code>{esc(hu.username)}</code></td>"
+            f"<td><code>{esc(r.get('username') or '')}</code></td>"
             f"<td>{os_name}</td>"
             f"<td><code>{shell or '-'}</code><div class='muted'>{home or '-'}</div></td>"
             f"<td>{sudo}</td>"
             f"<td>{locked}</td>"
             f"<td class='muted'>{last_seen}</td>"
-            f"<td class='muted'>{user_last_seen}</td>"
             f"</tr>"
         )
 
-    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='8' class='muted'>No matching accounts found on visible hosts</td></tr>"
+    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='7' class='muted'>No matching accounts found on scanned/visible hosts</td></tr>"
 
     return HTMLResponse(
         content=f"""<!doctype html>
@@ -226,7 +298,7 @@ def user_presence_html(
     body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:#0f172a; }}
     h1 {{ margin: 0 0 6px 0; }}
     .meta {{ color:#475569; margin-bottom: 16px; }}
-    table {{ border-collapse: collapse; width: 100%; min-width: 980px; }}
+    table {{ border-collapse: collapse; width: 100%; min-width: 920px; }}
     th, td {{ border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; vertical-align: top; }}
     th {{ background: #f8fafc; position: sticky; top: 0; }}
     .muted {{ color:#64748b; font-size: 12px; margin-top: 2px; }}
@@ -236,7 +308,7 @@ def user_presence_html(
 </head>
 <body>
   <h1>User Presence Report</h1>
-  <div class='meta'>Generated: {esc(ts)} UTC • username={esc(u)} • exact={esc(str(exact))} • rows={len(filtered)}</div>
+  <div class='meta'>Generated: {esc(ts)} UTC • username={esc(u)} • exact={esc(str(exact))} • rows={len(rows)} • scanned_hosts={len(visible_hosts)} • offline_skipped={skipped_offline} • failed_hosts={failed_hosts}</div>
   <div class='wrap'>
     <table>
       <thead>
@@ -248,7 +320,6 @@ def user_presence_html(
           <th>Sudo</th>
           <th>Locked</th>
           <th>Host last seen</th>
-          <th>User last seen</th>
         </tr>
       </thead>
       <tbody>
