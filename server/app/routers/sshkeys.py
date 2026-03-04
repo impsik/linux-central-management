@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -129,6 +130,7 @@ class DeployRequestCreate(BaseModel):
     key_id: str
     agent_ids: list[str] = Field(default_factory=list)
     grant_sudo: bool = True
+    sudo_mode: Literal["none", "restricted", "full"] | None = None
 
 
 @router.post("/deploy-requests")
@@ -141,7 +143,15 @@ def create_deploy_request(payload: DeployRequestCreate, db: Session = Depends(ge
     if not k:
         raise HTTPException(404, "unknown key")
 
-    normalized_profile = "N" if bool(payload.grant_sudo) is False else "B"
+    requested_mode = (payload.sudo_mode or "").strip().lower()
+    if requested_mode == "none":
+        normalized_profile = "N"
+    elif requested_mode == "full":
+        normalized_profile = "A"
+    elif requested_mode == "restricted":
+        normalized_profile = "B"
+    else:
+        normalized_profile = "N" if bool(payload.grant_sudo) is False else "B"
 
     with transaction(db):
         req = SSHKeyDeploymentRequest(
@@ -153,7 +163,9 @@ def create_deploy_request(payload: DeployRequestCreate, db: Session = Depends(ge
         )
         db.add(req)
 
-    return {"id": str(req.id), "status": req.status, "grant_sudo": (str(getattr(req, 'sudo_profile', 'B')).upper() == 'B')}
+    prof = str(getattr(req, "sudo_profile", "B") or "B").strip().upper()
+    mode = "none" if prof == "N" else ("full" if prof == "A" else "restricted")
+    return {"id": str(req.id), "status": req.status, "grant_sudo": prof != "N", "sudo_mode": mode}
 
 
 @router.get("/deploy-requests")
@@ -175,7 +187,8 @@ def list_my_deploy_requests(db: Session = Depends(get_db), user: AppUser = Depen
                 "key_id": str(r.key_id),
                 "agent_ids": r.agent_ids,
                 "status": r.status,
-                "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() == 'B'),
+                "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() != 'N'),
+                "sudo_mode": ("none" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'N' else ("full" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'A' else 'restricted')),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "approved_by": r.approved_by,
                 "error": r.error,
@@ -273,7 +286,8 @@ def admin_list_pending(db: Session = Depends(get_db), admin: AppUser = Depends(r
                 "agent_ids": r.agent_ids,
                 "targets": targets,
                 "status": r.status,
-                "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() == 'B'),
+                "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() != 'N'),
+                "sudo_mode": ("none" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'N' else ("full" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'A' else 'restricted')),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
         )
@@ -314,7 +328,12 @@ async def admin_approve(req_id: str, db: Session = Depends(get_db), admin: AppUs
         return {"id": str(r.id), "status": "failed", "error": msg}
 
     raw_profile = str(getattr(r, "sudo_profile", "B") or "B").strip().upper()
-    sudo_profile = "N" if raw_profile in {"N", "NO", "FALSE", "0"} else "B"
+    if raw_profile in {"N", "NO", "FALSE", "0", "NONE"}:
+        sudo_profile = "N"
+    elif raw_profile in {"A", "ALL", "FULL", "ADMIN"}:
+        sudo_profile = "A"
+    else:
+        sudo_profile = "B"
 
     with transaction(db):
         r.status = "approved"

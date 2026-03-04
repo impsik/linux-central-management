@@ -702,7 +702,7 @@
     <div class="tab-content-custom" id="sshkeys-tab">
       <div class="admin-content">
         <div class="section-title">SSH Keys</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">Upload your public key and request deployment to hosts. An admin must approve. You can now choose whether the created Linux user should get restricted sudo access.</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Upload your public key and request deployment to hosts. An admin must approve. You can choose sudo mode: none, restricted, or full (admin-like).</div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">Add public key</div>
@@ -747,8 +747,12 @@
             <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
               <button class="btn" id="sshkey-hosts-open" type="button">Choose hosts…</button>
               <label style="display:inline-flex;align-items:center;gap:0.4rem;font-size:0.9rem;color:var(--muted-2);padding:0.2rem 0.1rem;">
-                <input id="sshkey-grant-sudo" type="checkbox" checked />
-                Grant restricted sudo to created user
+                Sudo access:
+                <select id="sshkey-sudo-mode" class="host-search" style="height:30px;min-width:180px;">
+                  <option value="restricted" selected>Restricted sudo</option>
+                  <option value="full">Full sudo (admin-like)</option>
+                  <option value="none">No sudo</option>
+                </select>
               </label>
               <button class="btn btn-primary" id="sshkey-request-deploy" type="button">Request deploy (selected key + selected hosts)</button>
               <span id="sshkey-request-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
@@ -4143,7 +4147,8 @@
               const t = targetsLabel(it);
               const keyShort = (String(it.key_id||'')).slice(0,8);
               const keyLabel = (String(it.key_name||'').trim()) ? `${it.key_name} (${keyShort})` : keyShort;
-              const ok = confirm(`Approve deployment request?\n\nRequested by: ${it.user_name || it.user_id}\nKey: ${keyLabel}\nGrant sudo: ${it.grant_sudo ? 'yes' : 'no'}\nTargets:\n${t.title}`);
+              const sudoMode = it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none');
+              const ok = confirm(`Approve deployment request?\n\nRequested by: ${it.user_name || it.user_id}\nKey: ${keyLabel}\nSudo mode: ${sudoMode}\nTargets:\n${t.title}`);
               if (!ok) return;
             }
 

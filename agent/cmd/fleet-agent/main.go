@@ -2260,10 +2260,17 @@ func deploySSHKey(ctx context.Context, username, publicKey, sudoProfile string) 
 		profile = "B"
 	}
 
-	// Sudo profile B: apt + systemctl + reboot (NOPASSWD) with absolute paths.
-	if profile == "B" {
+	// Sudo profiles:
+	// B = restricted apt/systemctl/reboot
+	// A = full sudo (admin-like)
+	if profile == "B" || profile == "A" {
 		sudoers := fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)
-		content := fmt.Sprintf("%s ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /bin/systemctl, /usr/sbin/reboot, /sbin/reboot\n", username)
+		content := ""
+		if profile == "A" {
+			content = fmt.Sprintf("%s ALL=(ALL) NOPASSWD:ALL\n", username)
+		} else {
+			content = fmt.Sprintf("%s ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /bin/systemctl, /usr/sbin/reboot, /sbin/reboot\n", username)
+		}
 		// Avoid nested quoting (same issue as authorized_keys). Write via sudo tee.
 		cmds = append(cmds, fmt.Sprintf(
 			"printf '%%s' %s | sudo -n tee %s >/dev/null",
@@ -2271,7 +2278,11 @@ func deploySSHKey(ctx context.Context, username, publicKey, sudoProfile string) 
 		))
 		cmds = append(cmds, fmt.Sprintf("sudo -n chmod 440 %s", shellEscape(sudoers)))
 		cmds = append(cmds, fmt.Sprintf("sudo -n visudo -cf %s", shellEscape(sudoers)))
-		cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(root) NOPASSWD:"), shellEscape(sudoers)))
+		if profile == "A" {
+			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(ALL) NOPASSWD:ALL"), shellEscape(sudoers)))
+		} else {
+			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(root) NOPASSWD:"), shellEscape(sudoers)))
+		}
 	}
 
 	script := strings.Join(cmds, "\n")
