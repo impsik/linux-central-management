@@ -290,11 +290,19 @@ body {
   background: #0b1422 !important;
   border-color: #2d4f73 !important;
   opacity: 1 !important;
+  height: 36px !important;
+  line-height: 1.25 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-left: .65rem !important;
+  padding-right: 1.8rem !important;
+  font-size: 15px !important;
 }
 
 #sshkey-sudo-mode option {
   color: #e6f0ff;
   background: #0b1422;
+  line-height: 1.25;
 }
 
 #server-info-placeholder .admin-card-title {
