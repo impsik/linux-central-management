@@ -36,6 +36,7 @@ body {
   position: sticky;
   top: 0;
   z-index: 20;
+  min-height: 58px;
   border-bottom: 1px solid var(--app-shell-border);
   box-shadow: 0 8px 24px rgba(2, 6, 23, 0.22);
   background: color-mix(in srgb, var(--panel) 94%, #020617);
@@ -43,15 +44,18 @@ body {
 
 #app-title {
   font-family: "JetBrains Mono", monospace;
-  font-size: 1.25rem;
+  font-size: 1.18rem;
   letter-spacing: 0.01em;
+  line-height: 1.1;
 }
 
 .guardian-top-search .host-search {
-  border-radius: 10px;
+  border-radius: 9px;
   border-color: color-mix(in srgb, #14b8a6 38%, var(--border));
   background: color-mix(in srgb, #0b1220 78%, var(--panel));
   font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding-left: .65rem;
 }
 
 .container {
@@ -179,31 +183,31 @@ body {
 
 #server-info-placeholder h2 {
   font-family: "JetBrains Mono", monospace;
-  font-size: 1.9rem;
+  font-size: 1.6rem;
   font-weight: 600;
-  margin-bottom: .2rem;
+  margin-bottom: .15rem;
 }
 
 #server-info-placeholder .metrics-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: .7rem;
+  gap: .55rem;
 }
 
 #server-info-placeholder .metric-card {
-  min-height: 108px;
-  border-radius: 10px;
+  min-height: 96px;
+  border-radius: 9px;
   background: linear-gradient(180deg, color-mix(in srgb, #0f172a 86%, var(--panel)), color-mix(in srgb, #020617 94%, var(--panel))) !important;
 }
 
 #server-info-placeholder .metric-card .metric-label {
   text-transform: uppercase;
-  font-size: 10px;
-  letter-spacing: .12em;
+  font-size: 9px;
+  letter-spacing: .11em;
   color: #8bb8d7;
 }
 
 #server-info-placeholder .metric-card .metric-value {
-  font-size: 1.55rem;
+  font-size: 1.34rem;
   line-height: 1.05;
 }
 
@@ -218,7 +222,7 @@ body {
   grid-template-areas:
     "inventory alerts"
     "inventory quality";
-  gap: .7rem !important;
+  gap: .55rem !important;
 }
 
 #server-info-placeholder .overview-cards-grid > .admin-card:nth-child(1) { grid-area: inventory; }
@@ -249,8 +253,12 @@ body {
 
 #server-info-placeholder .admin-card-title {
   font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: .03em;
+}
+
+#server-info-placeholder .admin-card {
+  border-radius: 9px;
 }
 
 @media (max-width: 1100px) {
