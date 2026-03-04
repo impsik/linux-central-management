@@ -37,7 +37,10 @@
         statusEl: document.getElementById('sshkey-request-status'),
         selectedKeyId: ctx.getSshSelectedKeyId(),
         getSelectedAgentIds: () => Array.from(ctx.getSshSelectedAgentIds() || []),
-        getGrantSudo: () => !!document.getElementById('sshkey-grant-sudo')?.checked,
+        getGrantSudo: () => {
+          const el = document.getElementById('sshkey-grant-sudo');
+          return el ? !!el.checked : true;
+        },
         setPanelVisible: ctx.setSshHostsPanelVisible,
         renderList: ctx.renderSshHostsList,
         loadSshKeyRequests: ctx.loadSshKeyRequests,
