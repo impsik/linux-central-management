@@ -306,13 +306,18 @@
     const counterEl = document.getElementById('hosts-visible-counter');
     const total = Array.isArray(hostsTableItemsCache) ? hostsTableItemsCache.length : 0;
     if (!items.length) {
-      if (counterEl) counterEl.textContent = `0 / ${total} hosts shown`;
+      if (counterEl) counterEl.textContent = `0 / ${total} hosts shown · online 0 · offline 0`;
       w.setTableState(tbody, 10, 'empty', 'No hosts match current filters');
       if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
       return;
     }
 
-    if (counterEl) counterEl.textContent = `${items.length} / ${total} hosts shown`;
+    if (counterEl) {
+      const onlineCount = items.filter((it) => !!it.is_online).length;
+      const offlineCount = Math.max(0, items.length - onlineCount);
+      const withUpdates = items.filter((it) => Number(it.security_updates || 0) > 0 || Number(it.updates || 0) > 0).length;
+      counterEl.textContent = `${items.length} / ${total} hosts shown · online ${onlineCount} · offline ${offlineCount} · pending updates ${withUpdates}`;
+    }
 
     if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') {
       ctx.setLastRenderedAgentIds(items.map((it) => String(it.agent_id || '')).filter(Boolean));

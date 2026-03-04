@@ -376,9 +376,8 @@
       <div class="server-info-content" style="padding-top:0;">
         <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
           <div>
-            <h2 style="margin:0 0 0.25rem 0;">Hosts</h2>
-            <div style="color:var(--muted-2);font-size:0.95rem;">Sortable fleet table (updates, security, reboot-needed).
-              Select rows for bulk actions.</div>
+            <h2 style="margin:0 0 0.25rem 0;">Host Inventory</h2>
+            <div style="color:var(--muted-2);font-size:0.95rem;">Live host list with status, patch posture, and quick actions.</div>
             <div id="hosts-updates-hint" style="color:var(--muted-2);font-size:0.85rem;margin-top:0.25rem;">Updates hint: loading…</div>
           </div>
         </div>
@@ -529,7 +528,7 @@
           <select id="hosts-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
             <option value="hostname" selected>Host</option>
             <option value="os_version">OS</option>
-            <option value="updates">All updates</option>
+            <option value="updates">Pending updates</option>
             <option value="security_updates">Security updates</option>
             <option value="last_seen">Last seen</option>
           </select>
@@ -559,10 +558,10 @@
                 <th class="sortable-col" id="hosts-th-host" title="Sort by host" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th class="sortable-col" id="hosts-th-os" title="Sort by OS" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th>Kernel</th>
-                <th class="sortable-col" style="text-align:right;" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th class="sortable-col" style="text-align:right;" id="hosts-th-upd" title="Sort by all updates" tabindex="0" role="button">All updates <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col" style="text-align:right;" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security pkgs <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col" style="text-align:right;" id="hosts-th-upd" title="Sort by all updates" tabindex="0" role="button">Pending <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th>Reboot</th>
-                <th>Online</th>
+                <th>Status</th>
                 <th class="sortable-col" id="hosts-th-last" title="Sort by last seen" tabindex="0" role="button">Last seen <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th style="text-align:right;">Actions</th>
               </tr>
