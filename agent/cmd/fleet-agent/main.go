@@ -627,6 +627,10 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		// We overload fields for now: ServiceName=username, Action=sudo_profile, PackageName=public_key
 		pub := strings.TrimSpace(job.PackageName)
 		profile := strings.TrimSpace(job.Action)
+		if profile == "" {
+			// Safety default: if server omitted profile, keep historical behavior (grant restricted sudo).
+			profile = "B"
+		}
 		stdout, stderr, code, errMsg := deploySSHKey(ctx, username, pub, profile)
 		if code == 0 && errMsg == "" {
 			ev.Status = "success"
@@ -2251,8 +2255,13 @@ func deploySSHKey(ctx context.Context, username, publicKey, sudoProfile string) 
 		shellQuote(secondField(key)), shellEscape(username), shellQuote(line+"\n"), shellEscape(username),
 	))
 
+	profile := strings.TrimSpace(strings.ToUpper(sudoProfile))
+	if profile == "" {
+		profile = "B"
+	}
+
 	// Sudo profile B: apt + systemctl + reboot (NOPASSWD) with absolute paths.
-	if strings.TrimSpace(strings.ToUpper(sudoProfile)) == "B" {
+	if profile == "B" {
 		sudoers := fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)
 		content := fmt.Sprintf("%s ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /bin/systemctl, /usr/sbin/reboot, /sbin/reboot\n", username)
 		// Avoid nested quoting (same issue as authorized_keys). Write via sudo tee.
@@ -2261,6 +2270,8 @@ func deploySSHKey(ctx context.Context, username, publicKey, sudoProfile string) 
 			shellQuote(content), shellEscape(sudoers),
 		))
 		cmds = append(cmds, fmt.Sprintf("sudo -n chmod 440 %s", shellEscape(sudoers)))
+		cmds = append(cmds, fmt.Sprintf("sudo -n visudo -cf %s", shellEscape(sudoers)))
+		cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(root) NOPASSWD:"), shellEscape(sudoers)))
 	}
 
 	script := strings.Join(cmds, "\n")
