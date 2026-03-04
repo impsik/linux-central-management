@@ -193,13 +193,12 @@ ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -
 SERVER_URL="${SERVER_URL:-}"
 REMOTE_AGENT_TOKEN="${AGENT_TOKEN:-}"
 REMOTE_TERMINAL_TOKEN="${TERM_TOKEN:-}"
-REMOTE_LABELS="${AGENT_LABELS:-env=prod,role=host}"
 
 if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
   log_info "Installing/updating fleet-agent systemd service on targets"
 
   # Write env file on the REMOTE host (so hostname is correct)
-  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"\$(hostname -s)\"; SERVER_URL=\"$SERVER_URL\"; LABELS=\"$REMOTE_LABELS\"; TOKEN=\"$REMOTE_AGENT_TOKEN\"; TERM_TOKEN=\"$REMOTE_TERMINAL_TOKEN\"; cat > /etc/fleet-agent.env <<EOF
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"\$(hostname -s)\"; SERVER_URL=\"$SERVER_URL\"; TOKEN=\"$REMOTE_AGENT_TOKEN\"; TERM_TOKEN=\"$REMOTE_TERMINAL_TOKEN\"; cat > /etc/fleet-agent.env <<EOF
 FLEET_SERVER_URL=\$SERVER_URL
 FLEET_AGENT_ID=\$HOSTID
 FLEET_LABELS=\$LABELS
@@ -223,7 +222,6 @@ EnvironmentFile=/etc/fleet-agent.env
 # Values are resolved on the host via systemd's %H (hostname) specifier.
 Environment=FLEET_SERVER_URL=$SERVER_URL
 Environment=FLEET_AGENT_ID=%H
-Environment=FLEET_LABELS=$REMOTE_LABELS
 Environment=FLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN
 Environment=FLEET_TERMINAL_TOKEN=$REMOTE_TERMINAL_TOKEN
 
