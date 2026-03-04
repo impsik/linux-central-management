@@ -790,13 +790,14 @@
                     <th>Created</th>
                     <th>Key</th>
                     <th>Targets</th>
+                    <th>Sudo</th>
                     <th>Status</th>
                     <th>Approved by</th>
                     <th>Error</th>
                   </tr>
                 </thead>
                 <tbody id="sshkey-requests-table">
-                  <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                  <tr><td colspan="7" style="text-align:center;" class="status-muted">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -842,11 +843,12 @@
                     <th>User</th>
                     <th>Key</th>
                     <th>Targets</th>
+                    <th>Sudo</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody id="sshkey-admin-table">
-                  <tr><td colspan="5" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                  <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -4004,22 +4006,24 @@
       const tbody = document.getElementById('sshkey-requests-table');
       if (!tbody) return;
       try {
-        setTableState(tbody, 6, 'loading', 'Loading…');
+        setTableState(tbody, 7, 'loading', 'Loading…');
         const r = await fetch('/sshkeys/deploy-requests', { credentials: 'include' });
         if (!r.ok) throw new Error(`requests failed (${r.status})`);
         const d = await r.json();
         const items = d?.items || [];
         if (!items.length) {
-          setTableState(tbody, 6, 'empty', 'No requests');
+          setTableState(tbody, 7, 'empty', 'No requests');
           return;
         }
         tbody.innerHTML = '';
         for (const it of items) {
           const tr = document.createElement('tr');
+          const sudoMode = String(it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none'));
           tr.innerHTML = `
             <td class="status-muted">${escapeHtml(formatShortTime(it.created_at))}</td>
             <td><code>${escapeHtml(String(it.key_id || '')).slice(0,8)}</code></td>
             <td>${escapeHtml(String((it.agent_ids||[]).length))}</td>
+            <td>${escapeHtml(sudoMode)}</td>
             <td>${escapeHtml(it.status || '')}</td>
             <td>${escapeHtml(it.approved_by || '')}</td>
             <td class="status-error">${escapeHtml(it.error || '')}</td>
@@ -4027,7 +4031,7 @@
           tbody.appendChild(tr);
         }
       } catch (e) {
-        setTableState(tbody, 6, 'error', e.message || String(e));
+        setTableState(tbody, 7, 'error', e.message || String(e));
       }
     }
 
@@ -4093,7 +4097,7 @@
         if (indicator) indicator.style.display = items.length ? 'inline' : 'none';
 
         if (!items.length) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;" class="status-muted">No pending approvals</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;" class="status-muted">No pending approvals</td></tr>';
           return;
         }
         tbody.innerHTML = '';
@@ -4112,11 +4116,13 @@
         for (const it of items) {
           const tr = document.createElement('tr');
           const t = targetsLabel(it);
+          const sudoMode = String(it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none'));
           tr.innerHTML = `
             <td class="status-muted">${escapeHtml(formatShortTime(it.created_at))}</td>
             <td>${escapeHtml(it.user_name || String(it.user_id||'').slice(0,8))}</td>
             <td><code>${escapeHtml(String(it.key_name||'') || String(it.key_id||'').slice(0,8))}</code></td>
             <td title="${escapeHtml(t.title)}">${escapeHtml(t.text || String((it.agent_ids||[]).length))}</td>
+            <td>${escapeHtml(sudoMode)}</td>
             <td style="text-align:right;white-space:nowrap;">
               <button class="btn" data-view-id="${escapeHtml(it.id)}">Details</button>
               <button class="btn btn-primary" data-approve-id="${escapeHtml(it.id)}">Approve</button>
@@ -4222,7 +4228,7 @@
       } catch (e) {
         const indicator = document.getElementById('sshkeys-approval-indicator');
         if (indicator) indicator.style.display = 'none';
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;" class="status-error">${escapeHtml(e.message)}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;" class="status-error">${escapeHtml(e.message)}</td></tr>`;
       }
     }
 
