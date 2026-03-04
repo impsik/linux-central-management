@@ -37,7 +37,7 @@
         <div class="header-subtitle" style="text-transform:uppercase;letter-spacing:.2em;font-size:10px;opacity:.7;">Control Plane</div>
       </div>
       <div class="guardian-top-search" style="display:flex;align-items:center;gap:.5rem;min-width:320px;max-width:560px;flex:1;">
-        <input class="host-search" type="text" placeholder="Search hosts, jobs, packages..." style="margin:0;height:34px;" />
+        <input class="host-search" type="text" placeholder="Search hosts, jobs, packages..." aria-label="Global search" style="margin:0;height:34px;" />
       </div>
     </div>
     <div class="header-actions">
@@ -110,7 +110,7 @@
                   <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
                     <button class="btn" id="host-meta-env-add" type="button">Add env entry</button>
                     <button class="btn btn-primary" id="host-meta-save" type="button">Save metadata</button>
-                    <span id="host-meta-status" class="status-muted" style="font-size:0.85rem;"></span>
+                    <span id="host-meta-status" class="status-muted" role="status" aria-live="polite" style="font-size:0.85rem;"></span>
                   </div>
                 </div>
               </div>
@@ -523,7 +523,7 @@
         </div>
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
-          <span id="hosts-visible-counter" style="color:var(--muted-2);font-size:0.9rem;">0 / 0 hosts shown</span>
+          <span id="hosts-visible-counter" role="status" aria-live="polite" style="color:var(--muted-2);font-size:0.9rem;">0 / 0 hosts shown</span>
           <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
             <label style="color:var(--muted-2);font-size:0.9rem;">Sort</label>
           <select id="hosts-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
