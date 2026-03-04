@@ -14,21 +14,21 @@
 }
 
 :root[data-theme="dark"] {
-  --app-surface: #0a111d;
+  --app-surface: #050a13;
   --app-sidebar: #040914;
-  --app-sidebar-border: #1c2a3d;
+  --app-sidebar-border: #123046;
   --app-sidebar-text: #d7e4f9;
-  --app-sidebar-muted: #a2b4cf;
-  --app-sidebar-active: #1d4ed8;
-  --app-shell-border: #1f2937;
+  --app-sidebar-muted: #8aa0bf;
+  --app-sidebar-active: #0f766e;
+  --app-shell-border: #173044;
   --app-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
 }
 
 body {
-  font-family: "IBM Plex Sans", "Noto Sans", "Helvetica Neue", sans-serif;
+  font-family: "Inter", "IBM Plex Sans", "Noto Sans", sans-serif;
   background:
-    radial-gradient(circle at 5% -10%, color-mix(in srgb, var(--primary) 14%, transparent), transparent 42%),
-    radial-gradient(circle at 98% -15%, color-mix(in srgb, #0ea5e9 13%, transparent), transparent 40%),
+    radial-gradient(circle at 8% -10%, rgba(20, 184, 166, 0.13), transparent 40%),
+    radial-gradient(circle at 96% -15%, rgba(14, 165, 233, 0.11), transparent 38%),
     var(--app-surface);
 }
 
@@ -37,7 +37,14 @@ body {
   top: 0;
   z-index: 20;
   border-bottom: 1px solid var(--app-shell-border);
-  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.06);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.22);
+  background: color-mix(in srgb, var(--panel) 94%, #020617);
+}
+
+#app-title {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.25rem;
+  letter-spacing: 0.01em;
 }
 
 .container {
@@ -63,10 +70,9 @@ body {
 #fleet-actions {
   margin: 0 !important;
   padding: 0.9rem !important;
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid var(--app-sidebar-border);
-  background:
-    linear-gradient(175deg, color-mix(in srgb, var(--app-sidebar) 94%, #121f36), var(--app-sidebar));
+  background: linear-gradient(175deg, color-mix(in srgb, var(--app-sidebar) 90%, #0b2031), var(--app-sidebar));
   box-shadow: var(--app-shell-shadow);
   flex-direction: column;
   gap: 0.4rem !important;
@@ -76,38 +82,34 @@ body {
   width: 100%;
   justify-content: flex-start;
   padding: 0.62rem 0.78rem;
-  border-radius: 11px;
+  border-radius: 10px;
   border-color: transparent;
   background: transparent;
   color: var(--app-sidebar-text);
   text-align: left;
   font-weight: 700;
+  font-family: "JetBrains Mono", monospace;
 }
 
 #fleet-actions .btn:hover {
-  background: color-mix(in srgb, var(--app-sidebar-active) 26%, transparent);
+  background: color-mix(in srgb, var(--app-sidebar-active) 24%, transparent);
   border-color: color-mix(in srgb, var(--app-sidebar-active) 55%, transparent);
-}
-
-#fleet-actions .btn:focus-visible {
-  outline: 2px solid #60a5fa;
-  outline-offset: 2px;
 }
 
 .container:has(#server-info-tab.active) #nav-overview,
 .container:has(#hosts-table-tab.active) #nav-hosts,
 .container:has(#cronjobs-tab.active) #nav-cronjobs,
 .container:has(#sshkeys-tab.active) #nav-sshkeys {
-  background: color-mix(in srgb, var(--app-sidebar-active) 32%, transparent);
-  border-color: color-mix(in srgb, var(--app-sidebar-active) 60%, transparent);
-  color: #fff;
+  background: color-mix(in srgb, #14b8a6 24%, transparent);
+  border-color: color-mix(in srgb, #14b8a6 65%, transparent);
+  color: #dffdfa;
 }
 
 .fleet-main-shell {
   min-width: 0;
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 93%, #020617);
   border: 1px solid var(--app-shell-border);
-  border-radius: 18px;
+  border-radius: 16px;
   box-shadow: var(--app-shell-shadow);
   overflow: clip;
 }
@@ -119,87 +121,39 @@ body {
   background: color-mix(in srgb, var(--panel-2) 72%, transparent);
 }
 
-#host-actions .btn {
-  border-radius: 999px;
-}
-
-.server-info-content,
-.admin-content,
-.users-content,
-.services-content,
-.packages-content {
-  padding: 1.1rem 1.2rem 1.4rem;
-}
-
-.metrics-grid {
-  gap: 0.9rem;
-  margin-bottom: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-}
-
 .metric-card,
 .admin-card,
-.load-graph-container,
-.filter-section,
-.package-info-panel,
-.package-card,
-.user-card,
-.service-card {
-  border-radius: 14px;
-}
-
-.metric-card {
-  border-color: color-mix(in srgb, var(--border) 82%, #93c5fd 18%);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
-  padding: 1.1rem;
-}
-
-.metric-value {
-  letter-spacing: -0.02em;
-}
-
-.admin-card {
-  border-color: color-mix(in srgb, var(--border) 82%, #93c5fd 18%);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
-}
-
-.admin-card-title {
-  margin-bottom: 0.3rem;
-}
-
-.hosts-top-filters {
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  border-bottom: 1px solid var(--border);
-  box-shadow: none;
-  padding: 0.2rem 0 0.65rem 0;
-}
-
-.host-search,
-.admin-input {
-  border-radius: 10px;
+.section-card,
+.overview-card,
+.server-info-content .kpi-card,
+.server-info-content .stat-card {
+  border-color: color-mix(in srgb, #14b8a6 25%, var(--border)) !important;
+  background: color-mix(in srgb, var(--panel) 90%, #020617) !important;
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.04);
 }
 
 .process-table th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  color: color-mix(in srgb, var(--muted-2) 90%, #9dd9f5) !important;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: 11px;
 }
 
-.process-table th,
-.process-table td {
-  border-bottom-color: color-mix(in srgb, var(--border) 80%, transparent);
+.process-table td, .metric-value, .server-info-content h2, .server-info-content h3 {
+  font-family: "JetBrains Mono", monospace;
 }
 
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid #3b82f6;
-  outline-offset: 2px;
+.btn.btn-primary {
+  background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 75%, #0b1220), color-mix(in srgb, #0f766e 78%, #050b16));
+  border-color: color-mix(in srgb, #14b8a6 70%, #0f172a);
+  color: #e7fffb;
 }
 
-@media (max-width: 1260px) {
+.btn.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+@media (max-width: 1100px) {
   .main-content {
     grid-template-columns: 1fr;
   }
@@ -211,39 +165,9 @@ textarea:focus-visible {
   #fleet-actions {
     flex-direction: row;
     flex-wrap: wrap;
-    gap: 0.45rem !important;
   }
 
   #fleet-actions .btn {
     width: auto;
-    flex: 1 1 180px;
-    justify-content: center;
-  }
-}
-
-@media (max-width: 900px) {
-  .container {
-    padding: 0.7rem;
-  }
-
-  .header {
-    padding: 0.75rem 0.9rem;
-  }
-
-  .server-info-content,
-  .admin-content,
-  .users-content,
-  .services-content,
-  .packages-content {
-    padding: 0.9rem;
-  }
-
-  #host-actions {
-    padding: 0.7rem 0.75rem !important;
-  }
-
-  #fleet-actions .btn {
-    flex: 1 1 140px;
-    font-size: 0.84rem;
   }
 }
