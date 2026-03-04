@@ -140,9 +140,23 @@ body {
 
 #host-actions {
   margin: 0 !important;
-  padding: 0.85rem 1.1rem 0.7rem !important;
+  padding: 0.7rem .9rem 0.6rem !important;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+#host-actions .host-action-btn {
+  height: 30px;
+  border-radius: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding: .2rem .6rem;
+}
+
+#host-actions .host-action-btn.active {
+  background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 80%, #0b1220), color-mix(in srgb, #0f766e 82%, #050b16));
+  border-color: color-mix(in srgb, #14b8a6 75%, #0f172a);
+  color: #ecfeff;
 }
 
 .metric-card,
@@ -259,6 +273,11 @@ body {
 
 #server-info-placeholder .admin-card {
   border-radius: 9px;
+}
+
+.hosts-table tbody tr.host-row-active {
+  background: color-mix(in srgb, #14b8a6 12%, transparent) !important;
+  box-shadow: inset 2px 0 0 #14b8a6;
 }
 
 @media (max-width: 1100px) {

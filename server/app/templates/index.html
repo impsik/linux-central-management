@@ -84,8 +84,8 @@
       <div class="fleet-main-shell">
 
       <div class="host-actions" id="host-actions" style="display: none; padding-top: 0; margin-top: -0.35rem; margin-bottom: 0.75rem;">
-        <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button">Terminal</button>
-        <button class="btn btn-primary host-action-btn" id="host-action-users" type="button">Users</button>
+        <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button">Console</button>
+        <button class="btn btn-primary host-action-btn" id="host-action-users" type="button">Accounts</button>
         <button class="btn btn-primary host-action-btn" id="host-action-services" type="button">Services</button>
         <button class="btn btn-primary host-action-btn" id="host-action-packages" type="button">Packages</button>
       </div>
@@ -96,11 +96,11 @@
           <div id="server-info-header" style="display: none;">
             <div class="server-info-title">
               <div>
-                <h2 id="server-info-hostname">Server Name</h2>
+                <h2 id="server-info-hostname">Host Details</h2>
                 <div id="server-info-details" class="server-info-details"></div>
                 <div id="server-info-labels" class="label-badges"></div>
                 <div class="admin-card" style="margin-top:0.6rem;max-width:760px;">
-                  <div class="admin-card-title">Agent metadata</div>
+                  <div class="admin-card-title">Host metadata</div>
                   <div class="admin-card-body" style="display:grid;gap:0.45rem;">
                     <input id="host-meta-name" class="host-search" type="text" placeholder="Agent display name / hostname" />
                     <input id="host-meta-role" class="host-search" type="text" placeholder="Role (e.g. web, db, worker)" />
@@ -3129,6 +3129,7 @@
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
         setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(v) ? v : []); return lastRenderedAgentIds; },
         getHostSearchQuery: () => hostSearchQuery,
+        getCurrentAgentId: () => currentAgentId,
         getLabelEnvFilter: () => labelEnvFilter,
         getLabelRoleFilter: () => labelRoleFilter,
         getVulnFilteredAgentIds: () => vulnFilteredAgentIds,

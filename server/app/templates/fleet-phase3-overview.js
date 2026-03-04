@@ -339,6 +339,10 @@
 
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
+      const activeAgentId = (ctx.getCurrentAgentId && ctx.getCurrentAgentId()) || '';
+      if (activeAgentId && String(it.agent_id || '') === String(activeAgentId)) {
+        tr.classList.add('host-row-active');
+      }
       const selectedAgentIds = (ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || new Set();
       tr.innerHTML = `
         <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
