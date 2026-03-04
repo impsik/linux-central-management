@@ -11,7 +11,7 @@ from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostUser
 from ..routers.reports import hosts_updates_report
-from ..services.db import transaction
+from ..services.db_utils import transaction
 from ..services.hosts import is_host_online
 from ..services.job_wait import wait_for_job_run
 from ..services.jobs import create_job_with_runs, push_job_to_agents
