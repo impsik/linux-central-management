@@ -558,6 +558,7 @@
     const statusEl = api.statusEl || document.getElementById('sshkey-request-status');
     const selectedKeyId = api.selectedKeyId;
     const getSelectedAgentIds = api.getSelectedAgentIds;
+    const grantSudo = (typeof api.getGrantSudo === 'function') ? !!api.getGrantSudo() : true;
 
     if (!selectedKeyId) {
       if (typeof w.showToast === 'function') w.showToast('Select a key (click a row)', 'error');
@@ -577,7 +578,7 @@
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ key_id: selectedKeyId, agent_ids }),
+        body: JSON.stringify({ key_id: selectedKeyId, agent_ids, grant_sudo: grantSudo }),
       });
       if (!r.ok) throw new Error(await r.text());
       if (typeof w.showToast === 'function') w.showToast('Deployment requested (awaiting admin approval)', 'success');

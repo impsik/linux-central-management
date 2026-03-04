@@ -13,7 +13,8 @@ function openSshKeyDeployApprovalModal(it) {
       const keyShort = (String(it.key_id||'')).slice(0,8);
       const keyName = String(it.key_name || '').trim();
       const keyLabel = keyName ? `${keyName} (${keyShort})` : keyShort;
-      let meta = `Requested by: ${it.user_name || it.user_id} · Key: ${keyLabel} · Created: ${formatShortTime(it.created_at)}`;
+      const grantSudo = !!it.grant_sudo;
+      let meta = `Requested by: ${it.user_name || it.user_id} · Key: ${keyLabel} · Sudo: ${grantSudo ? 'yes' : 'no'} · Created: ${formatShortTime(it.created_at)}`;
       if (it.job_id || it.jobId) meta += ` · Job: ${String(it.job_id || it.jobId).slice(0,8)}`;
       metaEl.textContent = meta;
 

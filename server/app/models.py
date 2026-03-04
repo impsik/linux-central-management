@@ -388,6 +388,7 @@ class SSHKeyDeploymentRequest(Base):
     key_id = Column(UUID(as_uuid=True), ForeignKey("user_ssh_keys.id", ondelete="CASCADE"), nullable=False, index=True)
 
     agent_ids = Column(JSON, nullable=False, default=list)
+    sudo_profile = Column(String, nullable=False, default="B")  # B (sudo) | N (no sudo)
     status = Column(String, nullable=False, default="pending", index=True)  # pending|approved|rejected|done|failed
 
     approved_by = Column(String, nullable=True, index=True)

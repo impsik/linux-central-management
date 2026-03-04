@@ -54,6 +54,11 @@ def _startup() -> None:
                 app_saved_views_cols = {c.get("name") for c in insp.get_columns("app_saved_views")}
             except Exception:
                 app_saved_views_cols = set()
+            ssh_deploy_cols = set()
+            try:
+                ssh_deploy_cols = {c.get("name") for c in insp.get_columns("ssh_key_deployment_requests")}
+            except Exception:
+                ssh_deploy_cols = set()
 
             dialect = engine.dialect.name
             stmts: list[str] = []
@@ -78,6 +83,8 @@ def _startup() -> None:
                 stmts.append("ALTER TABLE app_saved_views ADD COLUMN is_shared BOOLEAN NOT NULL DEFAULT false")
             if app_saved_views_cols and "is_default_startup" not in app_saved_views_cols:
                 stmts.append("ALTER TABLE app_saved_views ADD COLUMN is_default_startup BOOLEAN NOT NULL DEFAULT false")
+            if ssh_deploy_cols and "sudo_profile" not in ssh_deploy_cols:
+                stmts.append("ALTER TABLE ssh_key_deployment_requests ADD COLUMN sudo_profile TEXT NOT NULL DEFAULT 'B'")
 
             if stmts:
                 with engine.begin() as conn:
