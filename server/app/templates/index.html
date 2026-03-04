@@ -31,9 +31,14 @@
 
 <body>
   <div class="header">
-    <div class="header-title">
-      <h1 id="app-title">Linux Guardian</h1>
-      <div class="header-subtitle" style="text-transform:uppercase;letter-spacing:.2em;font-size:10px;opacity:.7;">Control Plane</div>
+    <div class="header-title" style="display:flex;align-items:center;gap:1rem;min-width:0;">
+      <div>
+        <h1 id="app-title">Linux Guardian</h1>
+        <div class="header-subtitle" style="text-transform:uppercase;letter-spacing:.2em;font-size:10px;opacity:.7;">Control Plane</div>
+      </div>
+      <div class="guardian-top-search" style="display:flex;align-items:center;gap:.5rem;min-width:320px;max-width:560px;flex:1;">
+        <input class="host-search" type="text" placeholder="Search hosts, jobs, packages..." style="margin:0;height:34px;" />
+      </div>
     </div>
     <div class="header-actions">
       <div class="header-user">
@@ -212,9 +217,8 @@
           <div id="server-info-placeholder" class="empty-state" style="text-align:left;max-width:none;">
             <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
               <div>
-                <h2 style="margin:0 0 0.25rem 0;">Fleet Overview</h2>
-                <div style="color:var(--muted-2);font-size:0.95rem;">Live posture across your fleet. Click any tile to drill
-                  down.</div>
+                <h2 style="margin:0 0 0.25rem 0;">Operations Dashboard</h2>
+                <div style="color:var(--muted-2);font-size:0.95rem;">Last updated: <span id="guardian-last-updated">—</span> · environment: production</div>
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
                 <select id="kpi-timeframe" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
@@ -223,26 +227,25 @@
                   <option value="720">KPI: 30d</option>
                 </select>
                 <button class="btn" id="overview-refresh" type="button">Refresh</button>
-                <button class="btn btn-primary" id="overview-inventory-now" type="button">Inventory now
-                  (visible)</button>
-                <button class="btn btn-primary" id="overview-security-campaign" type="button">Security campaign</button>
+                <a class="btn btn-primary" id="overview-export-report" href="/dashboard/slo.csv?hours=24&bucket_hours=6" target="_blank" rel="noopener">Export report</a>
+                <button class="btn btn-primary" id="overview-inventory-now" type="button">Inventory now (visible)</button>
                 <button class="btn" id="overview-dist-upgrade" type="button">Full upgrade (dist-upgrade)</button>
               </div>
             </div>
 
             <div class="metrics-grid" style="margin-top:0.55rem;">
               <div class="metric-card" id="kpi-hosts-online" style="cursor:pointer;" title="Shows how many hosts are currently offline out of all known hosts (offline/total), plus the offline percentage trend for the selected KPI window.">
-                <div class="metric-label">Offline host ratio</div>
+                <div class="metric-label">Fleet health</div>
                 <div class="metric-value" id="kpi-online">–</div>
                 <div class="metric-details" id="kpi-online-details">–</div>
               </div>
               <div class="metric-card" id="kpi-security" style="cursor:pointer;" title="Shows successful job executions as a percentage in the selected KPI window, with trend vs the previous equal window.">
-                <div class="metric-label">Job success rate</div>
+                <div class="metric-label">Maintenance window</div>
                 <div class="metric-value" id="kpi-sec">–</div>
                 <div class="metric-details" id="kpi-sec-details">–</div>
               </div>
               <div class="metric-card" id="kpi-failures" style="cursor:pointer;" title="Shows authentication error rate (%) from OIDC events in the selected KPI window, with trend vs the previous equal window.">
-                <div class="metric-label">Auth error rate</div>
+                <div class="metric-label">SLA status</div>
                 <div class="metric-value" id="kpi-fail">–</div>
                 <div class="metric-details" id="kpi-fail-details">OIDC events</div>
               </div>
@@ -250,13 +253,13 @@
 
             <div class="overview-cards-grid" style="margin-top:0.55rem;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.8rem;">
               <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title">Attention required</div>
+                <div class="admin-card-title">Host Inventory</div>
                 <div class="admin-card-body">
                   <div id="overview-attention" class="status-muted">Loading…</div>
                 </div>
               </div>
               <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title">Data freshness</div>
+                <div class="admin-card-title">Active Alerts</div>
                 <div class="admin-card-body">
                   <div style="display:flex;flex-direction:column;gap:0.35rem;">
                     <div><span class="status-muted">Last updates check:</span> <span id="kpi-fresh">–</span></div>
@@ -272,14 +275,14 @@
                 </div>
               </div>
               <div class="admin-card" style="margin:0;height:100%;">
-                <div class="admin-card-title">Morning brief</div>
+                <div class="admin-card-title">Operational quality</div>
                 <div class="admin-card-body">
                   <div id="overview-morning-brief" class="status-muted">Loading…</div>
                 </div>
               </div>
               <div class="admin-card" style="margin:0;height:100%;">
                 <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
-                  <span>Next 5 cronjobs</span>
+                  <span>Recent Failed Runs</span>
                   <button class="btn" id="overview-next-cronjobs-open" type="button" style="padding:0.2rem 0.45rem;">Open</button>
                 </div>
                 <div class="admin-card-body">

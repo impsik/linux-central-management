@@ -60,6 +60,8 @@
       const hostsTotal = d?.hosts?.total ?? 0;
       const hostsOnline = d?.hosts?.online ?? 0;
       const hostsOffline = d?.hosts?.offline ?? Math.max(0, hostsTotal - hostsOnline);
+      const lastUpdatedEl = document.getElementById('guardian-last-updated');
+      if (lastUpdatedEl) lastUpdatedEl.textContent = formatDateSafe(d?.ts);
       const secHosts = d?.updates?.hosts_with_security_updates ?? 0;
       const secPkgs = d?.updates?.security_total ?? 0;
       const failed24h = d?.jobs?.failed_runs_last_24h ?? 0;
@@ -88,11 +90,11 @@
       if (onlineEl) onlineEl.textContent = `${hostsOffline}/${hostsTotal}`;
       if (onlineDetailsEl) onlineDetailsEl.textContent = `${fmtNum(offline.value, 1, '%')} offline • ${trend(offline.value, offline.previous, true)} • n=${offline.sample_count ?? 0}`;
       if (secEl) secEl.textContent = fmtNum(succ.value, 1, '%');
-      if (secDetailsEl) secDetailsEl.textContent = `${trend(succ.value, succ.previous)} • n=${succ.sample_count ?? 0}`;
-      if (failEl) failEl.textContent = fmtNum(auth.value, 1, '%');
-      const authNoData = !auth.sample_count ? 'no data in window' : `${trend(auth.value, auth.previous, true)} • n=${auth.sample_count ?? 0}`;
+      if (secDetailsEl) secDetailsEl.textContent = `Using SLO window ${kpiHours}h`;
+      if (failEl) failEl.textContent = fmtNum(succ.value, 1, '%');
+      const slaDetail = !succ.sample_count ? 'no data in window' : `${trend(succ.value, succ.previous)} • n=${succ.sample_count ?? 0}`;
       const failDetailsEl = document.getElementById('kpi-fail-details');
-      if (failDetailsEl) failDetailsEl.textContent = authNoData;
+      if (failDetailsEl) failDetailsEl.textContent = slaDetail;
       if (freshEl) freshEl.textContent = formatDateSafe(freshest);
 
       if (maintenanceEl) {
@@ -103,12 +105,18 @@
             if (!md.enabled) {
               maintenanceEl.className = 'status-muted';
               maintenanceEl.textContent = 'Maintenance window: disabled';
+              if (secEl) secEl.textContent = 'Disabled';
+              if (secDetailsEl) secDetailsEl.textContent = 'No active maintenance policy';
             } else if (md.within_window_now) {
               maintenanceEl.className = 'status-ok';
               maintenanceEl.textContent = `Maintenance window: ACTIVE (${md.start}-${md.end} ${md.timezone})`;
+              if (secEl) secEl.textContent = `${md.start}-${md.end}`;
+              if (secDetailsEl) secDetailsEl.textContent = `${md.timezone} · currently active`;
             } else {
               maintenanceEl.className = 'status-warn';
               maintenanceEl.textContent = `Maintenance window: outside allowed hours (${md.start}-${md.end} ${md.timezone})`;
+              if (secEl) secEl.textContent = `${md.start}-${md.end}`;
+              if (secDetailsEl) secDetailsEl.textContent = `${md.timezone} · outside window`;
             }
           }
         } catch (_) { }

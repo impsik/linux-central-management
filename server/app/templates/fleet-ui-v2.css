@@ -153,6 +153,40 @@ body {
   filter: brightness(1.08);
 }
 
+#server-info-placeholder {
+  padding-top: .25rem;
+}
+
+#server-info-placeholder h2 {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.55rem;
+  margin-bottom: .2rem;
+}
+
+#server-info-placeholder .metrics-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .7rem;
+}
+
+#server-info-placeholder .metric-card {
+  min-height: 118px;
+  border-radius: 12px;
+}
+
+#server-info-placeholder .overview-cards-grid {
+  grid-template-columns: 2fr 1fr !important;
+}
+
+#notifications-card,
+#overview-updates-report,
+#overview-updates-report.closest-card {
+  display: none;
+}
+
+#failed-runs-card .admin-card-title {
+  font-family: "JetBrains Mono", monospace;
+}
+
 @media (max-width: 1100px) {
   .main-content {
     grid-template-columns: 1fr;
@@ -169,5 +203,10 @@ body {
 
   #fleet-actions .btn {
     width: auto;
+  }
+
+  #server-info-placeholder .metrics-grid,
+  #server-info-placeholder .overview-cards-grid {
+    grid-template-columns: 1fr !important;
   }
 }
