@@ -285,6 +285,18 @@ body {
   font-size: 12px;
 }
 
+#sshkey-sudo-mode {
+  color: #e6f0ff !important;
+  background: #0b1422 !important;
+  border-color: #2d4f73 !important;
+  opacity: 1 !important;
+}
+
+#sshkey-sudo-mode option {
+  color: #e6f0ff;
+  background: #0b1422;
+}
+
 #server-info-placeholder .admin-card-title {
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
