@@ -188,6 +188,7 @@ def list_my_deploy_requests(db: Session = Depends(get_db), user: AppUser = Depen
                 "agent_ids": r.agent_ids,
                 "status": r.status,
                 "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() != 'N'),
+                "sudo_profile": str(getattr(r, 'sudo_profile', 'B')).upper(),
                 "sudo_mode": ("none" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'N' else ("full" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'A' else 'restricted')),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "approved_by": r.approved_by,
@@ -287,6 +288,7 @@ def admin_list_pending(db: Session = Depends(get_db), admin: AppUser = Depends(r
                 "targets": targets,
                 "status": r.status,
                 "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() != 'N'),
+                "sudo_profile": str(getattr(r, 'sudo_profile', 'B')).upper(),
                 "sudo_mode": ("none" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'N' else ("full" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'A' else 'restricted')),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
@@ -332,8 +334,17 @@ async def admin_approve(req_id: str, db: Session = Depends(get_db), admin: AppUs
         sudo_profile = "N"
     elif raw_profile in {"A", "ALL", "FULL", "ADMIN"}:
         sudo_profile = "A"
-    else:
+    elif raw_profile in {"B", "RESTRICTED", "TRUE", "1", "YES"}:
         sudo_profile = "B"
+    else:
+        msg = f"invalid sudo profile on request: {raw_profile!r}"
+        with transaction(db):
+            r.status = "failed"
+            r.error = msg
+            r.approved_by = getattr(admin, "username", None)
+            r.approved_at = datetime.now(timezone.utc)
+            r.finished_at = datetime.now(timezone.utc)
+        return {"id": str(r.id), "status": "failed", "error": msg}
 
     with transaction(db):
         r.status = "approved"
@@ -369,7 +380,7 @@ async def admin_approve(req_id: str, db: Session = Depends(get_db), admin: AppUs
         },
     )
 
-    return {"id": str(r.id), "status": "approved", "job_id": created.job_key}
+    return {"id": str(r.id), "status": "approved", "job_id": created.job_key, "sudo_profile": sudo_profile}
 
 
 @router.post("/admin/deploy-requests/{req_id}/reject")
