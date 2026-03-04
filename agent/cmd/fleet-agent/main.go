@@ -2274,14 +2274,14 @@ func deploySSHKey(ctx context.Context, username, publicKey, sudoProfile string) 
 		// Avoid nested quoting (same issue as authorized_keys). Write via sudo tee.
 		cmds = append(cmds, fmt.Sprintf(
 			"printf '%%s' %s | sudo -n tee %s >/dev/null",
-			shellQuote(content), shellEscape(sudoers),
+			shellQuote(content), shellQuote(sudoers),
 		))
-		cmds = append(cmds, fmt.Sprintf("sudo -n chmod 440 %s", shellEscape(sudoers)))
-		cmds = append(cmds, fmt.Sprintf("sudo -n visudo -cf %s", shellEscape(sudoers)))
+		cmds = append(cmds, fmt.Sprintf("sudo -n chmod 440 %s", shellQuote(sudoers)))
+		cmds = append(cmds, fmt.Sprintf("sudo -n visudo -cf %s", shellQuote(sudoers)))
 		if profile == "A" {
-			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(ALL) NOPASSWD:ALL"), shellEscape(sudoers)))
+			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(ALL) NOPASSWD:ALL"), shellQuote(sudoers)))
 		} else {
-			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(root) NOPASSWD:"), shellEscape(sudoers)))
+			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(root) NOPASSWD:"), shellQuote(sudoers)))
 		}
 	}
 
