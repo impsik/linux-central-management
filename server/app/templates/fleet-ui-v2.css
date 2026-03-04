@@ -164,6 +164,19 @@ body {
   color: #ecfeff;
 }
 
+#server-info-header .server-info-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+  gap: .9rem;
+  align-items: start;
+}
+
+#server-info-header .host-metadata-card {
+  justify-self: end;
+  width: 100%;
+  max-width: 520px;
+}
+
 .metric-card,
 .admin-card,
 .section-card,
@@ -306,5 +319,14 @@ body {
   #server-info-placeholder .metrics-grid,
   #server-info-placeholder .overview-cards-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  #server-info-header .server-info-title {
+    grid-template-columns: 1fr;
+  }
+
+  #server-info-header .host-metadata-card {
+    justify-self: stretch;
+    max-width: none;
   }
 }

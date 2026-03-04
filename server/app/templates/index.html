@@ -100,17 +100,17 @@
                 <h2 id="server-info-hostname">Host Details</h2>
                 <div id="server-info-details" class="server-info-details"></div>
                 <div id="server-info-labels" class="label-badges"></div>
-                <div class="admin-card" style="margin-top:0.6rem;max-width:760px;">
-                  <div class="admin-card-title">Host metadata</div>
-                  <div class="admin-card-body" style="display:grid;gap:0.45rem;">
-                    <input id="host-meta-name" class="host-search" type="text" placeholder="Agent display name / hostname" />
-                    <input id="host-meta-role" class="host-search" type="text" placeholder="Role (e.g. web, db, worker)" />
-                    <div id="host-meta-env-list" style="display:grid;gap:0.35rem;"></div>
-                    <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
-                      <button class="btn" id="host-meta-env-add" type="button">Add env entry</button>
-                      <button class="btn btn-primary" id="host-meta-save" type="button">Save metadata</button>
-                      <span id="host-meta-status" class="status-muted" style="font-size:0.85rem;"></span>
-                    </div>
+              </div>
+              <div class="admin-card host-metadata-card" style="margin-top:0;max-width:760px;">
+                <div class="admin-card-title">Host metadata</div>
+                <div class="admin-card-body" style="display:grid;gap:0.45rem;">
+                  <input id="host-meta-name" class="host-search" type="text" placeholder="Agent display name / hostname" />
+                  <input id="host-meta-role" class="host-search" type="text" placeholder="Role (e.g. web, db, worker)" />
+                  <div id="host-meta-env-list" style="display:grid;gap:0.35rem;"></div>
+                  <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
+                    <button class="btn" id="host-meta-env-add" type="button">Add env entry</button>
+                    <button class="btn btn-primary" id="host-meta-save" type="button">Save metadata</button>
+                    <span id="host-meta-status" class="status-muted" style="font-size:0.85rem;"></span>
                   </div>
                 </div>
               </div>
@@ -4367,6 +4367,24 @@
               const prev = allHosts[idx] || {};
               allHosts[idx] = { ...prev, hostname: updatedHost.hostname || prev.hostname, labels: updatedHost.labels || prev.labels || {} };
             }
+
+            if (String(currentAgentId || '') === String(updatedHost.agent_id || '')) {
+              const labelsEl = document.getElementById('server-info-labels');
+              if (labelsEl) {
+                const labels = (updatedHost.labels && typeof updatedHost.labels === 'object') ? updatedHost.labels : {};
+                const envVars = (labels.env_vars && typeof labels.env_vars === 'object') ? labels.env_vars : {};
+                const env = labels.env ? String(labels.env) : (envVars.env ? String(envVars.env) : '');
+                const role = labels.role ? String(labels.role) : '';
+                const parts = [];
+                if (env) parts.push(`<span class="label-badge">env: <code>${escapeHtml(env)}</code></span>`);
+                if (role) parts.push(`<span class="label-badge">role: <code>${escapeHtml(role)}</code></span>`);
+                labelsEl.innerHTML = parts.length ? parts.join('') : `<span class="label-badge">env: <code>n/a</code></span><span class="label-badge">role: <code>n/a</code></span>`;
+              }
+
+              const headerNameEl = document.getElementById('server-info-hostname');
+              if (headerNameEl && updatedHost.hostname) headerNameEl.textContent = String(updatedHost.hostname);
+            }
+
             rebuildLabelFilterOptions(allHosts);
             applyHostFilters();
           }
