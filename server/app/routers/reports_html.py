@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
+from ..models import Host, HostUser
 from ..routers.reports import hosts_updates_report
+from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -128,6 +131,124 @@ def hosts_updates_html(
           <th class='num'>{sort_link('All updates','updates')}</th>
           <th>Online</th>
           <th>{sort_link('Last seen','last_seen')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {body}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>""",
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/user-presence.html", response_class=HTMLResponse)
+def user_presence_html(
+    username: str = Query(..., min_length=1, max_length=128),
+    exact: bool = True,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    now = datetime.now(timezone.utc)
+    ts = now.isoformat()
+
+    def esc(s: str) -> str:
+        return (
+            str(s)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    u = (username or "").strip()
+    if exact:
+        stmt = (
+            select(HostUser, Host)
+            .join(Host, Host.id == HostUser.host_id)
+            .where(func.lower(HostUser.username) == u.lower())
+            .order_by(Host.hostname.asc(), Host.agent_id.asc())
+            .limit(5000)
+        )
+    else:
+        stmt = (
+            select(HostUser, Host)
+            .join(Host, Host.id == HostUser.host_id)
+            .where(func.lower(HostUser.username).like(f"%{u.lower()}%"))
+            .order_by(Host.hostname.asc(), Host.agent_id.asc())
+            .limit(5000)
+        )
+
+    rows = db.execute(stmt).all()
+    filtered: list[tuple[HostUser, Host]] = []
+    for hu, h in rows:
+        if is_host_visible_to_user(db, user, h):
+            filtered.append((hu, h))
+
+    html_rows: list[str] = []
+    for hu, h in filtered:
+        host = esc(h.hostname or h.agent_id or "")
+        agent_id = esc(h.agent_id or "")
+        ip = esc(h.ip_address or "")
+        os_name = esc(((h.os_id or "") + " " + (h.os_version or "")).strip() or "-")
+        last_seen = esc(h.last_seen.isoformat() if getattr(h, "last_seen", None) else "")
+        user_last_seen = esc(hu.last_seen.isoformat() if getattr(hu, "last_seen", None) else "")
+        shell = esc(hu.shell or "")
+        home = esc(hu.home or "")
+        sudo = "yes" if bool(getattr(hu, "has_sudo", False)) else "no"
+        locked = "yes" if bool(getattr(hu, "is_locked", False)) else "no"
+
+        html_rows.append(
+            f"<tr>"
+            f"<td><b>{host}</b><div class='muted'>{agent_id}{(' • ' + ip) if ip else ''}</div></td>"
+            f"<td><code>{esc(hu.username)}</code></td>"
+            f"<td>{os_name}</td>"
+            f"<td><code>{shell or '-'}</code><div class='muted'>{home or '-'}</div></td>"
+            f"<td>{sudo}</td>"
+            f"<td>{locked}</td>"
+            f"<td class='muted'>{last_seen}</td>"
+            f"<td class='muted'>{user_last_seen}</td>"
+            f"</tr>"
+        )
+
+    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='8' class='muted'>No matching accounts found on visible hosts</td></tr>"
+
+    return HTMLResponse(
+        content=f"""<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8' />
+  <title>Fleet Report - User Presence</title>
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:#0f172a; }}
+    h1 {{ margin: 0 0 6px 0; }}
+    .meta {{ color:#475569; margin-bottom: 16px; }}
+    table {{ border-collapse: collapse; width: 100%; min-width: 980px; }}
+    th, td {{ border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; vertical-align: top; }}
+    th {{ background: #f8fafc; position: sticky; top: 0; }}
+    .muted {{ color:#64748b; font-size: 12px; margin-top: 2px; }}
+    code {{ background:#f1f5f9; padding: 2px 6px; border-radius: 6px; }}
+    .wrap {{ overflow-x:auto; }}
+  </style>
+</head>
+<body>
+  <h1>User Presence Report</h1>
+  <div class='meta'>Generated: {esc(ts)} UTC • username={esc(u)} • exact={esc(str(exact))} • rows={len(filtered)}</div>
+  <div class='wrap'>
+    <table>
+      <thead>
+        <tr>
+          <th>Host</th>
+          <th>User</th>
+          <th>OS</th>
+          <th>Shell / Home</th>
+          <th>Sudo</th>
+          <th>Locked</th>
+          <th>Host last seen</th>
+          <th>User last seen</th>
         </tr>
       </thead>
       <tbody>

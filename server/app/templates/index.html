@@ -591,6 +591,20 @@
             <a class="btn" href="/dashboard/slo.csv?hours=24&bucket_hours=6" target="_blank" rel="noopener">Export SLO CSV</a>
           </div>
         </div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">User presence report</div>
+          <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="min-width:260px;">
+              <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Username</label>
+              <input id="reports-user-presence-username" class="host-search" type="text" placeholder="e.g. mihkel" />
+            </div>
+            <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
+              <input id="reports-user-presence-exact" type="checkbox" checked /> Exact match
+            </label>
+            <button class="btn btn-primary" id="reports-user-presence-open" type="button">Open HTML report</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -4496,6 +4510,22 @@
       });
     }
 
+    function initReportsControls() {
+      const btn = document.getElementById('reports-user-presence-open');
+      if (!btn) return;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const u = String(document.getElementById('reports-user-presence-username')?.value || '').trim();
+        const exact = !!document.getElementById('reports-user-presence-exact')?.checked;
+        if (!u) {
+          if (typeof showToast === 'function') showToast('Enter username', 'error');
+          return;
+        }
+        const qs = new URLSearchParams({ username: u, exact: String(exact) }).toString();
+        window.open(`/reports/user-presence.html?${qs}`, '_blank', 'noopener');
+      });
+    }
+
 // Load hosts on page load
     function safeInit(name, fn) {
       try { if (typeof fn === 'function') fn(); }
@@ -4507,6 +4537,7 @@
 
     safeInit('initHostFilters', initHostFilters);
     safeInit('initGlobalSearch', initGlobalSearch);
+    safeInit('initReportsControls', initReportsControls);
     safeInit('initFleetOverviewControls', initFleetOverviewControls);
     safeInit('initHostsTableControls', initHostsTableControls);
     safeInit('initCronjobsControls', initCronjobsControls);
