@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+from io import BytesIO
+
+from openpyxl import Workbook
 from sqlalchemy import select, func, delete
 from sqlalchemy.orm import Session
 
@@ -133,6 +136,67 @@ def hosts_updates_html(
 </html>""",
         media_type="text/html",
         headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/hosts-updates.xlsx")
+def hosts_updates_xlsx(
+    only_pending: bool = True,
+    online_only: bool = False,
+    sort: str = "security_updates",
+    order: str = "desc",
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    data = hosts_updates_report(
+        only_pending=only_pending,
+        online_only=online_only,
+        sort=sort,
+        order=order,
+        limit=5000,
+        offset=0,
+        db=db,
+        user=user,
+    )
+
+    rows = data.get("items") or []
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Hosts Updates"
+
+    ws.append(["Host", "Agent ID", "IP Address", "OS", "Kernel", "Security Updates", "All Updates", "Online", "Last Seen"])
+
+    for r in rows:
+      ws.append([
+          r.get("hostname") or r.get("agent_id") or "",
+          r.get("agent_id") or "",
+          r.get("ip_address") or "",
+          ((r.get("os_id") or "") + " " + (r.get("os_version") or "")).strip(),
+          r.get("kernel") or "",
+          int(r.get("security_updates") or 0),
+          int(r.get("updates") or 0),
+          "online" if r.get("is_online") else "offline",
+          r.get("last_seen") or "",
+      ])
+
+    # Simple width tuning for readability in Excel.
+    widths = {"A": 28, "B": 28, "C": 18, "D": 24, "E": 22, "F": 16, "G": 14, "H": 10, "I": 28}
+    for col, width in widths.items():
+        ws.column_dimensions[col].width = width
+
+    stream = BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+
+    filename = f"hosts-updates-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}Z.xlsx"
+    return Response(
+        content=stream.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
     )
 
 
