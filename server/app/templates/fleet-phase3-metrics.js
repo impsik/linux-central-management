@@ -140,7 +140,16 @@
     metricsLifecycleState.set('topProcessesInFlight', true);
     try {
       const resp = await fetch(`/hosts/${agentId}/top-processes`);
-      if (!resp.ok) throw new Error(resp.statusText);
+      if (!resp.ok) {
+        if (resp.status === 503) {
+          // Agent offline/unavailable: don't spam console; show neutral state.
+          if (metricsLifecycleState.get('currentMetricsAgentId') === agentId) {
+            updateTopProcessesTable([]);
+          }
+          return;
+        }
+        throw new Error(resp.statusText);
+      }
       const data = await resp.json();
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
       updateTopProcessesTable(data.top_processes || []);
@@ -164,7 +173,25 @@
 
     try {
       const response = await fetch(`/hosts/${agentId}/metrics`);
-      if (!response.ok) throw new Error(`Failed to load metrics: ${response.statusText}`);
+      if (!response.ok) {
+        if (response.status === 503) {
+          // Agent offline/unavailable. Keep UI calm and informative.
+          if (metricsLifecycleState.get('currentMetricsAgentId') === agentId && !silent) {
+            const setIfLoading = (id, text) => {
+              const el = document.getElementById(id);
+              if (!el) return;
+              const cur = (el.textContent || '').trim();
+              if (!cur || cur === '-' || cur === 'Loading...' || cur === 'Error') el.textContent = text;
+            };
+            setIfLoading('disk-usage', 'Unavailable');
+            setIfLoading('memory-usage', 'Unavailable');
+            setIfLoading('vcpus', 'Unavailable');
+            setIfLoading('ip-addresses', 'Unavailable');
+          }
+          return;
+        }
+        throw new Error(`Failed to load metrics: ${response.statusText}`);
+      }
       const data = await response.json();
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
 
