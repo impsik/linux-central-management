@@ -105,6 +105,7 @@ def hosts_updates_html(
 <head>
   <meta charset='utf-8' />
   <title>Fleet Report - Pending Updates</title>
+  <script src='/assets/fleet-theme-bootstrap.js'></script>
   <style>
     :root {{ --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }}
     :root[data-theme="dark"] {{ --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }}
@@ -130,7 +131,6 @@ def hosts_updates_html(
   </style>
 </head>
 <body>
-  <div class='toolbar'><button class='theme-btn' id='theme-btn' type='button'>Theme</button></div>
   <h1>Pending Updates Report</h1>
   <div class='meta'>Generated: {esc(ts)} UTC • only_pending={esc(str(only_pending))} • online_only={esc(str(online_only))} • sort={esc(sort)} {esc(order)} • rows={len(rows)}</div>
   <div class='wrap'>
@@ -151,20 +151,6 @@ def hosts_updates_html(
       </tbody>
     </table>
   </div>
-  <script>
-    (function () {{
-      function getTheme() {{
-        try {{ return localStorage.getItem('fleet_theme') || 'dark'; }} catch (_) {{ return 'dark'; }}
-      }}
-      function setTheme(t) {{
-        document.documentElement.dataset.theme = t;
-        try {{ localStorage.setItem('fleet_theme', t); }} catch (_) {{}}
-      }}
-      setTheme(getTheme());
-      var b = document.getElementById('theme-btn');
-      if (b) b.addEventListener('click', function () {{ setTheme((document.documentElement.dataset.theme || 'dark') === 'dark' ? 'light' : 'dark'); }});
-    }})();
-  </script>
 </body>
 </html>""",
         media_type="text/html",
@@ -337,6 +323,7 @@ async def user_presence_html(
 <head>
   <meta charset='utf-8' />
   <title>Fleet Report - User Presence</title>
+  <script src='/assets/fleet-theme-bootstrap.js'></script>
   <style>
     :root {{ --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }}
     :root[data-theme="dark"] {{ --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }}
@@ -354,7 +341,6 @@ async def user_presence_html(
   </style>
 </head>
 <body>
-  <div class='toolbar'><button class='theme-btn' id='theme-btn' type='button'>Theme</button></div>
   <h1>User Presence Report</h1>
   <div class='meta'>Generated: {esc(ts)} UTC • username={esc(u)} • exact={esc(str(exact))} • rows={len(rows)} • scanned_hosts={len(visible_hosts)} • offline_skipped={skipped_offline} • failed_hosts={failed_hosts}</div>
   <div class='wrap'>
@@ -375,20 +361,6 @@ async def user_presence_html(
       </tbody>
     </table>
   </div>
-  <script>
-    (function () {{
-      function getTheme() {{
-        try {{ return localStorage.getItem('fleet_theme') || 'dark'; }} catch (_) {{ return 'dark'; }}
-      }}
-      function setTheme(t) {{
-        document.documentElement.dataset.theme = t;
-        try {{ localStorage.setItem('fleet_theme', t); }} catch (_) {{}}
-      }}
-      setTheme(getTheme());
-      var b = document.getElementById('theme-btn');
-      if (b) b.addEventListener('click', function () {{ setTheme((document.documentElement.dataset.theme || 'dark') === 'dark' ? 'light' : 'dark'); }});
-    }})();
-  </script>
 </body>
 </html>""",
         media_type="text/html",
