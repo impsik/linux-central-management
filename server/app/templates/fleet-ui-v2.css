@@ -321,19 +321,42 @@ body {
 }
 
 /* Light-theme fixes for v2: neutralize hardcoded dark blends */
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 8% -10%, rgba(20, 184, 166, 0.06), transparent 42%),
+    radial-gradient(circle at 96% -15%, rgba(14, 165, 233, 0.05), transparent 40%),
+    var(--app-surface);
+}
+
 :root[data-theme="light"] .header {
-  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
-  background: color-mix(in srgb, var(--panel) 96%, #ffffff);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  background: color-mix(in srgb, var(--panel) 97%, #ffffff);
+}
+
+:root[data-theme="light"] #fleet-actions {
+  background: linear-gradient(176deg, #f8fbff, #eef4fb);
+  border-color: #d7e2ef;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] #fleet-actions .btn {
+  color: #1f3a5b;
+}
+
+:root[data-theme="light"] #fleet-actions .btn:hover {
+  background: color-mix(in srgb, #3b82f6 12%, transparent);
+  border-color: color-mix(in srgb, #3b82f6 28%, transparent);
 }
 
 :root[data-theme="light"] .guardian-top-search .host-search {
-  border-color: color-mix(in srgb, #14b8a6 28%, var(--border));
-  background: color-mix(in srgb, var(--panel-2) 86%, #ffffff);
+  border-color: color-mix(in srgb, #14b8a6 22%, var(--border));
+  background: color-mix(in srgb, var(--panel-2) 88%, #ffffff);
   color: var(--text);
 }
 
 :root[data-theme="light"] .fleet-main-shell {
-  background: color-mix(in srgb, var(--panel) 97%, #ffffff);
+  background: color-mix(in srgb, var(--panel) 98%, #ffffff);
+  border-color: #d9e3ef;
 }
 
 :root[data-theme="light"] .metric-card,
@@ -342,16 +365,21 @@ body {
 :root[data-theme="light"] .overview-card,
 :root[data-theme="light"] .server-info-content .kpi-card,
 :root[data-theme="light"] .server-info-content .stat-card {
+  border-color: color-mix(in srgb, var(--border) 88%, #ffffff) !important;
   background: color-mix(in srgb, var(--panel) 98%, #ffffff) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, #14b8a6 10%, transparent);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
 }
 
 :root[data-theme="light"] #server-info-placeholder .metric-card {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, #ffffff), color-mix(in srgb, var(--panel-2) 86%, #ffffff)) !important;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 97%, #ffffff), color-mix(in srgb, var(--panel-2) 90%, #ffffff)) !important;
 }
 
 :root[data-theme="light"] #server-info-placeholder .metric-card .metric-label {
-  color: color-mix(in srgb, var(--muted-2) 84%, #0f172a);
+  color: color-mix(in srgb, var(--muted-2) 88%, #0f172a);
+}
+
+:root[data-theme="light"] .process-table th {
+  color: color-mix(in srgb, var(--muted-2) 92%, #334155) !important;
 }
 
 :root[data-theme="light"] #sshkey-sudo-mode {
