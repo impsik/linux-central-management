@@ -320,6 +320,51 @@ body {
   box-shadow: inset 2px 0 0 #14b8a6;
 }
 
+/* Light-theme fixes for v2: neutralize hardcoded dark blends */
+:root[data-theme="light"] .header {
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  background: color-mix(in srgb, var(--panel) 96%, #ffffff);
+}
+
+:root[data-theme="light"] .guardian-top-search .host-search {
+  border-color: color-mix(in srgb, #14b8a6 28%, var(--border));
+  background: color-mix(in srgb, var(--panel-2) 86%, #ffffff);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .fleet-main-shell {
+  background: color-mix(in srgb, var(--panel) 97%, #ffffff);
+}
+
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .admin-card,
+:root[data-theme="light"] .section-card,
+:root[data-theme="light"] .overview-card,
+:root[data-theme="light"] .server-info-content .kpi-card,
+:root[data-theme="light"] .server-info-content .stat-card {
+  background: color-mix(in srgb, var(--panel) 98%, #ffffff) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #14b8a6 10%, transparent);
+}
+
+:root[data-theme="light"] #server-info-placeholder .metric-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, #ffffff), color-mix(in srgb, var(--panel-2) 86%, #ffffff)) !important;
+}
+
+:root[data-theme="light"] #server-info-placeholder .metric-card .metric-label {
+  color: color-mix(in srgb, var(--muted-2) 84%, #0f172a);
+}
+
+:root[data-theme="light"] #sshkey-sudo-mode {
+  color: var(--text) !important;
+  background: var(--panel) !important;
+  border-color: var(--border) !important;
+}
+
+:root[data-theme="light"] #sshkey-sudo-mode option {
+  color: var(--text);
+  background: var(--panel);
+}
+
 @media (max-width: 1100px) {
   .main-content {
     grid-template-columns: 1fr;
