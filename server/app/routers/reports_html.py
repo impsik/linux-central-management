@@ -106,23 +106,31 @@ def hosts_updates_html(
   <meta charset='utf-8' />
   <title>Fleet Report - Pending Updates</title>
   <style>
-    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:#0f172a; }}
-    h1 {{ margin: 0 0 6px 0; }}
-    .meta {{ color:#475569; margin-bottom: 16px; }}
-    table {{ border-collapse: collapse; width: 100%; min-width: 900px; }}
-    th, td {{ border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; vertical-align: top; }}
-    th {{ background: #f8fafc; position: sticky; top: 0; }}
-    th a:hover {{ text-decoration: underline; }}
-    .muted {{ color:#64748b; font-size: 12px; margin-top: 2px; }}
-    .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
-    code {{ background:#f1f5f9; padding: 2px 6px; border-radius: 6px; }}
-    .pill {{ display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }}
-    .pill.online {{ background:#dcfce7; color:#166534; }}
-    .pill.offline {{ background:#fee2e2; color:#991b1b; }}
-    .wrap {{ overflow-x:auto; }}
+    :root { --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }
+    :root[data-theme="dark"] { --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:var(--text); background:var(--bg); }
+    h1 { margin: 0 0 6px 0; }
+    .meta { color:var(--muted); margin-bottom: 16px; }
+    table { border-collapse: collapse; width: 100%; min-width: 900px; }
+    th, td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }
+    th { background: var(--th); position: sticky; top: 0; }
+    th a:hover { text-decoration: underline; }
+    a { color: inherit; }
+    .muted { color:var(--muted2); font-size: 12px; margin-top: 2px; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    code { background:var(--code); padding: 2px 6px; border-radius: 6px; }
+    .pill { display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+    .pill.online { background:#dcfce7; color:#166534; }
+    .pill.offline { background:#fee2e2; color:#991b1b; }
+    :root[data-theme="dark"] .pill.online { background:#14532d; color:#bbf7d0; }
+    :root[data-theme="dark"] .pill.offline { background:#7f1d1d; color:#fecaca; }
+    .wrap { overflow-x:auto; }
+    .toolbar { display:flex; justify-content:flex-end; margin-bottom: 10px; }
+    .theme-btn { border:1px solid var(--border); background:var(--btn); color:var(--text); border-radius:10px; padding:6px 10px; cursor:pointer; font-weight:600; }
   </style>
 </head>
 <body>
+  <div class='toolbar'><button class='theme-btn' id='theme-btn' type='button'>Theme</button></div>
   <h1>Pending Updates Report</h1>
   <div class='meta'>Generated: {esc(ts)} UTC • only_pending={esc(str(only_pending))} • online_only={esc(str(online_only))} • sort={esc(sort)} {esc(order)} • rows={len(rows)}</div>
   <div class='wrap'>
@@ -143,6 +151,20 @@ def hosts_updates_html(
       </tbody>
     </table>
   </div>
+  <script>
+    (function () {
+      function getTheme() {
+        try { return localStorage.getItem('fleet_theme') || 'dark'; } catch (_) { return 'dark'; }
+      }
+      function setTheme(t) {
+        document.documentElement.dataset.theme = t;
+        try { localStorage.setItem('fleet_theme', t); } catch (_) {}
+      }
+      setTheme(getTheme());
+      var b = document.getElementById('theme-btn');
+      if (b) b.addEventListener('click', function () { setTheme((document.documentElement.dataset.theme || 'dark') === 'dark' ? 'light' : 'dark'); });
+    })();
+  </script>
 </body>
 </html>""",
         media_type="text/html",
@@ -316,18 +338,23 @@ async def user_presence_html(
   <meta charset='utf-8' />
   <title>Fleet Report - User Presence</title>
   <style>
-    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:#0f172a; }}
-    h1 {{ margin: 0 0 6px 0; }}
-    .meta {{ color:#475569; margin-bottom: 16px; }}
-    table {{ border-collapse: collapse; width: 100%; min-width: 920px; }}
-    th, td {{ border-bottom: 1px solid #e2e8f0; padding: 10px 8px; text-align: left; vertical-align: top; }}
-    th {{ background: #f8fafc; position: sticky; top: 0; }}
-    .muted {{ color:#64748b; font-size: 12px; margin-top: 2px; }}
-    code {{ background:#f1f5f9; padding: 2px 6px; border-radius: 6px; }}
-    .wrap {{ overflow-x:auto; }}
+    :root { --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }
+    :root[data-theme="dark"] { --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:var(--text); background:var(--bg); }
+    h1 { margin: 0 0 6px 0; }
+    .meta { color:var(--muted); margin-bottom: 16px; }
+    table { border-collapse: collapse; width: 100%; min-width: 920px; }
+    th, td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }
+    th { background: var(--th); position: sticky; top: 0; }
+    .muted { color:var(--muted2); font-size: 12px; margin-top: 2px; }
+    code { background:var(--code); padding: 2px 6px; border-radius: 6px; }
+    .wrap { overflow-x:auto; }
+    .toolbar { display:flex; justify-content:flex-end; margin-bottom: 10px; }
+    .theme-btn { border:1px solid var(--border); background:var(--btn); color:var(--text); border-radius:10px; padding:6px 10px; cursor:pointer; font-weight:600; }
   </style>
 </head>
 <body>
+  <div class='toolbar'><button class='theme-btn' id='theme-btn' type='button'>Theme</button></div>
   <h1>User Presence Report</h1>
   <div class='meta'>Generated: {esc(ts)} UTC • username={esc(u)} • exact={esc(str(exact))} • rows={len(rows)} • scanned_hosts={len(visible_hosts)} • offline_skipped={skipped_offline} • failed_hosts={failed_hosts}</div>
   <div class='wrap'>
@@ -348,6 +375,20 @@ async def user_presence_html(
       </tbody>
     </table>
   </div>
+  <script>
+    (function () {
+      function getTheme() {
+        try { return localStorage.getItem('fleet_theme') || 'dark'; } catch (_) { return 'dark'; }
+      }
+      function setTheme(t) {
+        document.documentElement.dataset.theme = t;
+        try { localStorage.setItem('fleet_theme', t); } catch (_) {}
+      }
+      setTheme(getTheme());
+      var b = document.getElementById('theme-btn');
+      if (b) b.addEventListener('click', function () { setTheme((document.documentElement.dataset.theme || 'dark') === 'dark' ? 'light' : 'dark'); });
+    })();
+  </script>
 </body>
 </html>""",
         media_type="text/html",
