@@ -2255,14 +2255,26 @@ func deploySSHKey(ctx context.Context, username, publicKey, sudoProfile string) 
 		shellQuote(secondField(key)), shellEscape(username), shellQuote(line+"\n"), shellEscape(username),
 	))
 
-	profile := strings.TrimSpace(strings.ToUpper(sudoProfile))
-	if profile == "" {
-		profile = "B"
-	}
+	profile := normalizeSudoProfile(sudoProfile)
 
 	// Sudo profiles:
+	// N = none (no fleet sudoers file + no sudo/wheel group membership)
 	// B = restricted apt/systemctl/reboot
 	// A = full sudo (admin-like)
+	if profile == "N" {
+		sudoers := fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)
+		// Idempotent revoke path:
+		// - remove fleet sudoers include if present
+		// - remove from sudo/wheel only when group exists and user is currently a member
+		cmds = append(cmds, fmt.Sprintf("sudo -n rm -f %s", shellQuote(sudoers)))
+		for _, group := range []string{"sudo", "wheel"} {
+			cmds = append(cmds, fmt.Sprintf(
+				"if getent group %s >/dev/null 2>&1 && id -nG %s | tr ' ' '\\n' | grep -Fxq %s; then sudo -n gpasswd -d %s %s >/dev/null; fi",
+				shellQuote(group), shellEscape(username), shellQuote(group), shellEscape(username), shellQuote(group),
+			))
+		}
+	}
+
 	if profile == "B" || profile == "A" {
 		sudoers := fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)
 		content := ""
@@ -2304,6 +2316,17 @@ func secondField(pub string) string {
 		return parts[1]
 	}
 	return pub
+}
+
+func normalizeSudoProfile(profile string) string {
+	switch strings.ToUpper(strings.TrimSpace(profile)) {
+	case "A":
+		return "A"
+	case "N", "NONE":
+		return "N"
+	default:
+		return "B"
+	}
 }
 
 func shellEscape(s string) string {

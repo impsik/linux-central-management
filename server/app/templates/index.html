@@ -771,6 +771,7 @@
                   <option value="none">No sudo</option>
                 </select>
               </label>
+              <span style="color:var(--muted-2);font-size:0.85rem;">Note: selecting <strong>No sudo</strong> removes existing Fleet sudoers entry and sudo/wheel group access for that user on target hosts.</span>
               <button class="btn btn-primary" id="sshkey-request-deploy" type="button">Request deploy (selected key + selected hosts)</button>
               <span id="sshkey-request-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
             </div>
@@ -4171,7 +4172,10 @@
               const keyShort = (String(it.key_id||'')).slice(0,8);
               const keyLabel = (String(it.key_name||'').trim()) ? `${it.key_name} (${keyShort})` : keyShort;
               const sudoMode = it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none');
-              const ok = confirm(`Approve deployment request?\n\nRequested by: ${it.user_name || it.user_id}\nKey: ${keyLabel}\nSudo mode: ${sudoMode}\nTargets:\n${t.title}`);
+              const revokeWarning = (String(sudoMode).toLowerCase() === 'none')
+                ? '\n\n⚠ No sudo will remove existing Fleet sudoers entry and sudo/wheel group access for this user on target hosts.'
+                : '';
+              const ok = confirm(`Approve deployment request?\n\nRequested by: ${it.user_name || it.user_id}\nKey: ${keyLabel}\nSudo mode: ${sudoMode}\nTargets:\n${t.title}${revokeWarning}`);
               if (!ok) return;
             }
 

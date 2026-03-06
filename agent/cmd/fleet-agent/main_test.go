@@ -39,3 +39,27 @@ func TestParsePasswdStatusAll(t *testing.T) {
 		t.Fatalf("lockeduser status = %q, want L", m["lockeduser"])
 	}
 }
+
+func TestNormalizeSudoProfile(t *testing.T) {
+	cases := map[string]string{
+		"":         "B",
+		"  ":       "B",
+		"A":        "A",
+		"a":        "A",
+		"B":        "B",
+		"b":        "B",
+		"N":        "N",
+		"n":        "N",
+		"none":     "N",
+		" NONE  ":  "N",
+		"unknown":  "B",
+		"reduced?": "B",
+	}
+
+	for in, want := range cases {
+		got := normalizeSudoProfile(in)
+		if got != want {
+			t.Fatalf("normalizeSudoProfile(%q)=%q, want %q", in, got, want)
+		}
+	}
+}
