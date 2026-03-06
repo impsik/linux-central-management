@@ -338,19 +338,19 @@ async def user_presence_html(
   <meta charset='utf-8' />
   <title>Fleet Report - User Presence</title>
   <style>
-    :root { --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }
-    :root[data-theme="dark"] { --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }
-    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:var(--text); background:var(--bg); }
-    h1 { margin: 0 0 6px 0; }
-    .meta { color:var(--muted); margin-bottom: 16px; }
-    table { border-collapse: collapse; width: 100%; min-width: 920px; }
-    th, td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }
-    th { background: var(--th); position: sticky; top: 0; }
-    .muted { color:var(--muted2); font-size: 12px; margin-top: 2px; }
-    code { background:var(--code); padding: 2px 6px; border-radius: 6px; }
-    .wrap { overflow-x:auto; }
-    .toolbar { display:flex; justify-content:flex-end; margin-bottom: 10px; }
-    .theme-btn { border:1px solid var(--border); background:var(--btn); color:var(--text); border-radius:10px; padding:6px 10px; cursor:pointer; font-weight:600; }
+    :root {{ --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }}
+    :root[data-theme="dark"] {{ --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }}
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:var(--text); background:var(--bg); }}
+    h1 {{ margin: 0 0 6px 0; }}
+    .meta {{ color:var(--muted); margin-bottom: 16px; }}
+    table {{ border-collapse: collapse; width: 100%; min-width: 920px; }}
+    th, td {{ border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }}
+    th {{ background: var(--th); position: sticky; top: 0; }}
+    .muted {{ color:var(--muted2); font-size: 12px; margin-top: 2px; }}
+    code {{ background:var(--code); padding: 2px 6px; border-radius: 6px; }}
+    .wrap {{ overflow-x:auto; }}
+    .toolbar {{ display:flex; justify-content:flex-end; margin-bottom: 10px; }}
+    .theme-btn {{ border:1px solid var(--border); background:var(--btn); color:var(--text); border-radius:10px; padding:6px 10px; cursor:pointer; font-weight:600; }}
   </style>
 </head>
 <body>
