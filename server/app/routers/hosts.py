@@ -1339,9 +1339,13 @@ async def get_df(agent_id: str, wait: bool = True, db: Session = Depends(get_db)
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        if t is not None:
-            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
-        raise HTTPException(503, "Agent appears offline")
+        msg = f"Agent appears offline (last seen {int(t)}s ago)" if t is not None else "Agent appears offline"
+        return {
+            "stdout": msg,
+            "unavailable": True,
+            "reason": "agent_offline",
+            "last_seen_seconds_ago": int(t) if t is not None else None,
+        }
 
     with transaction(db):
         created = create_job_with_runs(
