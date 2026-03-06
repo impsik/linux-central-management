@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
+from ..config import settings
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
 from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage, CronJob
 from ..services.db_utils import transaction
@@ -1388,17 +1389,19 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        # For polling UI endpoint, surface offline as a soft state (200) instead of transport error.
-        return {
-            "agent_id": agent_id,
-            "disk_usage": {},
-            "memory": {},
-            "cpu": {},
-            "ip_addresses": [],
-            "unavailable": True,
-            "reason": "agent_offline",
-            "last_seen_seconds_ago": int(t) if t is not None else None,
-        }
+        # Polling endpoint: tolerate longer heartbeat jitter before declaring unavailable.
+        poll_grace = max(int(getattr(settings, "agent_online_grace_seconds", 30) or 30), 90)
+        if t is None or t > poll_grace:
+            return {
+                "agent_id": agent_id,
+                "disk_usage": {},
+                "memory": {},
+                "cpu": {},
+                "ip_addresses": [],
+                "unavailable": True,
+                "reason": "agent_offline",
+                "last_seen_seconds_ago": int(t) if t is not None else None,
+            }
 
     with transaction(db):
         created = create_job_with_runs(
@@ -1562,14 +1565,16 @@ async def get_top_processes(agent_id: str, wait: bool = True, db: Session = Depe
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        # For polling UI endpoint, surface offline as a soft state (200) instead of transport error.
-        return {
-            "agent_id": agent_id,
-            "top_processes": [],
-            "unavailable": True,
-            "reason": "agent_offline",
-            "last_seen_seconds_ago": int(t) if t is not None else None,
-        }
+        # Polling endpoint: tolerate longer heartbeat jitter before declaring unavailable.
+        poll_grace = max(int(getattr(settings, "agent_online_grace_seconds", 30) or 30), 90)
+        if t is None or t > poll_grace:
+            return {
+                "agent_id": agent_id,
+                "top_processes": [],
+                "unavailable": True,
+                "reason": "agent_offline",
+                "last_seen_seconds_ago": int(t) if t is not None else None,
+            }
 
     with transaction(db):
         created = create_job_with_runs(
