@@ -145,7 +145,6 @@
           // Agent offline/unavailable: stop polling to avoid repeated 503 noise.
           if (metricsLifecycleState.get('currentMetricsAgentId') === agentId) {
             updateTopProcessesTable([]);
-            if (ctx && typeof ctx.stopMetricsPolling === 'function') ctx.stopMetricsPolling();
           }
           return;
         }
@@ -155,7 +154,6 @@
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
       if (data && data.unavailable) {
         updateTopProcessesTable([]);
-        if (ctx && typeof ctx.stopMetricsPolling === 'function') ctx.stopMetricsPolling();
         return;
       }
       updateTopProcessesTable(data.top_processes || []);
@@ -193,7 +191,6 @@
             setIfLoading('memory-usage', 'Unavailable');
             setIfLoading('vcpus', 'Unavailable');
             setIfLoading('ip-addresses', 'Unavailable');
-            if (ctx && typeof ctx.stopMetricsPolling === 'function') ctx.stopMetricsPolling();
           }
           return;
         }
@@ -212,7 +209,6 @@
         setIfLoading('memory-usage', 'Unavailable');
         setIfLoading('vcpus', 'Unavailable');
         setIfLoading('ip-addresses', 'Unavailable');
-        if (ctx && typeof ctx.stopMetricsPolling === 'function') ctx.stopMetricsPolling();
         return;
       }
 
