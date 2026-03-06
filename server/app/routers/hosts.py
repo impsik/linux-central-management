@@ -632,6 +632,7 @@ def list_host_packages(
     agent_id: str,
     search: str | None = None,
     upgradable_only: bool = False,
+    cves_only: bool = False,
     limit: int = 500,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -673,6 +674,11 @@ def list_host_packages(
 
     collected_at = db.execute(select(func.max(HostPackage.collected_at)).where(*base_filter[:1])).scalar_one()
 
+    # For CVE-only view we need a wider candidate set before vulnerability filtering,
+    # otherwise a vulnerable package can be outside the first page and appear missing.
+    base_query_limit = 10000 if cves_only else limit
+    base_query_offset = 0 if cves_only else offset
+
     if upgradable_only:
         join_on = and_(HostPackageUpdate.host_id == HostPackage.host_id, HostPackageUpdate.name == HostPackage.name)
         rows = db.execute(
@@ -685,16 +691,16 @@ def list_host_packages(
                 HostPackageUpdate.candidate_version != HostPackage.version,
             )
             .order_by(HostPackage.name.asc())
-            .limit(limit)
-            .offset(offset)
+            .limit(base_query_limit)
+            .offset(base_query_offset)
         ).scalars().all()
     else:
         rows = db.execute(
             select(HostPackage)
             .where(*base_filter)
             .order_by(HostPackage.name.asc())
-            .limit(limit)
-            .offset(offset)
+            .limit(base_query_limit)
+            .offset(base_query_offset)
         ).scalars().all()
 
     names = [r.name for r in rows]
@@ -743,6 +749,14 @@ def list_host_packages(
                 if c.package_name not in pkg_cves:
                     pkg_cves[c.package_name] = []
                 pkg_cves[c.package_name].append(c.cve_id)
+
+    if cves_only:
+        rows = [r for r in rows if pkg_cves.get(r.name)]
+        total = len(rows)
+        if offset:
+            rows = rows[offset:]
+        if limit:
+            rows = rows[:limit]
 
     return {
         "agent_id": agent_id,

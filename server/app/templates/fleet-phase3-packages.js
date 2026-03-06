@@ -218,7 +218,8 @@
       const params = new URLSearchParams();
       if (q) params.set('search', q);
       if (st.packagesUpdatesOnly) params.set('upgradable_only', 'true');
-      params.set('limit', '500');
+      if (st.packagesCvesOnly) params.set('cves_only', 'true');
+      params.set('limit', st.packagesCvesOnly ? '2000' : '500');
       const resp = await fetch(`/hosts/${agentId}/packages?${params.toString()}`);
       if (!resp.ok) throw new Error(resp.statusText);
 
