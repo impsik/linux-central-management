@@ -1392,6 +1392,35 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
         # Polling endpoint: tolerate longer heartbeat jitter before declaring unavailable.
         poll_grace = max(int(getattr(settings, "agent_online_grace_seconds", 30) or 30), 90)
         if t is None or t > poll_grace:
+            # Try stale snapshot fallback first so UI can still show last-known values.
+            snap = db.execute(
+                select(HostMetricsSnapshot)
+                .where(HostMetricsSnapshot.agent_id == agent_id)
+                .order_by(HostMetricsSnapshot.recorded_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if snap:
+                ip_list = []
+                if getattr(host, "ip_address", None):
+                    ip_list.append(host.ip_address)
+                return {
+                    "agent_id": agent_id,
+                    "disk_usage": {
+                        "percent_used": float(snap.disk_percent_used) if snap.disk_percent_used not in (None, "") else None,
+                    },
+                    "memory": {
+                        "percent_used": float(snap.mem_percent_used) if snap.mem_percent_used not in (None, "") else None,
+                    },
+                    "cpu": {
+                        "vcpus": snap.vcpus,
+                        "load_1min": float(snap.load_1min) if snap.load_1min not in (None, "") else None,
+                    },
+                    "ip_addresses": ip_list,
+                    "stale": True,
+                    "reason": "agent_offline_snapshot",
+                    "last_seen_seconds_ago": int(t) if t is not None else None,
+                    "snapshot_recorded_at": snap.recorded_at,
+                }
             return {
                 "agent_id": agent_id,
                 "disk_usage": {},
