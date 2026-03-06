@@ -832,7 +832,10 @@ func queryUserDetails(ctx context.Context, username string) (string, string, int
 	b3, _ := cmd3.CombinedOutput()
 	ps := strings.TrimSpace(string(b3))
 	out["password_status"] = ps
-	out["locked"] = strings.Contains(ps, " L ") || strings.Contains(ps, "LK")
+	passwordLocked := strings.Contains(ps, " L ") || strings.Contains(ps, "LK")
+	shellStr := strings.TrimSpace(fmt.Sprintf("%v", out["shell"]))
+	shellBlocked := shellStr == "/usr/sbin/nologin" || shellStr == "/sbin/nologin" || shellStr == "/bin/false"
+	out["locked"] = passwordLocked && shellBlocked
 
 	// sudo rules (best effort)
 	cmd4 := exec.CommandContext(queryCtx, "sudo", "-n", "-l", "-U", u)
@@ -1548,12 +1551,14 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		// Check if user has sudo access (check our pre-built map)
 		hasSudo := sudoGroupUsers[username]
 
-		// Locked semantics: ONLY explicit passwd lock (passwd -l / usermod -L).
-		// Do NOT treat "no password set" or shell=nologin as locked.
-		isLocked := false
+		// "Locked" should reflect practical login-blocking state for SSH/user presence.
+		// Password lock alone (status=L) is not sufficient because SSH key auth can still work.
+		// Treat as locked only when password is locked AND shell is non-interactive.
+		shellBlocked := shell == "/usr/sbin/nologin" || shell == "/sbin/nologin" || shell == "/bin/false"
+		passwordLocked := false
 		if passwdStatusOK {
 			if st, ok := passwdStatusMap[username]; ok {
-				isLocked = (st == "L")
+				passwordLocked = (st == "L")
 			}
 		} else {
 			// Best-effort fallback if passwd status isn't available.
@@ -1563,10 +1568,11 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 				parts := strings.Split(shadowLine, ":")
 				if len(parts) >= 2 {
 					passwordField := parts[1]
-					isLocked = strings.HasPrefix(passwordField, "!")
+					passwordLocked = strings.HasPrefix(passwordField, "!")
 				}
 			}
 		}
+		isLocked := passwordLocked && shellBlocked
 
 		// Only include regular users (UID >= 1000) or root
 		uidInt := 0
