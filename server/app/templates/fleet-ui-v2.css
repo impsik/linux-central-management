@@ -11,6 +11,24 @@
   --app-sidebar-active: #1e3a8a;
   --app-shell-border: #d9e3f0;
   --app-shell-shadow: 0 14px 32px rgba(8, 15, 31, 0.08);
+  --quality-bar-start: #2563eb;
+  --quality-bar-end: #0ea5e9;
+  --chart-grid: #cbd5e1;
+  --chart-line: #0f766e;
+  --chart-point: #0f766e;
+  --disk-usage-track: rgba(148, 163, 184, 0.24);
+  --sudo-mode-label-text: var(--text);
+  --sudo-mode-select-bg: color-mix(in srgb, var(--panel) 98%, #ffffff);
+  --sudo-mode-select-border: #d9e3ef;
+  --sudo-mode-select-text: var(--text);
+  --nav-indicator-error: #dc2626;
+  --nav-indicator-warn: #d97706;
+  --report-th-bg: color-mix(in srgb, var(--panel-2) 92%, #ffffff);
+  --report-code-bg: color-mix(in srgb, var(--panel-2) 86%, #ffffff);
+  --report-pill-online-bg: rgba(22, 163, 74, 0.16);
+  --report-pill-online-text: #166534;
+  --report-pill-offline-bg: rgba(220, 38, 38, 0.14);
+  --report-pill-offline-text: #991b1b;
 }
 
 :root[data-theme="dark"] {
@@ -22,6 +40,24 @@
   --app-sidebar-active: #0f766e;
   --app-shell-border: #173044;
   --app-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  --quality-bar-start: #14b8a6;
+  --quality-bar-end: #22c55e;
+  --chart-grid: #334155;
+  --chart-line: #667eea;
+  --chart-point: #667eea;
+  --disk-usage-track: rgba(148, 163, 184, 0.25);
+  --sudo-mode-label-text: #e6f0ff;
+  --sudo-mode-select-bg: #0b1422;
+  --sudo-mode-select-border: #2d4f73;
+  --sudo-mode-select-text: #e6f0ff;
+  --nav-indicator-error: #ef4444;
+  --nav-indicator-warn: #f59e0b;
+  --report-th-bg: #111827;
+  --report-code-bg: #0f172a;
+  --report-pill-online-bg: #14532d;
+  --report-pill-online-text: #bbf7d0;
+  --report-pill-offline-bg: #7f1d1d;
+  --report-pill-offline-text: #fecaca;
 }
 
 body {
@@ -286,9 +322,9 @@ body {
 }
 
 #sshkey-sudo-mode {
-  color: #e6f0ff !important;
-  background: #0b1422 !important;
-  border-color: #2d4f73 !important;
+  color: var(--sudo-mode-select-text) !important;
+  background: var(--sudo-mode-select-bg) !important;
+  border-color: var(--sudo-mode-select-border) !important;
   opacity: 1 !important;
   height: 36px !important;
   line-height: 1.25 !important;
@@ -300,8 +336,8 @@ body {
 }
 
 #sshkey-sudo-mode option {
-  color: #e6f0ff;
-  background: #0b1422;
+  color: var(--sudo-mode-select-text);
+  background: var(--sudo-mode-select-bg);
   line-height: 1.25;
 }
 
@@ -380,17 +416,6 @@ body {
 
 :root[data-theme="light"] .process-table th {
   color: color-mix(in srgb, var(--muted-2) 92%, #334155) !important;
-}
-
-:root[data-theme="light"] #sshkey-sudo-mode {
-  color: var(--text) !important;
-  background: var(--panel) !important;
-  border-color: var(--border) !important;
-}
-
-:root[data-theme="light"] #sshkey-sudo-mode option {
-  color: var(--text);
-  background: var(--panel);
 }
 
 @media (max-width: 1100px) {

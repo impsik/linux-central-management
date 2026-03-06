@@ -1,3 +1,8 @@
+function cssVar(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return raw || fallback;
+}
+
 function openSshKeyDeployApprovalModal(it) {
       const modal = document.getElementById('sshkey-approval-modal');
       const metaEl = document.getElementById('sshkey-approval-modal-meta');
@@ -347,7 +352,7 @@ function openSshKeyDeployApprovalModal(it) {
                     <td>${escapeHtml(r.size)}</td>
                     <td style="min-width:140px;">
                       <div style="display:flex;align-items:center;gap:10px;">
-                        <div style="flex:1;height:10px;background:rgba(148,163,184,.25);border-radius:999px;overflow:hidden;">
+                        <div style="flex:1;height:10px;background:${cssVar('--disk-usage-track', 'rgba(148, 163, 184, 0.25)')};border-radius:999px;overflow:hidden;">
                           <div style="width:${Math.max(0,Math.min(100,r.pctNum||0))}%;height:100%;background:${barColor};"></div>
                         </div>
                         <div style="width:44px;text-align:right;font-variant-numeric:tabular-nums;">${escapeHtml(r.pcent)}</div>
@@ -401,4 +406,3 @@ function openSshKeyDeployApprovalModal(it) {
       modal.setAttribute('aria-hidden', 'true');
       modal.hidden = true;
     }
-

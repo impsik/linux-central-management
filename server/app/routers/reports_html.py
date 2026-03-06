@@ -69,17 +69,17 @@ def hosts_updates_html(
 
         html_rows.append(
             f"<tr>"
-            f"<td><b>{host}</b><div class='muted'>{agent_id}{(' • ' + ip) if ip else ''}</div></td>"
+            f"<td><b>{host}</b><div class='report-muted'>{agent_id}{(' • ' + ip) if ip else ''}</div></td>"
             f"<td>{os_name}</td>"
-            f"<td><code>{kernel}</code></td>"
+            f"<td><code class='report-code'>{kernel}</code></td>"
             f"<td class='num'>{sec}</td>"
             f"<td class='num'>{upd}</td>"
-            f"<td><span class='pill {online}'>{online}</span></td>"
-            f"<td class='muted'>{last_seen}</td>"
+            f"<td><span class='report-pill {online}'>{online}</span></td>"
+            f"<td class='report-muted'>{last_seen}</td>"
             f"</tr>"
         )
 
-    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='7' class='muted'>No rows</td></tr>"
+    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='7' class='report-muted'>No rows</td></tr>"
 
     def toggle_order(for_sort: str) -> str:
         if (sort or "") == for_sort:
@@ -95,7 +95,7 @@ def hosts_updates_html(
             f"/reports/hosts-updates.html?only_pending={str(only_pending).lower()}"
             f"&online_only={str(online_only).lower()}&sort={key}&order={next_order}"
         )
-        return f"<a href='{esc(href)}' style='color:inherit;text-decoration:none;'>{esc(label)}{arrow}</a>"
+        return f"<a href='{esc(href)}' class='report-sort-link'>{esc(label)}{arrow}</a>"
 
     filename = f"pending-updates-{now.strftime('%Y%m%d-%H%M%S')}Z.html"
 
@@ -105,36 +105,14 @@ def hosts_updates_html(
 <head>
   <meta charset='utf-8' />
   <title>Fleet Report - Pending Updates</title>
+  <link rel='stylesheet' href='/assets/fleet-ui.css' />
   <script src='/assets/fleet-theme-bootstrap.js'></script>
-  <style>
-    :root {{ --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }}
-    :root[data-theme="dark"] {{ --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }}
-    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:var(--text); background:var(--bg); }}
-    h1 {{ margin: 0 0 6px 0; }}
-    .meta {{ color:var(--muted); margin-bottom: 16px; }}
-    table {{ border-collapse: collapse; width: 100%; min-width: 900px; }}
-    th, td {{ border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }}
-    th {{ background: var(--th); position: sticky; top: 0; }}
-    th a:hover {{ text-decoration: underline; }}
-    a {{ color: inherit; }}
-    .muted {{ color:var(--muted2); font-size: 12px; margin-top: 2px; }}
-    .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
-    code {{ background:var(--code); padding: 2px 6px; border-radius: 6px; }}
-    .pill {{ display:inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }}
-    .pill.online {{ background:#dcfce7; color:#166534; }}
-    .pill.offline {{ background:#fee2e2; color:#991b1b; }}
-    :root[data-theme="dark"] .pill.online {{ background:#14532d; color:#bbf7d0; }}
-    :root[data-theme="dark"] .pill.offline {{ background:#7f1d1d; color:#fecaca; }}
-    .wrap {{ overflow-x:auto; }}
-    .toolbar {{ display:flex; justify-content:flex-end; margin-bottom: 10px; }}
-    .theme-btn {{ border:1px solid var(--border); background:var(--btn); color:var(--text); border-radius:10px; padding:6px 10px; cursor:pointer; font-weight:600; }}
-  </style>
 </head>
-<body>
+<body class='fleet-report'>
   <h1>Pending Updates Report</h1>
-  <div class='meta'>Generated: {esc(ts)} UTC • only_pending={esc(str(only_pending))} • online_only={esc(str(online_only))} • sort={esc(sort)} {esc(order)} • rows={len(rows)}</div>
-  <div class='wrap'>
-    <table>
+  <div class='report-meta'>Generated: {esc(ts)} UTC • only_pending={esc(str(only_pending))} • online_only={esc(str(online_only))} • sort={esc(sort)} {esc(order)} • rows={len(rows)}</div>
+  <div class='report-wrap'>
+    <table class='report-table'>
       <thead>
         <tr>
           <th>{sort_link('Host','hostname')}</th>
@@ -305,17 +283,17 @@ async def user_presence_html(
 
         html_rows.append(
             f"<tr>"
-            f"<td><b>{host}</b><div class='muted'>{agent_id}{(' • ' + ip) if ip else ''}</div></td>"
-            f"<td><code>{esc(r.get('username') or '')}</code></td>"
+            f"<td><b>{host}</b><div class='report-muted'>{agent_id}{(' • ' + ip) if ip else ''}</div></td>"
+            f"<td><code class='report-code'>{esc(r.get('username') or '')}</code></td>"
             f"<td>{os_name}</td>"
-            f"<td><code>{shell or '-'}</code><div class='muted'>{home or '-'}</div></td>"
+            f"<td><code class='report-code'>{shell or '-'}</code><div class='report-muted'>{home or '-'}</div></td>"
             f"<td>{sudo}</td>"
             f"<td>{locked}</td>"
-            f"<td class='muted'>{last_seen}</td>"
+            f"<td class='report-muted'>{last_seen}</td>"
             f"</tr>"
         )
 
-    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='7' class='muted'>No matching accounts found on scanned/visible hosts</td></tr>"
+    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='7' class='report-muted'>No matching accounts found on scanned/visible hosts</td></tr>"
 
     return HTMLResponse(
         content=f"""<!doctype html>
@@ -323,28 +301,14 @@ async def user_presence_html(
 <head>
   <meta charset='utf-8' />
   <title>Fleet Report - User Presence</title>
+  <link rel='stylesheet' href='/assets/fleet-ui.css' />
   <script src='/assets/fleet-theme-bootstrap.js'></script>
-  <style>
-    :root {{ --bg:#ffffff; --text:#0f172a; --muted:#475569; --muted2:#64748b; --border:#e2e8f0; --th:#f8fafc; --code:#f1f5f9; --btn:#ffffff; }}
-    :root[data-theme="dark"] {{ --bg:#0b1220; --text:#e2e8f0; --muted:#cbd5e1; --muted2:#94a3b8; --border:#334155; --th:#111827; --code:#0f172a; --btn:#111827; }}
-    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial; padding: 24px; color:var(--text); background:var(--bg); }}
-    h1 {{ margin: 0 0 6px 0; }}
-    .meta {{ color:var(--muted); margin-bottom: 16px; }}
-    table {{ border-collapse: collapse; width: 100%; min-width: 920px; }}
-    th, td {{ border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; vertical-align: top; }}
-    th {{ background: var(--th); position: sticky; top: 0; }}
-    .muted {{ color:var(--muted2); font-size: 12px; margin-top: 2px; }}
-    code {{ background:var(--code); padding: 2px 6px; border-radius: 6px; }}
-    .wrap {{ overflow-x:auto; }}
-    .toolbar {{ display:flex; justify-content:flex-end; margin-bottom: 10px; }}
-    .theme-btn {{ border:1px solid var(--border); background:var(--btn); color:var(--text); border-radius:10px; padding:6px 10px; cursor:pointer; font-weight:600; }}
-  </style>
 </head>
-<body>
+<body class='fleet-report'>
   <h1>User Presence Report</h1>
-  <div class='meta'>Generated: {esc(ts)} UTC • username={esc(u)} • exact={esc(str(exact))} • rows={len(rows)} • scanned_hosts={len(visible_hosts)} • offline_skipped={skipped_offline} • failed_hosts={failed_hosts}</div>
-  <div class='wrap'>
-    <table>
+  <div class='report-meta'>Generated: {esc(ts)} UTC • username={esc(u)} • exact={esc(str(exact))} • rows={len(rows)} • scanned_hosts={len(visible_hosts)} • offline_skipped={skipped_offline} • failed_hosts={failed_hosts}</div>
+  <div class='report-wrap'>
+    <table class='report-table' style='min-width:920px;'>
       <thead>
         <tr>
           <th>Host</th>

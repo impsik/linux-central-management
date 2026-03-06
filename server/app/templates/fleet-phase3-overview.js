@@ -18,6 +18,11 @@
     return new Error(`${label} (${resp.status}${detail ? `: ${detail}` : ''})`);
   }
 
+  function cssVar(name, fallback) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return raw || fallback;
+  }
+
   async function loadFleetOverview(ctx, forceLive) {
     const onlineEl = document.getElementById('kpi-online');
     const onlineDetailsEl = document.getElementById('kpi-online-details');
@@ -132,7 +137,7 @@
           const cls = s >= 95 ? 'status-ok' : s >= 85 ? 'status-warn' : 'status-error';
           return `<div style="display:flex;flex-direction:column;gap:.2rem;">
             <div style="display:flex;justify-content:space-between;gap:.6rem;"><span>${label}</span><b class="${cls}">${s.toFixed(1)}%</b></div>
-            <div style="height:6px;border-radius:6px;background:var(--panel-2);overflow:hidden;"><div style="height:100%;width:${s}%;background:linear-gradient(90deg,#14b8a6,#22c55e);"></div></div>
+            <div style="height:6px;border-radius:6px;background:var(--panel-2);overflow:hidden;"><div style="height:100%;width:${s}%;background:linear-gradient(90deg,${cssVar('--quality-bar-start', 'var(--primary)')},${cssVar('--quality-bar-end', 'var(--success)')});"></div></div>
             <div class="status-muted" style="font-size:.78rem;">${detail}</div>
           </div>`;
         };

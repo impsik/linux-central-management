@@ -1,4 +1,9 @@
 (function (w) {
+  function cssVar(name, fallback) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return raw || fallback;
+  }
+
   function updateTopProcessesTable(processes) {
     const tbody = document.getElementById('top-processes-body');
     if (typeof w.renderTopProcessesTable === 'function') {
@@ -92,7 +97,7 @@
     const maxT = data[data.length - 1].time.getTime();
     const rangeT = Math.max(1, maxT - minT);
 
-    ctx.strokeStyle = '#334155';
+    ctx.strokeStyle = cssVar('--chart-grid', '#334155');
     ctx.lineWidth = 1;
     for (let i = 0; i <= 5; i++) {
       const y = paddingTop + (plotH / 5) * i;
@@ -102,7 +107,7 @@
       ctx.stroke();
     }
 
-    ctx.strokeStyle = '#667eea';
+    ctx.strokeStyle = cssVar('--chart-line', '#667eea');
     ctx.lineWidth = 2;
     ctx.beginPath();
     data.forEach((point, index) => {
@@ -123,7 +128,7 @@
     ctx.fillText(w.formatTimeLabel(new Date(maxT), loadTimeframeSeconds), canvas.width - paddingRight, canvas.height - paddingBottom + 4);
 
     const last = data[data.length - 1];
-    ctx.fillStyle = '#667eea';
+    ctx.fillStyle = cssVar('--chart-point', '#667eea');
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';

@@ -356,6 +356,15 @@ GitHub Actions runs:
 
 Workflow file: `.github/workflows/ci.yml`
 
+### Theme audit
+Run the lightweight theme hardening guard before committing UI template changes:
+
+```bash
+python3 scripts/theme-audit.py
+```
+
+The script exits non-zero when it finds risky hardcoded hex colors in server templates/reports.
+
 ### Release notes
 See `CHANGELOG.md` for recent feature additions/fixes.
 
