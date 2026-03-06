@@ -154,7 +154,7 @@ if [ "$RUN_SERVER" = "1" ]; then
   # NOTE: `docker compose down` would remove the DB container; while the volume persists now,
   # keeping the containers up avoids unnecessary churn.
   log_info "Starting/updating Docker services"
-  docker compose up -d #--build --remove-orphans
+  docker compose up -d --build --remove-orphans
 fi
 
 cd "$ROOT_DIR/agent"
