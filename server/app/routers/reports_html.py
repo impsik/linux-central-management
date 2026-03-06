@@ -168,6 +168,16 @@ def hosts_updates_xlsx(
     ws.append(["Host", "Agent ID", "IP Address", "OS", "Kernel", "Security Updates", "All Updates", "Online", "Last Seen"])
 
     for r in rows:
+      last_seen = r.get("last_seen")
+      # openpyxl/Excel does not support timezone-aware datetimes reliably.
+      # Normalize to readable UTC-ish string for portability.
+      if isinstance(last_seen, datetime):
+          last_seen = last_seen.isoformat()
+      elif last_seen is None:
+          last_seen = ""
+      else:
+          last_seen = str(last_seen)
+
       ws.append([
           r.get("hostname") or r.get("agent_id") or "",
           r.get("agent_id") or "",
@@ -177,7 +187,7 @@ def hosts_updates_xlsx(
           int(r.get("security_updates") or 0),
           int(r.get("updates") or 0),
           "online" if r.get("is_online") else "offline",
-          r.get("last_seen") or "",
+          last_seen,
       ])
 
     # Simple width tuning for readability in Excel.
