@@ -1548,8 +1548,16 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		home := parts[5]
 		shell := parts[6]
 
-		// Check if user has sudo access (check our pre-built map)
+		// Check if user has sudo access.
+		// Prefer fast group-based detection, but also account for Fleet-managed per-user sudoers
+		// entries (/etc/sudoers.d/fleet-<username>) because those can grant sudo even when the
+		// user is not in sudo/wheel/admin groups.
 		hasSudo := sudoGroupUsers[username]
+		if !hasSudo {
+			if _, statErr := os.Stat(fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)); statErr == nil {
+				hasSudo = true
+			}
+		}
 
 		// "Locked" should reflect practical login-blocking state for SSH/user presence.
 		// Password lock alone (status=L) is not sufficient because SSH key auth can still work.
