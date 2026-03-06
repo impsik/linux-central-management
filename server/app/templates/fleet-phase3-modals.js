@@ -87,6 +87,13 @@ function openSshKeyDeployApprovalModal(it) {
 
       const safe = (v) => escapeHtml(v == null ? '' : String(v));
       const kv = (k, v) => `<div class="kv-row"><strong>${safe(k)}:</strong> <code>${safe(v || '')}</code></div>`;
+      const labelSudoMode = (profile) => {
+        const p = String(profile || '').trim().toUpperCase();
+        if (p === 'A') return 'full';
+        if (p === 'N') return 'none';
+        if (p === 'B') return 'restricted';
+        return '';
+      };
 
       outEl.innerHTML = '<div class="loading">Loading…</div>';
       metaEl.textContent = `Host: ${agentId}`;
@@ -113,6 +120,7 @@ function openSshKeyDeployApprovalModal(it) {
           kv('Groups', info.groups),
           kv('Locked', info.locked),
           `<div class="kv-row"><strong>Sudo access:</strong> <span class="status-badge ${sudoAllowed ? 'ok' : 'warn'}">${sudoAllowed ? 'allowed' : 'denied'}</span></div>`,
+          `<div class="kv-row"><strong>Last applied sudo mode:</strong> <code id="user-modal-last-sudo-mode">loading…</code></div>`,
           kv('Password status', info.password_status),
           kv('Last login', info.last_login),
           sudoRules ? `<details style="margin-top:0.5rem;"><summary>Sudo check output</summary><pre class="pkg-raw" style="margin-top:0.4rem;">${safe(sudoRules)}</pre></details>` : '',
@@ -128,7 +136,19 @@ function openSshKeyDeployApprovalModal(it) {
             const td = await tr.json();
             const items = Array.isArray(td?.items) ? td.items : [];
             const uname = String(info.username || username || '').trim();
-            const userTypes = new Set(['query-user-details', 'user-lock', 'user-unlock']);
+
+            const latestSudoDeploy = items.find((it) => {
+              const jt = String(it?.job_type || '').toLowerCase();
+              const pUser = String(it?.payload_username || '').trim();
+              return jt === 'ssh-key-deploy' && pUser === uname && String(it?.status || '').toLowerCase() === 'success';
+            });
+            const lastSudoEl = document.getElementById('user-modal-last-sudo-mode');
+            if (lastSudoEl) {
+              const mode = labelSudoMode(latestSudoDeploy?.payload_sudo_profile);
+              lastSudoEl.textContent = mode || 'unknown';
+            }
+
+            const userTypes = new Set(['query-user-details', 'user-lock', 'user-unlock', 'ssh-key-deploy']);
             const filtered = items.filter((it) => {
               const jt = String(it?.job_type || '').toLowerCase();
               if (!userTypes.has(jt)) return false;
@@ -157,6 +177,8 @@ function openSshKeyDeployApprovalModal(it) {
               ].join('');
             }
           } catch (te) {
+            const lastSudoEl = document.getElementById('user-modal-last-sudo-mode');
+            if (lastSudoEl) lastSudoEl.textContent = 'unknown';
             timelineEl.innerHTML = `<div class="status-muted" style="font-size:0.85rem;">${safe(te?.message || String(te))}</div>`;
           }
         }

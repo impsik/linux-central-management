@@ -240,6 +240,7 @@ def host_timeline(
             "finished_at": run.finished_at,
             "created_by": job.created_by,
             "payload_username": payload.get("username"),
+            "payload_sudo_profile": payload.get("sudo_profile"),
             "logs_zip": f"/jobs/{job.job_key}/logs.zip",
             "stdout": f"/jobs/{job.job_key}/runs/{agent_id}/stdout.txt",
             "stderr": f"/jobs/{job.job_key}/runs/{agent_id}/stderr.txt",
