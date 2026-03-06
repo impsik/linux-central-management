@@ -14,7 +14,9 @@ class Settings(BaseSettings):
 
     # Agent long-poll and online heuristics
     agent_poll_timeout_seconds: int = 25
-    agent_online_grace_seconds: int = 10
+    # Mark host offline only after this many seconds since last heartbeat.
+    # 10s is too aggressive for real-world jitter and can cause transient 503s.
+    agent_online_grace_seconds: int = 30
 
     # Agent authentication (shared secret MVP)
     # By default, the server requires a shared token for all /agent/* endpoints.
