@@ -1388,9 +1388,17 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        if t is not None:
-            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
-        raise HTTPException(503, "Agent appears offline")
+        # For polling UI endpoint, surface offline as a soft state (200) instead of transport error.
+        return {
+            "agent_id": agent_id,
+            "disk_usage": {},
+            "memory": {},
+            "cpu": {},
+            "ip_addresses": [],
+            "unavailable": True,
+            "reason": "agent_offline",
+            "last_seen_seconds_ago": int(t) if t is not None else None,
+        }
 
     with transaction(db):
         created = create_job_with_runs(
@@ -1554,9 +1562,14 @@ async def get_top_processes(agent_id: str, wait: bool = True, db: Session = Depe
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        if t is not None:
-            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
-        raise HTTPException(503, "Agent appears offline")
+        # For polling UI endpoint, surface offline as a soft state (200) instead of transport error.
+        return {
+            "agent_id": agent_id,
+            "top_processes": [],
+            "unavailable": True,
+            "reason": "agent_offline",
+            "last_seen_seconds_ago": int(t) if t is not None else None,
+        }
 
     with transaction(db):
         created = create_job_with_runs(

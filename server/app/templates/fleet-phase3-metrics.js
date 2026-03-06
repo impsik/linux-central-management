@@ -153,6 +153,11 @@
       }
       const data = await resp.json();
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
+      if (data && data.unavailable) {
+        updateTopProcessesTable([]);
+        if (ctx && typeof ctx.stopMetricsPolling === 'function') ctx.stopMetricsPolling();
+        return;
+      }
       updateTopProcessesTable(data.top_processes || []);
     } catch (e) {
       if (!silent) console.error('Error loading top processes:', e);
@@ -196,6 +201,20 @@
       }
       const data = await response.json();
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
+      if (data && data.unavailable) {
+        const setIfLoading = (id, text) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          const cur = (el.textContent || '').trim();
+          if (!cur || cur === '-' || cur === 'Loading...' || cur === 'Error') el.textContent = text;
+        };
+        setIfLoading('disk-usage', 'Unavailable');
+        setIfLoading('memory-usage', 'Unavailable');
+        setIfLoading('vcpus', 'Unavailable');
+        setIfLoading('ip-addresses', 'Unavailable');
+        if (ctx && typeof ctx.stopMetricsPolling === 'function') ctx.stopMetricsPolling();
+        return;
+      }
 
       const toNum = (v) => {
         if (v === null || v === undefined) return null;
