@@ -111,6 +111,7 @@
                   <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
                     <button class="btn" id="host-meta-env-add" type="button">Add env entry</button>
                     <button class="btn btn-primary" id="host-meta-save" type="button">Save metadata</button>
+                    <button class="btn" id="metrics-debug-toggle" type="button" title="Toggle metrics debug info">Metrics debug</button>
                     <span id="host-meta-status" class="status-muted" role="status" aria-live="polite" style="font-size:0.85rem;"></span>
                   </div>
                 </div>
@@ -148,6 +149,11 @@
                 <div class="metric-details" id="ip-list"></div>
               </div>
             </div>
+
+            <details id="metrics-debug-panel" style="margin:0.4rem 0 0.7rem;display:none;">
+              <summary style="cursor:pointer;color:var(--muted);font-size:0.85rem;">Metrics debug info</summary>
+              <pre id="metrics-debug-output" class="pkg-raw" style="margin-top:0.4rem;max-height:200px;overflow:auto;">No debug data yet.</pre>
+            </details>
 
             <div class="overview-cards-grid" style="margin:0.5rem 0 1rem;grid-template-columns:minmax(280px,1fr) minmax(380px,1.4fr);">
               <div class="admin-card">
