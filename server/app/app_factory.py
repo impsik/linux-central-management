@@ -20,6 +20,85 @@ from .routers import agent, ansible, approvals, audit, auth, backup_verification
 logger = logging.getLogger(__name__)
 
 
+_PLACEHOLDER_VALUES = {
+    "",
+    "changeme",
+    "change-me",
+    "change_me",
+    "change-me-long-random",
+    "change-me-agent-token",
+    "change-me-terminal-token",
+    "fleet",
+    "password",
+    "admin",
+    "token",
+}
+
+
+def _is_placeholder_secret(value: str | None) -> bool:
+    v = (value or "").strip().lower()
+    return v in _PLACEHOLDER_VALUES or v.startswith("change-me")
+
+
+def _is_non_local_deployment() -> bool:
+    """Best-effort detector for non-local deployments.
+
+    Signals considered non-local:
+    - ALLOW_INSECURE_NO_AGENT_TOKEN is false
+    - DATABASE_URL host is not localhost/loopback
+    """
+    from urllib.parse import urlparse
+
+    from .config import settings
+
+    if not bool(getattr(settings, "allow_insecure_no_agent_token", False)):
+        return True
+
+    db_url = str(getattr(settings, "database_url", "") or "")
+    try:
+        parsed = urlparse(db_url)
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        host = ""
+
+    local_hosts = {"", "localhost", "127.0.0.1", "::1"}
+    return host not in local_hosts
+
+
+def _enforce_non_local_security_guardrails() -> None:
+    from .config import settings
+
+    if not _is_non_local_deployment():
+        return
+
+    failures: list[str] = []
+
+    if _is_placeholder_secret(getattr(settings, "bootstrap_password", None)):
+        failures.append("BOOTSTRAP_PASSWORD is missing or placeholder")
+
+    if _is_placeholder_secret(getattr(settings, "agent_shared_token", None)):
+        failures.append("AGENT_SHARED_TOKEN is missing or placeholder")
+
+    if bool(getattr(settings, "mfa_require_for_privileged", True)) and _is_placeholder_secret(
+        getattr(settings, "mfa_encryption_key", None)
+    ):
+        failures.append("MFA_ENCRYPTION_KEY is required (and must be non-placeholder) when MFA is enabled")
+
+    if not bool(getattr(settings, "ui_cookie_secure", False)):
+        failures.append("UI_COOKIE_SECURE must be true in non-local deployments")
+
+    if bool(getattr(settings, "db_auto_create_tables", True)):
+        failures.append("DB_AUTO_CREATE_TABLES must be false in non-local deployments")
+
+    terminal_token = getattr(settings, "agent_terminal_token", None)
+    terminal_scheme = str(getattr(settings, "agent_terminal_scheme", "ws") or "ws").lower()
+    if terminal_token and terminal_scheme != "wss":
+        failures.append("AGENT_TERMINAL_SCHEME must be 'wss' when terminal proxy is enabled")
+
+    if failures:
+        raise RuntimeError("Startup blocked by production guardrails: " + "; ".join(failures))
+
+
 def _startup() -> None:
     from .config import settings
 
@@ -38,6 +117,8 @@ def _startup() -> None:
                 missing.append(name.upper())
         if missing:
             raise RuntimeError(f"OIDC is enabled but missing required settings: {', '.join(missing)}")
+
+    _enforce_non_local_security_guardrails()
 
     if bool(getattr(settings, "db_auto_create_tables", True)):
         Base.metadata.create_all(bind=engine)

@@ -224,6 +224,19 @@ Do **not** use that on anything exposed beyond a trusted LAN.
 No new secret tokens were introduced for backup verification or rollout controls.
 Use the existing env/token wiring below:
 
+### Startup guardrails (non-local deployments)
+The server now fails fast on non-local deployments if insecure settings are detected.
+
+Blocked conditions:
+- placeholder or missing `BOOTSTRAP_PASSWORD`
+- placeholder or missing `AGENT_SHARED_TOKEN`
+- missing/placeholder `MFA_ENCRYPTION_KEY` when MFA is required
+- `UI_COOKIE_SECURE=false`
+- `DB_AUTO_CREATE_TABLES=true`
+- terminal enabled with `AGENT_TERMINAL_SCHEME=ws` (requires `wss`)
+
+Local dev remains supported with `ALLOW_INSECURE_NO_AGENT_TOKEN=true` and local DB settings.
+
 **Server (`deploy/docker/.env`)**
 - `BOOTSTRAP_PASSWORD` (required)
 - `AGENT_SHARED_TOKEN` (required)
