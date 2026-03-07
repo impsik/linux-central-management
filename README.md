@@ -260,6 +260,14 @@ For HTTPS deployments, also set:
 - Postgres is internal-only by default in `deploy/docker/docker-compose.yml` (not published to host).
 - If you need host-local debug access, expose `127.0.0.1:5432:5432` via compose override.
 
+### CI security gate (required check)
+A dedicated GitHub Actions workflow is provided at:
+- `.github/workflows/security.yml`
+
+It runs a `Security` check (secrets, SAST, dependency vulns, and Trivy scans).
+For protected branches, configure branch protection to require the **Security** status check before merge.
+See also: `RELEASE_SECURITY_CHECKLIST.md`.
+
 ### Maintenance window guardrails (optional)
 Use this to block risky actions outside an approved window.
 
