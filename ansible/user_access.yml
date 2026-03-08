@@ -97,11 +97,44 @@
         - generate_password | bool
         - (user_create_redhat is changed) or (user_create_debian is changed) or (user_create_redhat_nosudo is changed) or (user_create_debian_nosudo is changed)
 
-    - name: Grant passwordless sudo and validate sudoers
+    - name: Grant passwordless sudo via dedicated sudoers include
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/fleet-{{ username }}"
+        owner: root
+        group: root
+        mode: '0440'
+        content: "{{ username }} ALL=(ALL) NOPASSWD: ALL\n"
+        validate: /usr/sbin/visudo -cf %s
+      when: sudo | bool
+
+    - name: Remove passwordless sudo include when sudo is disabled
+      ansible.builtin.file:
+        path: "/etc/sudoers.d/fleet-{{ username }}"
+        state: absent
+      when: not (sudo | bool)
+
+    - name: Remove legacy global sudoers entry from /etc/sudoers
       ansible.builtin.lineinfile:
         backup: true
         path: /etc/sudoers
-        state: present
-        line: "{{ username }} ALL=(ALL) NOPASSWD: ALL"
+        state: absent
+        regexp: "^{{ username }}\\s+ALL=\\(ALL\\)\\s+NOPASSWD:\\s*ALL\\s*$"
         validate: /usr/sbin/visudo -cf %s
-      when: sudo | bool
+
+    - name: Ensure user is removed from sudo group when sudo is disabled (Debian)
+      ansible.builtin.command: "gpasswd -d {{ username }} sudo"
+      register: rm_sudo_group
+      changed_when: rm_sudo_group.rc == 0
+      failed_when: rm_sudo_group.rc not in [0,3]
+      when:
+        - ansible_os_family == 'Debian'
+        - not (sudo | bool)
+
+    - name: Ensure user is removed from wheel group when sudo is disabled (RedHat)
+      ansible.builtin.command: "gpasswd -d {{ username }} wheel"
+      register: rm_wheel_group
+      changed_when: rm_wheel_group.rc == 0
+      failed_when: rm_wheel_group.rc not in [0,3]
+      when:
+        - ansible_os_family == 'RedHat'
+        - not (sudo | bool)
