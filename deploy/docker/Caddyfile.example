@@ -1,24 +1,20 @@
 # Example Caddy reverse proxy for linux-central-management
 #
-# Goals:
-# - HTTPS termination
-# - secure headers
-# - basic rate limiting at the edge
+# Supports both modes:
+# - Domain/TLS mode:   FLEET_SITE_ADDR=fleet.example.com
+# - IP/no-domain mode: FLEET_SITE_ADDR=:80  (or 192.168.1.10:80)
 #
-# Usage:
-# 1) Set your domain and email.
-# 2) Run Caddy on the same host (or in Docker) and proxy to the server container.
-#
-# NOTE: If you run Caddy in Docker, ensure it can reach the fleet server.
-# If the server is on the same Docker network, proxy to `server:8000`.
-# If not, proxy to `127.0.0.1:8000` (host networking).
+# Notes:
+# - Caddy enables HTTPS automatically for hostnames (domain mode).
+# - For plain HTTP/IP mode, include an explicit :80 listener.
+# - Upstream should usually be server:8000 when Caddy and app share Docker network.
 
-{$FLEET_DOMAIN} {
+{$FLEET_SITE_ADDR::80} {
   encode zstd gzip
 
   # Reverse proxy to the app
-  reverse_proxy {$FLEET_UPSTREAM} {
-    # Propagate client IP to the app
+  reverse_proxy {$FLEET_UPSTREAM:server:8000} {
+    # Propagate client/proto information to the app
     header_up X-Forwarded-For {remote_host}
     header_up X-Forwarded-Proto {scheme}
     header_up X-Real-IP {remote_host}
@@ -30,8 +26,6 @@
     Referrer-Policy "same-origin"
     Permissions-Policy "geolocation=(), microphone=(), camera=()"
     X-Frame-Options "DENY"
-    # Keep this aligned with CONTENT_SECURITY_POLICY if you set one on app side.
-    # Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   }
 
   # NOTE: `rate_limit` is not part of stock Caddy images.
