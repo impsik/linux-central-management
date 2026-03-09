@@ -110,7 +110,7 @@ DOCKER_TERM_TOKEN="$(get_env_value "$DOCKER_ENV_FILE" "AGENT_TERMINAL_TOKEN")"
 
 set_env_value_if_missing "$ROOT_ENV_FILE" "AGENT_TOKEN" "$DOCKER_SHARED_TOKEN"
 set_env_value_if_missing "$ROOT_ENV_FILE" "TERM_TOKEN" "$DOCKER_TERM_TOKEN"
-set_env_value_if_missing "$ROOT_ENV_FILE" "SERVER_URL" "http://192.168.100.240:8000"
+set_env_value_if_missing "$ROOT_ENV_FILE" "SERVER_URL" "http://192.168.100.252:8000"
 
 chmod 600 "$DOCKER_ENV_FILE" "$ROOT_ENV_FILE"
 log_info "Applied secure permissions (chmod 600) to env files"
@@ -143,7 +143,7 @@ if [ -n "${AGENT_TERMINAL_TOKEN:-}" ]; then
 fi
 
 # Default server URL for this environment (override by exporting SERVER_URL or setting it in .env).
-SERVER_URL="${SERVER_URL:-http://192.168.100.240:8000}"
+SERVER_URL="${SERVER_URL:-http://192.168.100.252:8000}"
 
 RUN_SERVER="${RUN_SERVER:-1}"
 
