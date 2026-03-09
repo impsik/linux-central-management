@@ -100,13 +100,16 @@ For non-local deployments, run behind HTTPS reverse proxy (Caddy example):
 ```bash
 cd deploy/docker
 cp caddy-compose.example.yml caddy-compose.yml
-# set in .env: FLEET_DOMAIN, FLEET_UPSTREAM=server:8000, CADDY_EMAIL
+# Domain mode (public DNS): set FLEET_DOMAIN + CADDY_EMAIL
+# OR IP/LAN mode (no domain): set FLEET_SITE=https://<server-ip>
+# Shared: FLEET_UPSTREAM=server:8000
 # and keep UI_COOKIE_SECURE=true
 
 docker compose -f docker-compose.yml -f caddy-compose.yml up -d --build
 ```
 Then open:
-- https://<your-domain>/
+- https://<your-domain>/  (domain mode)
+- https://<server-ip>/    (IP/LAN mode; accept/trust local cert)
 
 Login with the bootstrap user you set in `deploy/docker/.env`.
 

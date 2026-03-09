@@ -1,0 +1,23 @@
+# Caddy reverse proxy for LAN/IP-only deployments (no domain)
+#
+# Usage:
+# - Set FLEET_SITE to your HTTPS site address, e.g. https://192.168.100.252
+# - Browser will show cert warning until you trust Caddy's internal CA.
+
+{$FLEET_SITE} {
+  tls internal
+  encode zstd gzip
+
+  reverse_proxy {$FLEET_UPSTREAM} {
+    header_up X-Forwarded-For {remote_host}
+    header_up X-Forwarded-Proto {scheme}
+    header_up X-Real-IP {remote_host}
+  }
+
+  header {
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "same-origin"
+    Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    X-Frame-Options "DENY"
+  }
+}

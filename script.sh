@@ -161,6 +161,27 @@ if [ "$RUN_SERVER" = "1" ]; then
       cp caddy-compose.example.yml caddy-compose.yml
       log_info "Created deploy/docker/caddy-compose.yml from template"
     fi
+
+    # Choose Caddy config: domain mode (Let's Encrypt) or IP/LAN mode (internal TLS)
+    if [ -n "$(get_env_value "$DOCKER_ENV_FILE" "FLEET_DOMAIN" || true)" ]; then
+      cp Caddyfile.example Caddyfile
+      log_info "Using Caddy domain config (Let's Encrypt): deploy/docker/Caddyfile"
+    else
+      cp Caddyfile.ip.example Caddyfile
+      # Derive FLEET_SITE from SERVER_URL if possible, fallback to local LAN default.
+      _fleet_site="https://192.168.100.252"
+      if [ -n "${SERVER_URL:-}" ]; then
+        _hostport="${SERVER_URL#http://}"
+        _hostport="${_hostport#https://}"
+        _hostport="${_hostport%%/*}"
+        if [ -n "$_hostport" ]; then
+          _fleet_site="https://$_hostport"
+        fi
+      fi
+      set_env_value_if_missing "$DOCKER_ENV_FILE" "FLEET_SITE" "$_fleet_site"
+      log_info "Using Caddy IP/LAN config (internal TLS): deploy/docker/Caddyfile"
+    fi
+
     set_env_value_if_missing "$DOCKER_ENV_FILE" "FLEET_UPSTREAM" "server:8000"
     set_env_value "$DOCKER_ENV_FILE" "UI_COOKIE_SECURE" "true"
     set_env_value "$DOCKER_ENV_FILE" "AGENT_TERMINAL_SCHEME" "wss"
