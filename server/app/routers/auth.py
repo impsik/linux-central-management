@@ -29,6 +29,28 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _request_is_https(request: Request | None) -> bool:
+    if request is None:
+        return False
+    try:
+        if str(getattr(request.url, "scheme", "") or "").lower() == "https":
+            return True
+    except Exception:
+        pass
+    try:
+        xfp = str(request.headers.get("x-forwarded-proto") or "").lower()
+        if xfp:
+            return "https" in [p.strip() for p in xfp.split(",")]
+    except Exception:
+        pass
+    return False
+
+
+def _cookie_secure_for(request: Request | None) -> bool:
+    # Explicit setting wins; otherwise auto-detect from request/proxy headers.
+    return bool(getattr(settings, "ui_cookie_secure", False) or _request_is_https(request))
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -132,7 +154,7 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
         value=token,
         httponly=True,
         samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        secure=_cookie_secure_for(request),
         expires=int(expires.timestamp()),
         path="/",
     )
@@ -145,7 +167,7 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
         value=csrf,
         httponly=False,
         samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        secure=_cookie_secure_for(request),
         expires=int(expires.timestamp()),
         path="/",
     )
@@ -377,7 +399,7 @@ def _log_oidc_event(
 
 
 @router.get("/oidc/login")
-def auth_oidc_login():
+def auth_oidc_login(request: Request):
     if not bool(getattr(settings, "auth_oidc_enabled", False)):
         raise HTTPException(404, "OIDC is disabled")
 
@@ -411,7 +433,7 @@ def auth_oidc_login():
             value=c_val,
             httponly=True,
             samesite="lax",
-            secure=bool(getattr(settings, "ui_cookie_secure", False)),
+            secure=_cookie_secure_for(request),
             max_age=600,
             path="/",
         )
@@ -733,7 +755,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         value=token,
         httponly=True,
         samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        secure=_cookie_secure_for(request),
         expires=int(expires.timestamp()),
         path="/",
     )
@@ -743,7 +765,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         value=csrf,
         httponly=False,
         samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        secure=_cookie_secure_for(request),
         expires=int(expires.timestamp()),
         path="/",
     )
@@ -1390,7 +1412,7 @@ def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Dep
             value=csrf,
             httponly=False,
             samesite="lax",
-            secure=bool(getattr(settings, "ui_cookie_secure", False)),
+            secure=_cookie_secure_for(request),
             path="/",
         )
 

@@ -210,6 +210,11 @@ The server sets basic security headers by default (e.g. `X-Frame-Options`, `X-Co
 For internet exposure, run behind HTTPS and set:
 - `UI_COOKIE_SECURE=true`
 
+Cookie transport guardrail:
+- `UI_COOKIE_SECURE=true` + HTTP access => browser rejects session cookie (appears as login loop)
+- HTTP/IP mode should use `UI_COOKIE_SECURE=false`
+- HTTPS mode should use `UI_COOKIE_SECURE=true`
+
 Optional (advanced): set `CONTENT_SECURITY_POLICY` env var to override the default nonce-based CSP.
 By default the server emits a restrictive CSP with per-request script nonces and no `unsafe-inline` for scripts.
 
@@ -219,6 +224,11 @@ Token wiring (must match):
 
 For HTTPS deployments, also set:
 - `AGENT_TERMINAL_SCHEME=wss`
+
+Caddy reverse-proxy modes (`deploy/docker/caddy-compose.example.yml` + `Caddyfile.example`):
+- Domain/TLS: `FLEET_SITE_ADDR=fleet.example.com`
+- IP/no-domain HTTP: `FLEET_SITE_ADDR=:80` (or `192.168.x.x:80`)
+- Upstream usually: `FLEET_UPSTREAM=server:8000`
 
 ### Docker deployment defaults
 - Postgres is internal-only by default in `deploy/docker/docker-compose.yml` (not published to host).
@@ -304,6 +314,7 @@ If your tenant blocks webhook creation, use in-app Notification Center until Tea
 - builds the agent
 - deploys the agent to hosts via Ansible (from `./hosts`)
 - restarts the agent service
+- validates cookie-mode guardrail (`SERVER_URL` vs `UI_COOKIE_SECURE`) to prevent HTTP login loops
 
 To use it:
 ```bash

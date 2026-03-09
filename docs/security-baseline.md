@@ -17,6 +17,10 @@ See:
 - `deploy/docker/Caddyfile.example`
 - `deploy/docker/caddy-compose.example.yml`
 
+Mode selection:
+- Domain/TLS: `FLEET_SITE_ADDR=fleet.example.com` + `UI_COOKIE_SECURE=true`
+- IP/no-domain HTTP: `FLEET_SITE_ADDR=:80` + `UI_COOKIE_SECURE=false`
+
 ## 2) Authentication hardening
 - MFA (TOTP) is required for `admin` and `operator` by default.
 - Set `MFA_ENCRYPTION_KEY` (Fernet key) via environment (do not commit it).

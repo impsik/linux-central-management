@@ -29,6 +29,25 @@ SERVER_URL="${SERVER_URL:-http://192.168.100.240:8000}"
 RUN_SERVER="${RUN_SERVER:-1}"
 
 if [ "$RUN_SERVER" = "1" ]; then
+  DOCKER_ENV_FILE="$ROOT_DIR/deploy/docker/.env"
+
+  # Guardrail: secure cookies over plain HTTP create a login loop (cookie not stored by browser).
+  if [ -f "$DOCKER_ENV_FILE" ]; then
+    UI_COOKIE_SECURE_VAL="$(grep -E '^UI_COOKIE_SECURE=' "$DOCKER_ENV_FILE" | tail -n1 | cut -d= -f2- | tr -d '"' | tr '[:upper:]' '[:lower:]' | xargs || true)"
+    if [[ "$SERVER_URL" == http://* ]] && [[ "$UI_COOKIE_SECURE_VAL" == "true" ]]; then
+      echo "[ERROR] SERVER_URL is HTTP but UI_COOKIE_SECURE=true in deploy/docker/.env"
+      echo "        This causes browser login loops (secure session cookie is rejected on HTTP)."
+      echo "        Fix one:"
+      echo "          - use HTTPS URL in SERVER_URL, or"
+      echo "          - set UI_COOKIE_SECURE=false for HTTP/IP mode."
+      exit 1
+    fi
+    if [[ "$SERVER_URL" == https://* ]] && [[ "$UI_COOKIE_SECURE_VAL" != "true" ]]; then
+      echo "[WARN] SERVER_URL is HTTPS but UI_COOKIE_SECURE is not true in deploy/docker/.env"
+      echo "       Consider setting UI_COOKIE_SECURE=true for hardened cookie transport."
+    fi
+  fi
+
   cd "$ROOT_DIR/deploy/docker"
 
   # Docker Compose expects a .env next to docker-compose.yml.
