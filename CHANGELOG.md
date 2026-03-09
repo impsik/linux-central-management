@@ -28,6 +28,15 @@ All notable changes to this project are documented in this file.
   - `/auth/me` now returns scope metadata (`scope.limited`, `scope.selectors`)
 
 ### Changed
+- Linux-Guardian parity pass for the main UI shell:
+  - left-rail, dashboard-first navigation and dark theme alignment
+  - operations dashboard composition updated (Host Inventory, Active Alerts, Operational Quality, Recent Failed Runs)
+  - host detail action styling and active-host row highlighting improved
+  - host metadata editor moved into right-side column on host detail view
+- Top global search input is now functional: typing/Enter opens Hosts view and applies the hosts table search filter.
+- Added dedicated **Reports** left-nav section with quick report actions:
+  - open `/reports/hosts-updates.html`
+  - export `/dashboard/slo.csv`.
 - Target resolution now supports user-aware filtering (`resolve_agent_ids(..., user=...)`).
 - Scoped filtering is enforced for job creation (`/jobs/*`), patch campaign target selection, cron target selection, SSH key deployment requests, and terminal websocket host access.
 - Read-path scope filtering now applies to host listing (`/hosts`), search endpoints (`/search/packages`, `/search/cve`), and dashboard attention/notifications host visibility.
@@ -45,6 +54,10 @@ All notable changes to this project are documented in this file.
   - added user reactivation endpoint: `POST /auth/users/{username}/activate`
   - Admin Users UI now shows **Activate/Deactivate** based on current state
   - deactivation guardrail: cannot deactivate the last active admin
+
+### Fixed
+- Metadata save now updates host header labels (`env` / `role`) immediately without requiring a page reload.
+- UI v2 stylesheet loading order fixed to prevent layout regression where the left menu rendered on top instead of side-by-side.
 
 ## [2026-02-15]
 

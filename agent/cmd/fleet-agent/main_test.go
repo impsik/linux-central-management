@@ -2,6 +2,26 @@ package main
 
 import "testing"
 
+func TestIsEnabledState(t *testing.T) {
+	cases := map[string]bool{
+		"enabled":         true,
+		"enabled-runtime": true,
+		"alias":           true,
+		"static":          true,
+		"indirect":        true,
+		"disabled":        false,
+		"masked":          false,
+		"not-found":       false,
+	}
+
+	for in, want := range cases {
+		got := isEnabledState(in)
+		if got != want {
+			t.Fatalf("isEnabledState(%q)=%v, want %v", in, got, want)
+		}
+	}
+}
+
 func TestParsePasswdStatusAll(t *testing.T) {
 	out := "" +
 		"root P 2026-02-01 0 99999 7 -1\n" +
@@ -17,5 +37,29 @@ func TestParsePasswdStatusAll(t *testing.T) {
 	}
 	if m["lockeduser"] != "L" {
 		t.Fatalf("lockeduser status = %q, want L", m["lockeduser"])
+	}
+}
+
+func TestNormalizeSudoProfile(t *testing.T) {
+	cases := map[string]string{
+		"":         "B",
+		"  ":       "B",
+		"A":        "A",
+		"a":        "A",
+		"B":        "B",
+		"b":        "B",
+		"N":        "N",
+		"n":        "N",
+		"none":     "N",
+		" NONE  ":  "N",
+		"unknown":  "B",
+		"reduced?": "B",
+	}
+
+	for in, want := range cases {
+		got := normalizeSudoProfile(in)
+		if got != want {
+			t.Fatalf("normalizeSudoProfile(%q)=%q, want %q", in, got, want)
+		}
 	}
 }

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -128,6 +129,8 @@ def revoke_key(key_id: str, db: Session = Depends(get_db), user: AppUser = Depen
 class DeployRequestCreate(BaseModel):
     key_id: str
     agent_ids: list[str] = Field(default_factory=list)
+    grant_sudo: bool = True
+    sudo_mode: Literal["none", "restricted", "full"] | None = None
 
 
 @router.post("/deploy-requests")
@@ -140,11 +143,29 @@ def create_deploy_request(payload: DeployRequestCreate, db: Session = Depends(ge
     if not k:
         raise HTTPException(404, "unknown key")
 
+    requested_mode = (payload.sudo_mode or "").strip().lower()
+    if requested_mode == "none":
+        normalized_profile = "N"
+    elif requested_mode == "full":
+        normalized_profile = "A"
+    elif requested_mode == "restricted":
+        normalized_profile = "B"
+    else:
+        normalized_profile = "N" if bool(payload.grant_sudo) is False else "B"
+
     with transaction(db):
-        req = SSHKeyDeploymentRequest(user_id=user.id, key_id=k.id, agent_ids=scoped_agent_ids, status="pending")
+        req = SSHKeyDeploymentRequest(
+            user_id=user.id,
+            key_id=k.id,
+            agent_ids=scoped_agent_ids,
+            sudo_profile=normalized_profile,
+            status="pending",
+        )
         db.add(req)
 
-    return {"id": str(req.id), "status": req.status}
+    prof = str(getattr(req, "sudo_profile", "B") or "B").strip().upper()
+    mode = "none" if prof == "N" else ("full" if prof == "A" else "restricted")
+    return {"id": str(req.id), "status": req.status, "grant_sudo": prof != "N", "sudo_mode": mode}
 
 
 @router.get("/deploy-requests")
@@ -166,6 +187,9 @@ def list_my_deploy_requests(db: Session = Depends(get_db), user: AppUser = Depen
                 "key_id": str(r.key_id),
                 "agent_ids": r.agent_ids,
                 "status": r.status,
+                "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() != 'N'),
+                "sudo_profile": str(getattr(r, 'sudo_profile', 'B')).upper(),
+                "sudo_mode": ("none" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'N' else ("full" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'A' else 'restricted')),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "approved_by": r.approved_by,
                 "error": r.error,
@@ -263,6 +287,9 @@ def admin_list_pending(db: Session = Depends(get_db), admin: AppUser = Depends(r
                 "agent_ids": r.agent_ids,
                 "targets": targets,
                 "status": r.status,
+                "grant_sudo": (str(getattr(r, 'sudo_profile', 'B')).upper() != 'N'),
+                "sudo_profile": str(getattr(r, 'sudo_profile', 'B')).upper(),
+                "sudo_mode": ("none" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'N' else ("full" if str(getattr(r, 'sudo_profile', 'B')).upper() == 'A' else 'restricted')),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
         )
@@ -302,6 +329,23 @@ async def admin_approve(req_id: str, db: Session = Depends(get_db), admin: AppUs
             r.finished_at = datetime.now(timezone.utc)
         return {"id": str(r.id), "status": "failed", "error": msg}
 
+    raw_profile = str(getattr(r, "sudo_profile", "B") or "B").strip().upper()
+    if raw_profile in {"N", "NO", "FALSE", "0", "NONE"}:
+        sudo_profile = "N"
+    elif raw_profile in {"A", "ALL", "FULL", "ADMIN"}:
+        sudo_profile = "A"
+    elif raw_profile in {"B", "RESTRICTED", "TRUE", "1", "YES"}:
+        sudo_profile = "B"
+    else:
+        msg = f"invalid sudo profile on request: {raw_profile!r}"
+        with transaction(db):
+            r.status = "failed"
+            r.error = msg
+            r.approved_by = getattr(admin, "username", None)
+            r.approved_at = datetime.now(timezone.utc)
+            r.finished_at = datetime.now(timezone.utc)
+        return {"id": str(r.id), "status": "failed", "error": msg}
+
     with transaction(db):
         r.status = "approved"
         r.approved_by = getattr(admin, "username", None)
@@ -315,7 +359,7 @@ async def admin_approve(req_id: str, db: Session = Depends(get_db), admin: AppUs
             payload={
                 "username": linux_username,
                 "public_key": key.public_key,
-                "sudo_profile": "B",
+                "sudo_profile": sudo_profile,
             },
             agent_ids=agent_ids,
             created_by=getattr(admin, "username", None) or "admin",
@@ -331,12 +375,12 @@ async def admin_approve(req_id: str, db: Session = Depends(get_db), admin: AppUs
             "job_id": created.job_key,
             "type": "ssh-key-deploy",
             "service_name": linux_username,  # linux username to create/update on target
-            "action": "B",                  # sudo_profile
+            "action": sudo_profile,          # sudo_profile
             "package_name": key.public_key,  # public_key
         },
     )
 
-    return {"id": str(r.id), "status": "approved", "job_id": created.job_key}
+    return {"id": str(r.id), "status": "approved", "job_id": created.job_key, "sudo_profile": sudo_profile}
 
 
 @router.post("/admin/deploy-requests/{req_id}/reject")

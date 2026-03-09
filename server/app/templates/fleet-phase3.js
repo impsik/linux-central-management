@@ -231,9 +231,6 @@
     const security = document.getElementById('kpi-security');
     if (security) security.addEventListener('click', function (e) { e.preventDefault(); jumpToHostsSorted('security_updates', 'desc'); });
 
-    const updates = document.getElementById('kpi-updates');
-    if (updates) updates.addEventListener('click', function (e) { e.preventDefault(); jumpToHostsSorted('updates', 'desc'); });
-
     const failures = document.getElementById('kpi-failures');
     if (failures) {
       failures.addEventListener('click', function (e) {
@@ -561,6 +558,8 @@
     const statusEl = api.statusEl || document.getElementById('sshkey-request-status');
     const selectedKeyId = api.selectedKeyId;
     const getSelectedAgentIds = api.getSelectedAgentIds;
+    const grantSudo = (typeof api.getGrantSudo === 'function') ? !!api.getGrantSudo() : true;
+    const sudoMode = (typeof api.getSudoMode === 'function') ? String(api.getSudoMode() || 'restricted') : (grantSudo ? 'restricted' : 'none');
 
     if (!selectedKeyId) {
       if (typeof w.showToast === 'function') w.showToast('Select a key (click a row)', 'error');
@@ -580,7 +579,7 @@
         method: 'POST',
         credentials: 'include',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ key_id: selectedKeyId, agent_ids }),
+        body: JSON.stringify({ key_id: selectedKeyId, agent_ids, grant_sudo: grantSudo, sudo_mode: sudoMode }),
       });
       if (!r.ok) throw new Error(await r.text());
       if (typeof w.showToast === 'function') w.showToast('Deployment requested (awaiting admin approval)', 'success');

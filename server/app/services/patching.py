@@ -6,7 +6,7 @@ import json
 import secrets
 from contextlib import suppress
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
@@ -107,6 +107,102 @@ def _audit(db: Session, *, actor: str | None, action: str, entity_type: str, ent
     )
 
 
+def get_rollout_meta(c: PatchCampaign) -> dict[str, Any]:
+    raw = c.rollout_meta if isinstance(c.rollout_meta, dict) else {}
+    meta = dict(raw)
+    max_ring = max(0, len(c.rings or []) - 1)
+    approved = int(meta.get("approved_through_ring") or 0)
+    if approved < 0:
+        approved = 0
+    if approved > max_ring:
+        approved = max_ring
+    meta.setdefault("progressive", False)
+    meta.setdefault("paused", False)
+    meta.setdefault("pause_reason", None)
+    meta.setdefault("paused_at", None)
+    meta.setdefault("paused_by", None)
+    meta.setdefault("manual_resume_required", False)
+    meta.setdefault("auto_pause_enabled", False)
+    meta.setdefault("failure_threshold_percent", 0)
+    meta["approved_through_ring"] = approved
+    return meta
+
+
+def set_rollout_meta(c: PatchCampaign, meta: dict[str, Any]) -> None:
+    c.rollout_meta = cast(dict[str, Any], meta)
+
+
+def get_rollout_summary(db: Session, c: PatchCampaign) -> dict[str, Any]:
+    hosts = (
+        db.execute(
+            select(PatchCampaignHost)
+            .where(PatchCampaignHost.campaign_id == c.id)
+            .order_by(PatchCampaignHost.ring.asc(), PatchCampaignHost.agent_id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    by_ring: dict[int, dict[str, Any]] = {}
+    for h in hosts:
+        ring_idx = int(h.ring or 0)
+        item = by_ring.setdefault(
+            ring_idx,
+            {
+                "ring": ring_idx,
+                "name": f"ring-{ring_idx}",
+                "queued": 0,
+                "running": 0,
+                "success": 0,
+                "failed": 0,
+                "skipped": 0,
+                "total": 0,
+            },
+        )
+        item["total"] += 1
+        st = str(h.status or "queued")
+        if st in ("queued", "running", "success", "failed", "skipped"):
+            item[st] += 1
+
+    rings_cfg = c.rings or []
+    for idx, cfg in enumerate(rings_cfg):
+        if idx in by_ring:
+            by_ring[idx]["name"] = str((cfg or {}).get("name") or by_ring[idx]["name"])
+        else:
+            by_ring[idx] = {
+                "ring": idx,
+                "name": str((cfg or {}).get("name") or f"ring-{idx}"),
+                "queued": 0,
+                "running": 0,
+                "success": 0,
+                "failed": 0,
+                "skipped": 0,
+                "total": 0,
+            }
+
+    rings = [by_ring[k] for k in sorted(by_ring.keys())]
+    for ring in rings:
+        attempted = int(ring["success"] + ring["failed"])
+        ring["failure_rate_percent"] = round((ring["failed"] / attempted) * 100, 2) if attempted else 0.0
+
+    meta = get_rollout_meta(c)
+    return {
+        "campaign_id": c.campaign_key,
+        "status": c.status,
+        "rollout": {
+            "progressive": bool(meta.get("progressive")),
+            "paused": bool(meta.get("paused")),
+            "pause_reason": meta.get("pause_reason"),
+            "paused_at": meta.get("paused_at"),
+            "paused_by": meta.get("paused_by"),
+            "manual_resume_required": bool(meta.get("manual_resume_required")),
+            "auto_pause_enabled": bool(meta.get("auto_pause_enabled")),
+            "failure_threshold_percent": float(meta.get("failure_threshold_percent") or 0),
+            "approved_through_ring": int(meta.get("approved_through_ring") or 0),
+        },
+        "rings": rings,
+    }
+
+
 def create_patch_campaign(
     *,
     db: Session,
@@ -120,6 +216,7 @@ def create_patch_campaign(
     concurrency: int,
     reboot_if_needed: bool,
     include_kernel: bool = False,
+    rollout_controls: dict[str, Any] | None = None,
 ) -> PatchCampaign:
     # Resolve targets
     targets = resolve_agent_ids(db, agent_ids, labels)
@@ -147,6 +244,15 @@ def create_patch_campaign(
     else:
         norm_rings = [{"name": "all", "agent_ids": list(targets)}]
 
+    rcfg = rollout_controls if isinstance(rollout_controls, dict) else {}
+    progressive = bool(rcfg.get("progressive") or False)
+    auto_pause_enabled = bool(rcfg.get("auto_pause_enabled") or False)
+    failure_threshold = float(rcfg.get("failure_threshold_percent") or 0)
+    if failure_threshold < 0:
+        failure_threshold = 0
+    if failure_threshold > 100:
+        failure_threshold = 100
+
     campaign_key = _new_key("pc")
     c = PatchCampaign(
         campaign_key=campaign_key,
@@ -159,6 +265,17 @@ def create_patch_campaign(
         concurrency=concurrency,
         reboot_if_needed=reboot_if_needed,
         include_kernel=bool(include_kernel),
+        rollout_meta={
+            "progressive": progressive,
+            "auto_pause_enabled": auto_pause_enabled,
+            "failure_threshold_percent": failure_threshold,
+            "approved_through_ring": 0 if progressive else max(0, len(norm_rings) - 1),
+            "paused": False,
+            "pause_reason": None,
+            "paused_at": None,
+            "paused_by": None,
+            "manual_resume_required": False,
+        },
         status="scheduled",
     )
     db.add(c)
@@ -186,6 +303,7 @@ def create_patch_campaign(
             "window_end": window_end.isoformat(),
             "concurrency": concurrency,
             "reboot_if_needed": reboot_if_needed,
+            "rollout_controls": c.rollout_meta,
             "note": "Security classification not implemented yet; campaign applies all upgradable packages.",
         },
     )
@@ -244,33 +362,7 @@ async def _advance_campaign(db: Session, c: PatchCampaign) -> None:
         c.status = "running"
         c.started_at = c.started_at or now
 
-    # Compute how many hosts are currently running
-    running = int(
-        db.execute(
-            select(func.count())
-            .select_from(PatchCampaignHost)
-            .where(PatchCampaignHost.campaign_id == c.id, PatchCampaignHost.status == "running")
-        ).scalar_one()
-        or 0
-    )
-
-    # Fill free slots
-    free = max(0, int(c.concurrency or 1) - running)
-    if free > 0:
-        queued_hosts = (
-            db.execute(
-                select(PatchCampaignHost)
-                .where(PatchCampaignHost.campaign_id == c.id, PatchCampaignHost.status == "queued")
-                .order_by(PatchCampaignHost.ring.asc(), PatchCampaignHost.agent_id.asc())
-                .limit(free)
-            )
-            .scalars()
-            .all()
-        )
-        for h in queued_hosts:
-            await _dispatch_host_upgrade(db, c, h)
-
-    # Reconcile running hosts by reading their job statuses
+    # Reconcile running hosts by reading their job statuses first.
     running_hosts = (
         db.execute(
             select(PatchCampaignHost)
@@ -282,6 +374,84 @@ async def _advance_campaign(db: Session, c: PatchCampaign) -> None:
     )
     for h in running_hosts:
         await _reconcile_host(db, c, h)
+
+    meta = get_rollout_meta(c)
+
+    # Auto-pause on failure threshold breach for approved rings.
+    if bool(meta.get("auto_pause_enabled")) and not bool(meta.get("paused")):
+        approved_through_ring = int(meta.get("approved_through_ring") or 0)
+        attempted = int(
+            db.execute(
+                select(func.count())
+                .select_from(PatchCampaignHost)
+                .where(
+                    PatchCampaignHost.campaign_id == c.id,
+                    PatchCampaignHost.ring <= approved_through_ring,
+                    PatchCampaignHost.status.in_(["success", "failed"]),
+                )
+            ).scalar_one()
+            or 0
+        )
+        failed = int(
+            db.execute(
+                select(func.count())
+                .select_from(PatchCampaignHost)
+                .where(
+                    PatchCampaignHost.campaign_id == c.id,
+                    PatchCampaignHost.ring <= approved_through_ring,
+                    PatchCampaignHost.status == "failed",
+                )
+            ).scalar_one()
+            or 0
+        )
+        threshold = float(meta.get("failure_threshold_percent") or 0)
+        failure_rate = (failed / attempted) * 100 if attempted else 0.0
+        if attempted > 0 and threshold > 0 and failure_rate >= threshold:
+            meta["paused"] = True
+            meta["manual_resume_required"] = True
+            meta["pause_reason"] = (
+                f"Auto-paused: failure threshold breached ({failure_rate:.2f}% >= {threshold:.2f}%)"
+            )
+            meta["paused_at"] = now.isoformat()
+            meta["paused_by"] = "system"
+            set_rollout_meta(c, meta)
+            _audit(
+                db,
+                actor="system",
+                action="patch_campaign.auto_paused",
+                entity_type="patch_campaign",
+                entity_key=c.campaign_key,
+                detail={
+                    "approved_through_ring": approved_through_ring,
+                    "failure_rate_percent": round(failure_rate, 2),
+                    "failure_threshold_percent": threshold,
+                },
+            )
+
+    # Compute how many hosts are currently running (after reconciliation)
+    running = int(
+        db.execute(
+            select(func.count())
+            .select_from(PatchCampaignHost)
+            .where(PatchCampaignHost.campaign_id == c.id, PatchCampaignHost.status == "running")
+        ).scalar_one()
+        or 0
+    )
+
+    # Fill free slots (unless rollout paused)
+    free = max(0, int(c.concurrency or 1) - running)
+    if free > 0 and not bool(meta.get("paused")):
+        q = select(PatchCampaignHost).where(PatchCampaignHost.campaign_id == c.id, PatchCampaignHost.status == "queued")
+        if bool(meta.get("progressive")):
+            q = q.where(PatchCampaignHost.ring <= int(meta.get("approved_through_ring") or 0))
+
+        queued_hosts = (
+            db.execute(q.order_by(PatchCampaignHost.ring.asc(), PatchCampaignHost.agent_id.asc()).limit(free))
+            .scalars()
+            .all()
+        )
+        for h in queued_hosts:
+            await _dispatch_host_upgrade(db, c, h)
 
     # Finish campaign if everything is done
     remaining = int(

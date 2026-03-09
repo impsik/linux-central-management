@@ -1,0 +1,452 @@
+/* --------------------------------------------------------------------------
+   Linux Central dashboard redesign (layout + visual polish, no JS hook changes)
+--------------------------------------------------------------------------- */
+
+:root {
+  --app-surface: #f4f7fb;
+  --app-sidebar: #0b1424;
+  --app-sidebar-border: #1e2c43;
+  --app-sidebar-text: #dbe6f7;
+  --app-sidebar-muted: #9db0cc;
+  --app-sidebar-active: #1e3a8a;
+  --app-shell-border: #d9e3f0;
+  --app-shell-shadow: 0 14px 32px rgba(8, 15, 31, 0.08);
+  --quality-bar-start: #2563eb;
+  --quality-bar-end: #0ea5e9;
+  --chart-grid: #cbd5e1;
+  --chart-line: #0f766e;
+  --chart-point: #0f766e;
+  --disk-usage-track: rgba(148, 163, 184, 0.24);
+  --sudo-mode-label-text: var(--text);
+  --sudo-mode-select-bg: color-mix(in srgb, var(--panel) 98%, #ffffff);
+  --sudo-mode-select-border: #d9e3ef;
+  --sudo-mode-select-text: var(--text);
+  --nav-indicator-error: #dc2626;
+  --nav-indicator-warn: #d97706;
+  --report-th-bg: color-mix(in srgb, var(--panel-2) 92%, #ffffff);
+  --report-code-bg: color-mix(in srgb, var(--panel-2) 86%, #ffffff);
+  --report-pill-online-bg: rgba(22, 163, 74, 0.16);
+  --report-pill-online-text: #166534;
+  --report-pill-offline-bg: rgba(220, 38, 38, 0.14);
+  --report-pill-offline-text: #991b1b;
+}
+
+:root[data-theme="dark"] {
+  --app-surface: #050a13;
+  --app-sidebar: #040914;
+  --app-sidebar-border: #123046;
+  --app-sidebar-text: #d7e4f9;
+  --app-sidebar-muted: #8aa0bf;
+  --app-sidebar-active: #0f766e;
+  --app-shell-border: #173044;
+  --app-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  --quality-bar-start: #14b8a6;
+  --quality-bar-end: #22c55e;
+  --chart-grid: #334155;
+  --chart-line: #667eea;
+  --chart-point: #667eea;
+  --disk-usage-track: rgba(148, 163, 184, 0.25);
+  --sudo-mode-label-text: #e6f0ff;
+  --sudo-mode-select-bg: #0b1422;
+  --sudo-mode-select-border: #2d4f73;
+  --sudo-mode-select-text: #e6f0ff;
+  --nav-indicator-error: #ef4444;
+  --nav-indicator-warn: #f59e0b;
+  --report-th-bg: #111827;
+  --report-code-bg: #0f172a;
+  --report-pill-online-bg: #14532d;
+  --report-pill-online-text: #bbf7d0;
+  --report-pill-offline-bg: #7f1d1d;
+  --report-pill-offline-text: #fecaca;
+}
+
+body {
+  font-family: "Inter", "IBM Plex Sans", "Noto Sans", sans-serif;
+  background:
+    radial-gradient(circle at 8% -10%, rgba(20, 184, 166, 0.13), transparent 40%),
+    radial-gradient(circle at 96% -15%, rgba(14, 165, 233, 0.11), transparent 38%),
+    var(--app-surface);
+}
+
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  min-height: 58px;
+  border-bottom: 1px solid var(--app-shell-border);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.22);
+  background: color-mix(in srgb, var(--panel) 94%, #020617);
+}
+
+#app-title {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.18rem;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+}
+
+.guardian-top-search .host-search {
+  border-radius: 9px;
+  border-color: color-mix(in srgb, #14b8a6 38%, var(--border));
+  background: color-mix(in srgb, #0b1220 78%, var(--panel));
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding-left: .65rem;
+}
+
+.container {
+  display: block;
+  padding: .85rem;
+  max-width: 1840px;
+  margin: 0 auto;
+}
+
+.main-content {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: .85rem;
+  align-items: start !important;
+}
+
+.fleet-sidebar-shell {
+  position: sticky;
+  top: calc(1rem + 70px);
+  align-self: start;
+}
+
+#fleet-actions {
+  margin: 0 !important;
+  padding: 0.78rem !important;
+  border-radius: 12px;
+  border: 1px solid var(--app-sidebar-border);
+  background: linear-gradient(175deg, color-mix(in srgb, var(--app-sidebar) 92%, #0b2031), var(--app-sidebar));
+  box-shadow: var(--app-shell-shadow);
+  flex-direction: column;
+  gap: 0.3rem !important;
+}
+
+#fleet-actions .btn {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 0.58rem 0.74rem;
+  border-radius: 9px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--app-sidebar-text);
+  text-align: left;
+  font-weight: 700;
+  font-family: "JetBrains Mono", monospace;
+  position: relative;
+  padding-left: 1.95rem;
+}
+
+#fleet-actions .btn::before {
+  position: absolute;
+  left: .7rem;
+  opacity: .75;
+}
+
+#nav-overview::before { content: "⌂"; }
+#nav-hosts::before { content: "⛁"; }
+#nav-sshkeys::before { content: "◈"; }
+#nav-cronjobs::before { content: "⚙"; }
+#nav-reports::before { content: "▤"; }
+
+#fleet-actions .btn:hover {
+  background: color-mix(in srgb, var(--app-sidebar-active) 24%, transparent);
+  border-color: color-mix(in srgb, var(--app-sidebar-active) 55%, transparent);
+}
+
+#fleet-actions .btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.container:has(#server-info-tab.active) #nav-overview,
+.container:has(#hosts-table-tab.active) #nav-hosts,
+.container:has(#cronjobs-tab.active) #nav-cronjobs,
+.container:has(#sshkeys-tab.active) #nav-sshkeys,
+.container:has(#reports-tab.active) #nav-reports {
+  background: color-mix(in srgb, #14b8a6 24%, transparent);
+  border-color: color-mix(in srgb, #14b8a6 65%, transparent);
+  color: #dffdfa;
+}
+
+.fleet-main-shell {
+  min-width: 0;
+  background: color-mix(in srgb, var(--panel) 95%, #020617);
+  border: 1px solid var(--app-shell-border);
+  border-radius: 12px;
+  box-shadow: var(--app-shell-shadow);
+  overflow: clip;
+}
+
+#host-actions {
+  margin: 0 !important;
+  padding: 0.7rem .9rem 0.6rem !important;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+#host-actions .host-action-btn {
+  height: 30px;
+  border-radius: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  padding: .2rem .6rem;
+}
+
+#host-actions .host-action-btn.active {
+  background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 80%, #0b1220), color-mix(in srgb, #0f766e 82%, #050b16));
+  border-color: color-mix(in srgb, #14b8a6 75%, #0f172a);
+  color: #ecfeff;
+}
+
+#server-info-header .server-info-title {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+  gap: .9rem;
+  align-items: start;
+}
+
+#server-info-header .host-metadata-card {
+  justify-self: end;
+  width: 100%;
+  max-width: 520px;
+}
+
+.metric-card,
+.admin-card,
+.section-card,
+.overview-card,
+.server-info-content .kpi-card,
+.server-info-content .stat-card {
+  border-color: color-mix(in srgb, #14b8a6 25%, var(--border)) !important;
+  background: color-mix(in srgb, var(--panel) 90%, #020617) !important;
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.04);
+}
+
+.process-table th {
+  color: color-mix(in srgb, var(--muted-2) 90%, #9dd9f5) !important;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-size: 11px;
+}
+
+.process-table td, .metric-value, .server-info-content h2, .server-info-content h3 {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.btn.btn-primary {
+  background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 75%, #0b1220), color-mix(in srgb, #0f766e 78%, #050b16));
+  border-color: color-mix(in srgb, #14b8a6 70%, #0f172a);
+  color: #e7fffb;
+}
+
+.btn.btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+#server-info-placeholder {
+  padding-top: .25rem;
+}
+
+#server-info-placeholder h2 {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 1.6rem;
+  font-weight: 600;
+  margin-bottom: .15rem;
+}
+
+#server-info-placeholder .metrics-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .55rem;
+}
+
+#server-info-placeholder .metric-card {
+  min-height: 96px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, color-mix(in srgb, #0f172a 86%, var(--panel)), color-mix(in srgb, #020617 94%, var(--panel))) !important;
+}
+
+#server-info-placeholder .metric-card .metric-label {
+  text-transform: uppercase;
+  font-size: 9px;
+  letter-spacing: .11em;
+  color: #8bb8d7;
+}
+
+#server-info-placeholder .metric-card .metric-value {
+  font-size: 1.34rem;
+  line-height: 1.05;
+}
+
+#server-info-placeholder .metric-card .metric-details {
+  margin-top: .25rem;
+  font-size: .78rem;
+  opacity: .88;
+}
+
+#server-info-placeholder .overview-cards-grid {
+  grid-template-columns: 2fr 1fr !important;
+  grid-template-areas:
+    "inventory alerts"
+    "inventory quality";
+  gap: .55rem !important;
+}
+
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(1) { grid-area: inventory; }
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(2) { grid-area: alerts; }
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(3) { grid-area: quality; }
+#server-info-placeholder .overview-cards-grid > .admin-card:nth-child(4) { display: none; }
+
+#notifications-card,
+#pending-updates-report-card,
+#overview-updates-report,
+#overview-updates-report.closest-card {
+  display: none;
+}
+
+#failed-runs-card .admin-card-title {
+  font-family: "JetBrains Mono", monospace;
+}
+
+#server-info-placeholder .btn,
+#server-info-placeholder .host-search {
+  height: 30px;
+  padding-top: .2rem;
+  padding-bottom: .2rem;
+  border-radius: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+#sshkey-sudo-mode {
+  color: var(--sudo-mode-select-text) !important;
+  background: var(--sudo-mode-select-bg) !important;
+  border-color: var(--sudo-mode-select-border) !important;
+  opacity: 1 !important;
+  height: 36px !important;
+  line-height: 1.25 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  padding-left: .65rem !important;
+  padding-right: 1.8rem !important;
+  font-size: 15px !important;
+}
+
+#sshkey-sudo-mode option {
+  color: var(--sudo-mode-select-text);
+  background: var(--sudo-mode-select-bg);
+  line-height: 1.25;
+}
+
+#server-info-placeholder .admin-card-title {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: .03em;
+}
+
+#server-info-placeholder .admin-card {
+  border-radius: 9px;
+}
+
+.hosts-table tbody tr.host-row-active {
+  background: color-mix(in srgb, #14b8a6 12%, transparent) !important;
+  box-shadow: inset 2px 0 0 #14b8a6;
+}
+
+/* Light-theme fixes for v2: neutralize hardcoded dark blends */
+:root[data-theme="light"] body {
+  background:
+    radial-gradient(circle at 8% -10%, rgba(20, 184, 166, 0.06), transparent 42%),
+    radial-gradient(circle at 96% -15%, rgba(14, 165, 233, 0.05), transparent 40%),
+    var(--app-surface);
+}
+
+:root[data-theme="light"] .header {
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+  background: color-mix(in srgb, var(--panel) 97%, #ffffff);
+}
+
+:root[data-theme="light"] #fleet-actions {
+  background: linear-gradient(176deg, #f8fbff, #eef4fb);
+  border-color: #d7e2ef;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="light"] #fleet-actions .btn {
+  color: #1f3a5b;
+}
+
+:root[data-theme="light"] #fleet-actions .btn:hover {
+  background: color-mix(in srgb, #3b82f6 12%, transparent);
+  border-color: color-mix(in srgb, #3b82f6 28%, transparent);
+}
+
+:root[data-theme="light"] .guardian-top-search .host-search {
+  border-color: color-mix(in srgb, #14b8a6 22%, var(--border));
+  background: color-mix(in srgb, var(--panel-2) 88%, #ffffff);
+  color: var(--text);
+}
+
+:root[data-theme="light"] .fleet-main-shell {
+  background: color-mix(in srgb, var(--panel) 98%, #ffffff);
+  border-color: #d9e3ef;
+}
+
+:root[data-theme="light"] .metric-card,
+:root[data-theme="light"] .admin-card,
+:root[data-theme="light"] .section-card,
+:root[data-theme="light"] .overview-card,
+:root[data-theme="light"] .server-info-content .kpi-card,
+:root[data-theme="light"] .server-info-content .stat-card {
+  border-color: color-mix(in srgb, var(--border) 88%, #ffffff) !important;
+  background: color-mix(in srgb, var(--panel) 98%, #ffffff) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+}
+
+:root[data-theme="light"] #server-info-placeholder .metric-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 97%, #ffffff), color-mix(in srgb, var(--panel-2) 90%, #ffffff)) !important;
+}
+
+:root[data-theme="light"] #server-info-placeholder .metric-card .metric-label {
+  color: color-mix(in srgb, var(--muted-2) 88%, #0f172a);
+}
+
+:root[data-theme="light"] .process-table th {
+  color: color-mix(in srgb, var(--muted-2) 92%, #334155) !important;
+}
+
+@media (max-width: 1100px) {
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-sidebar-shell {
+    position: static;
+  }
+
+  #fleet-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  #fleet-actions .btn {
+    width: auto;
+  }
+
+  #server-info-placeholder .metrics-grid,
+  #server-info-placeholder .overview-cards-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #server-info-header .server-info-title {
+    grid-template-columns: 1fr;
+  }
+
+  #server-info-header .host-metadata-card {
+    justify-self: stretch;
+    max-width: none;
+  }
+}

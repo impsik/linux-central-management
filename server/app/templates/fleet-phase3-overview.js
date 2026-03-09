@@ -1,15 +1,37 @@
 (function (w) {
+  function formatDateSafe(value) {
+    if (!value) return '–';
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+  }
+
+  async function buildHttpError(resp, label) {
+    let detail = '';
+    try {
+      const data = await resp.clone().json();
+      detail = data?.detail || data?.error || '';
+    } catch (_) {
+      try {
+        detail = (await resp.text() || '').slice(0, 180);
+      } catch (_) { }
+    }
+    return new Error(`${label} (${resp.status}${detail ? `: ${detail}` : ''})`);
+  }
+
+  function cssVar(name, fallback) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return raw || fallback;
+  }
+
   async function loadFleetOverview(ctx, forceLive) {
     const onlineEl = document.getElementById('kpi-online');
     const onlineDetailsEl = document.getElementById('kpi-online-details');
     const secEl = document.getElementById('kpi-sec');
     const secDetailsEl = document.getElementById('kpi-sec-details');
-    const updEl = document.getElementById('kpi-upd');
-    const updDetailsEl = document.getElementById('kpi-upd-details');
     const failEl = document.getElementById('kpi-fail');
     const freshEl = document.getElementById('kpi-fresh');
     const attentionEl = document.getElementById('overview-attention');
-    const morningBriefEl = document.getElementById('overview-morning-brief');
+    const operationalQualityEl = document.getElementById('overview-operational-quality');
     const nextCronEl = document.getElementById('overview-next-cronjobs');
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
@@ -22,12 +44,8 @@
           const items0 = Array.isArray(report0?.items) ? report0.items : [];
           const secHosts0 = items0.filter((it) => Number(it.security_updates || 0) > 0).length;
           const secPkgs0 = items0.reduce((n, it) => n + Number(it.security_updates || 0), 0);
-          const updHosts0 = items0.filter((it) => Number(it.updates || 0) > 0).length;
-          const updPkgs0 = items0.reduce((n, it) => n + Number(it.updates || 0), 0);
           if (secEl) secEl.textContent = `${secHosts0} hosts`;
           if (secDetailsEl) secDetailsEl.textContent = `${secPkgs0} packages`;
-          if (updEl) updEl.textContent = `${updHosts0} hosts`;
-          if (updDetailsEl) updDetailsEl.textContent = `${updPkgs0} packages`;
         }
       } catch (_) { }
 
@@ -40,24 +58,24 @@
             try { await w.loadAuthInfo(); } catch (_) {}
           }
         }
-        throw new Error(`dashboard summary failed (${r.status})`);
+        throw await buildHttpError(r, 'dashboard summary failed');
       }
       const d = await r.json();
 
       const hostsTotal = d?.hosts?.total ?? 0;
       const hostsOnline = d?.hosts?.online ?? 0;
       const hostsOffline = d?.hosts?.offline ?? Math.max(0, hostsTotal - hostsOnline);
+      const lastUpdatedEl = document.getElementById('guardian-last-updated');
+      if (lastUpdatedEl) lastUpdatedEl.textContent = formatDateSafe(d?.ts);
       const secHosts = d?.updates?.hosts_with_security_updates ?? 0;
       const secPkgs = d?.updates?.security_total ?? 0;
-      const updHosts = d?.updates?.hosts_with_updates ?? 0;
-      const updPkgs = d?.updates?.total ?? 0;
       const failed24h = d?.jobs?.failed_runs_last_24h ?? 0;
       const freshest = d?.updates?.freshest_checked_at;
 
       const tfEl = document.getElementById('kpi-timeframe');
       const kpiHours = parseInt((tfEl?.value || '24').trim(), 10) || 24;
       const sr = await fetch(`/dashboard/slo?hours=${encodeURIComponent(kpiHours)}`, { credentials: 'include' });
-      if (!sr.ok) throw new Error(`dashboard slo failed (${sr.status})`);
+      if (!sr.ok) throw await buildHttpError(sr, 'dashboard slo failed');
       const slo = await sr.json();
       const k = slo?.kpis || {};
 
@@ -72,20 +90,17 @@
 
       const offline = k.offline_host_ratio || {};
       const succ = k.job_success_rate || {};
-      const patch = k.median_patch_duration || {};
       const auth = k.auth_error_rate || {};
 
-      if (onlineEl) onlineEl.textContent = fmtNum(offline.value, 1, '%');
-      if (onlineDetailsEl) onlineDetailsEl.textContent = `${trend(offline.value, offline.previous, true)} • n=${offline.sample_count ?? 0}`;
+      if (onlineEl) onlineEl.textContent = `${hostsOffline}/${hostsTotal}`;
+      if (onlineDetailsEl) onlineDetailsEl.textContent = `${fmtNum(offline.value, 1, '%')} offline • ${trend(offline.value, offline.previous, true)} • n=${offline.sample_count ?? 0}`;
       if (secEl) secEl.textContent = fmtNum(succ.value, 1, '%');
-      if (secDetailsEl) secDetailsEl.textContent = `${trend(succ.value, succ.previous)} • n=${succ.sample_count ?? 0}`;
-      if (updEl) updEl.textContent = fmtNum(patch.value, 1, 's');
-      if (updDetailsEl) updDetailsEl.textContent = `${trend(patch.value, patch.previous, true)} • n=${patch.sample_count ?? 0}`;
-      if (failEl) failEl.textContent = fmtNum(auth.value, 1, '%');
-      const authNoData = !auth.sample_count ? 'no data in window' : `${trend(auth.value, auth.previous, true)} • n=${auth.sample_count ?? 0}`;
+      if (secDetailsEl) secDetailsEl.textContent = `Using SLO window ${kpiHours}h`;
+      if (failEl) failEl.textContent = fmtNum(succ.value, 1, '%');
+      const slaDetail = !succ.sample_count ? 'no data in window' : `${trend(succ.value, succ.previous)} • n=${succ.sample_count ?? 0}`;
       const failDetailsEl = document.getElementById('kpi-fail-details');
-      if (failDetailsEl) failDetailsEl.textContent = authNoData;
-      if (freshEl) freshEl.textContent = freshest ? new Date(freshest).toLocaleString() : '–';
+      if (failDetailsEl) failDetailsEl.textContent = slaDetail;
+      if (freshEl) freshEl.textContent = formatDateSafe(freshest);
 
       if (maintenanceEl) {
         try {
@@ -95,120 +110,50 @@
             if (!md.enabled) {
               maintenanceEl.className = 'status-muted';
               maintenanceEl.textContent = 'Maintenance window: disabled';
+              if (secEl) secEl.textContent = 'Disabled';
+              if (secDetailsEl) secDetailsEl.textContent = 'No active maintenance policy';
             } else if (md.within_window_now) {
               maintenanceEl.className = 'status-ok';
               maintenanceEl.textContent = `Maintenance window: ACTIVE (${md.start}-${md.end} ${md.timezone})`;
+              if (secEl) secEl.textContent = `${md.start}-${md.end}`;
+              if (secDetailsEl) secDetailsEl.textContent = `${md.timezone} · currently active`;
             } else {
               maintenanceEl.className = 'status-warn';
               maintenanceEl.textContent = `Maintenance window: outside allowed hours (${md.start}-${md.end} ${md.timezone})`;
+              if (secEl) secEl.textContent = `${md.start}-${md.end}`;
+              if (secDetailsEl) secDetailsEl.textContent = `${md.timezone} · outside window`;
             }
           }
         } catch (_) { }
       }
 
-      if (morningBriefEl) {
-        morningBriefEl.innerHTML = '<div class="loading">Building brief…</div>';
-        try {
-          const reportUrl = `/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500`;
-          const rr = await fetch(reportUrl, { credentials: 'include' });
-          if (!rr.ok) throw new Error(`hosts-updates failed (${rr.status})`);
-          const report = await rr.json();
-          const items = Array.isArray(report?.items) ? report.items : [];
+      if (operationalQualityEl) {
+        const onlineRatio = hostsTotal > 0 ? (hostsOnline / hostsTotal) * 100 : 0;
+        const patchHygiene = hostsTotal > 0 ? ((hostsTotal - secHosts) / hostsTotal) * 100 : 0;
+        const successRate = Number(succ.value || 0);
 
-          const rebootRequired = items.filter((it) => !!it.reboot_required).length;
-          const heavySecurity = items.filter((it) => Number(it.security_updates || 0) >= 10).length;
-          const staleHosts = items.filter((it) => {
-            const last = it?.last_seen ? Date.parse(it.last_seen) : NaN;
-            if (!Number.isFinite(last)) return true;
-            return (Date.now() - last) > (24 * 60 * 60 * 1000);
-          }).length;
+        const qualityRow = (label, score, detail) => {
+          const s = Math.max(0, Math.min(100, Number(score || 0)));
+          const cls = s >= 95 ? 'status-ok' : s >= 85 ? 'status-warn' : 'status-error';
+          return `<div style="display:flex;flex-direction:column;gap:.2rem;">
+            <div style="display:flex;justify-content:space-between;gap:.6rem;"><span>${label}</span><b class="${cls}">${s.toFixed(1)}%</b></div>
+            <div style="height:6px;border-radius:6px;background:var(--panel-2);overflow:hidden;"><div style="height:100%;width:${s}%;background:linear-gradient(90deg,${cssVar('--quality-bar-start', 'var(--primary)')},${cssVar('--quality-bar-end', 'var(--success)')});"></div></div>
+            <div class="status-muted" style="font-size:.78rem;">${detail}</div>
+          </div>`;
+        };
 
-          const thresholdsKey = 'fleet_brief_thresholds_v1';
-          let th = { offline: 1, failed: 1, secPkgs: 20 };
-          try {
-            const raw = localStorage.getItem(thresholdsKey);
-            const parsed = raw ? JSON.parse(raw) : null;
-            if (parsed && typeof parsed === 'object') {
-              th = {
-                offline: Number(parsed.offline || 1),
-                failed: Number(parsed.failed || 1),
-                secPkgs: Number(parsed.secPkgs || 20),
-              };
-            }
-          } catch (_) { }
-
-          const alerts = [];
-          if (hostsOffline >= th.offline) alerts.push(`offline hosts (${hostsOffline} ≥ ${th.offline})`);
-          if (failed24h >= th.failed) alerts.push(`failed runs (${failed24h} ≥ ${th.failed})`);
-          if (secPkgs >= th.secPkgs) alerts.push(`security backlog (${secPkgs} ≥ ${th.secPkgs})`);
-
-          morningBriefEl.innerHTML = `
-            <div style="display:flex;flex-direction:column;gap:0.35rem;">
-              <div><span style="color:var(--muted-2);">Offline hosts:</span> <b>${hostsOffline}</b> <button class="btn" data-brief-action="offline" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:var(--muted-2);">Security backlog:</span> <b>${secPkgs}</b> packages on <b>${secHosts}</b> hosts</div>
-              <div><span style="color:var(--muted-2);">Reboot required:</span> <b>${rebootRequired}</b> hosts</div>
-              <div><span style="color:var(--muted-2);">Failed runs (24h):</span> <b>${failed24h}</b> <button class="btn" data-brief-action="failed" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:var(--muted-2);">Hosts with 10+ security updates:</span> <b>${heavySecurity}</b> <button class="btn" data-brief-action="heavy-security" type="button" style="margin-left:0.35rem;padding:0.2rem 0.45rem;">Show</button></div>
-              <div><span style="color:var(--muted-2);">Stale inventory (&gt;24h):</span> <b>${staleHosts}</b></div>
-
-              <div style="margin-top:0.4rem;padding-top:0.4rem;border-top:1px solid var(--border);display:flex;gap:0.35rem;flex-wrap:wrap;align-items:center;">
-                <span style="color:var(--muted-2);font-size:0.82rem;">Alerts:</span>
-                <label style="font-size:0.8rem;color:var(--muted-2);">Offline ≥ <input id="brief-th-offline" type="number" min="0" value="${th.offline}" style="width:58px;" /></label>
-                <label style="font-size:0.8rem;color:var(--muted-2);">Failed ≥ <input id="brief-th-failed" type="number" min="0" value="${th.failed}" style="width:58px;" /></label>
-                <label style="font-size:0.8rem;color:var(--muted-2);">Sec pkgs ≥ <input id="brief-th-sec" type="number" min="0" value="${th.secPkgs}" style="width:64px;" /></label>
-                <button class="btn" id="brief-th-save" type="button" style="padding:0.2rem 0.45rem;">Save</button>
-              </div>
-              <div style="font-size:0.85rem;" class="${alerts.length ? 'status-error' : 'status-ok'}">${alerts.length ? ('Attention: ' + alerts.join(' • ')) : 'No alert thresholds exceeded.'}</div>
-            </div>
-          `;
-
-          morningBriefEl.querySelectorAll('[data-brief-action]').forEach((btn) => {
-            btn.addEventListener('click', (e) => {
-              e.preventDefault();
-              const action = btn.getAttribute('data-brief-action') || '';
-              if (action === 'failed') {
-                const el = document.getElementById('failed-runs-card');
-                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                return;
-              }
-
-              document.getElementById('nav-hosts')?.click();
-              const sortSel = document.getElementById('hosts-sort');
-              const orderSel = document.getElementById('hosts-order');
-
-              if (action === 'offline') {
-                if (sortSel) sortSel.value = 'last_seen';
-                if (orderSel) orderSel.value = 'asc';
-              } else if (action === 'heavy-security') {
-                if (sortSel) sortSel.value = 'security_updates';
-                if (orderSel) orderSel.value = 'desc';
-              }
-
-              sortSel?.dispatchEvent(new Event('change'));
-            });
-          });
-
-          document.getElementById('brief-th-save')?.addEventListener('click', () => {
-            const offlineN = Number(document.getElementById('brief-th-offline')?.value || 0);
-            const failedN = Number(document.getElementById('brief-th-failed')?.value || 0);
-            const secN = Number(document.getElementById('brief-th-sec')?.value || 0);
-            try {
-              localStorage.setItem('fleet_brief_thresholds_v1', JSON.stringify({ offline: offlineN, failed: failedN, secPkgs: secN }));
-              if (typeof w.showToast === 'function') w.showToast('Morning brief thresholds saved', 'success');
-            } catch (_) {
-              if (typeof w.showToast === 'function') w.showToast('Failed to save thresholds', 'error');
-            }
-          });
-        } catch (briefErr) {
-          morningBriefEl.innerHTML = `<div class="error">Brief unavailable: ${w.escapeHtml(briefErr.message || String(briefErr))}</div>`;
-        }
+        operationalQualityEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:.55rem;">
+          ${qualityRow('Online host ratio', onlineRatio, `${hostsOnline}/${hostsTotal} hosts online`) }
+          ${qualityRow('Patch hygiene', patchHygiene, `${secHosts} hosts with security updates`) }
+          ${qualityRow('Job success rate', successRate, `SLO window ${kpiHours}h`) }
+        </div>`;
       }
 
       if (nextCronEl) {
         nextCronEl.innerHTML = '<div class="loading">Loading cronjobs…</div>';
         try {
           const rc = await fetch('/cronjobs', { credentials: 'include' });
-          if (!rc.ok) throw new Error(`cronjobs failed (${rc.status})`);
+          if (!rc.ok) throw await buildHttpError(rc, 'cronjobs failed');
           const cron = await rc.json();
           const items = Array.isArray(cron?.items) ? cron.items : [];
           const upcoming = items
@@ -224,7 +169,7 @@
             nextCronEl.innerHTML = '<div class="status-muted">No scheduled cronjobs.</div>';
           } else {
             nextCronEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:0.3rem;">${upcoming.map((it, idx) => {
-              const when = it?.run_at ? new Date(it.run_at).toLocaleString() : '–';
+              const when = formatDateSafe(it?.run_at);
               const action = w.escapeHtml(String(it?.action || 'job'));
               const name = w.escapeHtml(String(it?.name || action));
               return `<div><b>${idx + 1}.</b> ${name} <span style="color:var(--muted-2);">(${action})</span><br/><span style="color:var(--muted-2);font-size:0.9rem;">${w.escapeHtml(when)}</span></div>`;
@@ -239,7 +184,7 @@
         attentionEl.innerHTML = '<div class="loading">Loading attention list…</div>';
         try {
           const r2 = await fetch(`/dashboard/attention?limit=200&include_live=true&force_live=${forceLive ? 'true' : 'false'}`, { credentials: 'include' });
-          if (!r2.ok) throw new Error(`attention failed (${r2.status})`);
+          if (!r2.ok) throw await buildHttpError(r2, 'attention failed');
           const a = await r2.json();
           const rows = a?.items || [];
           if (!rows.length) {
@@ -366,13 +311,18 @@
     const counterEl = document.getElementById('hosts-visible-counter');
     const total = Array.isArray(hostsTableItemsCache) ? hostsTableItemsCache.length : 0;
     if (!items.length) {
-      if (counterEl) counterEl.textContent = `0 / ${total} hosts shown`;
+      if (counterEl) counterEl.textContent = `0 / ${total} hosts shown · online 0 · offline 0`;
       w.setTableState(tbody, 10, 'empty', 'No hosts match current filters');
       if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
       return;
     }
 
-    if (counterEl) counterEl.textContent = `${items.length} / ${total} hosts shown`;
+    if (counterEl) {
+      const onlineCount = items.filter((it) => !!it.is_online).length;
+      const offlineCount = Math.max(0, items.length - onlineCount);
+      const withUpdates = items.filter((it) => Number(it.security_updates || 0) > 0 || Number(it.updates || 0) > 0).length;
+      counterEl.textContent = `${items.length} / ${total} hosts shown · online ${onlineCount} · offline ${offlineCount} · pending updates ${withUpdates}`;
+    }
 
     if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') {
       ctx.setLastRenderedAgentIds(items.map((it) => String(it.agent_id || '')).filter(Boolean));
@@ -394,6 +344,10 @@
 
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
+      const activeAgentId = (ctx.getCurrentAgentId && ctx.getCurrentAgentId()) || '';
+      if (activeAgentId && String(it.agent_id || '') === String(activeAgentId)) {
+        tr.classList.add('host-row-active');
+      }
       const selectedAgentIds = (ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || new Set();
       tr.innerHTML = `
         <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
@@ -537,10 +491,7 @@
     const hintEl = document.getElementById('hosts-updates-hint');
     if (!hintEl) return;
 
-    const fmt = (iso) => {
-      if (!iso) return '–';
-      try { return new Date(iso).toLocaleString(); } catch (_) { return String(iso); }
-    };
+    const fmt = (iso) => formatDateSafe(iso);
 
     try {
       const [summaryRes, jobsRes] = await Promise.all([
@@ -579,7 +530,7 @@
       w.setTableState(tbody, 10, 'loading', 'Loading…');
       const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include' });
-      if (!r.ok) throw new Error(`hosts report failed (${r.status})`);
+      if (!r.ok) throw await buildHttpError(r, 'hosts report failed');
       const d = await r.json();
       const items = d?.items || [];
       hostsTableItemsCache = Array.isArray(items) ? items : [];
@@ -664,7 +615,7 @@
     try {
       const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
       const r = await fetch(url, { credentials: 'include' });
-      if (!r.ok) throw new Error(`report failed (${r.status})`);
+      if (!r.ok) throw await buildHttpError(r, 'report failed');
       const d = await r.json();
       const items = d?.items || [];
       if (showToastOnManual) w.showToast('Report refreshed', 'success');
@@ -699,16 +650,17 @@
   }
 
   async function loadNotifications(ctx, showToastOnManual) {
-    const wrap = document.getElementById('overview-notifications');
+    const wrap = document.getElementById('overview-active-alerts') || document.getElementById('overview-notifications');
     const card = document.getElementById('notifications-card');
     const badge = document.getElementById('notifications-badge');
     if (!wrap) return;
     try {
-      wrap.innerHTML = '<div class="loading">Loading notifications…</div>';
-      const r = await fetch('/dashboard/notifications?limit=30', { credentials: 'include' });
+      const compactMode = wrap.id === 'overview-active-alerts';
+      wrap.innerHTML = '<div class="loading">Loading alerts…</div>';
+      const r = await fetch(`/dashboard/notifications?limit=${compactMode ? 8 : 30}`, { credentials: 'include' });
       if (!r.ok) {
         if (r.status === 403) return; // MFA transient
-        throw new Error(`notifications failed (${r.status})`);
+        throw await buildHttpError(r, 'notifications failed');
       }
       const d = await r.json();
       const itemsRaw = Array.isArray(d?.items) ? d.items : [];
@@ -734,10 +686,18 @@
 
       if (!items.length) {
         if (card) card.style.display = 'none';
-        wrap.innerHTML = '<div class="status-ok">No active notifications 🎯</div>';
+        wrap.innerHTML = '<div class="status-ok">No active alerts.</div>';
       } else {
-        if (card) card.style.display = '';
-        wrap.innerHTML = `
+        if (card && !compactMode) card.style.display = '';
+        wrap.innerHTML = compactMode
+          ? `<div style="display:flex;flex-direction:column;gap:0.4rem;">${items.map((it) => `<div style="border:1px solid var(--border);border-radius:8px;padding:0.38rem 0.5rem;background:var(--panel-2);">
+              <div style="display:flex;justify-content:space-between;gap:0.45rem;align-items:center;">
+                <b>${w.escapeHtml(it.title || '')}</b>
+                <span style="font-size:0.72rem;" class="${it.severity==='high' ? 'status-error' : 'status-warn'}">${w.escapeHtml(it.severity || 'info')}</span>
+              </div>
+              <div class="status-muted" style="font-size:0.8rem;">${w.escapeHtml(it.detail || '')}</div>
+            </div>`).join('')}</div>`
+          : `
           <div style="display:flex;gap:0.5rem;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;">
             <div style="color:var(--muted-2);display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
               <span>Unread: <b>${unread.length}</b> / ${items.length}</span>
@@ -855,6 +815,7 @@
     const navHosts = document.getElementById('nav-hosts');
     const navCronjobs = document.getElementById('nav-cronjobs');
     const navSshKeys = document.getElementById('nav-sshkeys');
+    const navReports = document.getElementById('nav-reports');
     const nextCronjobsOpenBtn = document.getElementById('overview-next-cronjobs-open');
     const containerEl = document.querySelector('.container');
 
@@ -930,10 +891,18 @@
       ctx.loadAdminSshKeys();
     }
 
+    function showReportsTab() {
+      ctx.clearCurrentHostSelection();
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('reports-tab')?.classList.add('active');
+      if (containerEl) containerEl.classList.add('sidebar-collapsed');
+    }
+
     navOverview?.addEventListener('click', (e) => { e.preventDefault(); showOverviewTab(); });
     navHosts?.addEventListener('click', (e) => { e.preventDefault(); showHostsTab(); });
     navCronjobs?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
     navSshKeys?.addEventListener('click', (e) => { e.preventDefault(); showSshKeysTab(); });
+    navReports?.addEventListener('click', (e) => { e.preventDefault(); showReportsTab(); });
     nextCronjobsOpenBtn?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
 
     showOverviewTab();
@@ -948,7 +917,6 @@
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
     const teamsBriefBtn = document.getElementById('teams-send-brief');
-
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
     w.wireBusyClick(notificationsRefreshBtn, 'Refreshing…', async () => { await loadNotifications(ctx, true); });
     w.wireBusyClick(teamsTestBtn, 'Sending…', async () => {
@@ -967,6 +935,7 @@
       }
       w.showToast('Teams morning brief sent', 'success');
     });
+
     w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false)]); });
     kpiTimeframeEl?.addEventListener('change', () => {
       ctx.loadFleetOverview(true);

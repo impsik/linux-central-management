@@ -16,6 +16,8 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Fleet overview + “Attention required” (offline, high disk, high load, security updates, etc.)
 - **Morning Brief** card with quick drill-down actions
 - **Notification Center** (unread badge, mark-read, snooze by alert kind)
+- **Backup verification** status card (verified/stale/failed), latest timestamp, details link, configurable stale threshold
+- **Failed run details** modal copy helper with robust clipboard fallback (clipboard API → legacy copy → manual Ctrl/Cmd+C)
 - **Saved Views** for host filters (per-user, shared/team views, default startup view)
 - **Create cron from current view** + run-now/runbook quick actions
 - Per-host:
@@ -27,6 +29,10 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Admin:
   - users list + create/reset/deactivate users
   - audit log (who did what: auth, user lifecycle, MFA, package actions, etc.)
+- Patching rollout controls:
+  - campaign rollout summary (per-wave)
+  - pause/resume rollout
+  - approve-next wave for progressive rollout
 
 ### API
 - `/health` for health checks
@@ -35,6 +41,18 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - `/dashboard/notifications` for in-app notification feed
 - `/auth/views` for saved views (user/shared)
 - `/dashboard/alerts/teams/*` for Teams test + morning brief push
+- `/backup-verification/*` for verification runs + policy:
+  - `POST /backup-verification/runs`
+  - `GET /backup-verification/latest`
+  - `GET /backup-verification/runs/{id}`
+  - `GET /backup-verification/policy`
+  - `PUT /backup-verification/policy`
+  - `POST /backup-verification/policy/run-now`
+- rollout control APIs:
+  - `GET /patching/campaigns/{campaign_id}/rollout`
+  - `POST /patching/campaigns/{campaign_id}/pause`
+  - `POST /patching/campaigns/{campaign_id}/resume`
+  - `POST /patching/campaigns/{campaign_id}/approve-next`
 
 ---
 ![Screenshot](docs/image.png)
@@ -44,7 +62,7 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 - Docker + Docker Compose
 - If needed:
 ```bash
-sudo apt install docker.io docker-compose-v2 ansible-core -y
+sudo apt install docker.io docker-compose-v2 ansible-core golang-go -y
 sudo usermod $USER -a -G docker # log out and log in again.
 ```
 
@@ -87,7 +105,6 @@ Login with the bootstrap user you set in `deploy/docker/.env`.
 ### 1) Build (or copy the binary)
 ```bash
 cd ../../agent
-sudo apt  install golang-go
 go build -o fleet-agent ./cmd/fleet-agent
 ssh-copy-id $USER@<to agent IP address/FQDN>
 scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
@@ -97,7 +114,9 @@ scp fleet-agent IP ADDRESS:/home/USERNAME/fleet-agent
 cd ../
 cp hosts.example hosts
 # edit hosts
-SERVER_URL=http://<SERVER_IP>:8000 AGENT_TOKEN=<AGENT_SHARED_TOKEN> TERM_TOKEN=<AGENT_TERMINAL_TOKEN> TARGETS=all ./script.sh
+# script.sh now auto-creates .env files and secure tokens on first run.
+# You can still override values explicitly via env vars when needed.
+SERVER_URL=http://<SERVER_IP>:8000 TARGETS=all ./script.sh
 ```
 
 ### 2) Run (foreground)
@@ -201,6 +220,36 @@ For local development only, you can bypass this requirement by setting:
 
 Do **not** use that on anything exposed beyond a trusted LAN.
 
+### Token/env checklist (what to set, where)
+No new secret tokens were introduced for backup verification or rollout controls.
+Use the existing env/token wiring below:
+
+### Startup guardrails (non-local deployments)
+The server now fails fast on non-local deployments if insecure settings are detected.
+
+Blocked conditions:
+- placeholder or missing `BOOTSTRAP_PASSWORD`
+- placeholder or missing `AGENT_SHARED_TOKEN`
+- missing/placeholder `MFA_ENCRYPTION_KEY` when MFA is required
+- `UI_COOKIE_SECURE=false`
+- `DB_AUTO_CREATE_TABLES=true`
+- terminal enabled with `AGENT_TERMINAL_SCHEME=ws` (requires `wss`)
+
+Local dev remains supported with `ALLOW_INSECURE_NO_AGENT_TOKEN=true` and local DB settings.
+
+**Server (`deploy/docker/.env`)**
+- `BOOTSTRAP_PASSWORD` (required)
+- `AGENT_SHARED_TOKEN` (required)
+- `MFA_ENCRYPTION_KEY` (required when MFA is enabled)
+- `AGENT_TERMINAL_TOKEN` (only if terminal feature is enabled)
+- `TEAMS_WEBHOOK_URL` + `TEAMS_ALERTS_ENABLED=true` (optional Teams alerts)
+
+**Agent host (systemd/ENV)**
+- `FLEET_AGENT_TOKEN` = same value as server `AGENT_SHARED_TOKEN`
+- `FLEET_TERMINAL_TOKEN` = same value as server `AGENT_TERMINAL_TOKEN` (if terminal enabled)
+
+If token values do not match between server and agent, registration/job polling/terminal proxy calls will fail.
+
 ### Terminal feature (high risk)
 The agent has an optional websocket PTY feature.
 Enable only on trusted networks and only with explicit tokens.
@@ -233,6 +282,14 @@ Caddy reverse-proxy modes (`deploy/docker/caddy-compose.example.yml` + `Caddyfil
 ### Docker deployment defaults
 - Postgres is internal-only by default in `deploy/docker/docker-compose.yml` (not published to host).
 - If you need host-local debug access, expose `127.0.0.1:5432:5432` via compose override.
+
+### CI security gate (required check)
+A dedicated GitHub Actions workflow is provided at:
+- `.github/workflows/security.yml`
+
+It runs a `Security` check (secrets, SAST, dependency vulns, and Trivy scans).
+For protected branches, configure branch protection to require the **Security** status check before merge.
+See also: `RELEASE_SECURITY_CHECKLIST.md`.
 
 ### Maintenance window guardrails (optional)
 Use this to block risky actions outside an approved window.
@@ -330,6 +387,15 @@ GitHub Actions runs:
 - full backend test suite
 
 Workflow file: `.github/workflows/ci.yml`
+
+### Theme audit
+Run the lightweight theme hardening guard before committing UI template changes:
+
+```bash
+python3 scripts/theme-audit.py
+```
+
+The script exits non-zero when it finds risky hardcoded hex colors in server templates/reports.
 
 ### Release notes
 See `CHANGELOG.md` for recent feature additions/fixes.

@@ -20,6 +20,57 @@
   --header-bg: linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%);
   --header-text: #0f172a;
   --header-subtle: rgba(15, 23, 42, 0.65);
+  --focus-ring: rgba(37, 99, 235, 0.25);
+  --admin-divider: rgba(15, 23, 42, 0.18);
+  --admin-status: rgba(15, 23, 42, 0.65);
+  --admin-status-error: #b91c1c;
+  --admin-status-success: #166534;
+  --modal-overlay-bg: rgba(15, 23, 42, 0.25);
+  --terminal-surface: #0b1220;
+  --error-bg: rgba(239, 68, 68, 0.14);
+  --error-text: #b91c1c;
+  --empty-state-text: #64748b;
+  --status-ok-text: #166534;
+  --status-warn-text: #92400e;
+  --status-error-text: #b91c1c;
+  --status-muted-text: #475569;
+  --status-link-text: #1d4ed8;
+  --status-ok-bg: rgba(34, 197, 94, 0.14);
+  --status-ok-border: rgba(34, 197, 94, 0.35);
+  --status-warn-bg: rgba(251, 191, 36, 0.15);
+  --status-warn-border: rgba(251, 191, 36, 0.35);
+  --pkg-status-text: #475569;
+  --pkg-badge-good-bg: rgba(34, 197, 94, 0.12);
+  --pkg-badge-good-text: #166534;
+  --pkg-badge-good-border: rgba(22, 163, 74, 0.35);
+  --pkg-badge-bad-bg: rgba(239, 68, 68, 0.12);
+  --pkg-badge-bad-text: #b91c1c;
+  --pkg-badge-bad-border: rgba(220, 38, 38, 0.35);
+  --pkg-badge-neutral-bg: #e2e8f0;
+  --pkg-badge-neutral-text: #475569;
+  --pkg-badge-neutral-border: #cbd5e1;
+  --new-user-bg: rgba(250, 204, 21, 0.15);
+  --new-user-border: rgba(250, 204, 21, 0.45);
+  --new-user-badge-bg: rgba(250, 204, 21, 0.32);
+  --new-user-badge-text: #92400e;
+  --chart-grid: #cbd5e1;
+  --chart-line: #2563eb;
+  --chart-point: #2563eb;
+  --disk-usage-track: rgba(148, 163, 184, 0.25);
+  --quality-bar-start: #14b8a6;
+  --quality-bar-end: #22c55e;
+  --nav-indicator-error: #dc2626;
+  --nav-indicator-warn: #d97706;
+  --sudo-mode-label-text: var(--text);
+  --sudo-mode-select-bg: var(--panel);
+  --sudo-mode-select-border: var(--border);
+  --sudo-mode-select-text: var(--text);
+  --report-th-bg: var(--panel-2);
+  --report-code-bg: color-mix(in srgb, var(--panel-2) 80%, var(--panel));
+  --report-pill-online-bg: #dcfce7;
+  --report-pill-online-text: #166534;
+  --report-pill-offline-bg: #fee2e2;
+  --report-pill-offline-text: #991b1b;
 }
 
 :root[data-theme="dark"] {
@@ -41,6 +92,57 @@
   --header-bg: linear-gradient(135deg, #0f172a 0%, #020617 100%);
   --header-text: #ffffff;
   --header-subtle: rgba(255, 255, 255, 0.7);
+  --focus-ring: rgba(59, 130, 246, 0.25);
+  --admin-divider: rgba(255, 255, 255, 0.2);
+  --admin-status: rgba(255, 255, 255, 0.7);
+  --admin-status-error: #fecaca;
+  --admin-status-success: #bbf7d0;
+  --modal-overlay-bg: rgba(2, 6, 23, 0.55);
+  --terminal-surface: #0b1220;
+  --error-bg: rgba(239, 68, 68, 0.2);
+  --error-text: #fecaca;
+  --empty-state-text: #94a3b8;
+  --status-ok-text: #86efac;
+  --status-warn-text: #fbbf24;
+  --status-error-text: #fca5a5;
+  --status-muted-text: #94a3b8;
+  --status-link-text: #60a5fa;
+  --status-ok-bg: rgba(34, 197, 94, 0.15);
+  --status-ok-border: rgba(34, 197, 94, 0.35);
+  --status-warn-bg: rgba(251, 191, 36, 0.15);
+  --status-warn-border: rgba(251, 191, 36, 0.35);
+  --pkg-status-text: #cbd5e1;
+  --pkg-badge-good-bg: rgba(34, 197, 94, 0.2);
+  --pkg-badge-good-text: #86efac;
+  --pkg-badge-good-border: rgba(34, 197, 94, 0.35);
+  --pkg-badge-bad-bg: rgba(239, 68, 68, 0.2);
+  --pkg-badge-bad-text: #fecaca;
+  --pkg-badge-bad-border: rgba(239, 68, 68, 0.35);
+  --pkg-badge-neutral-bg: #111827;
+  --pkg-badge-neutral-text: #cbd5e1;
+  --pkg-badge-neutral-border: #1f2937;
+  --new-user-bg: rgba(250, 204, 21, 0.15);
+  --new-user-border: rgba(250, 204, 21, 0.45);
+  --new-user-badge-bg: rgba(250, 204, 21, 0.35);
+  --new-user-badge-text: #fde68a;
+  --chart-grid: #334155;
+  --chart-line: #667eea;
+  --chart-point: #667eea;
+  --disk-usage-track: rgba(148, 163, 184, 0.25);
+  --quality-bar-start: #14b8a6;
+  --quality-bar-end: #22c55e;
+  --nav-indicator-error: #ef4444;
+  --nav-indicator-warn: #f59e0b;
+  --sudo-mode-label-text: #e6f0ff;
+  --sudo-mode-select-bg: #0b1422;
+  --sudo-mode-select-border: #2d4f73;
+  --sudo-mode-select-text: #e6f0ff;
+  --report-th-bg: #111827;
+  --report-code-bg: #0f172a;
+  --report-pill-online-bg: #14532d;
+  --report-pill-online-text: #bbf7d0;
+  --report-pill-offline-bg: #7f1d1d;
+  --report-pill-offline-text: #fecaca;
 }
 
 * {
@@ -180,7 +282,7 @@ body {
 .admin-divider {
   width: 1px;
   height: 32px;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--admin-divider);
   margin: 0 0.25rem;
 }
 
@@ -209,21 +311,21 @@ body {
 
 .admin-input:focus {
   border-color: color-mix(in srgb, var(--primary) 75%, transparent);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .admin-status {
   font-size: 0.8rem;
   min-height: 1em;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--admin-status);
 }
 
 .admin-status.error {
-  color: #fecaca;
+  color: var(--admin-status-error);
 }
 
 .admin-status.success {
-  color: #bbf7d0;
+  color: var(--admin-status-success);
 }
 
 .header-actions .btn {
@@ -233,16 +335,12 @@ body {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(2, 6, 23, 0.55);
+  background: var(--modal-overlay-bg);
   display: none;
   align-items: center;
   justify-content: center;
   z-index: 50;
   padding: 1.5rem;
-}
-
-:root[data-theme="light"] .modal-overlay {
-  background: rgba(15, 23, 42, 0.25);
 }
 
 .modal-overlay.open {
@@ -782,7 +880,7 @@ body {
 .pkg-status-line {
   margin-top: 0.35rem;
   font-size: 0.75rem;
-  color: #cbd5e1;
+  color: var(--pkg-status-text);
   display: flex;
   gap: 0.4rem;
   align-items: center;
@@ -802,21 +900,21 @@ body {
 }
 
 .pkg-badge.good {
-  background: rgba(34, 197, 94, 0.2);
-  color: #86efac;
-  border-color: rgba(34, 197, 94, 0.35);
+  background: var(--pkg-badge-good-bg);
+  color: var(--pkg-badge-good-text);
+  border-color: var(--pkg-badge-good-border);
 }
 
 .pkg-badge.bad {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fecaca;
-  border-color: rgba(239, 68, 68, 0.35);
+  background: var(--pkg-badge-bad-bg);
+  color: var(--pkg-badge-bad-text);
+  border-color: var(--pkg-badge-bad-border);
 }
 
 .pkg-badge.neutral {
-  background: #111827;
-  color: #cbd5e1;
-  border-color: #1f2937;
+  background: var(--pkg-badge-neutral-bg);
+  color: var(--pkg-badge-neutral-text);
+  border-color: var(--pkg-badge-neutral-border);
 }
 
 .pkg-badge code {
@@ -1080,8 +1178,8 @@ body {
 }
 
 .user-card.new-user {
-  background: rgba(250, 204, 21, 0.15);
-  border-color: rgba(250, 204, 21, 0.45);
+  background: var(--new-user-bg);
+  border-color: var(--new-user-border);
 }
 
 .new-user-badge {
@@ -1091,8 +1189,8 @@ body {
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.04em;
-  background: rgba(250, 204, 21, 0.35);
-  color: #fde68a;
+  background: var(--new-user-badge-bg);
+  color: var(--new-user-badge-text);
   margin-left: 0.5rem;
   vertical-align: middle;
 }
@@ -1278,7 +1376,7 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   padding: 1rem;
-  background: #0b1220;
+  background: var(--terminal-surface);
   overflow: hidden;
   display: flex;
 }
@@ -1296,8 +1394,8 @@ body {
 }
 
 .error {
-  background: rgba(239, 68, 68, 0.2);
-  color: #fecaca;
+  background: var(--error-bg);
+  color: var(--error-text);
   padding: 1rem;
   border-radius: 6px;
   margin: 1rem 0;
@@ -1306,7 +1404,7 @@ body {
 .empty-state {
   text-align: center;
   padding: 3rem;
-  color: #64748b;
+  color: var(--empty-state-text);
 }
 
 #server-info-placeholder {
@@ -1376,17 +1474,11 @@ body {
 }
 
 /* Semantic status colors (prefer these over inline hex styles). */
-.status-ok { color: #86efac; }
-.status-warn { color: #fbbf24; }
-.status-error { color: #fca5a5; }
-.status-muted { color: #94a3b8; }
-.status-link { color: #60a5fa; }
-
-:root[data-theme="light"] .status-ok { color: #166534; }
-:root[data-theme="light"] .status-warn { color: #92400e; }
-:root[data-theme="light"] .status-error { color: #b91c1c; }
-:root[data-theme="light"] .status-muted { color: #475569; }
-:root[data-theme="light"] .status-link { color: #1d4ed8; }
+.status-ok { color: var(--status-ok-text); }
+.status-warn { color: var(--status-warn-text); }
+.status-error { color: var(--status-error-text); }
+.status-muted { color: var(--status-muted-text); }
+.status-link { color: var(--status-link-text); }
 
 .status-badge {
   display: inline-flex;
@@ -1400,15 +1492,128 @@ body {
 }
 
 .status-badge.ok {
-  color: #86efac;
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.35);
+  color: var(--status-ok-text);
+  background: var(--status-ok-bg);
+  border-color: var(--status-ok-border);
 }
 
 .status-badge.warn {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.15);
-  border-color: rgba(251, 191, 36, 0.35);
+  color: var(--status-warn-text);
+  background: var(--status-warn-bg);
+  border-color: var(--status-warn-border);
+}
+
+.nav-indicator {
+  display: inline-block;
+  margin-left: 6px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.nav-indicator.error {
+  color: var(--nav-indicator-error);
+}
+
+.nav-indicator.warn {
+  color: var(--nav-indicator-warn);
+}
+
+.sudo-mode-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.95rem;
+  color: var(--sudo-mode-label-text);
+  font-weight: 700;
+  padding: 0.2rem 0.1rem;
+  white-space: nowrap;
+}
+
+.sudo-mode-label > span {
+  color: inherit;
+}
+
+body.fleet-report {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial;
+  padding: 24px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.fleet-report h1 {
+  margin: 0 0 6px 0;
+}
+
+.fleet-report .report-meta {
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
+.fleet-report .report-wrap {
+  overflow-x: auto;
+}
+
+.fleet-report .report-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 900px;
+}
+
+.fleet-report .report-table th,
+.fleet-report .report-table td {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.fleet-report .report-table th {
+  background: var(--report-th-bg);
+  position: sticky;
+  top: 0;
+}
+
+.fleet-report .report-sort-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.fleet-report .report-sort-link:hover {
+  text-decoration: underline;
+}
+
+.fleet-report .report-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fleet-report .report-muted {
+  color: var(--muted-2);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.fleet-report .report-code {
+  background: var(--report-code-bg);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.fleet-report .report-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.fleet-report .report-pill.online {
+  background: var(--report-pill-online-bg);
+  color: var(--report-pill-online-text);
+}
+
+.fleet-report .report-pill.offline {
+  background: var(--report-pill-offline-bg);
+  color: var(--report-pill-offline-text);
 }
 
 .empty-state svg {

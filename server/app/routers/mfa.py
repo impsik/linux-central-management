@@ -46,7 +46,10 @@ def enroll_start(request: Request, db: Session = Depends(get_db), user: AppUser 
 
     if not secret:
         secret = new_totp_secret()
-        enc = encrypt_secret(secret)
+        try:
+            enc = encrypt_secret(secret)
+        except RuntimeError as e:
+            raise HTTPException(500, str(e))
         with transaction(db):
             user.totp_secret_pending_enc = enc
             user.mfa_pending_at = now_utc()
@@ -76,7 +79,10 @@ def enroll_confirm(payload: CodePayload, request: Request, db: Session = Depends
     if not getattr(user, "totp_secret_pending_enc", None):
         raise HTTPException(400, "No pending MFA enrollment")
 
-    secret = decrypt_secret(user.totp_secret_pending_enc)
+    try:
+        secret = decrypt_secret(user.totp_secret_pending_enc)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
     if not verify_totp(secret, payload.code):
         raise HTTPException(400, "Invalid code")
 
@@ -119,7 +125,10 @@ def verify(payload: CodePayload, request: Request, db: Session = Depends(get_db)
     if not getattr(user, "mfa_enabled", False) or not getattr(user, "totp_secret_enc", None):
         raise HTTPException(403, "MFA enrollment required")
 
-    secret = decrypt_secret(user.totp_secret_enc)
+    try:
+        secret = decrypt_secret(user.totp_secret_enc)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
     code = (payload.code or "").strip()
 
     ok = verify_totp(secret, code)

@@ -253,6 +253,9 @@ class PatchCampaign(Base):
     reboot_if_needed = Column(Boolean, nullable=False, default=False)
     include_kernel = Column(Boolean, nullable=False, default=False)
 
+    # Rollout controls/state (wave progression, pause/resume, auto-pause threshold)
+    rollout_meta = Column(JSON, nullable=False, default=dict)
+
     status = Column(String, nullable=False, default="scheduled", index=True)  # scheduled|running|success|failed|canceled
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -385,6 +388,7 @@ class SSHKeyDeploymentRequest(Base):
     key_id = Column(UUID(as_uuid=True), ForeignKey("user_ssh_keys.id", ondelete="CASCADE"), nullable=False, index=True)
 
     agent_ids = Column(JSON, nullable=False, default=list)
+    sudo_profile = Column(String, nullable=False, default="B")  # B (sudo) | N (no sudo)
     status = Column(String, nullable=False, default="pending", index=True)  # pending|approved|rejected|done|failed
 
     approved_by = Column(String, nullable=True, index=True)
@@ -493,3 +497,60 @@ class CVEPackage(Base):
     __table_args__ = (
         Index("ix_cve_packages_lookup", "release", "package_name"),
     )
+
+
+class BackupVerificationRun(Base):
+    __tablename__ = "backup_verification_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    status = Column(String, nullable=False, index=True)  # verified|failed
+    backup_path = Column(String, nullable=False)
+
+    checksum_algorithm = Column(String, nullable=False, default="sha256")
+    checksum_actual = Column(String, nullable=False)
+    checksum_expected = Column(String)
+
+    integrity_ok = Column(Boolean, nullable=False, default=False)
+    restore_ok = Column(Boolean, nullable=False, default=False)
+    compatibility_ok = Column(Boolean, nullable=False, default=False)
+
+    schema_version = Column(Integer)
+    expected_schema_version = Column(Integer)
+
+    artifact_path = Column(String, nullable=False)
+    detail = Column(JSON, nullable=False, default=dict)
+
+    created_by = Column(String, index=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    finished_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+
+class BackupVerificationPolicy(Base):
+    __tablename__ = "backup_verification_policy"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    enabled = Column(Boolean, nullable=False, default=True)
+
+    backup_path = Column(String, nullable=False)
+    expected_sha256 = Column(String)
+    expected_schema_version = Column(Integer)
+
+    schedule_kind = Column(String, nullable=False, default="daily")  # daily|weekly
+    timezone = Column(String, nullable=False, default="UTC")
+    time_hhmm = Column(String, nullable=False, default="03:00")
+    weekday = Column(Integer)
+
+    stale_after_hours = Column(Integer, nullable=False, default=36)
+    alert_on_failure = Column(Boolean, nullable=False, default=True)
+    alert_on_stale = Column(Boolean, nullable=False, default=True)
+
+    next_run_at = Column(DateTime(timezone=True), index=True)
+    last_run_at = Column(DateTime(timezone=True), index=True)
+    last_status = Column(String)
+    last_error = Column(String)
+    last_alert_at = Column(DateTime(timezone=True), index=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

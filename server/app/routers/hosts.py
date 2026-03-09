@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
+from ..config import settings
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
 from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage, CronJob
 from ..services.db_utils import transaction
@@ -19,8 +20,20 @@ from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
 from ..services.package_names import sanitize_package_list
 from ..services.deb_version import is_vulnerable
+from ..schemas import HostMetadataUpdate
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
+
+
+def _clean_optional_str(value: str | None, *, field: str, max_len: int = 255) -> str | None:
+    if value is None:
+        return None
+    out = str(value).strip()
+    if not out:
+        return ""
+    if len(out) > max_len:
+        raise HTTPException(400, f"{field} too long (max {max_len})")
+    return out
 
 
 @router.get("")
@@ -45,6 +58,72 @@ def list_hosts(online_only: bool = False, db: Session = Depends(get_db), user=De
         if is_host_visible_to_user(db, user, h)
         if (not online_only or is_host_online(h, now))
     ]
+
+
+@router.patch("/{agent_id}/metadata")
+def update_host_metadata(
+    agent_id: str,
+    payload: HostMetadataUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_users"):
+        raise HTTPException(403, "Admin privileges required")
+
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host or not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    next_hostname = _clean_optional_str(payload.hostname, field="hostname")
+    next_role = _clean_optional_str(payload.role, field="role")
+
+    next_env: dict[str, str] | None = None
+    if payload.env is not None:
+        next_env = {}
+        for k, v in (payload.env or {}).items():
+            kk = str(k or "").strip()
+            vv = str(v or "").strip()
+            if not kk:
+                continue
+            if len(kk) > 128:
+                raise HTTPException(400, "env key too long (max 128)")
+            if len(vv) > 2048:
+                raise HTTPException(400, f"env value too long for key '{kk}' (max 2048)")
+            next_env[kk] = vv
+
+    labels = dict(host.labels or {}) if isinstance(host.labels, dict) else {}
+
+    if next_hostname is not None and next_hostname != "":
+        host.hostname = next_hostname
+    if next_role is not None:
+        labels["role"] = next_role
+    if next_env is not None:
+        # Replace env_vars with what UI sends (supports true deletes from UI row removal).
+        labels["env_vars"] = dict(next_env)
+
+        # Back-compat for existing UI/filtering paths that read labels.env directly.
+        env_direct = None
+        for k, v in next_env.items():
+            if str(k).strip().lower() == "env":
+                env_direct = str(v).strip()
+                break
+        if env_direct:
+            labels["env"] = env_direct
+        else:
+            labels.pop("env", None)
+
+    host.labels = labels
+    db.commit()
+
+    return {
+        "ok": True,
+        "host": {
+            "agent_id": host.agent_id,
+            "hostname": host.hostname,
+            "labels": host.labels or {},
+        },
+    }
 
 
 @router.post("/{agent_id}/reboot")
@@ -151,6 +230,7 @@ def host_timeline(
     items = []
     for run, job in rows:
         ts = run.finished_at or run.started_at or job.created_at
+        payload = job.payload if isinstance(job.payload, dict) else {}
         items.append({
             "time": ts,
             "job_id": job.job_key,
@@ -160,6 +240,8 @@ def host_timeline(
             "started_at": run.started_at,
             "finished_at": run.finished_at,
             "created_by": job.created_by,
+            "payload_username": payload.get("username"),
+            "payload_sudo_profile": payload.get("sudo_profile"),
             "logs_zip": f"/jobs/{job.job_key}/logs.zip",
             "stdout": f"/jobs/{job.job_key}/runs/{agent_id}/stdout.txt",
             "stderr": f"/jobs/{job.job_key}/runs/{agent_id}/stderr.txt",
@@ -550,6 +632,7 @@ def list_host_packages(
     agent_id: str,
     search: str | None = None,
     upgradable_only: bool = False,
+    cves_only: bool = False,
     limit: int = 500,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -591,6 +674,11 @@ def list_host_packages(
 
     collected_at = db.execute(select(func.max(HostPackage.collected_at)).where(*base_filter[:1])).scalar_one()
 
+    # For CVE-only view we need a wider candidate set before vulnerability filtering,
+    # otherwise a vulnerable package can be outside the first page and appear missing.
+    base_query_limit = 10000 if cves_only else limit
+    base_query_offset = 0 if cves_only else offset
+
     if upgradable_only:
         join_on = and_(HostPackageUpdate.host_id == HostPackage.host_id, HostPackageUpdate.name == HostPackage.name)
         rows = db.execute(
@@ -603,16 +691,16 @@ def list_host_packages(
                 HostPackageUpdate.candidate_version != HostPackage.version,
             )
             .order_by(HostPackage.name.asc())
-            .limit(limit)
-            .offset(offset)
+            .limit(base_query_limit)
+            .offset(base_query_offset)
         ).scalars().all()
     else:
         rows = db.execute(
             select(HostPackage)
             .where(*base_filter)
             .order_by(HostPackage.name.asc())
-            .limit(limit)
-            .offset(offset)
+            .limit(base_query_limit)
+            .offset(base_query_offset)
         ).scalars().all()
 
     names = [r.name for r in rows]
@@ -661,6 +749,14 @@ def list_host_packages(
                 if c.package_name not in pkg_cves:
                     pkg_cves[c.package_name] = []
                 pkg_cves[c.package_name].append(c.cve_id)
+
+    if cves_only:
+        rows = [r for r in rows if pkg_cves.get(r.name)]
+        total = len(rows)
+        if offset:
+            rows = rows[offset:]
+        if limit:
+            rows = rows[:limit]
 
     return {
         "agent_id": agent_id,
@@ -1074,6 +1170,71 @@ async def get_services(agent_id: str, wait: bool = True, db: Session = Depends(g
     return loads_or(run.stdout, {})
 
 
+@router.post("/{agent_id}/services/{service_name}/{action}")
+async def control_service(
+    agent_id: str,
+    service_name: str,
+    action: str,
+    wait: bool = True,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_services"):
+        raise HTTPException(403, "Insufficient permissions to manage services")
+
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    if not is_host_online(host):
+        t = seconds_since_seen(host)
+        if t is not None:
+            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
+        raise HTTPException(503, "Agent appears offline")
+
+    action_norm = (action or "").strip().lower()
+    if action_norm not in ("start", "stop", "restart", "enable", "disable"):
+        raise HTTPException(400, "action must be one of: start, stop, restart, enable, disable")
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="service-control",
+            payload={"service_name": service_name, "action": action_norm},
+            agent_ids=[agent_id],
+            commit=False,
+        )
+    job_id = created.job.id
+
+    await push_job_to_agents(
+        agent_ids=[agent_id],
+        job_payload_builder=lambda aid: {
+            "job_id": created.job_key,
+            "type": "service-control",
+            "service_name": service_name,
+            "action": action_norm,
+        },
+    )
+
+    if not wait:
+        return {"job_id": created.job_key, "status": "queued"}
+
+    timeout = 30
+    res = await wait_for_job_run(job_id=job_id, agent_id=agent_id, timeout_s=timeout, poll_interval_s=0.3)
+    if not res.run:
+        raise HTTPException(504, f"Timeout waiting for service {action_norm} after {timeout}s")
+
+    run = res.run
+    if run.status == "failed":
+        msg = run.error or run.stderr or run.stdout or "Unknown error"
+        raise HTTPException(500, f"Service {action_norm} failed: {msg}")
+
+    return {"job_id": created.job_key, "status": "success"}
+
+
 @router.get("/{agent_id}/services/{service_name}")
 async def get_service_details(agent_id: str, service_name: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     """Return selected systemd properties for a service."""
@@ -1192,9 +1353,13 @@ async def get_df(agent_id: str, wait: bool = True, db: Session = Depends(get_db)
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        if t is not None:
-            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
-        raise HTTPException(503, "Agent appears offline")
+        msg = f"Agent appears offline (last seen {int(t)}s ago)" if t is not None else "Agent appears offline"
+        return {
+            "stdout": msg,
+            "unavailable": True,
+            "reason": "agent_offline",
+            "last_seen_seconds_ago": int(t) if t is not None else None,
+        }
 
     with transaction(db):
         created = create_job_with_runs(
@@ -1242,9 +1407,48 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        if t is not None:
-            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
-        raise HTTPException(503, "Agent appears offline")
+        # Polling endpoint: tolerate longer heartbeat jitter before declaring unavailable.
+        poll_grace = max(int(getattr(settings, "agent_online_grace_seconds", 30) or 30), 90)
+        if t is None or t > poll_grace:
+            # Try stale snapshot fallback first so UI can still show last-known values.
+            snap = db.execute(
+                select(HostMetricsSnapshot)
+                .where(HostMetricsSnapshot.agent_id == agent_id)
+                .order_by(HostMetricsSnapshot.recorded_at.desc())
+                .limit(1)
+            ).scalar_one_or_none()
+            if snap:
+                ip_list = []
+                if getattr(host, "ip_address", None):
+                    ip_list.append(host.ip_address)
+                return {
+                    "agent_id": agent_id,
+                    "disk_usage": {
+                        "percent_used": float(snap.disk_percent_used) if snap.disk_percent_used not in (None, "") else None,
+                    },
+                    "memory": {
+                        "percent_used": float(snap.mem_percent_used) if snap.mem_percent_used not in (None, "") else None,
+                    },
+                    "cpu": {
+                        "vcpus": snap.vcpus,
+                        "load_1min": float(snap.load_1min) if snap.load_1min not in (None, "") else None,
+                    },
+                    "ip_addresses": ip_list,
+                    "stale": True,
+                    "reason": "agent_offline_snapshot",
+                    "last_seen_seconds_ago": int(t) if t is not None else None,
+                    "snapshot_recorded_at": snap.recorded_at,
+                }
+            return {
+                "agent_id": agent_id,
+                "disk_usage": {},
+                "memory": {},
+                "cpu": {},
+                "ip_addresses": [],
+                "unavailable": True,
+                "reason": "agent_offline",
+                "last_seen_seconds_ago": int(t) if t is not None else None,
+            }
 
     with transaction(db):
         created = create_job_with_runs(
@@ -1408,9 +1612,16 @@ async def get_top_processes(agent_id: str, wait: bool = True, db: Session = Depe
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
-        if t is not None:
-            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
-        raise HTTPException(503, "Agent appears offline")
+        # Polling endpoint: tolerate longer heartbeat jitter before declaring unavailable.
+        poll_grace = max(int(getattr(settings, "agent_online_grace_seconds", 30) or 30), 90)
+        if t is None or t > poll_grace:
+            return {
+                "agent_id": agent_id,
+                "top_processes": [],
+                "unavailable": True,
+                "reason": "agent_offline",
+                "last_seen_seconds_ago": int(t) if t is not None else None,
+            }
 
     with transaction(db):
         created = create_job_with_runs(

@@ -15,9 +15,88 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import Base, SessionLocal, engine
 from .deps import get_current_user_from_request
-from .routers import agent, ansible, approvals, audit, auth, cronjobs, dashboard, hosts, jobs, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
+from .routers import agent, ansible, approvals, audit, auth, backup_verification, cronjobs, dashboard, hosts, jobs, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
 
 logger = logging.getLogger(__name__)
+
+
+_PLACEHOLDER_VALUES = {
+    "",
+    "changeme",
+    "change-me",
+    "change_me",
+    "change-me-long-random",
+    "change-me-agent-token",
+    "change-me-terminal-token",
+    "fleet",
+    "password",
+    "admin",
+    "token",
+}
+
+
+def _is_placeholder_secret(value: str | None) -> bool:
+    v = (value or "").strip().lower()
+    return v in _PLACEHOLDER_VALUES or v.startswith("change-me")
+
+
+def _is_non_local_deployment() -> bool:
+    """Best-effort detector for non-local deployments.
+
+    Signals considered non-local:
+    - ALLOW_INSECURE_NO_AGENT_TOKEN is false
+    - DATABASE_URL host is not localhost/loopback
+    """
+    from urllib.parse import urlparse
+
+    from .config import settings
+
+    if not bool(getattr(settings, "allow_insecure_no_agent_token", False)):
+        return True
+
+    db_url = str(getattr(settings, "database_url", "") or "")
+    try:
+        parsed = urlparse(db_url)
+        host = (parsed.hostname or "").lower()
+    except Exception:
+        host = ""
+
+    local_hosts = {"", "localhost", "127.0.0.1", "::1"}
+    return host not in local_hosts
+
+
+def _enforce_non_local_security_guardrails() -> None:
+    from .config import settings
+
+    if not _is_non_local_deployment():
+        return
+
+    failures: list[str] = []
+
+    if _is_placeholder_secret(getattr(settings, "bootstrap_password", None)):
+        failures.append("BOOTSTRAP_PASSWORD is missing or placeholder")
+
+    if _is_placeholder_secret(getattr(settings, "agent_shared_token", None)):
+        failures.append("AGENT_SHARED_TOKEN is missing or placeholder")
+
+    if bool(getattr(settings, "mfa_require_for_privileged", True)) and _is_placeholder_secret(
+        getattr(settings, "mfa_encryption_key", None)
+    ):
+        failures.append("MFA_ENCRYPTION_KEY is required (and must be non-placeholder) when MFA is enabled")
+
+    if not bool(getattr(settings, "ui_cookie_secure", False)):
+        failures.append("UI_COOKIE_SECURE must be true in non-local deployments")
+
+    if bool(getattr(settings, "db_auto_create_tables", True)):
+        failures.append("DB_AUTO_CREATE_TABLES must be false in non-local deployments")
+
+    terminal_token = getattr(settings, "agent_terminal_token", None)
+    terminal_scheme = str(getattr(settings, "agent_terminal_scheme", "ws") or "ws").lower()
+    if terminal_token and terminal_scheme != "wss":
+        failures.append("AGENT_TERMINAL_SCHEME must be 'wss' when terminal proxy is enabled")
+
+    if failures:
+        raise RuntimeError("Startup blocked by production guardrails: " + "; ".join(failures))
 
 
 def _startup() -> None:
@@ -39,6 +118,8 @@ def _startup() -> None:
         if missing:
             raise RuntimeError(f"OIDC is enabled but missing required settings: {', '.join(missing)}")
 
+    _enforce_non_local_security_guardrails()
+
     if bool(getattr(settings, "db_auto_create_tables", True)):
         Base.metadata.create_all(bind=engine)
         logger.info("DB auto-create enabled: ensured database tables exist")
@@ -54,6 +135,11 @@ def _startup() -> None:
                 app_saved_views_cols = {c.get("name") for c in insp.get_columns("app_saved_views")}
             except Exception:
                 app_saved_views_cols = set()
+            ssh_deploy_cols = set()
+            try:
+                ssh_deploy_cols = {c.get("name") for c in insp.get_columns("ssh_key_deployment_requests")}
+            except Exception:
+                ssh_deploy_cols = set()
 
             dialect = engine.dialect.name
             stmts: list[str] = []
@@ -78,6 +164,8 @@ def _startup() -> None:
                 stmts.append("ALTER TABLE app_saved_views ADD COLUMN is_shared BOOLEAN NOT NULL DEFAULT false")
             if app_saved_views_cols and "is_default_startup" not in app_saved_views_cols:
                 stmts.append("ALTER TABLE app_saved_views ADD COLUMN is_default_startup BOOLEAN NOT NULL DEFAULT false")
+            if ssh_deploy_cols and "sudo_profile" not in ssh_deploy_cols:
+                stmts.append("ALTER TABLE ssh_key_deployment_requests ADD COLUMN sudo_profile TEXT NOT NULL DEFAULT 'B'")
 
             if stmts:
                 with engine.begin() as conn:
@@ -272,6 +360,7 @@ def create_app() -> FastAPI:
             # Allow the UI shell and static assets so the user can complete MFA enrollment/verification flows.
             role = (getattr(user, "role", "operator") or "operator").lower()
             require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+            sess_res = None
             if require_mfa:
                 # Always allow static assets and login shell.
                 if path.startswith("/assets/") or path.startswith("/static/") or path in ("/", "/terminal"):
@@ -291,7 +380,28 @@ def create_app() -> FastAPI:
                 if not mfa_verified:
                     return JSONResponse(status_code=403, content={"detail": "MFA verification required"})
 
-            return await call_next(request)
+            response = await call_next(request)
+
+            # Keep rolling idle timeout alive for authenticated UI traffic.
+            token = request.cookies.get("fleet_session")
+            if token:
+                if sess_res is None:
+                    from .deps import get_current_session_from_request
+
+                    sess_res = get_current_session_from_request(request, db)
+                if sess_res:
+                    from .deps import CSRF_COOKIE
+                    from .routers.auth import _set_auth_cookies
+
+                    sess, _u = sess_res
+                    _set_auth_cookies(
+                        response,
+                        token=token,
+                        session_expires=sess.expires_at,
+                        csrf=(request.cookies.get(CSRF_COOKIE) or None),
+                    )
+
+            return response
         finally:
             db.close()
 
@@ -396,6 +506,7 @@ def create_app() -> FastAPI:
         app.include_router(migrations.router)
     app.include_router(search.router)
     app.include_router(patching.router)
+    app.include_router(backup_verification.router)
     app.include_router(terminal_ws.router)
 
     # Simple health endpoint

@@ -37,6 +37,17 @@
         statusEl: document.getElementById('sshkey-request-status'),
         selectedKeyId: ctx.getSshSelectedKeyId(),
         getSelectedAgentIds: () => Array.from(ctx.getSshSelectedAgentIds() || []),
+        getGrantSudo: () => {
+          const modeEl = document.getElementById('sshkey-sudo-mode');
+          if (modeEl) return String(modeEl.value || 'restricted') !== 'none';
+          return true;
+        },
+        getSudoMode: () => {
+          const modeEl = document.getElementById('sshkey-sudo-mode');
+          const mode = String(modeEl?.value || 'restricted');
+          if (mode === 'full' || mode === 'none' || mode === 'restricted') return mode;
+          return 'restricted';
+        },
         setPanelVisible: ctx.setSshHostsPanelVisible,
         renderList: ctx.renderSshHostsList,
         loadSshKeyRequests: ctx.loadSshKeyRequests,

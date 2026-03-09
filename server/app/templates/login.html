@@ -13,6 +13,7 @@
       --muted: #475569;
       --primary: #2563eb;
       --shadow: rgba(2, 6, 23, 0.08);
+      --oidc-bg: #0f766e;
     }
     :root[data-theme="dark"] {
       --bg: #0b1220;
@@ -22,6 +23,7 @@
       --muted: #94a3b8;
       --primary: #2563eb;
       --shadow: rgba(0,0,0,0.45);
+      --oidc-bg: #0f766e;
     }
     /* Prevent 100% width inputs from overflowing due to padding/borders */
     *, *::before, *::after { box-sizing: border-box; }
@@ -36,6 +38,7 @@
     :root[data-theme="dark"] input { background: rgba(255,255,255,0.04); color: var(--text); }
     input:focus { border-color:#1d4ed8; box-shadow:0 0 0 3px rgba(29,78,216,0.15); }
     button { margin-top:1rem; width:100%; padding:0.7rem 0.75rem; border:none; border-radius:10px; background:#1d4ed8; color:white; font-weight:700; cursor:pointer; }
+    .btn-oidc { background: var(--oidc-bg); }
     button:disabled { opacity:0.6; cursor:not-allowed; }
     .err { display:none; }
     .hint { margin-top:0.75rem; color:var(--muted); font-size:0.8rem; }
@@ -59,7 +62,7 @@
     <input id="p" type="password" autocomplete="current-password" />
     <div class="caps-hint" id="caps-hint">Caps Lock is on.</div>
     <button id="btn">Login</button>
-    <button id="btn-oidc" style="display:none;background:#0f766e;">Sign in with SSO</button>
+    <button id="btn-oidc" class="btn-oidc" style="display:none;">Sign in with SSO</button>
     <div class="err" id="err"></div>
     <div class="hint">Your session is stored in a secure cookie (HttpOnly). Passwords are stored hashed in DB.</div>
   </div>

@@ -1,3 +1,8 @@
+function cssVar(name, fallback) {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return raw || fallback;
+}
+
 function openSshKeyDeployApprovalModal(it) {
       const modal = document.getElementById('sshkey-approval-modal');
       const metaEl = document.getElementById('sshkey-approval-modal-meta');
@@ -13,7 +18,8 @@ function openSshKeyDeployApprovalModal(it) {
       const keyShort = (String(it.key_id||'')).slice(0,8);
       const keyName = String(it.key_name || '').trim();
       const keyLabel = keyName ? `${keyName} (${keyShort})` : keyShort;
-      let meta = `Requested by: ${it.user_name || it.user_id} · Key: ${keyLabel} · Created: ${formatShortTime(it.created_at)}`;
+      const sudoMode = String(it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none'));
+      let meta = `Requested by: ${it.user_name || it.user_id} · Key: ${keyLabel} · Sudo: ${sudoMode} · Created: ${formatShortTime(it.created_at)}`;
       if (it.job_id || it.jobId) meta += ` · Job: ${String(it.job_id || it.jobId).slice(0,8)}`;
       metaEl.textContent = meta;
 
@@ -86,6 +92,13 @@ function openSshKeyDeployApprovalModal(it) {
 
       const safe = (v) => escapeHtml(v == null ? '' : String(v));
       const kv = (k, v) => `<div class="kv-row"><strong>${safe(k)}:</strong> <code>${safe(v || '')}</code></div>`;
+      const labelSudoMode = (profile) => {
+        const p = String(profile || '').trim().toUpperCase();
+        if (p === 'A') return 'full';
+        if (p === 'N') return 'none';
+        if (p === 'B') return 'restricted';
+        return '';
+      };
 
       outEl.innerHTML = '<div class="loading">Loading…</div>';
       metaEl.textContent = `Host: ${agentId}`;
@@ -112,10 +125,68 @@ function openSshKeyDeployApprovalModal(it) {
           kv('Groups', info.groups),
           kv('Locked', info.locked),
           `<div class="kv-row"><strong>Sudo access:</strong> <span class="status-badge ${sudoAllowed ? 'ok' : 'warn'}">${sudoAllowed ? 'allowed' : 'denied'}</span></div>`,
+          `<div class="kv-row"><strong>Last applied sudo mode:</strong> <code id="user-modal-last-sudo-mode">loading…</code></div>`,
           kv('Password status', info.password_status),
           kv('Last login', info.last_login),
           sudoRules ? `<details style="margin-top:0.5rem;"><summary>Sudo check output</summary><pre class="pkg-raw" style="margin-top:0.4rem;">${safe(sudoRules)}</pre></details>` : '',
+          '<div id="user-modal-timeline" style="margin-top:0.8rem;"></div>',
         ].join('');
+
+        const timelineEl = document.getElementById('user-modal-timeline');
+        if (timelineEl) {
+          timelineEl.innerHTML = '<div class="loading">Loading recent user timeline…</div>';
+          try {
+            const tr = await fetch(`/hosts/${encodeURIComponent(agentId)}/timeline?limit=120`, { credentials: 'include' });
+            if (!tr.ok) throw new Error(`timeline failed (${tr.status})`);
+            const td = await tr.json();
+            const items = Array.isArray(td?.items) ? td.items : [];
+            const uname = String(info.username || username || '').trim();
+
+            const latestSudoDeploy = items.find((it) => {
+              const jt = String(it?.job_type || '').toLowerCase();
+              const pUser = String(it?.payload_username || '').trim();
+              return jt === 'ssh-key-deploy' && pUser === uname && String(it?.status || '').toLowerCase() === 'success';
+            });
+            const lastSudoEl = document.getElementById('user-modal-last-sudo-mode');
+            if (lastSudoEl) {
+              const mode = labelSudoMode(latestSudoDeploy?.payload_sudo_profile);
+              lastSudoEl.textContent = mode || 'unknown';
+            }
+
+            const userTypes = new Set(['query-user-details', 'user-lock', 'user-unlock', 'ssh-key-deploy']);
+            const filtered = items.filter((it) => {
+              const jt = String(it?.job_type || '').toLowerCase();
+              if (!userTypes.has(jt)) return false;
+              const pUser = String(it?.payload_username || '').trim();
+              return pUser && pUser === uname;
+            }).slice(0, 12);
+            if (!filtered.length) {
+              timelineEl.innerHTML = '<div class="status-muted" style="font-size:0.85rem;">No recent timeline entries for this user.</div>';
+            } else {
+              timelineEl.innerHTML = [
+                '<div class="kv-row" style="margin-top:0.4rem;"><strong>Recent timeline</strong></div>',
+                '<div style="display:grid;gap:0.35rem;">',
+                filtered.map((it) => {
+                  const t = it?.time ? new Date(it.time).toLocaleString() : 'n/a';
+                  const st = String(it?.status || 'unknown');
+                  const cls = st === 'success' ? 'status-ok' : (st === 'failed' ? 'status-error' : 'status-muted');
+                  return `<div style="border:1px solid var(--border);border-radius:8px;padding:0.35rem 0.5rem;background:var(--panel-2);display:flex;justify-content:space-between;gap:0.4rem;align-items:center;">
+                    <div style="font-size:0.82rem;">
+                      <div><b>${safe(String(it?.job_type || 'job'))}</b></div>
+                      <div class="status-muted">${safe(t)}</div>
+                    </div>
+                    <span class="${cls}" style="font-size:0.76rem;">${safe(st)}</span>
+                  </div>`;
+                }).join(''),
+                '</div>',
+              ].join('');
+            }
+          } catch (te) {
+            const lastSudoEl = document.getElementById('user-modal-last-sudo-mode');
+            if (lastSudoEl) lastSudoEl.textContent = 'unknown';
+            timelineEl.innerHTML = `<div class="status-muted" style="font-size:0.85rem;">${safe(te?.message || String(te))}</div>`;
+          }
+        }
       } catch (e) {
         outEl.innerHTML = `<div class="error">${safe(e.message || String(e))}</div>`;
       }
@@ -281,7 +352,7 @@ function openSshKeyDeployApprovalModal(it) {
                     <td>${escapeHtml(r.size)}</td>
                     <td style="min-width:140px;">
                       <div style="display:flex;align-items:center;gap:10px;">
-                        <div style="flex:1;height:10px;background:rgba(148,163,184,.25);border-radius:999px;overflow:hidden;">
+                        <div style="flex:1;height:10px;background:${cssVar('--disk-usage-track', 'rgba(148, 163, 184, 0.25)')};border-radius:999px;overflow:hidden;">
                           <div style="width:${Math.max(0,Math.min(100,r.pctNum||0))}%;height:100%;background:${barColor};"></div>
                         </div>
                         <div style="width:44px;text-align:right;font-variant-numeric:tabular-nums;">${escapeHtml(r.pcent)}</div>
@@ -335,4 +406,3 @@ function openSshKeyDeployApprovalModal(it) {
       modal.setAttribute('aria-hidden', 'true');
       modal.hidden = true;
     }
-

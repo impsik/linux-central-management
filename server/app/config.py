@@ -14,7 +14,9 @@ class Settings(BaseSettings):
 
     # Agent long-poll and online heuristics
     agent_poll_timeout_seconds: int = 25
-    agent_online_grace_seconds: int = 10
+    # Mark host offline only after this many seconds since last heartbeat.
+    # 10s is too aggressive for real-world jitter and can cause transient 503s.
+    agent_online_grace_seconds: int = 30
 
     # Agent authentication (shared secret MVP)
     # By default, the server requires a shared token for all /agent/* endpoints.
@@ -33,9 +35,14 @@ class Settings(BaseSettings):
 
     # UI auth
     ui_cookie_secure: bool = False  # set True behind HTTPS
-    ui_session_days: int = 30
-    # If true, revoke all UI sessions on server startup (useful when you want restart=>forced relogin).
-    ui_revoke_all_sessions_on_startup: bool = False
+    # Absolute server-side session lifetime.
+    ui_session_days: int = 1
+    # Idle timeout (rolling cookie window). 0 disables rolling idle timeout.
+    ui_session_idle_minutes: int = 60
+    # Optional hard cap in hours (absolute timeout). 0 disables this extra cap.
+    ui_session_max_hours: int = 24
+    # If true, revoke all UI sessions on server startup (restart => forced relogin).
+    ui_revoke_all_sessions_on_startup: bool = True
 
     # MFA (TOTP)
     # Required for admin/operator when mfa_require_for_privileged=true

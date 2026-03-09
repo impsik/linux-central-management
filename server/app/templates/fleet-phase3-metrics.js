@@ -1,4 +1,9 @@
 (function (w) {
+  function cssVar(name, fallback) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return raw || fallback;
+  }
+
   function updateTopProcessesTable(processes) {
     const tbody = document.getElementById('top-processes-body');
     if (typeof w.renderTopProcessesTable === 'function') {
@@ -28,6 +33,45 @@
     }).join('');
   }
 
+  function isMetricsDebugEnabled() {
+    try {
+      const p = new URLSearchParams(window.location.search || '');
+      if ((p.get('metrics_debug') || '').trim() === '1') return true;
+      return localStorage.getItem('fleet_metrics_debug') === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function setMetricsDebugEnabled(enabled) {
+    try {
+      localStorage.setItem('fleet_metrics_debug', enabled ? '1' : '0');
+    } catch (_) { }
+    const panel = document.getElementById('metrics-debug-panel');
+    if (panel) panel.style.display = enabled ? '' : 'none';
+  }
+
+  function renderMetricsDebug(extra) {
+    const out = document.getElementById('metrics-debug-output');
+    if (!out) return;
+    const payload = Object.assign({ at: new Date().toISOString() }, extra || {});
+    out.textContent = JSON.stringify(payload, null, 2);
+  }
+
+  function ensureMetricsDebugUi() {
+    const enabled = isMetricsDebugEnabled();
+    setMetricsDebugEnabled(enabled);
+    const btn = document.getElementById('metrics-debug-toggle');
+    if (btn && !btn.dataset.boundMetricsDebugToggle) {
+      btn.addEventListener('click', () => {
+        const next = !isMetricsDebugEnabled();
+        setMetricsDebugEnabled(next);
+        renderMetricsDebug({ event: 'toggle', enabled: next });
+      });
+      btn.dataset.boundMetricsDebugToggle = '1';
+    }
+  }
+
   function redrawLoadGraph(stateCtx) {
     const canvas = document.getElementById('load-graph');
     const loadGraphData = stateCtx.getLoadGraphData();
@@ -53,7 +97,7 @@
     const maxT = data[data.length - 1].time.getTime();
     const rangeT = Math.max(1, maxT - minT);
 
-    ctx.strokeStyle = '#334155';
+    ctx.strokeStyle = cssVar('--chart-grid', '#334155');
     ctx.lineWidth = 1;
     for (let i = 0; i <= 5; i++) {
       const y = paddingTop + (plotH / 5) * i;
@@ -63,7 +107,7 @@
       ctx.stroke();
     }
 
-    ctx.strokeStyle = '#667eea';
+    ctx.strokeStyle = cssVar('--chart-line', '#667eea');
     ctx.lineWidth = 2;
     ctx.beginPath();
     data.forEach((point, index) => {
@@ -84,7 +128,7 @@
     ctx.fillText(w.formatTimeLabel(new Date(maxT), loadTimeframeSeconds), canvas.width - paddingRight, canvas.height - paddingBottom + 4);
 
     const last = data[data.length - 1];
-    ctx.fillStyle = '#667eea';
+    ctx.fillStyle = cssVar('--chart-point', '#667eea');
     ctx.font = '12px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -134,17 +178,35 @@
   }
 
   async function loadTopProcesses(ctx, agentId, silent) {
+    ensureMetricsDebugUi();
     const metricsLifecycleState = ctx.getMetricsLifecycleState();
     if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
     if (metricsLifecycleState.get('topProcessesInFlight')) return;
     metricsLifecycleState.set('topProcessesInFlight', true);
     try {
       const resp = await fetch(`/hosts/${agentId}/top-processes`);
-      if (!resp.ok) throw new Error(resp.statusText);
+      if (!resp.ok) {
+        if (isMetricsDebugEnabled()) renderMetricsDebug({ endpoint: 'top-processes', agent_id: agentId, http_status: resp.status, ok: false });
+        if (resp.status === 503) {
+          // Agent offline/unavailable: stop polling to avoid repeated 503 noise.
+          if (metricsLifecycleState.get('currentMetricsAgentId') === agentId) {
+            updateTopProcessesTable([]);
+          }
+          return;
+        }
+        throw new Error(resp.statusText);
+      }
       const data = await resp.json();
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
+      if (data && data.unavailable) {
+        if (isMetricsDebugEnabled()) renderMetricsDebug({ endpoint: 'top-processes', agent_id: agentId, unavailable: true, reason: data.reason, last_seen_seconds_ago: data.last_seen_seconds_ago });
+        updateTopProcessesTable([]);
+        return;
+      }
+      if (isMetricsDebugEnabled()) renderMetricsDebug({ endpoint: 'top-processes', agent_id: agentId, unavailable: false, count: Array.isArray(data.top_processes) ? data.top_processes.length : 0 });
       updateTopProcessesTable(data.top_processes || []);
     } catch (e) {
+      if (isMetricsDebugEnabled()) renderMetricsDebug({ endpoint: 'top-processes', agent_id: agentId, error: e?.message || String(e) });
       if (!silent) console.error('Error loading top processes:', e);
     } finally {
       metricsLifecycleState.set('topProcessesInFlight', false);
@@ -152,6 +214,7 @@
   }
 
   async function loadMetrics(ctx, agentId, silent) {
+    ensureMetricsDebugUi();
     const metricsLifecycleState = ctx.getMetricsLifecycleState();
     if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
 
@@ -164,9 +227,54 @@
 
     try {
       const response = await fetch(`/hosts/${agentId}/metrics`);
-      if (!response.ok) throw new Error(`Failed to load metrics: ${response.statusText}`);
+      if (!response.ok) {
+        if (isMetricsDebugEnabled()) renderMetricsDebug({ endpoint: 'metrics', agent_id: agentId, http_status: response.status, ok: false });
+        if (response.status === 503) {
+          // Agent offline/unavailable. Keep UI calm and stop polling to avoid repeated 503 noise.
+          if (metricsLifecycleState.get('currentMetricsAgentId') === agentId) {
+            const setIfLoading = (id, text) => {
+              const el = document.getElementById(id);
+              if (!el) return;
+              const cur = (el.textContent || '').trim();
+              if (!cur || cur === '-' || cur === 'Loading...' || cur === 'Error') el.textContent = text;
+            };
+            setIfLoading('disk-usage', 'Unavailable');
+            setIfLoading('memory-usage', 'Unavailable');
+            setIfLoading('vcpus', 'Unavailable');
+            setIfLoading('ip-addresses', 'Unavailable');
+          }
+          return;
+        }
+        throw new Error(`Failed to load metrics: ${response.statusText}`);
+      }
       const data = await response.json();
       if (metricsLifecycleState.get('currentMetricsAgentId') !== agentId) return;
+      if (data && data.unavailable) {
+        if (isMetricsDebugEnabled()) renderMetricsDebug({ endpoint: 'metrics', agent_id: agentId, unavailable: true, reason: data.reason, last_seen_seconds_ago: data.last_seen_seconds_ago });
+        const setIfLoading = (id, text) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          const cur = (el.textContent || '').trim();
+          if (!cur || cur === '-' || cur === 'Loading...' || cur === 'Error') el.textContent = text;
+        };
+        setIfLoading('disk-usage', 'Unavailable');
+        setIfLoading('memory-usage', 'Unavailable');
+        setIfLoading('vcpus', 'Unavailable');
+        setIfLoading('ip-addresses', 'Unavailable');
+        return;
+      }
+
+      if (isMetricsDebugEnabled()) {
+        renderMetricsDebug({
+          endpoint: 'metrics',
+          agent_id: agentId,
+          unavailable: false,
+          has_disk_usage: !!data.disk_usage,
+          has_memory: !!data.memory,
+          has_cpu: !!data.cpu,
+          ip_count: Array.isArray(data.ip_addresses) ? data.ip_addresses.length : 0,
+        });
+      }
 
       const toNum = (v) => {
         if (v === null || v === undefined) return null;
@@ -226,6 +334,7 @@
       if (cpu.load_1min !== undefined) updateLoadGraph(ctx, cpu.load_1min);
       if (data.top_processes && data.top_processes.length) updateTopProcessesTable(data.top_processes || []);
     } catch (error) {
+      if (isMetricsDebugEnabled()) renderMetricsDebug({ endpoint: 'metrics', agent_id: agentId, error: error?.message || String(error) });
       console.error('Error loading metrics:', error);
       if (metricsLifecycleState.get('currentMetricsAgentId') === agentId && !silent) {
         // Keep previous values if any; only show hard error when nothing has been rendered yet.

@@ -627,6 +627,10 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		// We overload fields for now: ServiceName=username, Action=sudo_profile, PackageName=public_key
 		pub := strings.TrimSpace(job.PackageName)
 		profile := strings.TrimSpace(job.Action)
+		if profile == "" {
+			// Safety default: if server omitted profile, keep historical behavior (grant restricted sudo).
+			profile = "B"
+		}
 		stdout, stderr, code, errMsg := deploySSHKey(ctx, username, pub, profile)
 		if code == 0 && errMsg == "" {
 			ev.Status = "success"
@@ -828,7 +832,10 @@ func queryUserDetails(ctx context.Context, username string) (string, string, int
 	b3, _ := cmd3.CombinedOutput()
 	ps := strings.TrimSpace(string(b3))
 	out["password_status"] = ps
-	out["locked"] = strings.Contains(ps, " L ") || strings.Contains(ps, "LK")
+	passwordLocked := strings.Contains(ps, " L ") || strings.Contains(ps, "LK")
+	shellStr := strings.TrimSpace(fmt.Sprintf("%v", out["shell"]))
+	shellBlocked := shellStr == "/usr/sbin/nologin" || shellStr == "/sbin/nologin" || shellStr == "/bin/false"
+	out["locked"] = passwordLocked && shellBlocked
 
 	// sudo rules (best effort)
 	cmd4 := exec.CommandContext(queryCtx, "sudo", "-n", "-l", "-U", u)
@@ -1541,15 +1548,25 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		home := parts[5]
 		shell := parts[6]
 
-		// Check if user has sudo access (check our pre-built map)
+		// Check if user has sudo access.
+		// Prefer fast group-based detection, but also account for Fleet-managed per-user sudoers
+		// entries (/etc/sudoers.d/fleet-<username>) because those can grant sudo even when the
+		// user is not in sudo/wheel/admin groups.
 		hasSudo := sudoGroupUsers[username]
+		if !hasSudo {
+			if _, statErr := os.Stat(fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)); statErr == nil {
+				hasSudo = true
+			}
+		}
 
-		// Locked semantics: ONLY explicit passwd lock (passwd -l / usermod -L).
-		// Do NOT treat "no password set" or shell=nologin as locked.
-		isLocked := false
+		// "Locked" should reflect practical login-blocking state for SSH/user presence.
+		// Password lock alone (status=L) is not sufficient because SSH key auth can still work.
+		// Treat as locked only when password is locked AND shell is non-interactive.
+		shellBlocked := shell == "/usr/sbin/nologin" || shell == "/sbin/nologin" || shell == "/bin/false"
+		passwordLocked := false
 		if passwdStatusOK {
 			if st, ok := passwdStatusMap[username]; ok {
-				isLocked = (st == "L")
+				passwordLocked = (st == "L")
 			}
 		} else {
 			// Best-effort fallback if passwd status isn't available.
@@ -1559,10 +1576,11 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 				parts := strings.Split(shadowLine, ":")
 				if len(parts) >= 2 {
 					passwordField := parts[1]
-					isLocked = strings.HasPrefix(passwordField, "!")
+					passwordLocked = strings.HasPrefix(passwordField, "!")
 				}
 			}
 		}
+		isLocked := passwordLocked && shellBlocked
 
 		// Only include regular users (UID >= 1000) or root
 		uidInt := 0
@@ -1706,8 +1724,7 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 		svc.Enabled = false
 		if err == nil {
 			enabledState := strings.TrimSpace(string(enabledOut))
-			// "enabled" or "enabled-runtime" means enabled
-			svc.Enabled = enabledState == "enabled" || enabledState == "enabled-runtime"
+			svc.Enabled = isEnabledState(enabledState)
 		}
 		// If command fails (e.g., service not found), Enabled remains false
 	}
@@ -1727,6 +1744,15 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 	}
 
 	return string(jsonOut), "", 0, ""
+}
+
+func isEnabledState(state string) bool {
+	switch strings.TrimSpace(state) {
+	case "enabled", "enabled-runtime", "alias", "static", "indirect", "linked", "linked-runtime", "generated", "transient":
+		return true
+	default:
+		return false
+	}
 }
 
 func querySystemMetrics(ctx context.Context) (string, string, int, string) {
@@ -2243,16 +2269,46 @@ func deploySSHKey(ctx context.Context, username, publicKey, sudoProfile string) 
 		shellQuote(secondField(key)), shellEscape(username), shellQuote(line+"\n"), shellEscape(username),
 	))
 
-	// Sudo profile B: apt + systemctl + reboot (NOPASSWD) with absolute paths.
-	if strings.TrimSpace(strings.ToUpper(sudoProfile)) == "B" {
+	profile := normalizeSudoProfile(sudoProfile)
+
+	// Sudo profiles:
+	// N = none (no fleet sudoers file + no sudo/wheel group membership)
+	// B = restricted apt/systemctl/reboot
+	// A = full sudo (admin-like)
+	if profile == "N" {
 		sudoers := fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)
-		content := fmt.Sprintf("%s ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /bin/systemctl, /usr/sbin/reboot, /sbin/reboot\n", username)
+		// Idempotent revoke path:
+		// - remove fleet sudoers include if present
+		// - remove from sudo/wheel only when group exists and user is currently a member
+		cmds = append(cmds, fmt.Sprintf("sudo -n rm -f %s", shellQuote(sudoers)))
+		for _, group := range []string{"sudo", "wheel"} {
+			cmds = append(cmds, fmt.Sprintf(
+				"if getent group %s >/dev/null 2>&1 && id -nG %s | tr ' ' '\\n' | grep -Fxq %s; then sudo -n gpasswd -d %s %s >/dev/null; fi",
+				shellQuote(group), shellEscape(username), shellQuote(group), shellEscape(username), shellQuote(group),
+			))
+		}
+	}
+
+	if profile == "B" || profile == "A" {
+		sudoers := fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)
+		content := ""
+		if profile == "A" {
+			content = fmt.Sprintf("%s ALL=(ALL) NOPASSWD:ALL\n", username)
+		} else {
+			content = fmt.Sprintf("%s ALL=(root) NOPASSWD: /usr/bin/apt, /usr/bin/apt-get, /bin/systemctl, /usr/sbin/reboot, /sbin/reboot\n", username)
+		}
 		// Avoid nested quoting (same issue as authorized_keys). Write via sudo tee.
 		cmds = append(cmds, fmt.Sprintf(
 			"printf '%%s' %s | sudo -n tee %s >/dev/null",
-			shellQuote(content), shellEscape(sudoers),
+			shellQuote(content), shellQuote(sudoers),
 		))
-		cmds = append(cmds, fmt.Sprintf("sudo -n chmod 440 %s", shellEscape(sudoers)))
+		cmds = append(cmds, fmt.Sprintf("sudo -n chmod 440 %s", shellQuote(sudoers)))
+		cmds = append(cmds, fmt.Sprintf("sudo -n visudo -cf %s", shellQuote(sudoers)))
+		if profile == "A" {
+			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(ALL) NOPASSWD:ALL"), shellQuote(sudoers)))
+		} else {
+			cmds = append(cmds, fmt.Sprintf("sudo -n grep -Fq %s %s", shellQuote(username+" ALL=(root) NOPASSWD:"), shellQuote(sudoers)))
+		}
 	}
 
 	script := strings.Join(cmds, "\n")
@@ -2274,6 +2330,17 @@ func secondField(pub string) string {
 		return parts[1]
 	}
 	return pub
+}
+
+func normalizeSudoProfile(profile string) string {
+	switch strings.ToUpper(strings.TrimSpace(profile)) {
+	case "A":
+		return "A"
+	case "N", "NONE":
+		return "N"
+	default:
+		return "B"
+	}
 }
 
 func shellEscape(s string) string {

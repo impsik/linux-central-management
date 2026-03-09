@@ -49,7 +49,17 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
         host.os_id = payload.os_id
         host.os_version = payload.os_version
         host.kernel = payload.kernel
-        host.labels = payload.labels or {}
+
+        # Preserve UI-managed metadata (e.g. role/env) when agent re-registers without labels.
+        existing_labels = dict(host.labels or {}) if isinstance(host.labels, dict) else {}
+        incoming_labels = payload.labels or {}
+        if incoming_labels:
+            merged_labels = dict(existing_labels)
+            merged_labels.update(incoming_labels)
+            host.labels = merged_labels
+        else:
+            host.labels = existing_labels
+
         host.last_seen = now
 
     db.commit()
