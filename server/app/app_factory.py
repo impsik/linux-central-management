@@ -43,16 +43,16 @@ def _is_placeholder_secret(value: str | None) -> bool:
 def _is_non_local_deployment() -> bool:
     """Best-effort detector for non-local deployments.
 
-    Signals considered non-local:
-    - ALLOW_INSECURE_NO_AGENT_TOKEN is false
-    - DATABASE_URL host is not localhost/loopback
+    ALLOW_INSECURE_NO_AGENT_TOKEN=true is treated as an explicit
+    developer override and disables non-local guardrails.
     """
     from urllib.parse import urlparse
 
     from .config import settings
 
-    if not bool(getattr(settings, "allow_insecure_no_agent_token", False)):
-        return True
+    # Explicit dev override: allow insecure startup for local/LAN testing.
+    if bool(getattr(settings, "allow_insecure_no_agent_token", False)):
+        return False
 
     db_url = str(getattr(settings, "database_url", "") or "")
     try:
