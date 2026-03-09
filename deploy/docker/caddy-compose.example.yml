@@ -1,13 +1,17 @@
-# Example: run Caddy as an HTTPS reverse proxy in Docker.
+# Example: run Caddy as reverse proxy in Docker.
 #
 # This is intentionally separate from the main docker-compose.yml so you can
 # opt-in without changing the default dev stack.
 #
 # 1) Copy this file to deploy/docker/caddy-compose.yml
 # 2) Edit deploy/docker/.env:
-#    FLEET_DOMAIN=fleet.example.com
+#    # Domain + HTTPS mode
+#    # FLEET_SITE_ADDR=fleet.example.com
+#
+#    # OR IP/no-domain HTTP mode
+#    # FLEET_SITE_ADDR=:80
+#
 #    FLEET_UPSTREAM=server:8000
-#    CADDY_EMAIL=you@example.com
 # 3) Start:
 #    docker compose -f docker-compose.yml -f caddy-compose.yml up -d --build
 
@@ -19,9 +23,8 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      FLEET_DOMAIN: ${FLEET_DOMAIN:-localhost}
+      FLEET_SITE_ADDR: ${FLEET_SITE_ADDR:-:80}
       FLEET_UPSTREAM: ${FLEET_UPSTREAM:-server:8000}
-      CADDY_EMAIL: ${CADDY_EMAIL:-}
     volumes:
       - ./Caddyfile.example:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

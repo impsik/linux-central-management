@@ -29,6 +29,28 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+def _request_is_https(request: Request | None) -> bool:
+    if request is None:
+        return False
+    try:
+        if str(getattr(request.url, "scheme", "") or "").lower() == "https":
+            return True
+    except Exception:
+        pass
+    try:
+        xfp = str(request.headers.get("x-forwarded-proto") or "").lower()
+        if xfp:
+            return "https" in [p.strip() for p in xfp.split(",")]
+    except Exception:
+        pass
+    return False
+
+
+def _cookie_secure_for(request: Request | None) -> bool:
+    # Explicit setting wins; otherwise auto-detect from request/proxy headers.
+    return bool(getattr(settings, "ui_cookie_secure", False) or _request_is_https(request))
+
+
 def _compute_session_expiry(now: datetime) -> datetime:
     expires = now + timedelta(days=int(getattr(settings, "ui_session_days", 1) or 1))
     max_hours = int(getattr(settings, "ui_session_max_hours", 24) or 0)
@@ -53,17 +75,25 @@ def _cookie_expiry(now: datetime, session_expires: datetime) -> datetime:
     return session_expires
 
 
-def _set_auth_cookies(resp, *, token: str, session_expires: datetime, csrf: str | None = None) -> None:
+def _set_auth_cookies(
+    resp,
+    *,
+    token: str,
+    session_expires: datetime,
+    csrf: str | None = None,
+    request: Request | None = None,
+) -> None:
     now = datetime.now(timezone.utc)
     cookie_expires = _cookie_expiry(now, session_expires)
     max_age = max(1, int((cookie_expires - now).total_seconds()))
+    secure_flag = _cookie_secure_for(request)
 
     resp.set_cookie(
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
         samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        secure=secure_flag,
         expires=int(cookie_expires.timestamp()),
         max_age=max_age,
         path="/",
@@ -75,7 +105,7 @@ def _set_auth_cookies(resp, *, token: str, session_expires: datetime, csrf: str 
         value=csrf_val,
         httponly=False,
         samesite="lax",
-        secure=bool(getattr(settings, "ui_cookie_secure", False)),
+        secure=secure_flag,
         expires=int(cookie_expires.timestamp()),
         max_age=max_age,
         path="/",
@@ -182,7 +212,7 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
 
     # CSRF protection: double-submit cookie.
     # Frontend must echo this value in X-CSRF-Token for state-changing requests.
-    _set_auth_cookies(resp, token=token, session_expires=expires)
+    _set_auth_cookies(resp, token=token, session_expires=expires, request=request)
 
     return resp
 
@@ -411,7 +441,7 @@ def _log_oidc_event(
 
 
 @router.get("/oidc/login")
-def auth_oidc_login():
+def auth_oidc_login(request: Request):
     if not bool(getattr(settings, "auth_oidc_enabled", False)):
         raise HTTPException(404, "OIDC is disabled")
 
@@ -445,7 +475,7 @@ def auth_oidc_login():
             value=c_val,
             httponly=True,
             samesite="lax",
-            secure=bool(getattr(settings, "ui_cookie_secure", False)),
+            secure=_cookie_secure_for(request),
             max_age=600,
             path="/",
         )
@@ -762,7 +792,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
     from fastapi.responses import RedirectResponse
 
     redirect = RedirectResponse(url="/", status_code=302)
-    _set_auth_cookies(redirect, token=token, session_expires=expires)
+    _set_auth_cookies(redirect, token=token, session_expires=expires, request=request)
     redirect.delete_cookie("fleet_oidc_state", path="/")
     redirect.delete_cookie("fleet_oidc_nonce", path="/")
     return redirect
@@ -1417,7 +1447,7 @@ def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Dep
             value=csrf,
             httponly=False,
             samesite="lax",
-            secure=bool(getattr(settings, "ui_cookie_secure", False)),
+            secure=_cookie_secure_for(request),
             path="/",
         )
 
