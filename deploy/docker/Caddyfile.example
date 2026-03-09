@@ -34,13 +34,9 @@
     # Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   }
 
-  # Simple rate limiting (global) to reduce brute force noise.
-  # Adjust as needed; for per-path limits use multiple handlers.
-  rate_limit {
-    zone default {
-      key {remote_host}
-      events 200
-      window 60s
-    }
-  }
+  # NOTE: `rate_limit` is not part of stock Caddy images.
+  # Keep this file compatible with `caddy:2` out of the box.
+  # If you need edge rate limiting, either:
+  #   - use a Caddy build with a rate-limit plugin, or
+  #   - apply limits at your LB/WAF (Cloudflare, nginx, Traefik, etc).
 }
