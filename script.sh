@@ -146,6 +146,7 @@ fi
 SERVER_URL="${SERVER_URL:-http://192.168.100.240:8000}"
 
 RUN_SERVER="${RUN_SERVER:-1}"
+ENABLE_CADDY="${ENABLE_CADDY:-0}"
 
 if [ "$RUN_SERVER" = "1" ]; then
   cd "$ROOT_DIR/deploy/docker"
@@ -154,7 +155,20 @@ if [ "$RUN_SERVER" = "1" ]; then
   # NOTE: `docker compose down` would remove the DB container; while the volume persists now,
   # keeping the containers up avoids unnecessary churn.
   log_info "Starting/updating Docker services"
-  docker compose up -d --build --remove-orphans
+
+  if [ "$ENABLE_CADDY" = "1" ]; then
+    if [ ! -f caddy-compose.yml ]; then
+      cp caddy-compose.example.yml caddy-compose.yml
+      log_info "Created deploy/docker/caddy-compose.yml from template"
+    fi
+    set_env_value_if_missing "$DOCKER_ENV_FILE" "FLEET_UPSTREAM" "server:8000"
+    set_env_value "$DOCKER_ENV_FILE" "UI_COOKIE_SECURE" "true"
+    set_env_value "$DOCKER_ENV_FILE" "AGENT_TERMINAL_SCHEME" "wss"
+    log_info "ENABLE_CADDY=1 -> using HTTPS proxy stack (UI_COOKIE_SECURE=true, AGENT_TERMINAL_SCHEME=wss)"
+    docker compose -f docker-compose.yml -f caddy-compose.yml up -d --build --remove-orphans
+  else
+    docker compose up -d --build --remove-orphans
+  fi
 fi
 
 cd "$ROOT_DIR/agent"
