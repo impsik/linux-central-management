@@ -34,7 +34,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22.x'
+          # Keep CI stdlib patched so govulncheck doesn't fail on known fixed CVEs.
+          go-version: '1.25.x'
           cache: false
 
       - name: Install security tooling
