@@ -28,12 +28,9 @@
     X-Frame-Options "DENY"
   }
 
-  # Simple global rate limiting.
-  rate_limit {
-    zone default {
-      key {remote_host}
-      events 200
-      window 60s
-    }
-  }
+  # NOTE: `rate_limit` is not part of stock Caddy images.
+  # Keep this file compatible with `caddy:2` out of the box.
+  # If you need edge rate limiting, either:
+  #   - use a Caddy build with a rate-limit plugin, or
+  #   - apply limits at your LB/WAF (Cloudflare, nginx, Traefik, etc).
 }

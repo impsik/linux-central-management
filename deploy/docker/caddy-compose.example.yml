@@ -26,7 +26,7 @@ services:
       FLEET_SITE_ADDR: ${FLEET_SITE_ADDR:-:80}
       FLEET_UPSTREAM: ${FLEET_UPSTREAM:-server:8000}
     volumes:
-      - ./Caddyfile.example:/etc/caddy/Caddyfile:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
