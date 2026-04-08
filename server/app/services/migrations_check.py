@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 
@@ -46,6 +46,14 @@ def _get_db_revision(engine: Engine) -> str | None:
         return row[0] if row else None
 
 
+def _get_missing_model_tables(engine: Engine) -> list[str]:
+    from ..db import Base
+
+    existing = set(inspect(engine).get_table_names())
+    expected = set(Base.metadata.tables.keys())
+    return sorted(expected - existing)
+
+
 def assert_db_up_to_date(engine: Engine) -> None:
     """Fail fast if alembic_version is missing or not at head."""
 
@@ -62,4 +70,14 @@ def assert_db_up_to_date(engine: Engine) -> None:
         raise RuntimeError(
             f"Database Alembic revision {db_rev} is not at head {sorted(heads)}. "
             "Run: alembic upgrade head"
+        )
+
+    missing_tables = _get_missing_model_tables(engine)
+    if missing_tables:
+        preview = ", ".join(missing_tables[:10])
+        if len(missing_tables) > 10:
+            preview += f", ... (+{len(missing_tables) - 10} more)"
+        raise RuntimeError(
+            "Database is stamped at Alembic head but required tables are missing: "
+            f"{preview}. Run: alembic upgrade head"
         )
