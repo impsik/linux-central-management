@@ -12,6 +12,7 @@ from ..db import get_db
 from ..deps import require_admin_user
 from ..models import AppMaintenanceWindow
 from ..services.audit import log_event
+from ..services.maintenance import evaluate_action_now
 
 router = APIRouter(prefix="/maintenance-windows", tags=["maintenance-windows"])
 
@@ -25,6 +26,12 @@ class MaintenanceWindowPayload(BaseModel):
     label_selector: dict = Field(default_factory=dict)
     enforcement_mode: str = Field(default="block")
     enabled: bool = True
+
+
+class MaintenanceWindowEvaluatePayload(BaseModel):
+    action: str = Field(min_length=1, max_length=128)
+    agent_ids: list[str] = Field(default_factory=list)
+    labels: dict = Field(default_factory=dict)
 
 
 def _normalize_hhmm(value: str, *, field_name: str) -> str:
@@ -91,6 +98,17 @@ def _serialize(row: AppMaintenanceWindow) -> dict:
 def list_maintenance_windows(db: Session = Depends(get_db), admin=Depends(require_admin_user)):
     rows = db.execute(select(AppMaintenanceWindow).order_by(AppMaintenanceWindow.created_at.asc())).scalars().all()
     return {"items": [_serialize(r) for r in rows]}
+
+
+@router.post("/evaluate")
+def evaluate_maintenance_windows(payload: MaintenanceWindowEvaluatePayload, db: Session = Depends(get_db), admin=Depends(require_admin_user)):
+    decision = evaluate_action_now(
+        payload.action,
+        db=db,
+        agent_ids=[str(x).strip() for x in (payload.agent_ids or []) if str(x).strip()],
+        labels=payload.labels if isinstance(payload.labels, dict) else {},
+    )
+    return decision
 
 
 @router.post("")

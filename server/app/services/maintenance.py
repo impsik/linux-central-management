@@ -102,33 +102,102 @@ def _scoped_windows_for_targets(db: Session, *, action: str, agent_ids: list[str
     return out
 
 
-def assert_action_allowed_now(action: str, *, db: Session | None = None, agent_ids: list[str] | None = None, labels: dict | None = None) -> None:
+def evaluate_action_now(action: str, *, db: Session | None = None, agent_ids: list[str] | None = None, labels: dict | None = None) -> dict:
     action_norm = (action or "").strip().lower()
 
     if db is not None:
         scoped = _scoped_windows_for_targets(db, action=action_norm, agent_ids=agent_ids, labels=labels)
         if scoped:
-            if any(
+            matched_windows = [
+                {
+                    "id": str(w.id),
+                    "name": w.name,
+                    "timezone": w.timezone,
+                    "start_hhmm": w.start_hhmm,
+                    "end_hhmm": w.end_hhmm,
+                    "enforcement_mode": w.enforcement_mode,
+                    "label_selector": w.label_selector if isinstance(w.label_selector, dict) else {},
+                    "action_scope": w.action_scope if isinstance(w.action_scope, list) else [],
+                    "enabled": bool(w.enabled),
+                }
+                for w in scoped
+            ]
+            within = any(
                 _is_within_window(
                     tz_name=str(w.timezone or "UTC"),
                     start_hhmm=str(w.start_hhmm or "01:00"),
                     end_hhmm=str(w.end_hhmm or "05:00"),
                 )
                 for w in scoped
-            ):
-                return
+            )
+            if within:
+                return {
+                    "action": action_norm,
+                    "decision": "allow",
+                    "reason_code": "within_scoped_window",
+                    "matched_count": len(matched_windows),
+                    "matched_windows": matched_windows,
+                }
             if any((str(w.enforcement_mode or "block").strip().lower() == "block") for w in scoped):
-                raise PermissionError(f"Action '{action_norm}' is blocked outside maintenance window for matching targets")
-            return
+                return {
+                    "action": action_norm,
+                    "decision": "block",
+                    "reason_code": "outside_scoped_window_blocked",
+                    "matched_count": len(matched_windows),
+                    "matched_windows": matched_windows,
+                }
+            return {
+                "action": action_norm,
+                "decision": "allow",
+                "reason_code": "outside_scoped_window_warn_only",
+                "matched_count": len(matched_windows),
+                "matched_windows": matched_windows,
+            }
 
     if not bool(getattr(settings, "maintenance_window_enabled", False)):
-        return
+        return {
+            "action": action_norm,
+            "decision": "allow",
+            "reason_code": "no_matching_scoped_window",
+            "matched_count": 0,
+            "matched_windows": [],
+        }
 
     if not is_action_guarded(action_norm):
-        return
+        return {
+            "action": action_norm,
+            "decision": "allow",
+            "reason_code": "action_not_globally_guarded",
+            "matched_count": 0,
+            "matched_windows": [],
+        }
 
     if is_within_maintenance_window():
+        return {
+            "action": action_norm,
+            "decision": "allow",
+            "reason_code": "within_global_window",
+            "matched_count": 0,
+            "matched_windows": [],
+        }
+
+    return {
+        "action": action_norm,
+        "decision": "block",
+        "reason_code": "outside_global_window_blocked",
+        "matched_count": 0,
+        "matched_windows": [],
+    }
+
+
+def assert_action_allowed_now(action: str, *, db: Session | None = None, agent_ids: list[str] | None = None, labels: dict | None = None) -> None:
+    decision = evaluate_action_now(action, db=db, agent_ids=agent_ids, labels=labels)
+    if decision["decision"] != "block":
         return
+
+    action_norm = (action or "").strip().lower()
+    if decision["reason_code"] == "outside_scoped_window_blocked":
+        raise PermissionError(f"Action '{action_norm}' is blocked outside maintenance window for matching targets")
 
     tz_name = (getattr(settings, "maintenance_window_timezone", "UTC") or "UTC").strip() or "UTC"
     start = str(getattr(settings, "maintenance_window_start_hhmm", "01:00") or "01:00")

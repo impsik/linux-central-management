@@ -95,3 +95,75 @@ def test_readonly_user_cannot_manage_maintenance_windows(monkeypatch, auth_clien
     with auth_client_factory(app, username="viewer", password="viewer-pass-123") as (viewer_client, viewer_headers):
         resp = viewer_client.get("/maintenance-windows", headers=viewer_headers)
         assert resp.status_code == 403, resp.text
+
+
+def test_admin_can_preview_maintenance_window_evaluation(monkeypatch, auth_client_factory):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
+
+    with auth_client_factory(app) as (client, headers):
+        created = client.post(
+            "/maintenance-windows",
+            json={
+                "name": "Prod patch window",
+                "timezone": "UTC",
+                "start_hhmm": "01:00",
+                "end_hhmm": "05:00",
+                "action_scope": ["dist-upgrade"],
+                "label_selector": {"env": "prod"},
+                "enforcement_mode": "block",
+                "enabled": True,
+            },
+            headers=headers,
+        )
+        assert created.status_code == 200, created.text
+
+        preview = client.post(
+            "/maintenance-windows/evaluate",
+            json={
+                "action": "dist-upgrade",
+                "labels": {"env": "prod"},
+            },
+            headers=headers,
+        )
+        assert preview.status_code == 200, preview.text
+        body = preview.json()
+        assert body["action"] == "dist-upgrade"
+        assert body["matched_count"] == 1
+        assert body["matched_windows"][0]["name"] == "Prod patch window"
+        assert body["decision"] in {"allow", "block"}
+        assert body["reason_code"] in {"within_scoped_window", "outside_scoped_window_blocked"}
+
+
+def test_admin_preview_returns_no_matching_window_when_selector_does_not_match(monkeypatch, auth_client_factory):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
+
+    with auth_client_factory(app) as (client, headers):
+        created = client.post(
+            "/maintenance-windows",
+            json={
+                "name": "Prod patch window",
+                "timezone": "UTC",
+                "start_hhmm": "01:00",
+                "end_hhmm": "05:00",
+                "action_scope": ["dist-upgrade"],
+                "label_selector": {"env": "prod"},
+                "enforcement_mode": "block",
+                "enabled": True,
+            },
+            headers=headers,
+        )
+        assert created.status_code == 200, created.text
+
+        preview = client.post(
+            "/maintenance-windows/evaluate",
+            json={
+                "action": "dist-upgrade",
+                "labels": {"env": "stage"},
+            },
+            headers=headers,
+        )
+        assert preview.status_code == 200, preview.text
+        body = preview.json()
+        assert body["matched_count"] == 0
+        assert body["decision"] == "allow"
+        assert body["reason_code"] == "no_matching_scoped_window"
