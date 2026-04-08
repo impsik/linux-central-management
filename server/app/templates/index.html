@@ -6,8 +6,6 @@
   <title>Linux Guardian</title>
   <script src="/assets/fleet-theme-bootstrap.js?v=__ASSET_VERSION__"></script>
   <link rel="stylesheet" href="/static/css/xterm.css" />
-  <script src="/static/js/xterm.js"></script>
-  <script src="/static/js/xterm-addon-fit.js"></script>
   <script src="/assets/fleet-phase3.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-mfa.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-ui.js?v=__ASSET_VERSION__"></script>
@@ -1388,6 +1386,47 @@
     // Init xterm only when the container exists. If this throws early, it can break other UI JS (e.g. theme toggle).
     let term = null;
     let termFitAddon = null;
+    let terminalDepsPromise = null;
+
+    function loadScriptOnce(src) {
+      return new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[data-src="${src}"]`);
+        if (existing) {
+          if (existing.dataset.loaded === '1') {
+            resolve();
+            return;
+          }
+          existing.addEventListener('load', () => resolve(), { once: true });
+          existing.addEventListener('error', () => reject(new Error(`Failed to load ${src}`)), { once: true });
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = false;
+        script.dataset.src = src;
+        script.onload = () => {
+          script.dataset.loaded = '1';
+          resolve();
+        };
+        script.onerror = () => reject(new Error(`Failed to load ${src}`));
+        document.head.appendChild(script);
+      });
+    }
+
+    function loadTerminalDependenciesOnce() {
+      if (window.Terminal) return Promise.resolve();
+      if (!terminalDepsPromise) {
+        terminalDepsPromise = (async () => {
+          await loadScriptOnce('/static/js/xterm.js');
+          await loadScriptOnce('/static/js/xterm-addon-fit.js');
+        })().catch((err) => {
+          terminalDepsPromise = null;
+          throw err;
+        });
+      }
+      return terminalDepsPromise;
+    }
 
     function fitTerminalViewport() {
       if (!term) return;
@@ -1401,8 +1440,9 @@
       try { term.focus(); } catch { }
     }
 
-    function initTerminalOnce() {
+    async function initTerminalOnce() {
       if (term) return;
+      await loadTerminalDependenciesOnce();
       const termEl = document.getElementById('terminal');
       if (!termEl) return;
       term = new Terminal({
@@ -2197,11 +2237,17 @@
       });
     }
 
-    function showTerminal() {
+    async function showTerminal() {
       if (!currentAgentId) return;
       setHostActionActive('terminal');
       // Stop metrics updates when leaving server info view
       stopMetricsPolling(metricsLifecycleState);
+      try {
+        await initTerminalOnce();
+      } catch (e) {
+        showToast(`Failed to load terminal assets: ${e.message || e}`, 'error', 5000);
+        return;
+      }
       connect(currentAgentId);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('terminal-tab').classList.add('active');
