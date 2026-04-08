@@ -235,6 +235,16 @@ Blocked conditions:
 - `DB_AUTO_CREATE_TABLES=true`
 - terminal enabled with `AGENT_TERMINAL_SCHEME=ws` (requires `wss`)
 
+For local/LAN development only, you can bypass these non-local startup guardrails with:
+- `ALLOW_INSECURE_NO_AGENT_TOKEN=true`
+
+This is intended only for trusted local or home-lab testing, for example when:
+- accessing the UI over plain HTTP on a LAN IP
+- testing with `UI_COOKIE_SECURE=false`
+- bringing the stack up before real shared tokens/TLS are configured
+
+Do not use this override for production or internet-exposed deployments.
+
 Local dev remains supported with `ALLOW_INSECURE_NO_AGENT_TOKEN=true` and local DB settings.
 
 **Server (`deploy/docker/.env`)**
@@ -242,6 +252,7 @@ Local dev remains supported with `ALLOW_INSECURE_NO_AGENT_TOKEN=true` and local 
 - `AGENT_SHARED_TOKEN` (required)
 - `MFA_ENCRYPTION_KEY` (required when MFA is enabled)
 - `AGENT_TERMINAL_TOKEN` (only if terminal feature is enabled)
+- `ALLOW_INSECURE_NO_AGENT_TOKEN=true` only for local/LAN development override
 - `TEAMS_WEBHOOK_URL` + `TEAMS_ALERTS_ENABLED=true` (optional Teams alerts)
 
 **Agent host (systemd/ENV)**
