@@ -18,6 +18,34 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    dialect = bind.dialect.name
+
+    if dialect == "postgresql":
+        # Compatibility for legacy databases that were created outside Alembic
+        # and therefore never got an Alembic migration creating app_saved_views.
+        op.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_saved_views (
+              id uuid PRIMARY KEY,
+              user_id uuid NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+              scope varchar NOT NULL DEFAULT 'hosts',
+              name varchar NOT NULL,
+              payload json NOT NULL DEFAULT '{}'::json,
+              is_shared boolean NOT NULL DEFAULT false,
+              is_default_startup boolean NOT NULL DEFAULT false,
+              created_at timestamptz NOT NULL DEFAULT now(),
+              updated_at timestamptz NOT NULL DEFAULT now()
+            )
+            """
+        )
+        op.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_app_saved_views_user_scope_name ON app_saved_views (user_id, scope, name)"
+        )
+        op.execute(
+            "CREATE INDEX IF NOT EXISTS ix_app_saved_views_user_scope ON app_saved_views (user_id, scope)"
+        )
+
     op.create_table(
         "app_maintenance_windows",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
