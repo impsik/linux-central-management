@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from conftest import bootstrap_test_app, login_test_client
+
 
 def _reload_app_modules():
     for k in list(sys.modules.keys()):
@@ -12,17 +14,9 @@ def _reload_app_modules():
 
 
 def test_notifications_dedupe_cooldown_suppresses_repeat(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
     monkeypatch.setenv("NOTIFICATIONS_DEDUPE_ENABLED", "true")
     monkeypatch.setenv("NOTIFICATIONS_DEDUPE_COOLDOWN_SECONDS", "3600")
-
-    _reload_app_modules()
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from app.db import SessionLocal
     from app.models import Host
@@ -49,8 +43,7 @@ def test_notifications_dedupe_cooldown_suppresses_repeat(monkeypatch):
             h.last_seen = datetime.now(timezone.utc) - timedelta(days=1)
             db.commit()
 
-        lr = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert lr.status_code == 200, lr.text
+        login_test_client(client)
 
         first = client.get("/dashboard/notifications?limit=30")
         assert first.status_code == 200, first.text
@@ -67,17 +60,9 @@ def test_notifications_dedupe_cooldown_suppresses_repeat(monkeypatch):
 
 
 def test_notifications_dedupe_state_endpoint_admin_only(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
     monkeypatch.setenv("NOTIFICATIONS_DEDUPE_ENABLED", "true")
     monkeypatch.setenv("NOTIFICATIONS_DEDUPE_COOLDOWN_SECONDS", "3600")
-
-    _reload_app_modules()
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from app.db import SessionLocal
     from app.models import AppUser, Host
@@ -103,10 +88,7 @@ def test_notifications_dedupe_state_endpoint_admin_only(monkeypatch):
             h.last_seen = datetime.now(timezone.utc) - timedelta(days=1)
             db.commit()
 
-        lr = admin_client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert lr.status_code == 200, lr.text
-        csrf = admin_client.cookies.get("fleet_csrf")
-        headers = {"X-CSRF-Token": csrf} if csrf else {}
+        headers = login_test_client(admin_client)
 
         # Trigger notifications once so dedupe state is populated.
         n = admin_client.get("/dashboard/notifications?limit=30")
@@ -127,8 +109,7 @@ def test_notifications_dedupe_state_endpoint_admin_only(monkeypatch):
         assert any((it.get("dedupe_key") or "").startswith("offline:srv-offline-02") for it in (d.get("items") or []))
 
     with TestClient(app) as viewer_client:
-        lr2 = viewer_client.post("/auth/login", json={"username": "viewer", "password": "viewer-pass-123"})
-        assert lr2.status_code == 200, lr2.text
+        login_test_client(viewer_client, username="viewer", password="viewer-pass-123")
 
         denied = viewer_client.get("/dashboard/notifications/dedupe-state?minutes=1440")
         assert denied.status_code == 403, denied.text

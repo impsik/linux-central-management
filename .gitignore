@@ -1,7 +1,7 @@
 # Secrets / local env
 .env
 .env.*
-
+.idea
 # Local deploy targets (do not commit real lab IPs)
 hosts
 

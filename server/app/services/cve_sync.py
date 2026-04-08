@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 # Official Ubuntu OVAL definitions
 SUPPORTED_RELEASES = ["focal", "jammy", "noble"]
 OVAL_URL_TEMPLATE = "https://security-metadata.canonical.com/oval/com.ubuntu.{}.cve.oval.xml.bz2"
+CVE_SYNC_INTERVAL_SECONDS = 12 * 60 * 60
 
 async def sync_cve_definitions(db: AsyncSession):
     master_cve_map = {}
@@ -257,7 +258,7 @@ async def cve_sync_loop(stop_event: asyncio.Event):
         
     while not stop_event.is_set():
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=43200)
+            await asyncio.wait_for(stop_event.wait(), timeout=CVE_SYNC_INTERVAL_SECONDS)
         except asyncio.TimeoutError:
             pass
 

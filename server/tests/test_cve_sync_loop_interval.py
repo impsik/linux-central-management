@@ -1,6 +1,4 @@
-from pathlib import Path
-
-
 def test_cve_sync_loop_interval_is_12h():
-    src = Path('server/app/services/cve_sync.py').read_text(encoding='utf-8')
-    assert 'timeout=43200' in src
+    from app.services.cve_sync import CVE_SYNC_INTERVAL_SECONDS
+
+    assert CVE_SYNC_INTERVAL_SECONDS == 12 * 60 * 60

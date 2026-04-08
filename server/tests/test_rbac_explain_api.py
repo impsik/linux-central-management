@@ -1,19 +1,10 @@
 import importlib
 
+from conftest import bootstrap_test_app, login_test_client
+
 
 def test_admin_rbac_explain_allow_and_deny(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from fastapi.testclient import TestClient
     from sqlalchemy import select
@@ -53,10 +44,7 @@ def test_admin_rbac_explain_allow_and_deny(monkeypatch):
         assert r.status_code == 200, r.text
 
         # admin login
-        r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert r.status_code == 200, r.text
-        csrf = client.cookies.get("fleet_csrf")
-        headers = {"X-CSRF-Token": csrf} if csrf else {}
+        headers = login_test_client(client)
 
         # create test user
         reg = client.post("/auth/register", json={"username": "op1", "password": "pw-123456"}, headers=headers)

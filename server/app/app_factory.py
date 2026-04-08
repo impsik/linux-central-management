@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import Base, SessionLocal, engine
 from .deps import get_current_user_from_request
-from .routers import agent, ansible, approvals, audit, auth, backup_verification, cronjobs, dashboard, hosts, jobs, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
+from .routers import agent, ansible, approvals, audit, auth, backup_verification, cronjobs, dashboard, host_observability, host_packages, host_services, host_users, hosts, jobs, maintenance_windows, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
 
 logger = logging.getLogger(__name__)
 
@@ -497,6 +497,11 @@ def create_app() -> FastAPI:
     app.include_router(cronjobs.router)
     app.include_router(sshkeys.router)
     app.include_router(hosts.router)
+    app.include_router(host_packages.router)
+    app.include_router(host_services.router)
+    app.include_router(host_users.router)
+    app.include_router(host_observability.router)
+    app.include_router(maintenance_windows.router)
     app.include_router(reports.router)
     app.include_router(reports_html.router)
     app.include_router(jobs.router)

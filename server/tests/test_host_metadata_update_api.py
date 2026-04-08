@@ -1,19 +1,6 @@
 import importlib
 
-
-def _boot_app(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    app_factory = importlib.import_module("app.app_factory")
-    return app_factory.create_app()
+from conftest import bootstrap_test_app
 
 
 def _seed_host(agent_id="agent-1", hostname="old-host", labels=None):
@@ -25,21 +12,11 @@ def _seed_host(agent_id="agent-1", hostname="old-host", labels=None):
         db.commit()
 
 
-def _login(client):
-    r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-    assert r.status_code == 200, r.text
-    csrf = client.cookies.get("fleet_csrf")
-    return {"X-CSRF-Token": csrf} if csrf else {}
-
-
-def test_update_host_metadata_name_role_env_and_preserve_existing(monkeypatch):
-    app = _boot_app(monkeypatch)
+def test_update_host_metadata_name_role_env_and_preserve_existing(monkeypatch, auth_client_factory):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
     _seed_host(labels={"team": "core", "role": "old"})
 
-    from fastapi.testclient import TestClient
-
-    with TestClient(app) as client:
-        headers = _login(client)
+    with auth_client_factory(app) as (client, headers):
         resp = client.patch(
             "/hosts/agent-1/metadata",
             json={
@@ -58,14 +35,11 @@ def test_update_host_metadata_name_role_env_and_preserve_existing(monkeypatch):
         assert body["host"]["labels"]["env_vars"] == {"FOO": "bar", "X": "1"}
 
 
-def test_update_host_metadata_role_when_missing_and_env_replace_idempotent(monkeypatch):
-    app = _boot_app(monkeypatch)
+def test_update_host_metadata_role_when_missing_and_env_replace_idempotent(monkeypatch, auth_client_factory):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
     _seed_host(agent_id="agent-2", labels={"team": "ops", "env_vars": {"FOO": "old", "UNCHANGED": "yes"}})
 
-    from fastapi.testclient import TestClient
-
-    with TestClient(app) as client:
-        headers = _login(client)
+    with auth_client_factory(app) as (client, headers):
         payload = {"role": "db", "env": {"FOO": "new", "BAR": "2"}}
         first = client.patch("/hosts/agent-2/metadata", json=payload, headers=headers)
         assert first.status_code == 200, first.text
@@ -78,14 +52,11 @@ def test_update_host_metadata_role_when_missing_and_env_replace_idempotent(monke
         assert labels["env_vars"] == {"FOO": "new", "BAR": "2"}
 
 
-def test_update_host_metadata_env_key_sets_legacy_env_and_clears_on_remove(monkeypatch):
-    app = _boot_app(monkeypatch)
+def test_update_host_metadata_env_key_sets_legacy_env_and_clears_on_remove(monkeypatch, auth_client_factory):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
     _seed_host(agent_id="agent-3", labels={"team": "ops", "env_vars": {"env": "test"}, "env": "test"})
 
-    from fastapi.testclient import TestClient
-
-    with TestClient(app) as client:
-        headers = _login(client)
+    with auth_client_factory(app) as (client, headers):
 
         set_resp = client.patch("/hosts/agent-3/metadata", json={"env": {"env": "prelive"}}, headers=headers)
         assert set_resp.status_code == 200, set_resp.text

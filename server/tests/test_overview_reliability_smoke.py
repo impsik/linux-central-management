@@ -2,6 +2,8 @@ import importlib
 import sys
 from datetime import datetime, timedelta, timezone
 
+from conftest import bootstrap_test_app, login_test_client
+
 
 def _reload_app_modules():
     for k in list(sys.modules.keys()):
@@ -10,20 +12,7 @@ def _reload_app_modules():
 
 
 def test_overview_and_cron_smoke_sqlite(monkeypatch):
-    # Configure environment before importing app modules.
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    _reload_app_modules()
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from fastapi.testclient import TestClient
 
@@ -44,11 +33,7 @@ def test_overview_and_cron_smoke_sqlite(monkeypatch):
         assert r.status_code == 200, r.text
 
         # Login
-        r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert r.status_code == 200, r.text
-
-        csrf = client.cookies.get("fleet_csrf")
-        headers = {"X-CSRF-Token": csrf} if csrf else {}
+        headers = login_test_client(client)
 
         # Dashboard summary smoke
         r = client.get("/dashboard/summary")
@@ -92,11 +77,8 @@ def test_overview_and_cron_smoke_sqlite(monkeypatch):
         assert any(it.get("id") == cron_id for it in items)
 
 
-def test_mfa_gate_403_is_suppressed_in_overview_js():
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[2]
-    js = (root / "server" / "app" / "templates" / "fleet-phase3-overview.js").read_text(encoding="utf-8")
+def test_mfa_gate_403_is_suppressed_in_overview_js(templates_dir):
+    js = (templates_dir / "fleet-phase3-overview.js").read_text(encoding="utf-8")
 
     # During MFA-gated bootstrapping, 403 from protected endpoints should not show scary errors.
     assert "if (r.status === 403)" in js

@@ -2,6 +2,8 @@ import asyncio
 import importlib
 import sys
 
+from conftest import login_test_client
+
 
 def _reload_app_modules():
     for k in list(sys.modules.keys()):
@@ -38,13 +40,6 @@ def _register_host(client, agent_id: str, labels: dict | None = None):
     assert r.status_code == 200, r.text
 
 
-def _auth_headers(client) -> dict:
-    lr = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-    assert lr.status_code == 200, lr.text
-    csrf = client.cookies.get("fleet_csrf")
-    return {"X-CSRF-Token": csrf} if csrf else {}
-
-
 def _campaign_payload():
     return {
         "agent_ids": ["srv-001", "srv-002", "srv-003"],
@@ -70,7 +65,7 @@ def test_rollout_pause_resume_and_approve_next(monkeypatch):
     with TestClient(app) as client:
         for aid in ["srv-001", "srv-002", "srv-003"]:
             _register_host(client, aid, labels={"env": "prod"})
-        headers = _auth_headers(client)
+        headers = login_test_client(client)
 
         cr = client.post("/patching/campaigns/security-updates", json=_campaign_payload(), headers=headers)
         assert cr.status_code == 200, cr.text
@@ -102,7 +97,7 @@ def test_auto_pause_on_failure_threshold(monkeypatch):
     with TestClient(app) as client:
         for aid in ["srv-001", "srv-002", "srv-003"]:
             _register_host(client, aid, labels={"env": "prod"})
-        headers = _auth_headers(client)
+        headers = login_test_client(client)
 
         cr = client.post("/patching/campaigns/security-updates", json=_campaign_payload(), headers=headers)
         assert cr.status_code == 200, cr.text

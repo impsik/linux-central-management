@@ -208,6 +208,26 @@ class AppSavedView(Base):
     )
 
 
+class AppMaintenanceWindow(Base):
+    __tablename__ = "app_maintenance_windows"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=False, index=True)
+    enabled = Column(Boolean, nullable=False, default=True, index=True)
+
+    timezone = Column(String, nullable=False, default="UTC")
+    start_hhmm = Column(String, nullable=False, default="01:00")
+    end_hhmm = Column(String, nullable=False, default="05:00")
+
+    action_scope = Column(JSON, nullable=False, default=list)
+    label_selector = Column(JSON, nullable=False, default=dict)
+    saved_view_id = Column(UUID(as_uuid=True), ForeignKey("app_saved_views.id", ondelete="SET NULL"), nullable=True, index=True)
+    enforcement_mode = Column(String, nullable=False, default="block")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 class AnsibleRun(Base):
     __tablename__ = "ansible_runs"
 

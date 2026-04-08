@@ -343,14 +343,14 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
     """Run apt-get dist-upgrade/full-upgrade on targeted agents."""
     _require_job_write_access(user)
 
-    try:
-        assert_action_allowed_now("dist-upgrade")
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-
     targets = resolve_agent_ids(db, payload.agent_ids, payload.labels, user=user)
     if not targets:
         raise HTTPException(400, "No targets resolved (agent_ids or labels required).")
+
+    try:
+        assert_action_allowed_now("dist-upgrade", db=db, agent_ids=targets, labels=payload.labels)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     preflight = preflight_targets(JobPreflightRequest(agent_ids=payload.agent_ids, labels=payload.labels), db, user)
 

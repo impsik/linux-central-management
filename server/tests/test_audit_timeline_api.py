@@ -1,19 +1,10 @@
 import importlib
 
+from conftest import bootstrap_test_app, login_test_client
+
 
 def test_audit_timeline_includes_normalized_events(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from app.db import SessionLocal
     from app.models import OIDCAuthEvent
@@ -21,8 +12,7 @@ def test_audit_timeline_includes_normalized_events(monkeypatch):
 
     with TestClient(app) as client:
         # login as admin
-        r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert r.status_code == 200, r.text
+        login_test_client(client)
 
         # seed one OIDC event directly
         db = SessionLocal()

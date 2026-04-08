@@ -3,23 +3,11 @@ import importlib
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from conftest import bootstrap_test_app, login_test_client
+
 
 def test_job_flow_sqlite(monkeypatch):
-    # Configure test environment BEFORE importing app modules (engine is created at import time).
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    # Import after env is set
-    app_factory = importlib.import_module("app.app_factory")
-
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from fastapi.testclient import TestClient
 
@@ -48,11 +36,7 @@ def test_job_flow_sqlite(monkeypatch):
         assert r.status_code == 200, r.text
 
         # Login (bootstrap seeded on startup)
-        r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert r.status_code == 200, r.text
-
-        csrf = client.cookies.get("fleet_csrf")
-        headers = {"X-CSRF-Token": csrf} if csrf else {}
+        headers = login_test_client(client)
 
         # Create a query job
         r = client.post("/jobs/pkg-query", json={"agent_ids": ["srv-001"], "packages": ["bash"]}, headers=headers)
@@ -143,18 +127,7 @@ def test_job_flow_sqlite(monkeypatch):
 
 
 def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from app.db import SessionLocal
     from app.models import AppUser, AppUserScope
@@ -176,10 +149,7 @@ def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
             )
             assert rr.status_code == 200, rr.text
 
-        lr = admin_client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert lr.status_code == 200, lr.text
-        csrf = admin_client.cookies.get("fleet_csrf")
-        headers = {"X-CSRF-Token": csrf} if csrf else {}
+        headers = login_test_client(admin_client)
 
         reg = admin_client.post("/auth/register", json={"username": "viewer", "password": "viewer-pass-123"}, headers=headers)
         assert reg.status_code == 200, reg.text
@@ -212,10 +182,7 @@ def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
         assert ev.status_code == 200, ev.text
 
     with TestClient(app) as viewer_client:
-        lr2 = viewer_client.post("/auth/login", json={"username": "viewer", "password": "viewer-pass-123"})
-        assert lr2.status_code == 200, lr2.text
-        viewer_csrf = viewer_client.cookies.get("fleet_csrf")
-        viewer_headers = {"X-CSRF-Token": viewer_csrf} if viewer_csrf else {}
+        viewer_headers = login_test_client(viewer_client, username="viewer", password="viewer-pass-123")
 
         denied_write = viewer_client.post(
             "/jobs/pkg-query",
@@ -232,18 +199,7 @@ def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
 
 
 def test_cleanup_offline_hosts_admin_only(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from datetime import datetime, timedelta, timezone
 
@@ -271,12 +227,9 @@ def test_cleanup_offline_hosts_admin_only(monkeypatch):
             h.last_seen = datetime.now(timezone.utc) - timedelta(days=2)
             db.commit()
 
-        lr = admin_client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert lr.status_code == 200, lr.text
-        csrf = admin_client.cookies.get("fleet_csrf")
-        headers = {"X-CSRF-Token": csrf} if csrf else {}
+        headers = login_test_client(admin_client)
 
-        reg = admin_client.post("/auth/register", json={"username": "viewer2", "password": "viewer-pass-123"}, headers=headers)
+        reg = admin_client.post("/auth/register", json={"username": "viewer2", "password": "viewer2-pass-123"}, headers=headers)
         assert reg.status_code == 200, reg.text
 
         with SessionLocal() as db:
@@ -292,10 +245,7 @@ def test_cleanup_offline_hosts_admin_only(monkeypatch):
         assert "srv-old" in (payload.get("agent_ids") or [])
 
     with TestClient(app) as viewer_client:
-        lr2 = viewer_client.post("/auth/login", json={"username": "viewer2", "password": "viewer-pass-123"})
-        assert lr2.status_code == 200, lr2.text
-        viewer_csrf = viewer_client.cookies.get("fleet_csrf")
-        viewer_headers = {"X-CSRF-Token": viewer_csrf} if viewer_csrf else {}
+        viewer_headers = login_test_client(viewer_client, username="viewer2", password="viewer2-pass-123")
 
         denied = viewer_client.post("/hosts/cleanup-offline?older_than_minutes=60&dry_run=true", headers=viewer_headers)
         assert denied.status_code == 403, denied.text

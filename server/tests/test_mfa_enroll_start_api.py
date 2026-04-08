@@ -1,6 +1,8 @@
 import importlib
 import sys
 
+from conftest import login_test_client
+
 
 def _reload_app_modules():
     for k in list(sys.modules.keys()):
@@ -20,14 +22,6 @@ def _base_env(monkeypatch):
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "true")
 
 
-def _login(client):
-    r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-    assert r.status_code == 200
-    csrf = client.cookies.get("fleet_csrf")
-    assert csrf
-    return csrf
-
-
 def test_mfa_enroll_start_accepts_quoted_fernet_key(monkeypatch):
     _base_env(monkeypatch)
 
@@ -42,11 +36,11 @@ def test_mfa_enroll_start_accepts_quoted_fernet_key(monkeypatch):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as client:
-        csrf = _login(client)
+        headers = login_test_client(client)
         r = client.post(
             "/auth/mfa/enroll/start",
             json={},
-            headers={"X-CSRF-Token": csrf},
+            headers=headers,
         )
         assert r.status_code == 200, r.text
         data = r.json()
@@ -65,11 +59,11 @@ def test_mfa_enroll_start_returns_actionable_error_for_invalid_key(monkeypatch):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as client:
-        csrf = _login(client)
+        headers = login_test_client(client)
         r = client.post(
             "/auth/mfa/enroll/start",
             json={},
-            headers={"X-CSRF-Token": csrf},
+            headers=headers,
         )
         assert r.status_code == 500
         assert "MFA_ENCRYPTION_KEY is invalid" in (r.text or "")

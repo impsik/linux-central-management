@@ -117,11 +117,6 @@ def create_security_updates_campaign(
     }
     """
 
-    try:
-        assert_action_allowed_now("security-campaign")
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
-
     window_start = payload.get("window_start")
     window_end = payload.get("window_end")
     if not window_start or not window_end:
@@ -150,6 +145,11 @@ def create_security_updates_campaign(
     scoped_targets = resolve_agent_ids(db, agent_ids, labels, user=user)
     if not scoped_targets:
         raise HTTPException(400, "No targets resolved within your scope")
+
+    try:
+        assert_action_allowed_now("security-campaign", db=db, agent_ids=scoped_targets, labels=labels)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
 
     if is_approval_required("security-campaign"):
         with transaction(db):

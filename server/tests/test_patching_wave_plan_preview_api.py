@@ -2,6 +2,8 @@ import hashlib
 import importlib
 import sys
 
+from conftest import login_test_client
+
 
 def _reload_app_modules():
     for k in list(sys.modules.keys()):
@@ -36,13 +38,6 @@ def _register_host(client, agent_id: str, labels: dict | None = None):
     assert r.status_code == 200, r.text
 
 
-def _auth_headers(client) -> dict:
-    lr = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-    assert lr.status_code == 200, lr.text
-    csrf = client.cookies.get("fleet_csrf")
-    return {"X-CSRF-Token": csrf} if csrf else {}
-
-
 def _stable_hash_sort(agent_ids: list[str]) -> list[str]:
     return sorted(set(agent_ids), key=lambda a: (hashlib.sha256(a.encode("utf-8")).hexdigest(), a))
 
@@ -57,7 +52,7 @@ def test_preview_wave_plan_is_deterministic_for_same_target_set(monkeypatch):
     with TestClient(app) as client:
         for aid in agent_ids:
             _register_host(client, aid, labels={"env": "prod"})
-        headers = _auth_headers(client)
+        headers = login_test_client(client)
 
         payload_a = {
             "agent_ids": agent_ids,
@@ -90,7 +85,7 @@ def test_preview_wave_plan_response_shape(monkeypatch):
         _register_host(client, "srv-002", labels={"env": "prod"})
         _register_host(client, "srv-003", labels={"env": "prod"})
         _register_host(client, "srv-004", labels={"env": "dev"})
-        headers = _auth_headers(client)
+        headers = login_test_client(client)
 
         r = client.post(
             "/patching/campaigns/security-updates/preview",
@@ -117,7 +112,7 @@ def test_preview_wave_plan_validation(monkeypatch):
 
     with TestClient(app) as client:
         _register_host(client, "srv-001", labels={"env": "prod"})
-        headers = _auth_headers(client)
+        headers = login_test_client(client)
 
         bad_plan = client.post(
             "/patching/campaigns/security-updates/preview",

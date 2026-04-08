@@ -1,19 +1,8 @@
-import importlib
+from conftest import bootstrap_test_app, login_test_client
 
 
 def test_dashboard_slo_api_smoke(monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
-    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
-    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
-    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
-    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
-    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
-    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
-    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
-    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
-
-    app_factory = importlib.import_module("app.app_factory")
-    app = app_factory.create_app()
+    app = bootstrap_test_app(monkeypatch)
 
     from fastapi.testclient import TestClient
 
@@ -33,8 +22,7 @@ def test_dashboard_slo_api_smoke(monkeypatch):
         assert r.status_code == 200, r.text
 
         # login to access dashboard API
-        r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
-        assert r.status_code == 200, r.text
+        login_test_client(client)
 
         slo = client.get("/dashboard/slo", params={"hours": 24})
         assert slo.status_code == 200, slo.text
