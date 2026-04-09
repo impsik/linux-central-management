@@ -98,7 +98,7 @@ describe('phase3 host-filter behavior flows', () => {
 
   it('select all visible hosts propagates selection + refresh callbacks', () => {
     const doc = createDocument([
-      'host-search', 'label-env', 'label-role', 'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
+      'host-search', 'label-env', 'label-role', 'label-owner', 'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
       'select-visible-hosts', 'vuln-filter-section', 'vuln-filter-toggle', 'vuln-toggle-btn', 'ansible-filter-section', 'ansible-filter-toggle', 'ansible-toggle-btn',
     ]);
     const win = { window: null, document: doc, console };
@@ -126,16 +126,16 @@ describe('phase3 host-filter behavior flows', () => {
     expect(upgradeCount).toBe(1);
   });
 
-  it('label clear resets env/role filters and reapplies filtering', () => {
+  it('label clear resets env/role/owner filters and reapplies filtering', () => {
     const doc = createDocument([
-      'host-search', 'label-env', 'label-role', 'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
+      'host-search', 'label-env', 'label-role', 'label-owner', 'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
       'select-visible-hosts', 'vuln-filter-section', 'vuln-filter-toggle', 'vuln-toggle-btn', 'ansible-filter-section', 'ansible-filter-toggle', 'ansible-toggle-btn',
     ]);
     const win = { window: null, document: doc, console };
     win.window = win;
     run(uiPath, win);
 
-    const state = { labelEnvFilter: 'prod', labelRoleFilter: 'db' };
+    const state = { labelEnvFilter: 'prod', labelRoleFilter: 'db', labelOwnerFilter: 'alice' };
     let applyCount = 0;
 
     win.phase3HostFiltersUi.initHostFiltersUi({
@@ -147,10 +147,12 @@ describe('phase3 host-filter behavior flows', () => {
 
     doc.getElementById('label-env').value = 'prod';
     doc.getElementById('label-role').value = 'db';
+    doc.getElementById('label-owner').value = 'alice';
     doc.getElementById('labels-clear').dispatch('click');
 
     expect(state.labelEnvFilter).toBe('');
     expect(state.labelRoleFilter).toBe('');
+    expect(state.labelOwnerFilter).toBe('');
     expect(applyCount).toBe(1);
   });
 });

@@ -408,6 +408,11 @@
                     <option value="">Role: Any</option>
                   </select>
                 </div>
+                <div class="vuln-row">
+                  <select id="label-owner" class="host-search">
+                    <option value="">Owner: Any</option>
+                  </select>
+                </div>
                 <div class="vuln-actions">
                   <button class="btn" id="labels-clear">Clear</button>
                 </div>
@@ -1605,6 +1610,7 @@
     let hostSearchQuery = hostFilterSelectionDefaults.hostSearchQuery;
     let labelEnvFilter = hostFilterSelectionDefaults.labelEnvFilter;
     let labelRoleFilter = hostFilterSelectionDefaults.labelRoleFilter;
+    let labelOwnerFilter = hostFilterSelectionDefaults.labelOwnerFilter;
     let vulnFilteredAgentIds = hostFilterSelectionDefaults.vulnFilteredAgentIds; // Set<string> or null
     let selectedAgentIds = hostFilterSelectionDefaults.selectedAgentIds;
     let lastRenderedAgentIds = hostFilterSelectionDefaults.lastRenderedAgentIds; // string[]
@@ -1641,6 +1647,8 @@
         setLabelEnvFilter: (v) => { labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', v); return labelEnvFilter; },
         getLabelRoleFilter: () => labelRoleFilter,
         setLabelRoleFilter: (v) => { labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', v); return labelRoleFilter; },
+        getLabelOwnerFilter: () => labelOwnerFilter,
+        setLabelOwnerFilter: (v) => { labelOwnerFilter = syncHostFilterSelectionState('labelOwnerFilter', v); return labelOwnerFilter; },
         getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
         getSelectedAgentIds: () => selectedAgentIds,
         setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', v); return lastRenderedAgentIds; },
@@ -1993,9 +2001,3 @@
       }
 
       el.innerHTML = items.map((it) => {
-        const t = it?.time ? new Date(it.time).toLocaleString() : 'n/a';
-        const st = String(it?.status || 'unknown');
-        const stClass = st === 'success' ? 'status-ok' : (st === 'failed' ? 'status-error' : 'status-muted');
-        const jobType = escapeHtml(String(it?.job_type || 'job'));
-        const jobId = escapeHtml(String(it?.job_id || ''));
-        const stdout = it?.stdout ? `<a class="status-link" href="${escapeHtml(String(it.stdout))}" target="_blank" rel="noopener">stdout</a>` : '';

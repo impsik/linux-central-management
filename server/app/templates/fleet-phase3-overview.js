@@ -281,17 +281,19 @@
     const q = String((ctx && typeof ctx.getHostSearchQuery === 'function') ? (ctx.getHostSearchQuery() || '') : '').trim().toLowerCase();
     const labelEnv = String((ctx && typeof ctx.getLabelEnvFilter === 'function') ? (ctx.getLabelEnvFilter() || '') : '').trim();
     const labelRole = String((ctx && typeof ctx.getLabelRoleFilter === 'function') ? (ctx.getLabelRoleFilter() || '') : '').trim();
+    const labelOwner = String((ctx && typeof ctx.getLabelOwnerFilter === 'function') ? (ctx.getLabelOwnerFilter() || '') : (document.getElementById('label-owner')?.value || '')).trim();
     const vulnSet = (ctx && typeof ctx.getVulnFilteredAgentIds === 'function') ? ctx.getVulnFilteredAgentIds() : null;
 
     if (vulnSet instanceof Set) {
       out = out.filter((it) => vulnSet.has(String(it.agent_id || '')));
     }
 
-    if (labelEnv || labelRole) {
+    if (labelEnv || labelRole || labelOwner) {
       out = out.filter((it) => {
         const labels = (it && it.labels && typeof it.labels === 'object') ? it.labels : {};
         if (labelEnv && String(labels.env || '') !== labelEnv) return false;
         if (labelRole && String(labels.role || '') !== labelRole) return false;
+        if (labelOwner && String(labels.owner || '') !== labelOwner) return false;
         return true;
       });
     }

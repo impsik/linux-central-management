@@ -815,6 +815,7 @@
         hostSearchQuery: '',
         labelEnvFilter: '',
         labelRoleFilter: '',
+        labelOwnerFilter: '',
         vulnFilteredAgentIds: null,
         selectedAgentIds: new Set(),
         lastRenderedAgentIds: []
@@ -826,6 +827,7 @@
       hostSearchQuery: stateAccess.get('hostSearchQuery', '') || '',
       labelEnvFilter: stateAccess.get('labelEnvFilter', '') || '',
       labelRoleFilter: stateAccess.get('labelRoleFilter', '') || '',
+      labelOwnerFilter: stateAccess.get('labelOwnerFilter', '') || '',
       vulnFilteredAgentIds: (stateAccess.get('vulnFilteredAgentIds') instanceof Set) ? stateAccess.get('vulnFilteredAgentIds') : null,
       selectedAgentIds: (stateAccess.get('selectedAgentIds') instanceof Set) ? stateAccess.get('selectedAgentIds') : new Set(),
       lastRenderedAgentIds: Array.isArray(stateAccess.get('lastRenderedAgentIds')) ? stateAccess.get('lastRenderedAgentIds') : []
