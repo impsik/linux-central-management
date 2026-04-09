@@ -152,15 +152,22 @@
         controller = new AbortController();
         timeout = setTimeout(() => controller.abort(), 8000);
       }
-      const response = await fetch('/hosts?online_only=true', { credentials: 'include', ...(controller ? { signal: controller.signal } : {}) });
-      if (!response.ok) {
-        if (response.status === 403 && typeof w.loadAuthInfo === 'function') {
-          try { await w.loadAuthInfo(); } catch (_) {}
+      const fetchHosts = async (onlineOnly) => {
+        const r = await fetch(`/hosts?online_only=${onlineOnly ? 'true' : 'false'}`, { credentials: 'include', ...(controller ? { signal: controller.signal } : {}) });
+        if (!r.ok) {
+          if (r.status === 403 && typeof w.loadAuthInfo === 'function') {
+            try { await w.loadAuthInfo(); } catch (_) {}
+          }
+          throw new Error(`hosts failed (${r.status})`);
         }
-        throw new Error(`hosts failed (${response.status})`);
+        const data = await r.json();
+        return Array.isArray(data) ? data : [];
+      };
+
+      let list = await fetchHosts(true);
+      if (list.length === 0) {
+        list = await fetchHosts(false);
       }
-      const hosts = await response.json();
-      const list = Array.isArray(hosts) ? hosts : [];
       ctx.setAllHosts(list);
       rebuildLabelFilterOptions(ctx);
 
