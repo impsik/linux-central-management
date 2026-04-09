@@ -45,8 +45,16 @@ def _read_template(name: str) -> str:
 
 
 def _render_template_with_nonce(name: str, request: Request) -> str:
+    from ..config import settings
+
     html = _read_template(name)
     html = html.replace("__ASSET_VERSION__", ASSET_VERSION)
+    html = html.replace("__DASHBOARD_SHOW_FLEET_HEALTH__", "1" if bool(getattr(settings, "dashboard_show_fleet_health", True)) else "0")
+    html = html.replace("__DASHBOARD_SHOW_MAINTENANCE_WINDOW__", "1" if bool(getattr(settings, "dashboard_show_maintenance_window", True)) else "0")
+    html = html.replace("__DASHBOARD_SHOW_SLA_STATUS__", "1" if bool(getattr(settings, "dashboard_show_sla_status", True)) else "0")
+    html = html.replace("__DASHBOARD_DISPLAY_FLEET_HEALTH__", "block" if bool(getattr(settings, "dashboard_show_fleet_health", True)) else "none")
+    html = html.replace("__DASHBOARD_DISPLAY_MAINTENANCE_WINDOW__", "block" if bool(getattr(settings, "dashboard_show_maintenance_window", True)) else "none")
+    html = html.replace("__DASHBOARD_DISPLAY_SLA_STATUS__", "block" if bool(getattr(settings, "dashboard_show_sla_status", True)) else "none")
     nonce = getattr(getattr(request, "state", None), "csp_nonce", None)
     if nonce:
         return html.replace("__CSP_NONCE__", str(nonce))

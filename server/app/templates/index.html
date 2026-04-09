@@ -238,17 +238,17 @@
             </div>
 
             <div class="metrics-grid" style="margin-top:0.55rem;">
-              <div class="metric-card" id="kpi-hosts-online" style="cursor:pointer;" title="Shows how many hosts are currently offline out of all known hosts (offline/total), plus the offline percentage trend for the selected KPI window.">
+              <div class="metric-card" id="kpi-hosts-online" data-dashboard-visible="__DASHBOARD_SHOW_FLEET_HEALTH__" style="cursor:pointer;display:__DASHBOARD_DISPLAY_FLEET_HEALTH__;" title="Shows how many hosts are currently offline out of all known hosts (offline/total), plus the offline percentage trend for the selected KPI window.">
                 <div class="metric-label">Fleet health</div>
                 <div class="metric-value" id="kpi-online">–</div>
                 <div class="metric-details" id="kpi-online-details">–</div>
               </div>
-              <div class="metric-card" id="kpi-security" style="cursor:pointer;" title="Shows successful job executions as a percentage in the selected KPI window, with trend vs the previous equal window.">
+              <div class="metric-card" id="kpi-security" data-dashboard-visible="__DASHBOARD_SHOW_MAINTENANCE_WINDOW__" style="cursor:pointer;display:__DASHBOARD_DISPLAY_MAINTENANCE_WINDOW__;" title="Shows successful job executions as a percentage in the selected KPI window, with trend vs the previous equal window.">
                 <div class="metric-label">Maintenance window</div>
                 <div class="metric-value" id="kpi-sec">–</div>
                 <div class="metric-details" id="kpi-sec-details">–</div>
               </div>
-              <div class="metric-card" id="kpi-failures" style="cursor:pointer;" title="Shows authentication error rate (%) from OIDC events in the selected KPI window, with trend vs the previous equal window.">
+              <div class="metric-card" id="kpi-failures" data-dashboard-visible="__DASHBOARD_SHOW_SLA_STATUS__" style="cursor:pointer;display:__DASHBOARD_DISPLAY_SLA_STATUS__;" title="Shows authentication error rate (%) from OIDC events in the selected KPI window, with trend vs the previous equal window.">
                 <div class="metric-label">SLA status</div>
                 <div class="metric-value" id="kpi-fail">–</div>
                 <div class="metric-details" id="kpi-fail-details">OIDC events</div>
@@ -1998,4 +1998,3 @@
         const jobType = escapeHtml(String(it?.job_type || 'job'));
         const jobId = escapeHtml(String(it?.job_id || ''));
         const stdout = it?.stdout ? `<a class="status-link" href="${escapeHtml(String(it.stdout))}" target="_blank" rel="noopener">stdout</a>` : '';
-        const stderr = it?.stderr ? `<a class="status-link" href="${escapeHtml(String(it.stderr))}" target="_blank" rel="noopener">stderr</a>` : '';

@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     metrics_background_refresh_seconds: int = 60  # set 0 to disable
     metrics_background_batch_limit: int = 50
 
+    # Dashboard card visibility toggles
+    dashboard_show_fleet_health: bool = True
+    dashboard_show_maintenance_window: bool = True
+    dashboard_show_sla_status: bool = True
+
     # Teams notifications
     teams_webhook_url: str | None = None
     teams_alerts_enabled: bool = False
