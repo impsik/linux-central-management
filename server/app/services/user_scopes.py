@@ -59,7 +59,12 @@ def is_host_visible_to_user(db: Session, user: AppUser, host: Host) -> bool:
         return True
     selectors = get_user_scope_selectors(db, user)
     if not selectors:
-        return True
+        labels = (getattr(host, "labels", None) or {}) if host is not None else {}
+        owner = str(labels.get("owner", "")).strip()
+        username = str(getattr(user, "username", "") or "").strip()
+        if owner:
+            return bool(username and owner == username)
+        return False
 
     labels = (getattr(host, "labels", None) or {}) if host is not None else {}
     for sel in selectors:

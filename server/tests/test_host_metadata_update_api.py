@@ -12,7 +12,7 @@ def _seed_host(agent_id="agent-1", hostname="old-host", labels=None):
         db.commit()
 
 
-def test_update_host_metadata_name_role_env_and_preserve_existing(monkeypatch, auth_client_factory):
+def test_update_host_metadata_name_role_owner_env_and_preserve_existing(monkeypatch, auth_client_factory):
     app = bootstrap_test_app(monkeypatch, create_schema=True)
     _seed_host(labels={"team": "core", "role": "old"})
 
@@ -22,6 +22,7 @@ def test_update_host_metadata_name_role_env_and_preserve_existing(monkeypatch, a
             json={
                 "hostname": "new-host",
                 "role": "web",
+                "owner": "alice",
                 "env": {"FOO": "bar", "X": "1"},
             },
             headers=headers,
@@ -31,6 +32,7 @@ def test_update_host_metadata_name_role_env_and_preserve_existing(monkeypatch, a
         assert body["ok"] is True
         assert body["host"]["hostname"] == "new-host"
         assert body["host"]["labels"]["role"] == "web"
+        assert body["host"]["labels"]["owner"] == "alice"
         assert body["host"]["labels"]["team"] == "core"
         assert body["host"]["labels"]["env_vars"] == {"FOO": "bar", "X": "1"}
 
@@ -69,3 +71,14 @@ def test_update_host_metadata_env_key_sets_legacy_env_and_clears_on_remove(monke
         clear_labels = clear_resp.json()["host"]["labels"]
         assert clear_labels["env_vars"] == {}
         assert "env" not in clear_labels
+
+
+def test_update_host_metadata_owner_clears_on_blank(monkeypatch, auth_client_factory):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
+    _seed_host(agent_id="agent-4", labels={"team": "ops", "owner": "alice"})
+
+    with auth_client_factory(app) as (client, headers):
+        resp = client.patch("/hosts/agent-4/metadata", json={"owner": ""}, headers=headers)
+        assert resp.status_code == 200, resp.text
+        labels = resp.json()["host"]["labels"]
+        assert "owner" not in labels

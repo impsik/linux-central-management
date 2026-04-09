@@ -36,19 +36,21 @@ def test_normalize_env_map_rejects_overlong_key_and_value():
     assert "env value too long" in str(value_exc.value.detail)
 
 
-def test_apply_host_metadata_update_updates_env_vars_and_legacy_env():
+def test_apply_host_metadata_update_updates_owner_env_vars_and_legacy_env():
     host = SimpleNamespace(hostname="old-host", labels={"team": "core", "env": "test", "env_vars": {"env": "test"}})
 
     labels = apply_host_metadata_update(
         host,
         hostname="new-host",
         role="web",
+        owner="alice",
         env={"env": "prelive", "FOO": "bar"},
     )
 
     assert host.hostname == "new-host"
     assert labels["team"] == "core"
     assert labels["role"] == "web"
+    assert labels["owner"] == "alice"
     assert labels["env_vars"] == {"env": "prelive", "FOO": "bar"}
     assert labels["env"] == "prelive"
 
@@ -60,6 +62,7 @@ def test_apply_host_metadata_update_removes_legacy_env_when_env_key_missing():
         host,
         hostname=None,
         role=None,
+        owner=None,
         env={},
     )
 

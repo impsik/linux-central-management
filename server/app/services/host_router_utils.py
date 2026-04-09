@@ -51,13 +51,18 @@ def normalize_env_map(env: dict | None) -> dict[str, str] | None:
     return next_env
 
 
-def apply_host_metadata_update(host: Host, *, hostname: str | None, role: str | None, env: dict[str, str] | None) -> dict:
+def apply_host_metadata_update(host: Host, *, hostname: str | None, role: str | None, owner: str | None, env: dict[str, str] | None) -> dict:
     labels = dict(host.labels or {}) if isinstance(host.labels, dict) else {}
 
     if hostname is not None and hostname != "":
         host.hostname = hostname
     if role is not None:
         labels["role"] = role
+    if owner is not None:
+        if owner != "":
+            labels["owner"] = owner
+        else:
+            labels.pop("owner", None)
     if env is not None:
         labels["env_vars"] = dict(env)
 

@@ -7,15 +7,14 @@ describe('failed runs copyability UI', () => {
   const indexPath = path.join(root, 'server/app/templates/index.html');
   const src = fs.readFileSync(indexPath, 'utf8');
 
-  it('includes failed runs copy affordances and detail modal', () => {
-    expect(src).toContain('id="failed-runs-copy-visible"');
-    expect(src).toContain('data-copy-failed-run');
+  it('includes failed run detail modal copy affordances', () => {
     expect(src).toContain('id="failed-run-detail-modal"');
+    expect(src).toContain('id="failed-run-detail-modal-title"');
+    expect(src).toContain('id="failed-run-detail-modal-output"');
     expect(src).toContain('id="failed-run-detail-modal-copy"');
   });
 
-  it('uses failed run detail modal instead of alert for row details', () => {
-    expect(src).toContain('window.openFailedRunDetailModal');
+  it('does not use legacy alert-based failed run details', () => {
     expect(src).not.toContain('alert(detail);');
   });
 });

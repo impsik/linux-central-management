@@ -94,6 +94,7 @@
       const fqdn = host.fqdn || '';
       const env = w.hostLabel(host, 'env') || '';
       const role = w.hostLabel(host, 'role') || '';
+      const owner = w.hostLabel(host, 'owner') || '';
       const selectedAgentIds = ctx.getSelectedAgentIds();
 
       div.innerHTML = `
@@ -113,6 +114,7 @@
           <div class="host-tags">
             ${env ? `<span class="tag">env: <code>${w.escapeHtml(env)}</code></span>` : ''}
             ${role ? `<span class="tag">role: <code>${w.escapeHtml(role)}</code></span>` : ''}
+            ${owner ? `<span class="tag">owner: <code>${w.escapeHtml(owner)}</code></span>` : ''}
           </div>
           ${pkgLine}
         </div>

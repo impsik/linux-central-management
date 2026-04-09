@@ -69,10 +69,11 @@ def update_host_metadata(
 
     next_hostname = clean_optional_str(payload.hostname, field="hostname")
     next_role = clean_optional_str(payload.role, field="role")
+    next_owner = clean_optional_str(payload.owner, field="owner")
 
     next_env = normalize_env_map(payload.env)
 
-    labels = apply_host_metadata_update(host, hostname=next_hostname, role=next_role, env=next_env)
+    labels = apply_host_metadata_update(host, hostname=next_hostname, role=next_role, owner=next_owner, env=next_env)
     db.commit()
 
     return {

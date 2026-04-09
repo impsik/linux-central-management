@@ -20,13 +20,14 @@ describe('phase3 host metadata payload normalization', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
   const scriptPath = path.join(root, 'server/app/templates/fleet-phase3-host-actions.js');
 
-  it('trims hostname/role and drops blank env keys', () => {
+  it('trims hostname/role/owner and drops blank env keys', () => {
     const ctx = loadScript(scriptPath);
     const fn = ctx.phase3HostActions.normalizeHostMetadataPayload;
 
     const got = fn({
       hostname: '  web-01  ',
       role: '  app  ',
+      owner: '  alice  ',
       env: {
         ' FOO ': '  bar ',
         '': 'x',
@@ -37,6 +38,7 @@ describe('phase3 host metadata payload normalization', () => {
     expect(got).toEqual({
       hostname: 'web-01',
       role: 'app',
+      owner: 'alice',
       env: { FOO: 'bar' },
     });
   });
