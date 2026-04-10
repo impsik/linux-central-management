@@ -10,6 +10,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostPackageUpdate
+from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -120,12 +121,13 @@ def hosts_updates_report(
     col = sort_col_map[sort]
     q = q.order_by(col.asc() if order == "asc" else col.desc())
 
-    total = db.execute(select(func.count()).select_from(q.subquery())).scalar_one()
-
     rows = db.execute(q.limit(limit).offset(offset)).all()
 
     items = []
     for r in rows:
+        host = db.execute(select(Host).where(Host.agent_id == r.agent_id)).scalar_one_or_none()
+        if not host or not is_host_visible_to_user(db, user, host):
+            continue
         # online hint
         is_online = False
         if r.last_seen is not None:
@@ -151,6 +153,8 @@ def hosts_updates_report(
                 "security_updates": int(r.security_updates or 0),
             }
         )
+
+    total = len(items)
 
     return {
         "ts": now.isoformat(),
