@@ -1,5 +1,26 @@
 (function (w) {
+  function ensureOwnerFilterControls() {
+    const roleSel = document.getElementById('label-role');
+    if (roleSel && !document.getElementById('label-owner')) {
+      const row = roleSel.closest('.vuln-row');
+      if (row && row.parentElement) {
+        const newRow = document.createElement('div');
+        newRow.className = 'vuln-row';
+        newRow.innerHTML = '<select id="label-owner" class="host-search"><option value="">Owner: Any</option></select>';
+        row.insertAdjacentElement('afterend', newRow);
+      }
+    }
+    const sortSel = document.getElementById('hosts-sort');
+    if (sortSel && !Array.from(sortSel.options || []).some((o) => o.value === 'owner')) {
+      const opt = document.createElement('option');
+      opt.value = 'owner';
+      opt.textContent = 'Owner';
+      sortSel.insertBefore(opt, sortSel.querySelector('option[value="os_version"]') || null);
+    }
+  }
+
   function rebuildLabelFilterOptions(ctx) {
+    ensureOwnerFilterControls();
     const envSel = document.getElementById('label-env');
     const roleSel = document.getElementById('label-role');
     const ownerSel = document.getElementById('label-owner');
@@ -219,6 +240,7 @@
   }
 
   w.phase3HostList = {
+    ensureOwnerFilterControls,
     rebuildLabelFilterOptions,
     applyHostFilters,
     renderHosts,

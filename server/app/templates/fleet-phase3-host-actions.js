@@ -54,10 +54,24 @@
     list.appendChild(row);
   }
 
+  function ensureOwnerInput() {
+    let ownerEl = document.getElementById('host-meta-owner');
+    if (ownerEl) return ownerEl;
+    const roleEl = document.getElementById('host-meta-role');
+    if (!roleEl || !roleEl.parentElement) return null;
+    ownerEl = document.createElement('input');
+    ownerEl.id = 'host-meta-owner';
+    ownerEl.className = 'host-search';
+    ownerEl.type = 'text';
+    ownerEl.placeholder = 'Owner (person responsible for this server)';
+    roleEl.insertAdjacentElement('afterend', ownerEl);
+    return ownerEl;
+  }
+
   function populateHostMetadataEditor(host) {
     const nameEl = document.getElementById('host-meta-name');
     const roleEl = document.getElementById('host-meta-role');
-    const ownerEl = document.getElementById('host-meta-owner');
+    const ownerEl = ensureOwnerInput();
     const list = document.getElementById('host-meta-env-list');
     const statusEl = document.getElementById('host-meta-status');
     if (!nameEl || !roleEl || !ownerEl || !list) return;
@@ -94,6 +108,7 @@
 
   function initHostMetadataEditor(ctx) {
     const api = ctx || {};
+    ensureOwnerInput();
     const addBtn = document.getElementById('host-meta-env-add');
     const saveBtn = document.getElementById('host-meta-save');
     const statusEl = document.getElementById('host-meta-status');
