@@ -11,19 +11,30 @@
     return formatDateSafe(value);
   }
 
-  function ensureBulkOwnerButton() {
-    let btn = document.getElementById('hosts-bulk-owner');
-    if (btn) return btn;
+  function ensureBulkOwnerButtons() {
+    let selectedBtn = document.getElementById('hosts-bulk-owner');
+    let visibleBtn = document.getElementById('hosts-bulk-owner-visible');
+    if (selectedBtn && visibleBtn) return { selectedBtn, visibleBtn };
     const anchor = document.getElementById('hosts-remove-selected') || document.getElementById('hosts-reload');
     const parent = anchor ? anchor.parentElement : null;
-    if (!anchor || !parent) return null;
-    btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn';
-    btn.id = 'hosts-bulk-owner';
-    btn.textContent = 'Set owner…';
-    anchor.insertAdjacentElement('beforebegin', btn);
-    return btn;
+    if (!anchor || !parent) return { selectedBtn: null, visibleBtn: null };
+    if (!visibleBtn) {
+      visibleBtn = document.createElement('button');
+      visibleBtn.type = 'button';
+      visibleBtn.className = 'btn';
+      visibleBtn.id = 'hosts-bulk-owner-visible';
+      visibleBtn.textContent = 'Set owner (visible)…';
+      anchor.insertAdjacentElement('beforebegin', visibleBtn);
+    }
+    if (!selectedBtn) {
+      selectedBtn = document.createElement('button');
+      selectedBtn.type = 'button';
+      selectedBtn.className = 'btn';
+      selectedBtn.id = 'hosts-bulk-owner';
+      selectedBtn.textContent = 'Set owner (selected)…';
+      visibleBtn.insertAdjacentElement('beforebegin', selectedBtn);
+    }
+    return { selectedBtn, visibleBtn };
   }
 
   function getSelectedHostAgentIds() {
@@ -954,7 +965,9 @@
     const invBtn = document.getElementById('overview-inventory-now');
     const secBtn = document.getElementById('overview-security-campaign');
     const distBtn = document.getElementById('overview-dist-upgrade');
-    const bulkOwnerBtn = ensureBulkOwnerButton();
+    const bulkOwnerButtons = ensureBulkOwnerButtons();
+    const bulkOwnerBtn = bulkOwnerButtons.selectedBtn;
+    const bulkOwnerVisibleBtn = bulkOwnerButtons.visibleBtn;
     const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
@@ -1057,6 +1070,42 @@
       }
 
       w.showToast(`Updated owner to ${owner} for ${agentIds.length} host(s)`, 'success');
+      await Promise.allSettled([
+        ctx.loadHostsTable(),
+        ctx.loadHosts(),
+        ctx.loadPendingUpdatesReport(false),
+        ctx.loadFleetOverview(true),
+      ]);
+    });
+
+    w.wireBusyClick(bulkOwnerVisibleBtn, 'Saving…', async () => {
+      const agentIds = ((ctx.getLastRenderedAgentIds && ctx.getLastRenderedAgentIds()) || []).slice().filter(Boolean);
+      if (!agentIds.length) return w.showToast('No visible hosts to update', 'error');
+
+      const owner = String(window.prompt('Set owner for all currently visible hosts to:', '') || '').trim();
+      if (!owner) return;
+
+      const csrf = typeof w.getCookie === 'function' ? (w.getCookie('fleet_csrf') || '') : '';
+      const failures = [];
+      for (const agentId of agentIds) {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/metadata`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            'X-CSRF-Token': csrf,
+          },
+          body: JSON.stringify({ owner }),
+        });
+        if (!r.ok) failures.push(agentId);
+      }
+
+      if (failures.length) {
+        const sample = failures.slice(0, 3).join(', ');
+        return w.showToast(`Visible-owner update failed for ${failures.length} host(s)${sample ? `: ${sample}` : ''}`, 'error', 6000);
+      }
+
+      w.showToast(`Updated owner to ${owner} for ${agentIds.length} visible host(s)`, 'success');
       await Promise.allSettled([
         ctx.loadHostsTable(),
         ctx.loadHosts(),
