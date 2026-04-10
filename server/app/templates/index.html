@@ -2000,3 +2000,6 @@
       if (!items.length) {
         el.innerHTML = '<div class="status-muted">No events for selected filter.</div>';
         return;
+      }
+
+      el.innerHTML = items.map((it) => {
