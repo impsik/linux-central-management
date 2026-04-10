@@ -87,3 +87,44 @@ def test_explicit_scope_still_overrides_owner_fallback(monkeypatch):
         agent_ids = [h["agent_id"] for h in resp.json()]
         assert "srv-dev" in agent_ids
         assert "srv-alice" not in agent_ids
+
+
+def test_filter_agent_ids_for_user_respects_owner_fallback_without_explicit_scopes(monkeypatch):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
+
+    from fastapi.testclient import TestClient
+    from sqlalchemy import select
+
+    with TestClient(app) as admin_client:
+        headers = login_test_client(admin_client)
+
+        for agent_id, owner in (("srv-tarmo", "tarmo"), ("srv-other", "other"), ("srv-unowned", None)):
+            labels = {"env": "prod"}
+            if owner:
+                labels["owner"] = owner
+            r = admin_client.post(
+                "/agent/register",
+                json={
+                    "agent_id": agent_id,
+                    "hostname": agent_id,
+                    "os_id": "ubuntu",
+                    "os_version": "22.04",
+                    "kernel": "test",
+                    "labels": labels,
+                },
+            )
+            assert r.status_code == 200, r.text
+
+        reg = admin_client.post("/auth/register", json={"username": "tarmo", "password": "tarmo-pass-123"}, headers=headers)
+        assert reg.status_code == 200, reg.text
+
+        db_mod = importlib.import_module("app.db")
+        models = importlib.import_module("app.models")
+        scopes_mod = importlib.import_module("app.services.user_scopes")
+        with db_mod.SessionLocal() as db:
+            user = db.execute(select(models.AppUser).where(models.AppUser.username == "tarmo")).scalar_one()
+            user.role = "readonly"
+            db.commit()
+            visible = scopes_mod.filter_agent_ids_for_user(db, user, ["srv-tarmo", "srv-other", "srv-unowned"])
+
+        assert visible == ["srv-tarmo"]

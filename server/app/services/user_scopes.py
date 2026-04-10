@@ -84,8 +84,6 @@ def filter_agent_ids_for_user(db: Session, user: AppUser, agent_ids: list[str]) 
 
     selectors = get_user_scope_selectors(db, user)
     uniq = sorted(list(set([a for a in agent_ids if a])))
-    if not selectors:
-        return uniq
 
     hosts = db.execute(select(Host).where(Host.agent_id.in_(uniq))).scalars().all()
     host_by_agent = {h.agent_id: h for h in hosts}
