@@ -530,12 +530,23 @@
 
     try {
       w.setTableState(tbody, 10, 'loading', 'Loading…');
-      const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=500`;
+      const effectiveSort = sort === 'owner' ? 'hostname' : sort;
+      const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(effectiveSort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include' });
       if (!r.ok) throw await buildHttpError(r, 'hosts report failed');
       const d = await r.json();
       const items = d?.items || [];
       hostsTableItemsCache = Array.isArray(items) ? items : [];
+      if (sort === 'owner') {
+        const dir = order === 'desc' ? -1 : 1;
+        hostsTableItemsCache.sort((a, b) => {
+          const ao = String(a?.labels?.owner || '').trim();
+          const bo = String(b?.labels?.owner || '').trim();
+          const ownerCmp = ao.localeCompare(bo, undefined, { sensitivity: 'base' });
+          if (ownerCmp !== 0) return ownerCmp * dir;
+          return String(a?.hostname || a?.agent_id || '').localeCompare(String(b?.hostname || b?.agent_id || ''), undefined, { sensitivity: 'base' }) * dir;
+        });
+      }
       if (!hostsTableItemsCache.length) {
         if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
         updateHostsUpdatesHint();

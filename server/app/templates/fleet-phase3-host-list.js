@@ -60,6 +60,26 @@
       });
     }
 
+    const sortSel = document.getElementById('hosts-sort');
+    const orderSel = document.getElementById('hosts-order');
+    const sort = String(sortSel?.value || 'hostname');
+    const order = String(orderSel?.value || 'asc');
+    const dir = order === 'desc' ? -1 : 1;
+    const cmpText = (a, b) => String(a || '').localeCompare(String(b || ''), undefined, { sensitivity: 'base' });
+    const cmpNum = (a, b) => Number(a || 0) - Number(b || 0);
+    filtered.sort((a, b) => {
+      if (sort === 'owner') {
+        const ownerCmp = cmpText(w.hostLabel(a, 'owner') || '', w.hostLabel(b, 'owner') || '');
+        if (ownerCmp !== 0) return ownerCmp * dir;
+        return cmpText(a.hostname || a.agent_id || '', b.hostname || b.agent_id || '') * dir;
+      }
+      if (sort === 'os_version') return cmpText(a.os_version || '', b.os_version || '') * dir;
+      if (sort === 'updates') return cmpNum(a.updates, b.updates) * dir;
+      if (sort === 'security_updates') return cmpNum(a.security_updates, b.security_updates) * dir;
+      if (sort === 'last_seen') return cmpNum(new Date(a.last_seen || 0).getTime(), new Date(b.last_seen || 0).getTime()) * dir;
+      return cmpText(a.hostname || a.agent_id || '', b.hostname || b.agent_id || '') * dir;
+    });
+
     ctx.renderHosts(filtered);
   }
 
