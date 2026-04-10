@@ -1521,6 +1521,7 @@
       hostSearchQuery: '',
       labelEnvFilter: '',
       labelRoleFilter: '',
+      labelOwnerFilter: '',
       vulnFilteredAgentIds: null,
       selectedAgentIds: new Set(),
       lastRenderedAgentIds: [],
@@ -1532,6 +1533,7 @@
         hostSearchQuery: '',
         labelEnvFilter: '',
         labelRoleFilter: '',
+        labelOwnerFilter: '',
         vulnFilteredAgentIds: null,
         selectedAgentIds: new Set(),
         lastRenderedAgentIds: [],
@@ -1540,6 +1542,7 @@
     let hostSearchQuery = hostFilterSelectionDefaults.hostSearchQuery;
     let labelEnvFilter = hostFilterSelectionDefaults.labelEnvFilter;
     let labelRoleFilter = hostFilterSelectionDefaults.labelRoleFilter;
+    let labelOwnerFilter = hostFilterSelectionDefaults.labelOwnerFilter;
     let vulnFilteredAgentIds = hostFilterSelectionDefaults.vulnFilteredAgentIds; // Set<string> or null
     let selectedAgentIds = hostFilterSelectionDefaults.selectedAgentIds;
     let lastRenderedAgentIds = hostFilterSelectionDefaults.lastRenderedAgentIds; // string[]
@@ -1576,6 +1579,8 @@
         setLabelEnvFilter: (v) => { labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', v); return labelEnvFilter; },
         getLabelRoleFilter: () => labelRoleFilter,
         setLabelRoleFilter: (v) => { labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', v); return labelRoleFilter; },
+        getLabelOwnerFilter: () => labelOwnerFilter,
+        setLabelOwnerFilter: (v) => { labelOwnerFilter = syncHostFilterSelectionState('labelOwnerFilter', v); return labelOwnerFilter; },
         getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
         getSelectedAgentIds: () => selectedAgentIds,
         setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', v); return lastRenderedAgentIds; },
@@ -1602,7 +1607,7 @@
       }
       const overviewMod = window.phase3Overview;
       if (overviewMod && typeof overviewMod.applyHostsTableFilters === 'function') {
-        overviewMod.applyHostsTableFilters(getOverviewCtx());
+        overviewMod.applyHostsTableFilters(getHostListCtx());
       }
     }
 
