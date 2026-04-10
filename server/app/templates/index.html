@@ -1591,6 +1591,7 @@
       hostSearchQuery: '',
       labelEnvFilter: '',
       labelRoleFilter: '',
+      labelOwnerFilter: '',
       vulnFilteredAgentIds: null,
       selectedAgentIds: new Set(),
       lastRenderedAgentIds: [],
@@ -1602,6 +1603,7 @@
         hostSearchQuery: '',
         labelEnvFilter: '',
         labelRoleFilter: '',
+        labelOwnerFilter: '',
         vulnFilteredAgentIds: null,
         selectedAgentIds: new Set(),
         lastRenderedAgentIds: [],
@@ -1675,7 +1677,7 @@
       }
       const overviewMod = window.phase3Overview;
       if (overviewMod && typeof overviewMod.applyHostsTableFilters === 'function') {
-        overviewMod.applyHostsTableFilters(getOverviewCtx());
+        overviewMod.applyHostsTableFilters(getHostListCtx());
       }
     }
 
@@ -1998,6 +2000,3 @@
       if (!items.length) {
         el.innerHTML = '<div class="status-muted">No events for selected filter.</div>';
         return;
-      }
-
-      el.innerHTML = items.map((it) => {
