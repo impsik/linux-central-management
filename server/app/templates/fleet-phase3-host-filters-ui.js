@@ -7,10 +7,6 @@
     const applyHostFilters = typeof api.applyHostFilters === 'function' ? api.applyHostFilters : function () { };
     const updateUpgradeControls = typeof api.updateUpgradeControls === 'function' ? api.updateUpgradeControls : function () { };
 
-    if (w.phase3HostList && typeof w.phase3HostList.ensureOwnerFilterControls === 'function') {
-      w.phase3HostList.ensureOwnerFilterControls();
-    }
-
     const searchEl = document.getElementById('host-search');
     const envSel = document.getElementById('label-env');
     const roleSel = document.getElementById('label-role');
