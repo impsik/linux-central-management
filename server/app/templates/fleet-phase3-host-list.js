@@ -34,9 +34,9 @@
     roleSel.value = (prevRole && roleList.includes(prevRole)) ? prevRole : '';
     ownerSel.value = (prevOwner && ownerList.includes(prevOwner)) ? prevOwner : '';
 
-    ctx.setLabelEnvFilter(envSel.value || '');
-    ctx.setLabelRoleFilter(roleSel.value || '');
-    ctx.setLabelOwnerFilter(ownerSel.value || '');
+    if (typeof ctx.setLabelEnvFilter === 'function') ctx.setLabelEnvFilter(envSel.value || '');
+    if (typeof ctx.setLabelRoleFilter === 'function') ctx.setLabelRoleFilter(roleSel.value || '');
+    if (typeof ctx.setLabelOwnerFilter === 'function') ctx.setLabelOwnerFilter(ownerSel.value || '');
   }
 
   function applyHostFilters(ctx) {
@@ -46,9 +46,9 @@
     const vulnFilteredAgentIds = ctx.getVulnFilteredAgentIds();
     if (vulnFilteredAgentIds) filtered = filtered.filter(h => vulnFilteredAgentIds.has(h.agent_id));
 
-    const labelEnvFilter = ctx.getLabelEnvFilter();
-    const labelRoleFilter = ctx.getLabelRoleFilter();
-    const labelOwnerFilter = ctx.getLabelOwnerFilter();
+    const labelEnvFilter = (typeof ctx.getLabelEnvFilter === 'function') ? ctx.getLabelEnvFilter() : '';
+    const labelRoleFilter = (typeof ctx.getLabelRoleFilter === 'function') ? ctx.getLabelRoleFilter() : '';
+    const labelOwnerFilter = (typeof ctx.getLabelOwnerFilter === 'function') ? ctx.getLabelOwnerFilter() : '';
     if (labelEnvFilter) filtered = filtered.filter(h => (w.hostLabel(h, 'env') || '') === labelEnvFilter);
     if (labelRoleFilter) filtered = filtered.filter(h => (w.hostLabel(h, 'role') || '') === labelRoleFilter);
     if (labelOwnerFilter) filtered = filtered.filter(h => (w.hostLabel(h, 'owner') || '') === labelOwnerFilter);
