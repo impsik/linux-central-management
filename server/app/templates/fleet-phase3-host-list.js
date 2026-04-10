@@ -1,8 +1,22 @@
 (function (w) {
+  function ensureOwnerFilterControl() {
+    let ownerSel = document.getElementById('label-owner');
+    if (ownerSel) return ownerSel;
+    const roleSel = document.getElementById('label-role');
+    const roleRow = roleSel ? roleSel.closest('.vuln-row') : null;
+    const parent = roleRow ? roleRow.parentElement : null;
+    if (!roleSel || !roleRow || !parent) return null;
+    const row = document.createElement('div');
+    row.className = 'vuln-row';
+    row.innerHTML = '<select id="label-owner" class="host-search"><option value="">Owner: Any</option></select>';
+    roleRow.insertAdjacentElement('afterend', row);
+    return row.querySelector('#label-owner');
+  }
+
   function rebuildLabelFilterOptions(ctx) {
     const envSel = document.getElementById('label-env');
     const roleSel = document.getElementById('label-role');
-    const ownerSel = document.getElementById('label-owner');
+    const ownerSel = ensureOwnerFilterControl();
     if (!envSel || !roleSel || !ownerSel) return;
 
     const hosts = ctx.getAllHosts();
@@ -219,6 +233,7 @@
   }
 
   w.phase3HostList = {
+    ensureOwnerFilterControl,
     rebuildLabelFilterOptions,
     applyHostFilters,
     renderHosts,
