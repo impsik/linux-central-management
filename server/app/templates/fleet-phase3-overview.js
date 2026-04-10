@@ -11,6 +11,28 @@
     return formatDateSafe(value);
   }
 
+  function ensureBulkOwnerButton() {
+    let btn = document.getElementById('hosts-bulk-owner');
+    if (btn) return btn;
+    const anchor = document.getElementById('hosts-remove-selected') || document.getElementById('hosts-reload');
+    const parent = anchor ? anchor.parentElement : null;
+    if (!anchor || !parent) return null;
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn';
+    btn.id = 'hosts-bulk-owner';
+    btn.textContent = 'Set owner…';
+    anchor.insertAdjacentElement('beforebegin', btn);
+    return btn;
+  }
+
+  function getSelectedHostAgentIds() {
+    return Array.from(document.querySelectorAll('.host-select:checked, .hosts-row-select:checked'))
+      .map((el) => String(el.getAttribute('data-agent-id') || '').trim())
+      .filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i);
+  }
+
   async function buildHttpError(resp, label) {
     let detail = '';
     try {
@@ -932,6 +954,7 @@
     const invBtn = document.getElementById('overview-inventory-now');
     const secBtn = document.getElementById('overview-security-campaign');
     const distBtn = document.getElementById('overview-dist-upgrade');
+    const bulkOwnerBtn = ensureBulkOwnerButton();
     const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
@@ -1004,6 +1027,42 @@
         return w.showToast(`Approval required (dist-upgrade): ${d.request_id}`, 'info', 5000);
       }
       w.showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
+    });
+
+    w.wireBusyClick(bulkOwnerBtn, 'Saving…', async () => {
+      const agentIds = getSelectedHostAgentIds();
+      if (!agentIds.length) return w.showToast('Select at least one host first', 'error');
+
+      const owner = String(window.prompt('Set owner for selected hosts to:', '') || '').trim();
+      if (!owner) return;
+
+      const csrf = typeof w.getCookie === 'function' ? (w.getCookie('fleet_csrf') || '') : '';
+      const failures = [];
+      for (const agentId of agentIds) {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/metadata`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            'X-CSRF-Token': csrf,
+          },
+          body: JSON.stringify({ owner }),
+        });
+        if (!r.ok) failures.push(agentId);
+      }
+
+      if (failures.length) {
+        const sample = failures.slice(0, 3).join(', ');
+        return w.showToast(`Owner update failed for ${failures.length} host(s)${sample ? `: ${sample}` : ''}`, 'error', 6000);
+      }
+
+      w.showToast(`Updated owner to ${owner} for ${agentIds.length} host(s)`, 'success');
+      await Promise.allSettled([
+        ctx.loadHostsTable(),
+        ctx.loadHosts(),
+        ctx.loadPendingUpdatesReport(false),
+        ctx.loadFleetOverview(true),
+      ]);
     });
 
     const reportRefresh = document.getElementById('report-refresh');
