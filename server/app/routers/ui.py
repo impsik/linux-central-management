@@ -71,22 +71,22 @@ def login_page(request: Request):
 
 @router.get("/assets/index-MnFIflNy.css")
 def ui_css():
-    return FileResponse(str(TEMPLATES_DIR / "index-MnFIflNy.css"), media_type="text/css")
+    return FileResponse(str(TEMPLATES_DIR / "index-MnFIflNy.css"), media_type="text/css", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/assets/fleet-ui.css")
 def ui_custom_css():
-    return FileResponse(str(TEMPLATES_DIR / "fleet-ui.css"), media_type="text/css")
+    return FileResponse(str(TEMPLATES_DIR / "fleet-ui.css"), media_type="text/css", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/assets/fleet-theme-bootstrap.js")
 def ui_theme_bootstrap_js():
-    return FileResponse(str(TEMPLATES_DIR / "fleet-theme-bootstrap.js"), media_type="application/javascript")
+    return FileResponse(str(TEMPLATES_DIR / "fleet-theme-bootstrap.js"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/assets/fleet-phase3.js")
 def ui_phase3_js():
-    return FileResponse(str(TEMPLATES_DIR / "fleet-phase3.js"), media_type="application/javascript")
+    return FileResponse(str(TEMPLATES_DIR / "fleet-phase3.js"), media_type="application/javascript", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/assets/{asset_path:path}")
@@ -99,7 +99,7 @@ def ui_asset_file(asset_path: str):
         raise HTTPException(status_code=404, detail="Asset not found")
 
     media_type, _ = mimetypes.guess_type(str(requested))
-    return FileResponse(str(requested), media_type=media_type)
+    return FileResponse(str(requested), media_type=media_type, headers={"Cache-Control": "no-store"})
 
 
 @router.get("/terminal", response_class=HTMLResponse)
