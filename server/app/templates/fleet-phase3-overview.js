@@ -5,6 +5,12 @@
     return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
   }
 
+  function formatShortTimeSafe(ctx, value) {
+    if (ctx && typeof ctx.formatShortTime === 'function') return ctx.formatShortTime(value);
+    if (typeof w.formatShortTime === 'function') return w.formatShortTime(value);
+    return formatDateSafe(value);
+  }
+
   async function buildHttpError(resp, label) {
     let detail = '';
     try {
@@ -196,7 +202,7 @@
               const agentId = String(it.agent_id || '');
               const hostName = String(it.hostname || it.agent_id || '');
               const host = w.escapeHtml(hostName);
-              const last = it.last_seen ? w.escapeHtml(ctx.formatShortTime(it.last_seen)) : '–';
+              const last = it.last_seen ? w.escapeHtml(formatShortTimeSafe(ctx, it.last_seen)) : '–';
               const issuesHtml = (it.issues || []).map(x => {
                 const kind = String(x.kind || '');
                 const msg = String(x.message || '');
@@ -342,7 +348,7 @@
       const rebootAction = it.reboot_required
         ? ('<button type="button" class="btn host-reboot-btn" data-agent-id="' + w.escapeHtml(it.agent_id || '') + '" data-hostname="' + w.escapeHtml(hostName) + '" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Reboot</button>')
         : '<span class="status-muted">—</span>';
-      const lastSeen = ctx.formatShortTime(it.last_seen);
+      const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
 
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
@@ -576,7 +582,7 @@
       if (hostsEl && hostText.includes('loading hosts')) {
         hostsEl.innerHTML = hostsTableItemsCache.map((it) => {
           const ip = it.ip_address || '';
-          const lastSeen = ctx.formatShortTime(it.last_seen);
+          const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
           const labels = (it.labels && typeof it.labels === 'object') ? it.labels : {};
           const env = labels.env || '';
           const role = labels.role || '';
@@ -642,7 +648,7 @@
         const sec = Number(it.security_updates || 0);
         const all = Number(it.updates || 0);
         const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
-        const lastSeen = ctx.formatShortTime(it.last_seen);
+        const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
