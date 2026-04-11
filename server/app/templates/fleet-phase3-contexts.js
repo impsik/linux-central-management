@@ -1,0 +1,71 @@
+(function (w) {
+  function createHostListCtx(deps) {
+    const d = deps || {};
+    return {
+      getAllHosts: d.getAllHosts || (() => []),
+      setAllHosts: d.setAllHosts || ((v) => v),
+      getHostSearchQuery: d.getHostSearchQuery || (() => ''),
+      getLabelEnvFilter: d.getLabelEnvFilter || (() => ''),
+      setLabelEnvFilter: d.setLabelEnvFilter || ((v) => v),
+      getLabelRoleFilter: d.getLabelRoleFilter || (() => ''),
+      setLabelRoleFilter: d.setLabelRoleFilter || ((v) => v),
+      getLabelOwnerFilter: d.getLabelOwnerFilter || (() => ''),
+      setLabelOwnerFilter: d.setLabelOwnerFilter || ((v) => v),
+      getVulnFilteredAgentIds: d.getVulnFilteredAgentIds || (() => null),
+      getSelectedAgentIds: d.getSelectedAgentIds || (() => new Set()),
+      setLastRenderedAgentIds: d.setLastRenderedAgentIds || ((v) => v),
+      getCurrentAgentId: d.getCurrentAgentId || (() => null),
+      getLastPkgVerification: d.getLastPkgVerification || (() => null),
+      selectHost: d.selectHost || (() => {}),
+      updateUpgradeControls: d.updateUpgradeControls || (() => {}),
+      renderHosts: d.renderHosts || (() => {}),
+    };
+  }
+
+  function createHostWorkflowsCtx(deps) {
+    const d = deps || {};
+    return {
+      getCurrentPermissions: d.getCurrentPermissions || (() => ({})),
+      getCurrentAgentId: d.getCurrentAgentId || (() => null),
+    };
+  }
+
+  function createOverviewCtx(deps) {
+    const d = deps || {};
+    return {
+      formatShortTime: d.formatShortTime || w.formatShortTime,
+      selectHost: d.selectHost || (() => {}),
+      openDiskModal: d.openDiskModal || (() => {}),
+      showServerInfo: d.showServerInfo || (() => {}),
+      showPackages: d.showPackages || (() => {}),
+      loadPackages: d.loadPackages || (() => Promise.resolve()),
+      setPackagesUpdatesOnly: d.setPackagesUpdatesOnly || (() => {}),
+      loadPendingUpdatesReport: d.loadPendingUpdatesReport || (() => Promise.resolve()),
+      clearCurrentHostSelection: d.clearCurrentHostSelection || (() => {}),
+      stopMetricsPolling: d.stopMetricsPolling || (() => {}),
+      loadHostsTable: d.loadHostsTable || (() => Promise.resolve()),
+      loadCronjobs: d.loadCronjobs || (() => Promise.resolve()),
+      loadSshKeys: d.loadSshKeys || (() => Promise.resolve()),
+      loadSshKeyRequests: d.loadSshKeyRequests || (() => Promise.resolve()),
+      maybeLoadSshKeyAdminQueue: d.maybeLoadSshKeyAdminQueue || (() => Promise.resolve()),
+      loadAdminSshKeys: d.loadAdminSshKeys || (() => Promise.resolve()),
+      loadFleetOverview: d.loadFleetOverview || (() => Promise.resolve()),
+      loadFailedRuns: d.loadFailedRuns || (() => Promise.resolve()),
+      loadHosts: d.loadHosts || (() => Promise.resolve()),
+      getLastRenderedAgentIds: d.getLastRenderedAgentIds || (() => []),
+      setLastRenderedAgentIds: d.setLastRenderedAgentIds || ((v) => v),
+      getHostSearchQuery: d.getHostSearchQuery || (() => ''),
+      getCurrentAgentId: d.getCurrentAgentId || (() => null),
+      getLabelEnvFilter: d.getLabelEnvFilter || (() => ''),
+      getLabelRoleFilter: d.getLabelRoleFilter || (() => ''),
+      getVulnFilteredAgentIds: d.getVulnFilteredAgentIds || (() => null),
+      setAllHosts: d.setAllHosts || ((hosts) => hosts),
+    };
+  }
+
+  w.phase3Contexts = {
+    createHostListCtx,
+    createHostWorkflowsCtx,
+    createOverviewCtx,
+  };
+})(window);

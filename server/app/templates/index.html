@@ -11,6 +11,7 @@
   <script src="/assets/fleet-phase3.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-mfa.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-shared.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-contexts.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-settings-menu.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-admin-users.js?v=__ASSET_VERSION__"></script>
@@ -563,6 +564,28 @@ __PARTIAL_MODALS__
     let currentPackageName = null;
 
     function getHostListCtx() {
+      const mod = window.phase3Contexts;
+      if (mod && typeof mod.createHostListCtx === 'function') {
+        return mod.createHostListCtx({
+          getAllHosts: () => allHosts,
+          setAllHosts: (v) => { allHosts = syncHostFilterSelectionState('allHosts', v); return allHosts; },
+          getHostSearchQuery: () => hostSearchQuery,
+          getLabelEnvFilter: () => labelEnvFilter,
+          setLabelEnvFilter: (v) => { labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', v); return labelEnvFilter; },
+          getLabelRoleFilter: () => labelRoleFilter,
+          setLabelRoleFilter: (v) => { labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', v); return labelRoleFilter; },
+          getLabelOwnerFilter: () => labelOwnerFilter,
+          setLabelOwnerFilter: (v) => { labelOwnerFilter = syncHostFilterSelectionState('labelOwnerFilter', v); return labelOwnerFilter; },
+          getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
+          getSelectedAgentIds: () => selectedAgentIds,
+          setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', v); return lastRenderedAgentIds; },
+          getCurrentAgentId: () => currentAgentId,
+          getLastPkgVerification: () => lastPkgVerification,
+          selectHost,
+          updateUpgradeControls: () => updateUpgradeControlsFn(),
+          renderHosts: (hosts) => renderHosts(hosts),
+        });
+      }
       return {
         getAllHosts: () => allHosts,
         setAllHosts: (v) => { allHosts = syncHostFilterSelectionState('allHosts', v); return allHosts; },
@@ -1850,6 +1873,13 @@ __PARTIAL_MODALS__
     }
 
     function getHostWorkflowsCtx() {
+      const mod = window.phase3Contexts;
+      if (mod && typeof mod.createHostWorkflowsCtx === 'function') {
+        return mod.createHostWorkflowsCtx({
+          getCurrentPermissions: () => currentPermissions,
+          getCurrentAgentId: () => currentAgentId,
+        });
+      }
       return {
         getCurrentPermissions: () => currentPermissions,
         getCurrentAgentId: () => currentAgentId,
@@ -1963,7 +1993,7 @@ __PARTIAL_MODALS__
     }
 
     function getOverviewCtx() {
-      return {
+      const deps = {
         formatShortTime,
         selectHost,
         openDiskModal,
@@ -2001,6 +2031,9 @@ __PARTIAL_MODALS__
           return allHosts;
         },
       };
+      const mod = window.phase3Contexts;
+      if (mod && typeof mod.createOverviewCtx === 'function') return mod.createOverviewCtx(deps);
+      return deps;
     }
 
     async function loadFleetOverview(forceLive = false) {
