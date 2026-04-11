@@ -80,3 +80,27 @@ test('owner-scoped readonly user only sees owned seeded host', async ({ page }) 
   await expect(page.locator('#hosts-table-tab')).toHaveClass(/active/);
   await expect(page.locator('#hosts-visible-counter')).toContainText('1 / 1', { timeout: 10000 });
 });
+
+test('admin can create and remove a user from admin panel', async ({ page }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  const username = `pw-smoke-${Date.now()}`;
+  const password = 'pw-smoke-pass-123';
+
+  await loginAs(page, ADMIN_USERNAME, ADMIN_PASSWORD);
+  await page.locator('#settings-btn').click();
+  await page.locator('#admin-menu-item').click();
+  await expect(page.locator('#admin-tab')).toHaveClass(/active/);
+
+  await page.locator('#register-username').fill(username);
+  await page.locator('#register-password').fill(password);
+  await page.locator('#register-role').selectOption('readonly');
+  await page.locator('#register-user-btn').click();
+
+  await expect(page.locator('#register-status')).toContainText(`User ${username} created as readonly.`, { timeout: 10000 });
+  await expect(page.locator('#admin-users-table')).toContainText(username, { timeout: 10000 });
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.locator(`[data-user-remove-enhanced="${username}"]`).click();
+  await expect(page.locator('#admin-users-table')).not.toContainText(username, { timeout: 10000 });
+});

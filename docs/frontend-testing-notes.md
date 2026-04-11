@@ -30,6 +30,7 @@
     - Admin tab opens from the settings menu
     - admin can save host metadata on a seeded host
     - owner-scoped readonly user only sees their owned seeded host
+    - admin can create and remove a user from the admin panel
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:

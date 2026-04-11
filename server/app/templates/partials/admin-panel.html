@@ -8,6 +8,11 @@
               <div class="admin-card-body">
                 <input id="register-username" class="admin-input" type="text" placeholder="New username" />
                 <input id="register-password" class="admin-input" type="password" placeholder="Temporary password" />
+                <select id="register-role" class="admin-input">
+                  <option value="readonly">Regular (readonly)</option>
+                  <option value="operator" selected>Operator</option>
+                  <option value="admin">Admin</option>
+                </select>
                 <button class="btn btn-primary" id="register-user-btn">Create user</button>
                 <div class="admin-status" id="register-status"></div>
               </div>
