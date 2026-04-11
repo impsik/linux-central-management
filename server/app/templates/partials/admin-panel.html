@@ -1,0 +1,245 @@
+    <div class="tab-content-custom" id="admin-tab">
+      <div class="admin-content">
+        <div class="section-title">Admin</div>
+        <div class="admin-panels" style="display:grid;grid-template-columns:1fr 1.2fr;gap:1rem;align-items:start;">
+          <div>
+            <div class="admin-card">
+              <div class="admin-card-title">Create user</div>
+              <div class="admin-card-body">
+                <input id="register-username" class="admin-input" type="text" placeholder="New username" />
+                <input id="register-password" class="admin-input" type="password" placeholder="Temporary password" />
+                <button class="btn btn-primary" id="register-user-btn">Create user</button>
+                <div class="admin-status" id="register-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" style="margin-top:1rem;">
+              <div class="admin-card-title">Reset password</div>
+              <div class="admin-card-body">
+                <input id="reset-username" class="admin-input" type="text" placeholder="Username to reset" />
+                <input id="reset-password" class="admin-input" type="password" placeholder="New password" />
+                <button class="btn btn-primary" id="reset-password-btn">Reset password</button>
+                <div class="admin-status" id="reset-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-access-note" style="margin-top:1rem;">
+              <div class="admin-card-title">Access</div>
+              <div class="admin-card-body">
+                <div class="admin-note">Admin access required to manage app users.</div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="admin-card" id="admin-users-card">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Users</span>
+                <button class="btn" id="admin-users-refresh" type="button">Reload</button>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:720px;">
+                    <thead>
+                      <tr>
+                        <th>Username</th>
+                        <th>Role</th>
+                        <th>Active</th>
+                        <th>MFA</th>
+                        <th>Created</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-users-table">
+                      <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-users-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-rbac-explain-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>RBAC access explain</span>
+                <button class="btn" id="admin-rbac-explain-run" type="button">Explain</button>
+              </div>
+              <div class="admin-card-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                  <select id="admin-rbac-user" class="admin-input"></select>
+                  <select id="admin-rbac-host" class="admin-input"></select>
+                </div>
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin:0.75rem 0 0.35rem;">Result</label>
+                <textarea id="admin-rbac-explain-output" class="admin-input" rows="7" readonly style="width:100%;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;"></textarea>
+                <div class="admin-status" id="admin-rbac-explain-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-oidc-map-preview-card" style="margin-top:1rem;display:none;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>OIDC mapping preview</span>
+                <button class="btn" id="admin-oidc-preview-run" type="button">Run preview</button>
+              </div>
+              <div class="admin-card-body">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.35rem;">Claims JSON</label>
+                <textarea id="admin-oidc-preview-input" class="admin-input" rows="6" style="width:100%;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;" placeholder='{"sub":"123","email":"user@example.com","groups":["fleet-ops"]}'></textarea>
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin:0.75rem 0 0.35rem;">Result</label>
+                <textarea id="admin-oidc-preview-output" class="admin-input" rows="6" readonly style="width:100%;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;"></textarea>
+                <div class="admin-status" id="admin-oidc-preview-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-oidc-events-card" style="margin-top:1rem;display:none;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>OIDC diagnostics</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <select id="oidc-events-filter-hours" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="24" selected>Last 24h</option>
+                    <option value="168">Last 7d</option>
+                  </select>
+                  <select id="oidc-events-filter-status" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="">Any status</option>
+                    <option value="error">Errors only</option>
+                    <option value="success">Success only</option>
+                  </select>
+                  <button class="btn" id="admin-oidc-events-refresh" type="button">Reload</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:980px;">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Stage</th>
+                        <th>Status</th>
+                        <th>Error</th>
+                        <th>Correlation ID</th>
+                        <th>Hint</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-oidc-events-table">
+                      <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-oidc-events-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-approvals-card" style="margin-top:1rem;display:none;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>High-risk approvals</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <input id="approvals-filter-action" class="host-search" style="max-width:180px;" type="text" placeholder="Action" />
+                  <input id="approvals-filter-requester" class="host-search" style="max-width:180px;" type="text" placeholder="Requester" />
+                  <select id="approvals-filter-age" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="">Any age</option>
+                    <option value="15">≤ 15 min</option>
+                    <option value="60">≤ 1 hour</option>
+                    <option value="240">≤ 4 hours</option>
+                    <option value="1440">≤ 24 hours</option>
+                  </select>
+                  <select id="approvals-filter-mode" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:200px;">
+                    <option value="pending">Pending only</option>
+                    <option value="recent">Last 24h (all states)</option>
+                  </select>
+                  <select id="approvals-filter-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:200px;">
+                    <option value="created_desc">Newest first</option>
+                    <option value="created_asc">Oldest first</option>
+                    <option value="action_asc">Action A→Z</option>
+                    <option value="requester_asc">Requester A→Z</option>
+                  </select>
+                  <button class="btn" id="admin-approvals-refresh" type="button">Reload</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:900px;">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Requester</th>
+                        <th>Action</th>
+                        <th>Targets</th>
+                        <th style="text-align:right;">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-approvals-table">
+                      <tr><td colspan="5" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-approvals-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-dedupe-card" style="margin-top:1rem;display:none;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Notification dedupe state</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <input id="dedupe-filter-kind" class="host-search" style="max-width:180px;" type="text" placeholder="Kind (optional)" />
+                  <select id="dedupe-filter-minutes" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
+                    <option value="60">Last 1h</option>
+                    <option value="240">Last 4h</option>
+                    <option value="1440" selected>Last 24h</option>
+                    <option value="10080">Last 7d</option>
+                  </select>
+                  <button class="btn" id="admin-dedupe-refresh" type="button">Reload</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:900px;">
+                    <thead>
+                      <tr>
+                        <th>Last emitted</th>
+                        <th>Kind</th>
+                        <th>Severity</th>
+                        <th>Dedupe key</th>
+                        <th>Title</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-dedupe-table">
+                      <tr><td colspan="5" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-dedupe-status"></div>
+              </div>
+            </div>
+
+            <div class="admin-card" id="admin-audit-card" style="margin-top:1rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Audit log</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <input id="audit-filter-action" class="host-search" style="max-width:220px;" type="text" placeholder="Action (e.g. auth.login)" />
+                  <input id="audit-filter-actor" class="host-search" style="max-width:200px;" type="text" placeholder="Actor (username)" />
+                  <button class="btn" id="admin-audit-refresh" type="button">Reload</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:900px;">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Action</th>
+                        <th>Actor</th>
+                        <th>Target</th>
+                        <th>IP</th>
+                        <th>Meta</th>
+                      </tr>
+                    </thead>
+                    <tbody id="admin-audit-table">
+                      <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div class="admin-status" id="admin-audit-status"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
