@@ -31,6 +31,7 @@
     - admin can save host metadata on a seeded host
     - owner-scoped readonly user only sees their owned seeded host
     - admin can create and remove a user from the admin panel
+    - owner-scoped user can request SSH key deploy and admin can review/reject it
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:

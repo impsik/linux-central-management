@@ -4,6 +4,7 @@ const ADMIN_USERNAME = process.env.PLAYWRIGHT_USERNAME || '';
 const ADMIN_PASSWORD = process.env.PLAYWRIGHT_PASSWORD || '';
 const OWNER_VIEWER_USERNAME = process.env.PLAYWRIGHT_OWNER_USERNAME || '';
 const OWNER_VIEWER_PASSWORD = process.env.PLAYWRIGHT_OWNER_PASSWORD || '';
+const SAMPLE_SSH_PUBKEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB8x7SxgY8m0Q4X8pM0lJx2Y4vWw2vQ2mYwK9f1Wm0a1 playwright-smoke@example';
 
 async function loginAs(page, username, password) {
   await page.goto('/login');
@@ -103,4 +104,50 @@ test('admin can create and remove a user from admin panel', async ({ page }) => 
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator(`[data-user-remove-enhanced="${username}"]`).click();
   await expect(page.locator('#admin-users-table')).not.toContainText(username, { timeout: 10000 });
+});
+
+test('ssh key deploy request can be reviewed and rejected by admin', async ({ browser }) => {
+  test.skip(
+    !ADMIN_USERNAME || !ADMIN_PASSWORD || !OWNER_VIEWER_USERNAME || !OWNER_VIEWER_PASSWORD,
+    'Set admin and owner-viewer Playwright credentials to run SSH request smoke checks.'
+  );
+
+  const keyName = `pw-ssh-${Date.now()}`;
+  const ownerPage = await browser.newPage();
+  const adminPage = await browser.newPage();
+
+  try {
+    await loginAs(ownerPage, OWNER_VIEWER_USERNAME, OWNER_VIEWER_PASSWORD);
+    await ownerPage.locator('#nav-sshkeys').click();
+    await expect(ownerPage.locator('#sshkeys-tab')).toHaveClass(/active/);
+
+    await ownerPage.locator('#sshkey-name').fill(keyName);
+    await ownerPage.locator('#sshkey-pub').fill(SAMPLE_SSH_PUBKEY);
+    await ownerPage.locator('#sshkey-add').click();
+    await expect(ownerPage.locator('#sshkeys-table')).toContainText(keyName, { timeout: 10000 });
+
+    await ownerPage.locator('#sshkeys-table tr', { hasText: keyName }).click();
+    await ownerPage.locator('#sshkey-hosts-open').click();
+    await expect(ownerPage.locator('#sshkey-hosts-panel')).toBeVisible();
+    await ownerPage.locator('#sshkey-hosts-list label', { hasText: 'ci-alice-host' }).locator('input[type="checkbox"]').check();
+    await ownerPage.locator('#sshkey-request-deploy').click();
+
+    await expect(ownerPage.locator('#sshkey-requests-table')).toContainText('pending', { timeout: 10000 });
+    await expect(ownerPage.locator('#sshkey-requests-table')).toContainText('1');
+
+    await loginAs(adminPage, ADMIN_USERNAME, ADMIN_PASSWORD);
+    await adminPage.locator('#nav-sshkeys').click();
+    await expect(adminPage.locator('#sshkeys-tab')).toHaveClass(/active/);
+    await expect(adminPage.locator('#sshkey-admin-table')).toContainText(OWNER_VIEWER_USERNAME, { timeout: 10000 });
+
+    await adminPage.locator('#sshkey-admin-table tr', { hasText: OWNER_VIEWER_USERNAME }).locator('button[data-reject-id]').click();
+    await expect(adminPage.locator('#sshkey-admin-table')).not.toContainText(OWNER_VIEWER_USERNAME, { timeout: 10000 });
+
+    await ownerPage.reload();
+    await ownerPage.locator('#nav-sshkeys').click();
+    await expect(ownerPage.locator('#sshkey-requests-table')).toContainText('rejected', { timeout: 10000 });
+  } finally {
+    await ownerPage.close();
+    await adminPage.close();
+  }
 });
