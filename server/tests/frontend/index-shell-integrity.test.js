@@ -14,6 +14,7 @@ describe('index shell integrity', () => {
   const modalsPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/modals.html'), 'utf8');
   const packagesPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/packages-tab.html'), 'utf8');
   const servicesPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/services-tab.html'), 'utf8');
+  const usersPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/users-tab.html'), 'utf8');
 
   it('ends with expected closing tags', () => {
     const trimmed = src.trim();
@@ -32,6 +33,7 @@ describe('index shell integrity', () => {
     expect(src).toContain('__PARTIAL_MODALS__');
     expect(src).toContain('__PARTIAL_PACKAGES_TAB__');
     expect(src).toContain('__PARTIAL_SERVICES_TAB__');
+    expect(src).toContain('__PARTIAL_USERS_TAB__');
     expect(src).toContain('id="nav-overview"');
     expect(src).toContain('safeInit(');
     expect(src).toContain('bootPhase3AppShell()');
@@ -60,5 +62,7 @@ describe('index shell integrity', () => {
     expect(packagesPartial).toContain('id="packages-list"');
     expect(servicesPartial).toContain('id="services-tab"');
     expect(servicesPartial).toContain('id="services-list"');
+    expect(usersPartial).toContain('id="users-tab"');
+    expect(usersPartial).toContain('id="users-list"');
   });
 });
