@@ -54,6 +54,12 @@ jobs:
           pip install -r server/requirements.txt uvicorn
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
+      - name: Seed browser smoke data
+        env:
+          DATABASE_URL: sqlite+pysqlite:///./ci-smoke.db
+          DB_AUTO_CREATE_TABLES: "true"
+          DB_REQUIRE_MIGRATIONS_UP_TO_DATE: "false"
+        run: python3 server/scripts/seed_playwright_smoke.py
       - name: Start app for smoke test
         env:
           DATABASE_URL: sqlite+pysqlite:///./ci-smoke.db
@@ -84,6 +90,8 @@ jobs:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:8000
           PLAYWRIGHT_USERNAME: admin
           PLAYWRIGHT_PASSWORD: ci-admin-password
+          PLAYWRIGHT_OWNER_USERNAME: owner-viewer
+          PLAYWRIGHT_OWNER_PASSWORD: ci-owner-password
         run: npm run test:e2e:smoke
       - name: Dump server log on failure
         if: failure()

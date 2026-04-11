@@ -1,14 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-const USERNAME = process.env.PLAYWRIGHT_USERNAME || '';
-const PASSWORD = process.env.PLAYWRIGHT_PASSWORD || '';
+const ADMIN_USERNAME = process.env.PLAYWRIGHT_USERNAME || '';
+const ADMIN_PASSWORD = process.env.PLAYWRIGHT_PASSWORD || '';
+const OWNER_VIEWER_USERNAME = process.env.PLAYWRIGHT_OWNER_USERNAME || '';
+const OWNER_VIEWER_PASSWORD = process.env.PLAYWRIGHT_OWNER_PASSWORD || '';
 
-async function login(page) {
+async function loginAs(page, username, password) {
   await page.goto('/login');
   await expect(page.locator('#u')).toBeVisible();
   await expect(page.locator('#p')).toBeVisible();
-  await page.locator('#u').fill(USERNAME);
-  await page.locator('#p').fill(PASSWORD);
+  await page.locator('#u').fill(username);
+  await page.locator('#p').fill(password);
   await page.locator('#btn').click();
   await page.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
 }
@@ -22,9 +24,9 @@ test('login page renders', async ({ page }) => {
 });
 
 test('authenticated boot-critical UI smoke', async ({ page }) => {
-  test.skip(!USERNAME || !PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
 
-  await login(page);
+  await loginAs(page, ADMIN_USERNAME, ADMIN_PASSWORD);
 
   await expect(page.locator('#settings-btn')).toBeVisible();
   await expect(page.locator('#nav-overview')).toBeVisible();
@@ -47,4 +49,34 @@ test('authenticated boot-critical UI smoke', async ({ page }) => {
   await page.locator('#admin-menu-item').click();
   await expect(page.locator('#admin-tab')).toHaveClass(/active/);
   await expect(page.locator('#admin-users-table')).toBeVisible();
+});
+
+test('admin can save host metadata on seeded host', async ({ page }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  await loginAs(page, ADMIN_USERNAME, ADMIN_PASSWORD);
+  await expect(page.locator('#hosts .host-item')).toContainText('ci-alice-host', { timeout: 15000 });
+  await page.locator('#hosts .host-item', { hasText: 'ci-alice-host' }).click();
+
+  await expect(page.locator('#host-meta-role')).toBeVisible();
+  await expect(page.locator('#host-meta-owner')).toBeVisible();
+
+  await page.locator('#host-meta-role').fill('web-smoke');
+  await page.locator('#host-meta-save').click();
+
+  await expect(page.locator('#host-meta-status')).toContainText('Saved.', { timeout: 10000 });
+  await expect(page.locator('#server-info-labels')).toContainText('role:');
+  await expect(page.locator('#server-info-labels')).toContainText('web-smoke');
+});
+
+test('owner-scoped readonly user only sees owned seeded host', async ({ page }) => {
+  test.skip(!OWNER_VIEWER_USERNAME || !OWNER_VIEWER_PASSWORD, 'Set PLAYWRIGHT_OWNER_USERNAME and PLAYWRIGHT_OWNER_PASSWORD to run owner-scope smoke checks.');
+
+  await loginAs(page, OWNER_VIEWER_USERNAME, OWNER_VIEWER_PASSWORD);
+  await expect(page.locator('#hosts .host-item')).toContainText('ci-alice-host', { timeout: 15000 });
+  await expect(page.locator('#hosts .host-item')).not.toContainText('ci-bob-host');
+
+  await page.locator('#nav-hosts').click();
+  await expect(page.locator('#hosts-table-tab')).toHaveClass(/active/);
+  await expect(page.locator('#hosts-visible-counter')).toContainText('1 / 1', { timeout: 10000 });
 });
