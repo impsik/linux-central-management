@@ -35,6 +35,7 @@
     - admin can create and cancel a one-time cronjob for a seeded host
     - admin can filter hosts by owner in the hosts view
     - admin can assign owner scope and scoped user visibility follows it
+    - user can change their own password from the settings menu
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:

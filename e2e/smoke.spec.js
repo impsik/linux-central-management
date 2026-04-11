@@ -245,3 +245,53 @@ test('admin can assign owner scope and scoped user visibility follows it', async
     await adminPage.close();
   }
 });
+
+test('user can change own password from settings menu', async ({ browser }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  const username = `pw-self-${Date.now()}`;
+  const initialPassword = 'pw-self-pass-123';
+  const newPassword = 'pw-self-pass-456';
+  const adminPage = await browser.newPage();
+  const userPage = await browser.newPage();
+
+  try {
+    await loginAs(adminPage, ADMIN_USERNAME, ADMIN_PASSWORD);
+    await adminPage.locator('#settings-btn').click();
+    await adminPage.locator('#admin-menu-item').click();
+    await expect(adminPage.locator('#admin-tab')).toHaveClass(/active/);
+
+    await adminPage.locator('#register-username').fill(username);
+    await adminPage.locator('#register-password').fill(initialPassword);
+    await adminPage.locator('#register-role').selectOption('readonly');
+    await adminPage.locator('#register-user-btn').click();
+    await expect(adminPage.locator('#admin-users-table')).toContainText(username, { timeout: 10000 });
+
+    await loginAs(userPage, username, initialPassword);
+    userPage.on('dialog', async (dialog) => {
+      const msg = dialog.message();
+      if (msg.includes('Current password')) return dialog.accept(initialPassword);
+      if (msg.includes('New password')) return dialog.accept(newPassword);
+      if (msg.includes('Repeat new password')) return dialog.accept(newPassword);
+      return dialog.dismiss();
+    });
+
+    await userPage.locator('#settings-btn').click();
+    await userPage.locator('#change-password-menu-item').click();
+    await expect(userPage.locator('#current-user')).toBeVisible({ timeout: 10000 });
+
+    await userPage.goto('/login');
+    await userPage.locator('#u').fill(username);
+    await userPage.locator('#p').fill(newPassword);
+    await userPage.locator('#btn').click();
+    await userPage.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+    await expect(userPage.locator('#settings-btn')).toBeVisible();
+
+    adminPage.once('dialog', (dialog) => dialog.accept());
+    await adminPage.locator(`[data-user-remove-enhanced="${username}"]`).click();
+    await expect(adminPage.locator('#admin-users-table')).not.toContainText(username, { timeout: 10000 });
+  } finally {
+    await userPage.close();
+    await adminPage.close();
+  }
+});

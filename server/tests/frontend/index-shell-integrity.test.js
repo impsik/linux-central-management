@@ -43,6 +43,7 @@ describe('index shell integrity', () => {
 
     expect(headerPartial).toContain('id="settings-btn"');
     expect(headerPartial).toContain('id="current-user"');
+    expect(headerPartial).toContain('id="change-password-menu-item"');
     expect(adminPartial).toContain('id="admin-tab"');
     expect(adminPartial).toContain('id="admin-users-table"');
     expect(adminPartial).toContain('id="admin-audit-table"');
