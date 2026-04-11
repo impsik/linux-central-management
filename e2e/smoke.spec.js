@@ -295,3 +295,62 @@ test('user can change own password from settings menu', async ({ browser }) => {
     await adminPage.close();
   }
 });
+
+test('admin can deactivate and reactivate a user from admin panel', async ({ browser }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  const username = `pw-active-${Date.now()}`;
+  const password = 'pw-active-pass-123';
+  const adminPage = await browser.newPage();
+  const userPage = await browser.newPage();
+
+  try {
+    await loginAs(adminPage, ADMIN_USERNAME, ADMIN_PASSWORD);
+    await adminPage.locator('#settings-btn').click();
+    await adminPage.locator('#admin-menu-item').click();
+    await expect(adminPage.locator('#admin-tab')).toHaveClass(/active/);
+
+    await adminPage.locator('#register-username').fill(username);
+    await adminPage.locator('#register-password').fill(password);
+    await adminPage.locator('#register-role').selectOption('readonly');
+    await adminPage.locator('#register-user-btn').click();
+    await expect(adminPage.locator('#admin-users-table')).toContainText(username, { timeout: 10000 });
+
+    await userPage.goto('/login');
+    await userPage.locator('#u').fill(username);
+    await userPage.locator('#p').fill(password);
+    await userPage.locator('#btn').click();
+    await userPage.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+    await expect(userPage.locator('#settings-btn')).toBeVisible();
+
+    adminPage.once('dialog', (dialog) => dialog.accept());
+    await adminPage.locator(`#admin-users-table tr:has-text("${username}") button[data-user-toggle-active="${username}"]`).click();
+    await expect(adminPage.locator(`#admin-users-table tr:has-text("${username}")`)).toContainText('no', { timeout: 10000 });
+    await expect(adminPage.locator(`#admin-users-table tr:has-text("${username}") button[data-user-toggle-active="${username}"]`)).toContainText('Activate');
+
+    await userPage.goto('/login');
+    await userPage.locator('#u').fill(username);
+    await userPage.locator('#p').fill(password);
+    await userPage.locator('#btn').click();
+    await expect(userPage.locator('#err')).toContainText('Invalid username or password', { timeout: 10000 });
+
+    adminPage.once('dialog', (dialog) => dialog.accept());
+    await adminPage.locator(`#admin-users-table tr:has-text("${username}") button[data-user-toggle-active="${username}"]`).click();
+    await expect(adminPage.locator(`#admin-users-table tr:has-text("${username}")`)).toContainText('yes', { timeout: 10000 });
+    await expect(adminPage.locator(`#admin-users-table tr:has-text("${username}") button[data-user-toggle-active="${username}"]`)).toContainText('Deactivate');
+
+    await userPage.goto('/login');
+    await userPage.locator('#u').fill(username);
+    await userPage.locator('#p').fill(password);
+    await userPage.locator('#btn').click();
+    await userPage.waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 });
+    await expect(userPage.locator('#settings-btn')).toBeVisible();
+
+    adminPage.once('dialog', (dialog) => dialog.accept());
+    await adminPage.locator(`[data-user-remove-enhanced="${username}"]`).click();
+    await expect(adminPage.locator('#admin-users-table')).not.toContainText(username, { timeout: 10000 });
+  } finally {
+    await userPage.close();
+    await adminPage.close();
+  }
+});
