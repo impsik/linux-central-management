@@ -37,6 +37,7 @@
     - admin can assign owner scope and scoped user visibility follows it
     - user can change their own password from the settings menu
     - admin can deactivate and reactivate a user from the admin panel
+    - admin can reset another user password from the admin panel
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:
