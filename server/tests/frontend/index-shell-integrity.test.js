@@ -17,6 +17,6 @@ describe('index shell integrity', () => {
     expect(src).toContain('id="settings-btn"');
     expect(src).toContain('id="nav-overview"');
     expect(src).toContain('safeInit(');
-    expect(src).toContain('loadAuthInfo().catch');
+    expect(src).toContain('bootPhase3AppShell()');
   });
 });
