@@ -483,13 +483,16 @@ __PARTIAL_MODALS__
     const TOP_PROCS_POLL_MS = 1_000; // top processes can change quickly
 
     function getMetricsCtx() {
-      return {
+      const deps = {
         getMetricsLifecycleState: () => metricsLifecycleState,
         getLoadGraphData: () => loadGraphData,
         setLoadGraphData: (v) => { loadGraphData = v; return loadGraphData; },
         getLoadTimeframeSeconds: () => loadTimeframeSeconds,
         stopMetricsPolling: () => stopMetricsPolling(metricsLifecycleState),
       };
+      const mod = window.phase3Contexts;
+      if (mod && typeof mod.createMetricsCtx === 'function') return mod.createMetricsCtx(deps);
+      return deps;
     }
 
     function initLoadTimeframeControls() {
@@ -1927,7 +1930,7 @@ __PARTIAL_MODALS__
 
 
     function getPackagesCtx() {
-      return {
+      const deps = {
         getState: () => ({
           currentAgentId,
           packagesSearchQuery,
@@ -1960,8 +1963,6 @@ __PARTIAL_MODALS__
           else if (action === 'remove') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y ${pkgArgs}`;
           if (!cmd) return false;
 
-          // Security: never collect terminal credentials in browser prompts.
-          // Queue command, switch to terminal, and let user run it after login.
           pendingInteractivePackageCmd = cmd;
           updateTerminalPendingCmdButton();
           showTerminal();
@@ -1969,6 +1970,9 @@ __PARTIAL_MODALS__
           return true;
         },
       };
+      const mod = window.phase3Contexts;
+      if (mod && typeof mod.createPackagesCtx === 'function') return mod.createPackagesCtx(deps);
+      return deps;
     }
 
     function initPackagesSearch() {
@@ -3290,7 +3294,7 @@ __PARTIAL_MODALS__
     }
 
     function getSshUiCtx() {
-      return {
+      const deps = {
         loadSshKeys,
         maybeLoadSshKeyAdminQueue,
         loadAdminSshKeys,
@@ -3307,6 +3311,9 @@ __PARTIAL_MODALS__
         loadSshKeyRequests,
         getAllHosts: () => allHosts,
       };
+      const mod = window.phase3Contexts;
+      if (mod && typeof mod.createSshUiCtx === 'function') return mod.createSshUiCtx(deps);
+      return deps;
     }
 
     function initSshKeysControls() {

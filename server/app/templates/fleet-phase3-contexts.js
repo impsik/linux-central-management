@@ -63,9 +63,53 @@
     };
   }
 
+  function createMetricsCtx(deps) {
+    const d = deps || {};
+    return {
+      getMetricsLifecycleState: d.getMetricsLifecycleState || (() => null),
+      getLoadGraphData: d.getLoadGraphData || (() => []),
+      setLoadGraphData: d.setLoadGraphData || ((v) => v),
+      getLoadTimeframeSeconds: d.getLoadTimeframeSeconds || (() => 3600),
+      stopMetricsPolling: d.stopMetricsPolling || (() => {}),
+    };
+  }
+
+  function createPackagesCtx(deps) {
+    const d = deps || {};
+    return {
+      getState: d.getState || (() => ({})),
+      setState: d.setState || (() => {}),
+      runInteractivePackageCommand: d.runInteractivePackageCommand || (() => false),
+    };
+  }
+
+  function createSshUiCtx(deps) {
+    const d = deps || {};
+    return {
+      loadSshKeys: d.loadSshKeys || (() => Promise.resolve()),
+      maybeLoadSshKeyAdminQueue: d.maybeLoadSshKeyAdminQueue || (() => Promise.resolve()),
+      loadAdminSshKeys: d.loadAdminSshKeys || (() => Promise.resolve()),
+      loadAdminUsers: d.loadAdminUsers || (() => Promise.resolve()),
+      loadAdminOidcEvents: d.loadAdminOidcEvents || (() => Promise.resolve()),
+      loadAdminApprovals: d.loadAdminApprovals || (() => Promise.resolve()),
+      loadAdminNotificationDedupe: d.loadAdminNotificationDedupe || (() => Promise.resolve()),
+      loadAdminAudit: d.loadAdminAudit || (() => Promise.resolve()),
+      setSshHostsPanelVisible: d.setSshHostsPanelVisible || (() => {}),
+      renderSshHostsList: d.renderSshHostsList || (() => {}),
+      getSshSelectedAgentIds: d.getSshSelectedAgentIds || (() => []),
+      setSshSelectedAgentIds: d.setSshSelectedAgentIds || (() => {}),
+      getSshSelectedKeyId: d.getSshSelectedKeyId || (() => null),
+      loadSshKeyRequests: d.loadSshKeyRequests || (() => Promise.resolve()),
+      getAllHosts: d.getAllHosts || (() => []),
+    };
+  }
+
   w.phase3Contexts = {
     createHostListCtx,
     createHostWorkflowsCtx,
     createOverviewCtx,
+    createMetricsCtx,
+    createPackagesCtx,
+    createSshUiCtx,
   };
 })(window);
