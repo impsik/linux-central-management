@@ -120,11 +120,26 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     username: str
     password: str
+    role: str = "operator"
 
 
 class ResetPasswordRequest(BaseModel):
     username: str
     password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+def _normalize_app_role(role: str | None) -> str:
+    val = str(role or "operator").strip().lower()
+    alias = {"regular": "readonly", "read-only": "readonly", "readonly": "readonly", "operator": "operator", "admin": "admin"}
+    norm = alias.get(val)
+    if not norm:
+        raise HTTPException(400, "invalid role (admin|operator|readonly)")
+    return norm
 
 
 class SaveViewRequest(BaseModel):
@@ -896,6 +911,7 @@ def auth_register(payload: RegisterRequest, request: Request, db: Session = Depe
     require_admin_user(request, db)
     username = (payload.username or "").strip()
     password = payload.password or ""
+    role = _normalize_app_role(getattr(payload, "role", "operator"))
     if not username or not password:
         raise HTTPException(400, "username and password are required")
     if any(ch.isspace() for ch in username):
@@ -907,13 +923,13 @@ def auth_register(payload: RegisterRequest, request: Request, db: Session = Depe
     if existing:
         raise HTTPException(409, "username already exists")
 
-    u = AppUser(username=username, password_hash=pwd_context.hash(password), is_active=True)
+    u = AppUser(username=username, password_hash=pwd_context.hash(password), role=role, is_active=True)
     db.add(u)
     # Audit
     admin = require_ui_user(request, db)
-    log_event(db, action="user.create", actor=admin, request=request, target_type="app_user", target_name=username)
+    log_event(db, action="user.create", actor=admin, request=request, target_type="app_user", target_name=username, meta={"role": role})
     db.commit()
-    return {"ok": True, "username": username}
+    return {"ok": True, "username": username, "role": role}
 
 
 @router.post("/reset-password")
@@ -936,6 +952,68 @@ def auth_reset_password(payload: ResetPasswordRequest, request: Request, db: Ses
     log_event(db, action="user.reset_password", actor=admin, request=request, target_type="app_user", target_name=username)
     db.commit()
     return {"ok": True, "username": username}
+
+
+@router.post("/change-password")
+def auth_change_password(payload: ChangePasswordRequest, request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+    current_password = payload.current_password or ""
+    new_password = payload.new_password or ""
+    if not current_password or not new_password:
+        raise HTTPException(400, "current_password and new_password are required")
+    if len(new_password) < 8:
+        raise HTTPException(400, "password must be at least 8 characters")
+    if not pwd_context.verify(current_password, getattr(user, "password_hash", "") or ""):
+        raise HTTPException(400, "current password is incorrect")
+
+    user.password_hash = pwd_context.hash(new_password)
+    current_sess = get_current_session_from_request(request, db)
+    current_sess_obj = current_sess[0] if isinstance(current_sess, tuple) else current_sess
+    if current_sess_obj:
+        db.execute(delete(AppSession).where(AppSession.user_id == user.id, AppSession.id != current_sess_obj.id))
+    log_event(db, action="user.change_password", actor=user, request=request, target_type="app_user", target_name=user.username)
+    db.commit()
+    return {"ok": True, "username": user.username}
+
+
+@router.post("/users/{username}/remove")
+def remove_user(username: str, request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+    perms = permissions_for(user)
+    if not perms.get("can_delete_app_users"):
+        raise HTTPException(403, "Insufficient permissions to remove users")
+
+    uname = (username or "").strip()
+    if not uname:
+        raise HTTPException(400, "username required")
+
+    bootstrap = (getattr(settings, "bootstrap_username", None) or "admin").strip()
+    if uname == bootstrap:
+        raise HTTPException(400, "Cannot remove bootstrap admin user")
+    if uname == user.username:
+        raise HTTPException(400, "Cannot remove your own user")
+
+    target = db.execute(select(AppUser).where(AppUser.username == uname)).scalar_one_or_none()
+    if not target:
+        raise HTTPException(404, "user not found")
+
+    role_norm = (getattr(target, "role", "operator") or "operator").lower()
+    if role_norm == "admin" and bool(getattr(target, "is_active", True)):
+        active_admins = int(
+            db.execute(
+                select(func.count())
+                .select_from(AppUser)
+                .where(AppUser.is_active == True, AppUser.role == "admin")  # noqa: E712
+            ).scalar_one()
+            or 0
+        )
+        if active_admins <= 1:
+            raise HTTPException(400, "Cannot remove the last active admin")
+
+    with transaction(db):
+        db.execute(delete(AppSession).where(AppSession.user_id == target.id))
+        db.execute(delete(AppUser).where(AppUser.id == target.id))
+        log_event(db, action="user.remove", actor=user, request=request, target_type="app_user", target_name=uname)
+
+    return {"ok": True, "username": uname, "removed": True}
 
 
 @router.post("/logout")

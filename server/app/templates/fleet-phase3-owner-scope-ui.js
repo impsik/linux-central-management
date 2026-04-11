@@ -97,6 +97,35 @@
     return { wrap, input, btn, status };
   }
 
+  function buildRemoveButton(username, tr) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-danger';
+    btn.textContent = 'Remove';
+    btn.setAttribute('data-user-remove-enhanced', username);
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const ok = window.confirm(`Permanently remove user '${username}'?\n\nThis deletes the account and revokes sessions. This cannot be undone.`);
+      if (!ok) return;
+      try {
+        const resp = await fetch(`/auth/users/${encodeURIComponent(username)}/remove`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': (typeof w.getCookie === 'function' ? (w.getCookie('fleet_csrf') || '') : '') },
+        });
+        const raw = await resp.text();
+        let data = null;
+        try { data = raw ? JSON.parse(raw) : null; } catch {}
+        if (!resp.ok) throw new Error((data && (data.detail || data.error)) || raw || `remove failed (${resp.status})`);
+        if (typeof w.showToast === 'function') w.showToast(`User '${username}' removed`, 'success');
+        tr.remove();
+      } catch (err) {
+        if (typeof w.showToast === 'function') w.showToast(err?.message || String(err), 'error', 5000);
+      }
+    });
+    return btn;
+  }
+
   async function enhanceUserRow(tr) {
     if (!tr || tr.dataset.ownerScopeEnhanced === '1') return;
     const username = getUsernameFromRow(tr);
@@ -113,6 +142,9 @@
 
     const controls = buildControls(username);
     actionsCell.prepend(controls.wrap);
+    if (!actionsCell.querySelector(`[data-user-remove-enhanced="${CSS.escape(username)}"]`)) {
+      actionsCell.appendChild(buildRemoveButton(username, tr));
+    }
 
     try {
       controls.status.textContent = 'Loading…';

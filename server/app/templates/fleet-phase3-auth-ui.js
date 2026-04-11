@@ -4,8 +4,9 @@ function initAdminPanel() {
 
       const usernameInput = document.getElementById('register-username');
       const passwordInput = document.getElementById('register-password');
+      const roleInput = document.getElementById('register-role');
       const button = document.getElementById('register-user-btn');
-      if (!usernameInput || !passwordInput || !button) return;
+      if (!usernameInput || !passwordInput || !roleInput || !button) return;
       const resetUserInput = document.getElementById('reset-username');
       const resetPasswordInput = document.getElementById('reset-password');
       const resetButton = document.getElementById('reset-password-btn');
@@ -13,6 +14,7 @@ function initAdminPanel() {
       const submit = async () => {
         const username = (usernameInput.value || '').trim();
         const password = passwordInput.value || '';
+        const role = (roleInput.value || 'operator').trim();
         if (!username || !password) {
           setAdminStatus('Username and password required.', 'error');
           return;
@@ -24,7 +26,7 @@ function initAdminPanel() {
           const resp = await fetch('/auth/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password })
+            body: JSON.stringify({ username, password, role })
           });
           if (!resp.ok) {
             let msg = 'Failed to create user';
@@ -36,8 +38,9 @@ function initAdminPanel() {
           }
           const data = await resp.json();
           const createdUser = data.username || username;
-          setAdminStatus(`User ${createdUser} created.`, 'success');
-          showToast(`User ${createdUser} created.`, 'success');
+          const createdRole = data.role || role;
+          setAdminStatus(`User ${createdUser} created as ${createdRole}.`, 'success');
+          showToast(`User ${createdUser} created as ${createdRole}.`, 'success');
           passwordInput.value = '';
         } catch (e) {
           const msg = e.message || String(e);
@@ -112,6 +115,7 @@ function initAdminPanel() {
       const btn = document.getElementById('settings-btn');
       const dropdown = document.getElementById('settings-dropdown');
       const adminItem = document.getElementById('admin-menu-item');
+      const changePasswordItem = document.getElementById('change-password-menu-item');
       const logoutItem = document.getElementById('logout-btn');
       if (!wrap || !btn || !dropdown) return;
 
@@ -135,6 +139,35 @@ function initAdminPanel() {
         e.preventDefault();
         closeMenu();
         showAdminPage();
+      });
+
+      changePasswordItem?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        closeMenu();
+        const currentPassword = window.prompt('Current password:');
+        if (currentPassword === null) return;
+        const newPassword = window.prompt('New password (minimum 8 characters):');
+        if (newPassword === null) return;
+        const confirmPassword = window.prompt('Repeat new password:');
+        if (confirmPassword === null) return;
+        if (newPassword !== confirmPassword) {
+          showToast('New passwords do not match', 'error');
+          return;
+        }
+        try {
+          const resp = await fetch('/auth/change-password', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (typeof getCookie === 'function' ? (getCookie('fleet_csrf') || '') : '') },
+            body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+          });
+          const raw = await resp.text();
+          let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+          if (!resp.ok) throw new Error((data && (data.detail || data.error)) || raw || 'Password change failed');
+          showToast('Password changed successfully', 'success');
+        } catch (err) {
+          showToast(err.message || String(err), 'error', 5000);
+        }
       });
 
       logoutItem?.addEventListener('click', async (e) => {
