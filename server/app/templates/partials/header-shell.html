@@ -1,0 +1,32 @@
+  <div class="header">
+    <div class="header-title" style="display:flex;align-items:center;gap:1rem;min-width:0;">
+      <div>
+        <h1 id="app-title">Linux Guardian</h1>
+        <div class="header-subtitle" style="text-transform:uppercase;letter-spacing:.2em;font-size:10px;opacity:.7;">Control Plane</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="header-user">
+        <div class="header-subtitle" id="current-user">Signed in</div>
+        <div class="settings-menu" id="settings-menu-wrap">
+          <button class="icon-btn" id="theme-toggle" type="button" title="Toggle theme" aria-label="Toggle theme">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-16a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm0 18a1 1 0 0 1 1 1v1a1 1 0 1 1-2 0v-1a1 1 0 0 1 1-1zM4.22 5.64a1 1 0 0 1 1.41 0l.7.7A1 1 0 1 1 4.92 7.75l-.7-.7a1 1 0 0 1 0-1.41zm12.45 12.45a1 1 0 0 1 1.41 0l.7.7a1 1 0 1 1-1.41 1.41l-.7-.7a1 1 0 0 1 0-1.41zM2 12a1 1 0 0 1 1-1h1a1 1 0 1 1 0 2H3a1 1 0 0 1-1-1zm18 0a1 1 0 0 1 1-1h1a1 1 0 1 1 0 2h-1a1 1 0 0 1-1-1zM4.22 18.36a1 1 0 0 1 0-1.41l.7-.7a1 1 0 1 1 1.41 1.41l-.7.7a1 1 0 0 1-1.41 0zM16.67 5.91a1 1 0 0 1 0-1.41l.7-.7a1 1 0 1 1 1.41 1.41l-.7.7a1 1 0 0 1-1.41 0z" />
+            </svg>
+          </button>
+          <button class="icon-btn" id="settings-btn" type="button" aria-haspopup="true" aria-expanded="false"
+            aria-controls="settings-dropdown" title="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M19.14 12.94c.04-.3.06-.61.06-.94s-.02-.64-.06-.94l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.47 7.47 0 0 0-1.63-.94l-.36-2.54A.5.5 0 0 0 13.9 1h-3.8a.5.5 0 0 0-.49.41l-.36 2.54a7.47 7.47 0 0 0-1.63.94l-2.39-.96a.5.5 0 0 0-.6.22L2.71 7.97a.5.5 0 0 0 .12.64l2.03 1.58c-.04.3-.06.62-.06.94s.02.64.06.94L2.83 13.65a.5.5 0 0 0-.12.64l1.92 3.32a.5.5 0 0 0 .6.22l2.39-.96c.5.39 1.05.72 1.63.94l.36 2.54a.5.5 0 0 0 .49.41h3.8a.5.5 0 0 0 .49-.41l.36-2.54c.58-.22 1.13-.55 1.63-.94l2.39.96a.5.5 0 0 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z" />
+            </svg>
+          </button>
+          <div class="settings-dropdown" id="settings-dropdown" role="menu">
+            <button class="settings-item" id="admin-menu-item" type="button" role="menuitem">Admin</button>
+            <button class="settings-item" id="logout-btn" type="button" role="menuitem">Logout</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>

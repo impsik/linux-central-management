@@ -48,6 +48,7 @@ def _render_template_with_nonce(name: str, request: Request) -> str:
     from ..config import settings
 
     html = _read_template(name)
+    html = html.replace("__PARTIAL_HEADER_SHELL__", _read_template("partials/header-shell.html"))
     html = html.replace("__ASSET_VERSION__", ASSET_VERSION)
     html = html.replace("__DASHBOARD_SHOW_FLEET_HEALTH__", "1" if bool(getattr(settings, "dashboard_show_fleet_health", True)) else "0")
     html = html.replace("__DASHBOARD_SHOW_MAINTENANCE_WINDOW__", "1" if bool(getattr(settings, "dashboard_show_maintenance_window", True)) else "0")

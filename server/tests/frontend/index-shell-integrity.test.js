@@ -5,6 +5,7 @@ import path from 'node:path';
 describe('index shell integrity', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
   const src = fs.readFileSync(path.join(root, 'server/app/templates/index.html'), 'utf8');
+  const headerPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/header-shell.html'), 'utf8');
 
   it('ends with expected closing tags', () => {
     const trimmed = src.trim();
@@ -13,10 +14,12 @@ describe('index shell integrity', () => {
     expect(trimmed.includes('</script>')).toBe(true);
   });
 
-  it('contains boot-critical markers', () => {
-    expect(src).toContain('id="settings-btn"');
+  it('contains boot-critical markers and extracted header partial', () => {
+    expect(src).toContain('__PARTIAL_HEADER_SHELL__');
     expect(src).toContain('id="nav-overview"');
     expect(src).toContain('safeInit(');
     expect(src).toContain('bootPhase3AppShell()');
+    expect(headerPartial).toContain('id="settings-btn"');
+    expect(headerPartial).toContain('id="current-user"');
   });
 });
