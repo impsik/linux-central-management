@@ -3,9 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test:frontend": "vitest run server/tests/frontend"
+    "test:frontend": "vitest run server/tests/frontend",
+    "test:e2e:smoke": "playwright test e2e/smoke.spec.js",
+    "test:e2e:smoke:list": "playwright test e2e/smoke.spec.js --list"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.1",
     "vitest": "^2.1.9"
   }
+
 }
