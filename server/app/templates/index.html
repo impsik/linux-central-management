@@ -56,7 +56,6 @@
           </button>
           <div class="settings-dropdown" id="settings-dropdown" role="menu">
             <button class="settings-item" id="admin-menu-item" type="button" role="menuitem">Admin</button>
-            <button class="settings-item" id="change-password-menu-item" type="button" role="menuitem">Change password</button>
             <button class="settings-item" id="logout-btn" type="button" role="menuitem">Logout</button>
           </div>
         </div>
@@ -897,11 +896,6 @@
               <div class="admin-card-body">
                 <input id="register-username" class="admin-input" type="text" placeholder="New username" />
                 <input id="register-password" class="admin-input" type="password" placeholder="Temporary password" />
-                <select id="register-role" class="admin-input">
-                  <option value="readonly">Regular (readonly)</option>
-                  <option value="operator" selected>Operator</option>
-                  <option value="admin">Admin</option>
-                </select>
                 <button class="btn btn-primary" id="register-user-btn">Create user</button>
                 <div class="admin-status" id="register-status"></div>
               </div>
@@ -2004,3 +1998,2650 @@
       const base = `host-timeline-${hostTimelineFilter}-${stamp}`;
       let blob;
       let filename;
+      if (kind === 'csv') {
+        const esc = (v) => {
+          const s = String(v == null ? '' : v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const headers = ['time','job_id','job_type','status','exit_code','started_at','finished_at','created_by'];
+        const rows = [headers.join(',')].concat(items.map((it) => headers.map((h) => esc(it?.[h] ?? '')).join(',')));
+        blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+        filename = `${base}.csv`;
+      } else {
+        blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json;charset=utf-8' });
+        filename = `${base}.json`;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showToast(`Exported ${items.length} timeline entr${items.length === 1 ? 'y' : 'ies'}`, 'success', 2000);
+    }
+
+    async function loadHostTimeline(agentId) {
+      const el = document.getElementById('host-timeline-list');
+      if (!el || !agentId) return;
+      const jsonBtn = document.getElementById('timeline-export-json');
+      const csvBtn = document.getElementById('timeline-export-csv');
+      if (jsonBtn && jsonBtn.dataset.boundTimelineExport !== '1') {
+        jsonBtn.addEventListener('click', (e) => { e.preventDefault(); downloadHostTimeline('json'); });
+        jsonBtn.dataset.boundTimelineExport = '1';
+      }
+      if (csvBtn && csvBtn.dataset.boundTimelineExport !== '1') {
+        csvBtn.addEventListener('click', (e) => { e.preventDefault(); downloadHostTimeline('csv'); });
+        csvBtn.dataset.boundTimelineExport = '1';
+      }
+
+      el.innerHTML = '<div class="loading" style="padding:0.5rem;">Loading timeline…</div>';
+      try {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/timeline?limit=50`, { credentials: 'include' });
+        if (!r.ok) throw new Error(`timeline failed (${r.status})`);
+        const d = await r.json();
+        hostTimelineItemsCache = Array.isArray(d?.items) ? d.items : [];
+        renderHostTimeline();
+      } catch (e) {
+        el.innerHTML = `<div class="error" style="margin:0;">${escapeHtml(e?.message || String(e))}</div>`;
+      }
+    }
+
+    function renderHostDriftChecks() {
+      const listEl = document.getElementById('host-drift-list');
+      const toggleBtn = document.getElementById('host-drift-critical-only');
+      if (!listEl) return;
+      if (toggleBtn) toggleBtn.classList.toggle('btn-primary', hostDriftCriticalOnly);
+
+      const checks = (hostDriftChecksCache || []).filter((c) => {
+        if (!hostDriftCriticalOnly) return true;
+        const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
+        return sev === 'critical';
+      });
+
+      if (!checks.length) {
+        listEl.innerHTML = '<div class="status-muted">No checks for selected filter.</div>';
+        return;
+      }
+
+      listEl.innerHTML = checks.map((c) => {
+        const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
+        const sevClass = sev === 'critical' ? 'status-error' : (sev === 'warn' ? 'status-warn' : 'status-ok');
+        return `<div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:flex-start;">
+          <div><b>${escapeHtml(String(c?.title || 'check'))}</b><div class="status-muted" style="font-size:0.82rem;">${escapeHtml(String(c?.detail || ''))}</div></div>
+          <span class="${sevClass}" style="font-size:0.75rem;">${escapeHtml(sev)}</span>
+        </div>`;
+      }).join('');
+    }
+
+    async function loadHostDrift(agentId) {
+      const sumEl = document.getElementById('host-drift-summary');
+      const listEl = document.getElementById('host-drift-list');
+      if (!sumEl || !listEl || !agentId) return;
+      sumEl.textContent = 'Loading…';
+      listEl.innerHTML = '';
+      try {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/drift`, { credentials: 'include' });
+        if (!r.ok) throw new Error(`drift failed (${r.status})`);
+        const d = await r.json();
+        const s = d?.summary || {};
+        const lastRemAt = s.last_remediated_at ? new Date(s.last_remediated_at).toLocaleString() : null;
+        const lastRemVia = s.last_remediated_via ? String(s.last_remediated_via).replace('-', ' ') : '';
+        sumEl.innerHTML = `
+          <div>Checks: <b>${s.checks_pass || 0}</b>/<b>${s.checks_total || 0}</b> pass • <b>${s.checks_warn || 0}</b> warnings</div>
+          <div class="status-muted" style="font-size:0.82rem;margin-top:0.25rem;">Security updates: ${s.security_updates || 0} • All updates: ${s.all_updates || 0} • Failed runs 24h: ${s.failed_runs_24h || 0}</div>
+          <div class="status-muted" style="font-size:0.82rem;margin-top:0.2rem;">Last remediated: ${lastRemAt ? `${escapeHtml(lastRemAt)}${lastRemVia ? ` via ${escapeHtml(lastRemVia)}` : ''}` : 'n/a'}</div>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-top:0.45rem;">
+            <button class="btn" id="host-drift-refresh" type="button">Re-check</button>
+            <button class="btn" id="host-drift-inventory" type="button">Inventory now</button>
+            <button class="btn btn-primary" id="host-drift-security" type="button">Install security updates</button>
+            <button class="btn" id="host-drift-critical-only" type="button">Critical only</button>
+          </div>
+        `;
+
+        document.getElementById('host-drift-refresh')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          void loadHostDrift(agentId);
+        });
+
+        document.getElementById('host-drift-inventory')?.addEventListener('click', async (e) => {
+          e.preventDefault();
+          try {
+            const rr = await fetch('/jobs/inventory-now', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ agent_ids: [agentId] }),
+            });
+            if (!rr.ok) throw new Error(`inventory-now failed (${rr.status})`);
+            showToast('Inventory queued', 'success');
+            setTimeout(() => { void loadHostDrift(agentId); }, 1500);
+          } catch (err) {
+            showToast(err.message || String(err), 'error');
+          }
+        });
+
+        document.getElementById('host-drift-security')?.addEventListener('click', async (e) => {
+          e.preventDefault();
+          try {
+            const now = new Date();
+            const end = new Date(now.getTime() + 60 * 60 * 1000);
+            const payload = {
+              agent_ids: [agentId],
+              window_start: now.toISOString(),
+              window_end: end.toISOString(),
+              concurrency: 1,
+              reboot_if_needed: true,
+              include_kernel: false,
+            };
+            const rr = await fetch('/patching/campaigns/security-updates', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            if (!rr.ok) throw new Error(`security campaign failed (${rr.status})`);
+            showToast('Security campaign queued for host', 'success');
+            setTimeout(() => { void loadHostDrift(agentId); }, 1500);
+          } catch (err) {
+            showToast(err.message || String(err), 'error');
+          }
+        });
+
+        document.getElementById('host-drift-critical-only')?.addEventListener('click', (e) => {
+          e.preventDefault();
+          hostDriftCriticalOnly = !hostDriftCriticalOnly;
+          renderHostDriftChecks();
+        });
+
+        hostDriftChecksCache = Array.isArray(d?.checks) ? d.checks : [];
+        renderHostDriftChecks();
+      } catch (e) {
+        sumEl.textContent = 'Drift unavailable';
+        listEl.innerHTML = `<div class="error" style="margin:0;">${escapeHtml(e?.message || String(e))}</div>`;
+      }
+    }
+
+    function initTimelineFilters() {
+      ['all', 'failed', 'security', 'package', 'service'].forEach((k) => {
+        const btn = document.getElementById(`timeline-filter-${k}`);
+        if (!btn || btn.dataset.boundTimelineFilter === '1') return;
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          hostTimelineFilter = k;
+          renderHostTimeline();
+        });
+        btn.dataset.boundTimelineFilter = '1';
+      });
+    }
+
+    function showTerminal() {
+      if (!currentAgentId) return;
+      setHostActionActive('terminal');
+      // Stop metrics updates when leaving server info view
+      stopMetricsPolling(metricsLifecycleState);
+      connect(currentAgentId);
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('terminal-tab').classList.add('active');
+      window.requestAnimationFrame(() => {
+        fitTerminalViewport();
+        setTimeout(fitTerminalViewport, 60);
+      });
+    }
+
+    function showUsers() {
+      if (!currentAgentId) return;
+      setHostActionActive('users');
+      // Stop metrics updates when leaving server info view
+      stopMetricsPolling(metricsLifecycleState);
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('users-tab').classList.add('active');
+      loadUsers(currentAgentId);
+    }
+
+    function showServices() {
+      if (!currentAgentId) return;
+      setHostActionActive('services');
+      // Stop metrics updates when leaving server info view
+      stopMetricsPolling(metricsLifecycleState);
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('services-tab').classList.add('active');
+      loadServices(currentAgentId);
+    }
+
+    function showPackages() {
+      if (!currentAgentId) return;
+      setHostActionActive('packages');
+      // Stop metrics updates when leaving server info view
+      stopMetricsPolling(metricsLifecycleState);
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('packages-tab').classList.add('active');
+      // Load what's in DB immediately, then trigger an on-demand inventory refresh and reload.
+      loadPackages(currentAgentId);
+      refreshPackagesNow(currentAgentId);
+    }
+
+    function showServerInfo() {
+      if (!currentAgentId) return;
+      const hostObj = (allHosts || []).find(h => h.agent_id === currentAgentId);
+      const hostname = hostObj?.hostname || currentAgentId;
+      selectHost(currentAgentId, hostname);
+    }
+
+    async function loadAdminAudit(showToastOnManual = false) {
+      const tbody = document.getElementById('admin-audit-table');
+      const statusEl = document.getElementById('admin-audit-status');
+      if (!tbody) return;
+
+      const action = (document.getElementById('audit-filter-action')?.value || '').trim();
+      const actor = (document.getElementById('audit-filter-actor')?.value || '').trim();
+
+      try {
+        setTableState(tbody, 6, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+
+        const qs = new URLSearchParams();
+        if (action) qs.set('action', action);
+        if (actor) qs.set('actor', actor);
+        qs.set('limit', '200');
+
+        const r = await fetch(`/audit?${qs.toString()}`, { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `audit fetch failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          setTableState(tbody, 6, 'empty', 'No events');
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const ev of items) {
+          const tr = document.createElement('tr');
+          const when = formatShortTime(ev.created_at || '');
+          const who = String(ev.actor || '');
+          const actionName = String(ev.action || '');
+          const target = (ev.target_type || ev.target_name) ? `${String(ev.target_type||'')}:${String(ev.target_name||'')}` : '';
+          const ip = String(ev.ip || '');
+          const meta = safeJsonPreview(ev.meta || {}, 160);
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(when)}</td>
+            <td><a href="#" data-audit-id="${escapeHtml(String(ev.id||''))}" style="text-decoration:underline;color:inherit;"><code>${escapeHtml(actionName)}</code></a></td>
+            <td>${escapeHtml(who)}</td>
+            <td class="status-muted">${escapeHtml(target)}</td>
+            <td class="status-muted"><code>${escapeHtml(ip)}</code></td>
+            <td class="status-muted"><code>${escapeHtml(meta)}</code></td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        tbody.querySelectorAll('a[data-audit-id]').forEach(a => {
+          a.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = a.getAttribute('data-audit-id') || '';
+            if (!id) return;
+            try {
+              const r2 = await fetch(`/audit/${encodeURIComponent(id)}`, { credentials: 'include' });
+              const raw2 = await r2.text();
+              let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'Audit event load failed');
+
+              const pretty = JSON.stringify(d2.meta || {}, null, 2);
+
+              // Show in a large, copyable modal instead of alert().
+              const modal = document.getElementById('audit-detail-modal');
+              const titleEl = document.getElementById('audit-detail-modal-title');
+              const outEl = document.getElementById('audit-detail-modal-output');
+              const metaEl = document.getElementById('audit-detail-modal-meta');
+              if (modal && titleEl && outEl && metaEl) {
+                titleEl.textContent = `Audit event: ${d2.action || ''}`;
+                metaEl.textContent = `Time: ${d2.created_at || ''} · Actor: ${d2.actor || ''} · Target: ${(d2.target_type||'')}:${(d2.target_name||'')} · IP: ${d2.ip || ''}`;
+                outEl.value = pretty;
+                modal.hidden = false;
+                modal.classList.add('open');
+                modal.setAttribute('aria-hidden', 'false');
+              } else {
+                alert(
+                  `Audit event\n\n` +
+                  `Time: ${d2.created_at || ''}\n` +
+                  `Action: ${d2.action || ''}\n` +
+                  `Actor: ${d2.actor || ''}\n` +
+                  `Target: ${(d2.target_type||'')}:${(d2.target_name||'')}\n` +
+                  `IP: ${d2.ip || ''}\n\n` +
+                  `Meta:\n${pretty}`
+                );
+              }
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
+
+        if (showToastOnManual) showToast('Audit refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 6, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message;
+        if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
+    async function loadAdminUsers(showToastOnManual = false) {
+      const tbody = document.getElementById('admin-users-table');
+      const statusEl = document.getElementById('admin-users-status');
+      if (!tbody) return;
+
+      try {
+        setTableState(tbody, 6, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+        const r = await fetch('/auth/admin/users', { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `users list failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          setTableState(tbody, 6, 'empty', 'No users');
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const u of items) {
+          const tr = document.createElement('tr');
+          const role = String(u.role || 'operator');
+          const active = (u.active === false) ? 'no' : 'yes';
+          const mfa = u.mfa_enabled ? 'enabled' : 'off';
+          const created = formatShortTime(u.created_at || '');
+          const uname = String(u.username || '');
+          const bootstrap = String(adminUsername || 'admin');
+          const canToggleActive = !!(currentPermissions && currentPermissions.can_delete_app_users) && uname && uname !== bootstrap && uname !== currentUsername;
+          const canResetMfa = !!(currentPermissions && currentPermissions.can_manage_users) && uname && uname !== currentUsername;
+          const isActive = (u.active !== false);
+
+          tr.innerHTML = `
+            <td><code>${escapeHtml(uname)}</code></td>
+            <td>${escapeHtml(role)}</td>
+            <td>${escapeHtml(active)}</td>
+            <td>${escapeHtml(mfa)}</td>
+            <td class="status-muted">${escapeHtml(created)}</td>
+            <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end;">
+              <button class="btn" data-user-rbac-explain="${escapeHtml(uname)}" title="Explain host access for this user">Explain</button>
+              <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
+              <button class="btn" data-user-toggle-active="${escapeHtml(uname)}" data-user-active="${isActive ? '1' : '0'}" ${canToggleActive ? '' : 'disabled'} title="${canToggleActive ? (isActive ? 'Deactivate user' : 'Activate user') : 'Cannot change this user'}">${isActive ? 'Deactivate' : 'Activate'}</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        // Scope selectors removed from Admin view.
+        const scopeAreas = Array.from(tbody.querySelectorAll('textarea[data-user-scope]'));
+        for (const ta of scopeAreas) {
+          const uname = ta.getAttribute('data-user-scope') || '';
+          if (!uname) continue;
+          try {
+            const rs = await fetch(`/auth/admin/users/${encodeURIComponent(uname)}/scopes`, { credentials: 'include' });
+            if (!rs.ok) continue;
+            const ds = await rs.json();
+            ta.value = JSON.stringify((ds && ds.selectors) ? ds.selectors : [], null, 2);
+          } catch {}
+        }
+
+        tbody.querySelectorAll('button[data-user-scope-save]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-scope-save') || '';
+            const ta = tbody.querySelector(`textarea[data-user-scope="${CSS.escape(uname)}"]`);
+            if (!uname || !ta) return;
+            let selectors = [];
+            try {
+              const raw = (ta.value || '').trim() || '[]';
+              const parsed = JSON.parse(raw);
+              if (!Array.isArray(parsed)) throw new Error('Scope must be a JSON array');
+              selectors = parsed;
+            } catch (err) {
+              showToast(`Invalid scope JSON for ${uname}: ${err.message || err}`, 'error', 5000);
+              return;
+            }
+            try {
+              const r3 = await fetch(`/auth/admin/users/${encodeURIComponent(uname)}/scopes`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+                body: JSON.stringify({ selectors }),
+              });
+              const raw3 = await r3.text();
+              let d3 = null; try { d3 = raw3 ? JSON.parse(raw3) : null; } catch {}
+              if (!r3.ok) throw new Error((d3 && (d3.detail||d3.error)) || raw3 || 'Scope save failed');
+              showToast(`Scope updated for ${uname}`, 'success');
+              loadAdminAudit();
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
+
+        tbody.querySelectorAll('button[data-user-rbac-explain]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-rbac-explain') || '';
+            if (!uname) return;
+            const userSel = document.getElementById('admin-rbac-user');
+            if (userSel) {
+              userSel.value = uname;
+              userSel.dispatchEvent(new Event('change'));
+            }
+            document.getElementById('admin-rbac-explain-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        });
+
+        tbody.querySelectorAll('button[data-user-mfa-reset]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-mfa-reset') || '';
+            if (!uname) return;
+            const reason = prompt(`Reset MFA for '${uname}'.\n\nOptional reason/ticket:`, '');
+            if (reason === null) return;
+            const ok = confirm(`Reset MFA for '${uname}' now?\n\nThis will revoke all active sessions and require re-enrollment at next login.`);
+            if (!ok) return;
+            try {
+              const r2 = await fetch('/auth/mfa/admin/reset', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+                body: JSON.stringify({ username: uname, reason: reason || '' }),
+              });
+              const raw2 = await r2.text();
+              let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || 'MFA reset failed');
+              showToast(`MFA reset for '${uname}' (sessions revoked: ${d2 && d2.sessions_revoked != null ? d2.sessions_revoked : 0})`, 'success');
+              loadAdminUsers();
+              loadAdminAudit();
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
+
+        tbody.querySelectorAll('button[data-user-toggle-active]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-toggle-active') || '';
+            const isActive = (btn.getAttribute('data-user-active') || '1') === '1';
+            if (!uname) return;
+            const action = isActive ? 'deactivate' : 'activate';
+            const ok = confirm(`${isActive ? 'Deactivate' : 'Activate'} user '${uname}'?` + (isActive ? '\n\nThis will disable login and revoke sessions.' : ''));
+            if (!ok) return;
+            try {
+              const endpoint = isActive ? `/auth/users/${encodeURIComponent(uname)}/delete` : `/auth/users/${encodeURIComponent(uname)}/activate`;
+              const r2 = await fetch(endpoint, { method: 'POST', credentials: 'include', headers: { 'X-CSRF-Token': (getCookie('fleet_csrf')||'') } });
+              const raw2 = await r2.text();
+              let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+              if (!r2.ok) throw new Error((d2 && (d2.detail||d2.error)) || raw2 || `${action} failed`);
+              showToast(`User '${uname}' ${isActive ? 'deactivated' : 'activated'}`, 'success');
+              loadAdminUsers();
+              loadAdminAudit();
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
+
+        if (showToastOnManual) showToast('Users refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 6, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message;
+        if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
+    async function initRbacExplain() {
+      const runBtn = document.getElementById('admin-rbac-explain-run');
+      const userSel = document.getElementById('admin-rbac-user');
+      const hostSel = document.getElementById('admin-rbac-host');
+      const outEl = document.getElementById('admin-rbac-explain-output');
+      const statusEl = document.getElementById('admin-rbac-explain-status');
+      const card = document.getElementById('admin-rbac-explain-card');
+      if (!runBtn || !userSel || !hostSel || !outEl || !statusEl || !card) return;
+
+      card.style.display = 'block';
+
+      async function loadUsersAndHosts() {
+        try {
+          const [ur, hr] = await Promise.all([
+            fetch('/auth/admin/users', { credentials: 'include' }),
+            fetch('/hosts?online_only=false', { credentials: 'include' }),
+          ]);
+          if (ur.ok) {
+            const u = await ur.json();
+            const items = Array.isArray(u?.items) ? u.items : [];
+            userSel.innerHTML = items.map(x => `<option value="${escapeHtml(x.username || '')}">${escapeHtml(x.username || '')} (${escapeHtml(x.role || '')})</option>`).join('');
+          }
+          if (hr.ok) {
+            const h = await hr.json();
+            const items = Array.isArray(h) ? h : [];
+            hostSel.innerHTML = items.map(x => `<option value="${escapeHtml(x.id || '')}">${escapeHtml(x.hostname || x.agent_id || '')} · ${escapeHtml(x.agent_id || '')}</option>`).join('');
+          }
+        } catch (_) {}
+      }
+
+      await loadUsersAndHosts();
+
+      runBtn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const uname = (userSel.value || '').trim();
+        const hid = (hostSel.value || '').trim();
+        if (!uname || !hid) {
+          statusEl.textContent = 'Pick user and host first.';
+          return;
+        }
+
+        runBtn.disabled = true;
+        statusEl.textContent = 'Explaining…';
+        try {
+          const ur = await fetch('/auth/admin/users', { credentials: 'include' });
+          if (!ur.ok) throw new Error(`users list failed (${ur.status})`);
+          const ud = await ur.json();
+          const users = Array.isArray(ud?.items) ? ud.items : [];
+          const u = users.find(x => String(x.username || '') === uname);
+          if (!u?.id) throw new Error('Selected user not found');
+
+          const r = await fetch(`/auth/admin/rbac/explain?user_id=${encodeURIComponent(u.id)}&host_id=${encodeURIComponent(hid)}`, { credentials: 'include' });
+          const raw = await r.text();
+          let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+          if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `Explain failed (${r.status})`);
+
+          const summary = `${d.allowed ? 'ALLOWED' : 'DENIED'} — ${d.reason || ''}`;
+          outEl.value = `${summary}\n\n${JSON.stringify(d, null, 2)}`;
+          statusEl.textContent = 'Explain ready.';
+        } catch (err) {
+          statusEl.textContent = err.message || String(err);
+          showToast(statusEl.textContent, 'error', 5000);
+        } finally {
+          runBtn.disabled = false;
+        }
+      });
+    }
+
+    function initOidcMapPreview() {
+      const card = document.getElementById('admin-oidc-map-preview-card');
+      if (card) card.style.display = 'none';
+    }
+
+    async function loadAdminOidcEvents(showToastOnManual = false) {
+      const card = document.getElementById('admin-oidc-events-card');
+      const tbody = document.getElementById('admin-oidc-events-table');
+      const statusEl = document.getElementById('admin-oidc-events-status');
+      if (!card || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';
+
+      try {
+        setTableState(tbody, 6, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+
+        const sinceHours = parseInt((document.getElementById('oidc-events-filter-hours')?.value || '24').trim(), 10) || 24;
+        const status = (document.getElementById('oidc-events-filter-status')?.value || '').trim();
+
+        const qs = new URLSearchParams();
+        qs.set('limit', '100');
+        qs.set('since_hours', String(sinceHours));
+        if (status) qs.set('status', status);
+
+        const r = await fetch(`/auth/admin/oidc/events?${qs.toString()}`, { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `oidc events failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          setTableState(tbody, 6, 'empty', 'No OIDC events in selected window');
+          if (showToastOnManual) showToast('OIDC diagnostics refreshed', 'success');
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const it of items) {
+          const tr = document.createElement('tr');
+          const st = String(it?.status || '').toLowerCase();
+          const statusBadge = st === 'error'
+            ? '<span class="badge badge-danger">error</span>'
+            : '<span class="badge badge-success">success</span>';
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(formatShortTime(it.created_at || ''))}</td>
+            <td><code>${escapeHtml(it.stage || '')}</code></td>
+            <td>${statusBadge}</td>
+            <td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(it.error_code || '')}${it.error_message ? `<div class="status-muted" style="margin-top:0.25rem;">${escapeHtml(it.error_message)}</div>` : ''}</td>
+            <td><code>${escapeHtml(it.correlation_id || '')}</code></td>
+            <td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(it.remediation_hint || '')}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        if (showToastOnManual) showToast('OIDC diagnostics refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 6, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message || String(e);
+        if (showToastOnManual) showToast(e.message || String(e), 'error');
+      }
+    }
+
+    async function loadAdminNotificationDedupe(showToastOnManual = false) {
+      const card = document.getElementById('admin-dedupe-card');
+      const tbody = document.getElementById('admin-dedupe-table');
+      const statusEl = document.getElementById('admin-dedupe-status');
+      if (!card || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = 'block';
+
+      try {
+        setTableState(tbody, 5, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+
+        const kind = (document.getElementById('dedupe-filter-kind')?.value || '').trim();
+        const minutes = (document.getElementById('dedupe-filter-minutes')?.value || '1440').trim();
+        const qs = new URLSearchParams();
+        qs.set('limit', '100');
+        qs.set('minutes', minutes || '1440');
+        if (kind) qs.set('kind', kind);
+
+        const r = await fetch(`/dashboard/notifications/dedupe-state?${qs.toString()}`, { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `dedupe state failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+        if (!items.length) {
+          setTableState(tbody, 5, 'empty', 'No dedupe entries in selected window');
+          if (showToastOnManual) showToast('Dedupe state refreshed', 'success');
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const it of items) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(formatShortTime(it.last_emitted_at || ''))}</td>
+            <td><code>${escapeHtml(it.kind || '')}</code></td>
+            <td>${escapeHtml(it.severity || '')}</td>
+            <td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;"><code>${escapeHtml(it.dedupe_key || '')}</code></td>
+            <td style="color:var(--muted-2);white-space:normal;overflow-wrap:anywhere;word-break:break-word;">${escapeHtml(it.last_title || '')}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        if (showToastOnManual) showToast('Dedupe state refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 5, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message || String(e);
+        if (showToastOnManual) showToast(e.message || String(e), 'error');
+      }
+    }
+
+    async function refreshApprovalsIndicator() {
+      const badge = document.getElementById('approvals-badge');
+      if (!badge) return;
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        badge.style.display = 'none';
+        return;
+      }
+      try {
+        const r = await fetch('/approvals/admin/pending', { credentials: 'include' });
+        if (!r.ok) throw new Error(`approvals failed (${r.status})`);
+        const d = await r.json();
+        const count = ((d && d.items) ? d.items : []).length;
+        badge.style.display = count > 0 ? 'inline' : 'none';
+        badge.textContent = count > 0 ? `⚠${count > 9 ? '9+' : count}` : '⚠';
+      } catch (_) {
+        badge.style.display = 'none';
+      }
+    }
+
+    async function loadAdminApprovals(showToastOnManual = false) {
+      const card = document.getElementById('admin-approvals-card');
+      const tbody = document.getElementById('admin-approvals-table');
+      const statusEl = document.getElementById('admin-approvals-status');
+      if (!card || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role || '').toLowerCase() === 'admin') || !!(currentPermissions && currentPermissions.can_manage_users);
+      if (!isAdmin) {
+        card.style.display = 'none';
+        await refreshApprovalsIndicator();
+        return;
+      }
+      card.style.display = 'block';
+
+      try {
+        setTableState(tbody, 5, 'loading', 'Loading…');
+        if (statusEl) statusEl.textContent = '';
+
+        const filterAction = (document.getElementById('approvals-filter-action')?.value || '').trim().toLowerCase();
+        const filterRequester = (document.getElementById('approvals-filter-requester')?.value || '').trim().toLowerCase();
+        const ageMins = parseInt((document.getElementById('approvals-filter-age')?.value || '').trim(), 10);
+        const mode = (document.getElementById('approvals-filter-mode')?.value || 'pending').trim();
+        const sortMode = (document.getElementById('approvals-filter-sort')?.value || 'created_desc').trim();
+        const nowMs = Date.now();
+
+        const qs = new URLSearchParams();
+        qs.set('mode', mode === 'recent' ? 'recent' : 'pending');
+        qs.set('hours', '24');
+        const r = await fetch(`/approvals/admin/pending?${qs.toString()}`, { credentials: 'include' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `approvals failed (${r.status})`);
+
+        const items = (d && d.items) ? d.items : [];
+
+        const filtered = items.filter((it) => {
+          const act = String(it?.action || '').toLowerCase();
+          const usr = String(it?.user || '').toLowerCase();
+          if (filterAction && !act.includes(filterAction)) return false;
+          if (filterRequester && !usr.includes(filterRequester)) return false;
+          if (!Number.isNaN(ageMins) && ageMins > 0) {
+            const ts = Date.parse(String(it?.created_at || ''));
+            if (!Number.isNaN(ts)) {
+              const age = (nowMs - ts) / 60000;
+              if (age > ageMins) return false;
+            }
+          }
+          return true;
+        });
+
+        filtered.sort((a, b) => {
+          if (sortMode === 'created_asc') return Date.parse(String(a?.created_at || '')) - Date.parse(String(b?.created_at || ''));
+          if (sortMode === 'action_asc') return String(a?.action || '').localeCompare(String(b?.action || ''));
+          if (sortMode === 'requester_asc') return String(a?.user || '').localeCompare(String(b?.user || ''));
+          return Date.parse(String(b?.created_at || '')) - Date.parse(String(a?.created_at || ''));
+        });
+
+        if (!filtered.length) {
+          const emptyBase = (mode === 'recent') ? 'No approvals in last 24h' : 'No pending approvals';
+          setTableState(tbody, 5, 'empty', items.length ? 'No requests match filters' : emptyBase);
+          await refreshApprovalsIndicator();
+          if (showToastOnManual) showToast('Approvals refreshed', 'success');
+          return;
+        }
+
+        tbody.innerHTML = '';
+        for (const it of filtered) {
+          const payload = (it && typeof it.payload === 'object' && it.payload) ? it.payload : {};
+          const targets = Array.isArray(payload.agent_ids) ? payload.agent_ids : [];
+          const targetLabel = targets.length ? `${targets.slice(0, 3).join(', ')}${targets.length > 3 ? ` (+${targets.length - 3})` : ''}` : 'selector-based';
+          const tr = document.createElement('tr');
+          const isPending = String(it?.status || '') === 'pending';
+          const execRef = String(it?.execution_ref || '');
+          const feedback = String((approvalActionFeedback && approvalActionFeedback[it.id]) || '');
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(formatShortTime(it.created_at))}</td>
+            <td>${escapeHtml(it.user || '')}<div class="status-muted" style="font-size:0.8rem;">${escapeHtml(String(it?.status || ''))}</div></td>
+            <td><code>${escapeHtml(it.action || '')}</code>${execRef ? `<div class="status-muted" style="font-size:0.8rem;">${escapeHtml(execRef.slice(0, 16))}</div>` : ''}${feedback ? `<div class="status-ok" style="font-size:0.78rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(feedback)}">${escapeHtml(feedback)}</div>` : ''}</td>
+            <td title="${escapeHtml(targets.join('\n'))}">${escapeHtml(targetLabel)}</td>
+            <td style="text-align:right;white-space:nowrap;">
+              <button class="btn" data-copy-id="${escapeHtml(it.id)}">Copy ID</button>
+              <button class="btn" data-details-id="${escapeHtml(it.id)}">Details</button>
+              <button class="btn btn-primary" data-approve-id="${escapeHtml(it.id)}" ${isPending ? '' : 'disabled'}>Approve</button>
+              <button class="btn" data-reject-id="${escapeHtml(it.id)}" ${isPending ? '' : 'disabled'}>Reject</button>
+            </td>
+          `;
+          tr.dataset.approvalPayload = JSON.stringify(it || {});
+          tbody.appendChild(tr);
+        }
+
+        tbody.querySelectorAll('button[data-copy-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-copy-id') || '';
+            if (!id) return;
+            try {
+              await navigator.clipboard.writeText(id);
+              showToast('Request ID copied', 'success');
+            } catch {
+              showToast('Copy failed', 'error');
+            }
+          });
+        });
+
+        tbody.querySelectorAll('button[data-details-id]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const tr = btn.closest('tr');
+            if (!tr) return;
+            let row = null;
+            try { row = JSON.parse(tr.dataset.approvalPayload || '{}'); } catch { row = null; }
+            if (!row) return;
+            const modal = document.getElementById('approval-detail-modal');
+            const titleEl = document.getElementById('approval-detail-modal-title');
+            const metaEl = document.getElementById('approval-detail-modal-meta');
+            const outEl = document.getElementById('approval-detail-modal-output');
+            if (!modal || !titleEl || !metaEl || !outEl) return;
+            titleEl.textContent = `Approval request: ${row.action || ''}`;
+            metaEl.textContent = `Requested: ${row.created_at || ''} · By: ${row.user || ''} · Status: ${row.status || ''} · ID: ${row.id || ''}`;
+            outEl.value = JSON.stringify({
+              request: {
+                id: row.id || '',
+                action: row.action || '',
+                user: row.user || '',
+                status: row.status || '',
+                created_at: row.created_at || null,
+                finished_at: row.finished_at || null,
+                approved_by: row.approved_by || null,
+                execution_ref: row.execution_ref || null,
+                error: row.error || null,
+              },
+              payload: row.payload || {},
+            }, null, 2);
+            modal.hidden = false;
+            modal.classList.add('open');
+            modal.setAttribute('aria-hidden', 'false');
+          });
+        });
+
+        tbody.querySelectorAll('button[data-approve-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-approve-id');
+            if (!id) return;
+            const r2 = await fetch(`/approvals/admin/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include' });
+            const raw2 = await r2.text();
+            let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+            if (!r2.ok) {
+              const msg = (d2 && (d2.detail || d2.error)) || raw2 || 'Approve failed';
+              return showToast(msg, 'error');
+            }
+            const msg = (d2 && d2.summary && d2.summary.message) ? d2.summary.message : 'Approved and executed';
+            approvalActionFeedback[id] = msg;
+            showToast(msg, 'success');
+            loadAdminApprovals();
+            loadAdminAudit();
+            refreshApprovalsIndicator();
+          });
+        });
+
+        tbody.querySelectorAll('button[data-reject-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-reject-id');
+            if (!id) return;
+            const note = prompt('Reject note (optional):', '') || '';
+            const r2 = await fetch(`/approvals/admin/${encodeURIComponent(id)}/reject`, {
+              method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ note })
+            });
+            const raw2 = await r2.text();
+            let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+            if (!r2.ok) {
+              const msg = (d2 && (d2.detail || d2.error)) || raw2 || 'Reject failed';
+              return showToast(msg, 'error');
+            }
+            const msg = (d2 && d2.summary && d2.summary.message) ? d2.summary.message : 'Rejected';
+            approvalActionFeedback[id] = msg;
+            showToast(msg, 'success');
+            loadAdminApprovals();
+            loadAdminAudit();
+            refreshApprovalsIndicator();
+          });
+        });
+
+        await refreshApprovalsIndicator();
+        if (showToastOnManual) showToast('Approvals refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 5, 'error', e.message || String(e));
+        if (statusEl) statusEl.textContent = e.message || String(e);
+        if (showToastOnManual) showToast(e.message || String(e), 'error');
+        await refreshApprovalsIndicator();
+      }
+    }
+
+    function showAdminPage() {
+      // Stop metrics updates when leaving server info view
+      stopMetricsPolling(metricsLifecycleState);
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('admin-tab').classList.add('active');
+      loadAdminUsers();
+      loadAdminAudit();
+    }
+
+    const setHostActionActive = window.setHostActionActive || function(action) {
+      document.querySelectorAll('.host-action-btn').forEach(btn => btn.classList.remove('active'));
+      const map = {
+        terminal: 'host-action-terminal',
+        users: 'host-action-users',
+        services: 'host-action-services',
+        packages: 'host-action-packages'
+      };
+      const id = map[action];
+      const target = id ? document.getElementById(id) : null;
+      if (target) target.classList.add('active');
+    };
+
+    function connect(agentId) {
+      const run = window.connectTerminalSession;
+      if (typeof run === 'function') {
+        run({
+          agentId,
+          term,
+          getWs: () => ws,
+          setWs: (next) => { ws = next; },
+          setCurrentAgentId: (next) => { currentAgentId = next; }
+        });
+        return;
+      }
+
+      currentAgentId = agentId;
+      if (ws) { try { ws.close(); } catch { } }
+      term.clear();
+      term.write(`Connecting to ${agentId}...\r\n`);
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${agentId}`);
+      ws.binaryType = "arraybuffer";
+    }
+
+    async function loadHosts() {
+      const hostsEl = document.getElementById('hosts');
+      const mod = window.phase3HostList;
+      try {
+        if (mod && typeof mod.loadHosts === 'function') {
+          await mod.loadHosts(getHostListCtx());
+          return;
+        }
+
+        // Fallback path so UI doesn't stay stuck when module fails to load.
+        console.error('[loadHosts] phase3HostList module missing; using inline fallback');
+        const r = await fetch('/hosts?online_only=true', { credentials: 'include' });
+        if (!r.ok) throw new Error(`hosts failed (${r.status})`);
+        const items = await r.json();
+        const hosts = Array.isArray(items) ? items : [];
+        if (!hostsEl) return;
+        if (!hosts.length) {
+          hostsEl.innerHTML = '<div class="empty-state">No hosts found</div>';
+          return;
+        }
+        hostsEl.innerHTML = hosts.map(h => `
+          <div class="host-item">
+            <div class="host-meta">
+              <div class="host-row-top"><div class="host-name">${escapeHtml(h.hostname || h.agent_id || '')}</div></div>
+              <div class="host-subline"><span class="host-subitem">${escapeHtml(h.agent_id || '')}</span></div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error('[loadHosts failed]', e);
+        if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
+      }
+    }
+
+    function initHostFilters() {
+      const mod = window.phase3HostFilters;
+      if (!mod || typeof mod.initHostFilters !== 'function') return;
+
+      const out = mod.initHostFilters({
+        getState: () => ({
+          allHosts,
+          hostSearchQuery,
+          labelEnvFilter,
+          labelRoleFilter,
+          vulnFilteredAgentIds,
+          selectedAgentIds,
+          lastRenderedAgentIds,
+          lastPkgVerification,
+          lastCveCheck,
+          lastCveAffectedAgentIds,
+          lastCveUnionPackages,
+          selectedCvePackages,
+        }),
+        setState: (patch) => {
+          if (!patch || typeof patch !== 'object') return;
+          if (Object.prototype.hasOwnProperty.call(patch, 'allHosts')) allHosts = syncHostFilterSelectionState('allHosts', patch.allHosts || []);
+          if (Object.prototype.hasOwnProperty.call(patch, 'hostSearchQuery')) hostSearchQuery = syncHostFilterSelectionState('hostSearchQuery', patch.hostSearchQuery || '');
+          if (Object.prototype.hasOwnProperty.call(patch, 'labelEnvFilter')) labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', patch.labelEnvFilter || '');
+          if (Object.prototype.hasOwnProperty.call(patch, 'labelRoleFilter')) labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', patch.labelRoleFilter || '');
+          if (Object.prototype.hasOwnProperty.call(patch, 'vulnFilteredAgentIds')) vulnFilteredAgentIds = syncHostFilterSelectionState('vulnFilteredAgentIds', patch.vulnFilteredAgentIds);
+          if (Object.prototype.hasOwnProperty.call(patch, 'selectedAgentIds')) selectedAgentIds = syncHostFilterSelectionState('selectedAgentIds', (patch.selectedAgentIds instanceof Set) ? patch.selectedAgentIds : new Set());
+          if (Object.prototype.hasOwnProperty.call(patch, 'lastRenderedAgentIds')) lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(patch.lastRenderedAgentIds) ? patch.lastRenderedAgentIds : []);
+          if (Object.prototype.hasOwnProperty.call(patch, 'lastPkgVerification')) lastPkgVerification = patch.lastPkgVerification;
+          if (Object.prototype.hasOwnProperty.call(patch, 'lastCveCheck')) lastCveCheck = patch.lastCveCheck;
+          if (Object.prototype.hasOwnProperty.call(patch, 'lastCveAffectedAgentIds')) lastCveAffectedAgentIds = Array.isArray(patch.lastCveAffectedAgentIds) ? patch.lastCveAffectedAgentIds : [];
+          if (Object.prototype.hasOwnProperty.call(patch, 'lastCveUnionPackages')) lastCveUnionPackages = Array.isArray(patch.lastCveUnionPackages) ? patch.lastCveUnionPackages : [];
+          if (Object.prototype.hasOwnProperty.call(patch, 'selectedCvePackages')) selectedCvePackages = (patch.selectedCvePackages instanceof Set) ? patch.selectedCvePackages : new Set();
+        },
+        syncSelectionState: syncHostFilterSelectionState,
+        applyHostFilters,
+        pollJob: window.pollJob,
+        escapeHtml,
+        matchesGlob,
+      });
+
+      updateUpgradeControlsFn = (out && typeof out.updateUpgradeControls === 'function')
+        ? out.updateUpgradeControls
+        : (() => {});
+    }
+
+    function getHostWorkflowsCtx() {
+      return {
+        getCurrentPermissions: () => currentPermissions,
+        getCurrentAgentId: () => currentAgentId,
+      };
+    }
+
+    async function loadUsers(agentId) {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.loadUsers === 'function') {
+        return mod.loadUsers(getHostWorkflowsCtx(), agentId);
+      }
+    }
+
+    async function loadServices(agentId) {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.loadServices === 'function') {
+        return mod.loadServices(getHostWorkflowsCtx(), agentId);
+      }
+    }
+
+    async function waitForServicesToStabilize(agentId, targetServiceName = null) {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.waitForServicesToStabilize === 'function') {
+        return mod.waitForServicesToStabilize(getHostWorkflowsCtx(), agentId, targetServiceName);
+      }
+    }
+
+    async function controlService(agentId, serviceName, action) {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.controlService === 'function') {
+        return mod.controlService(getHostWorkflowsCtx(), agentId, serviceName, action);
+      }
+    }
+
+    window.controlService = controlService;
+
+    async function controlUser(agentId, username, action) {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.controlUser === 'function') {
+        return mod.controlUser(getHostWorkflowsCtx(), agentId, username, action);
+      }
+    }
+
+    window.controlUser = controlUser;
+
+
+    function getPackagesCtx() {
+      return {
+        getState: () => ({
+          currentAgentId,
+          packagesSearchQuery,
+          packagesSearchTimer,
+          packagesUpdatesOnly,
+          packagesCvesOnly,
+          packagesSortBy,
+          pkgInteractiveTerminal,
+          selectedPackages,
+          currentPackageName,
+        }),
+        setState: (patch) => {
+          if (!patch || typeof patch !== 'object') return;
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesSearchQuery')) packagesSearchQuery = patch.packagesSearchQuery || '';
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesSearchTimer')) packagesSearchTimer = patch.packagesSearchTimer || null;
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesUpdatesOnly')) packagesUpdatesOnly = !!patch.packagesUpdatesOnly;
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesCvesOnly')) packagesCvesOnly = !!patch.packagesCvesOnly;
+          if (Object.prototype.hasOwnProperty.call(patch, 'packagesSortBy')) packagesSortBy = String(patch.packagesSortBy || 'name');
+          if (Object.prototype.hasOwnProperty.call(patch, 'pkgInteractiveTerminal')) pkgInteractiveTerminal = !!patch.pkgInteractiveTerminal;
+          if (Object.prototype.hasOwnProperty.call(patch, 'selectedPackages')) selectedPackages = (patch.selectedPackages instanceof Set) ? patch.selectedPackages : new Set();
+          if (Object.prototype.hasOwnProperty.call(patch, 'currentPackageName')) currentPackageName = patch.currentPackageName || null;
+        },
+        runInteractivePackageCommand: (action, packages) => {
+          if (!currentAgentId || !Array.isArray(packages) || !packages.length) return false;
+          const esc = (s) => `'${String(s).replace(/'/g, `'"'"'`)}'`;
+          const pkgArgs = packages.map(esc).join(' ');
+          let cmd = '';
+          if (action === 'upgrade') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade ${pkgArgs}`;
+          else if (action === 'reinstall') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --reinstall ${pkgArgs}`;
+          else if (action === 'remove') cmd = `sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y ${pkgArgs}`;
+          if (!cmd) return false;
+
+          // Security: never collect terminal credentials in browser prompts.
+          // Queue command, switch to terminal, and let user run it after login.
+          pendingInteractivePackageCmd = cmd;
+          updateTerminalPendingCmdButton();
+          showTerminal();
+          showToast('Terminal opened. Log in and click "Run pending package command".', 'info', 5000);
+          return true;
+        },
+      };
+    }
+
+    function initPackagesSearch() {
+      const mod = window.phase3Packages;
+      if (mod && typeof mod.initPackagesSearch === 'function') {
+        return mod.initPackagesSearch(getPackagesCtx());
+      }
+    }
+
+    async function loadPackages(agentId) {
+      const mod = window.phase3Packages;
+      if (mod && typeof mod.loadPackages === 'function') {
+        return mod.loadPackages(getPackagesCtx(), agentId);
+      }
+    }
+
+    async function refreshPackagesNow(agentId) {
+      const mod = window.phase3Packages;
+      if (mod && typeof mod.refreshPackagesNow === 'function') {
+        return mod.refreshPackagesNow(getPackagesCtx(), agentId);
+      }
+    }
+
+    function getOverviewCtx() {
+      return {
+        formatShortTime,
+        selectHost,
+        openDiskModal,
+        showServerInfo,
+        showPackages,
+        loadPackages,
+        setPackagesUpdatesOnly: (v) => { packagesUpdatesOnly = !!v; },
+        loadPendingUpdatesReport: (showToastOnManual = false) => loadPendingUpdatesReport(showToastOnManual),
+        clearCurrentHostSelection,
+        stopMetricsPolling: () => stopMetricsPolling(metricsLifecycleState),
+        loadHostsTable,
+        loadCronjobs,
+        loadSshKeys,
+        loadSshKeyRequests,
+        maybeLoadSshKeyAdminQueue,
+        loadAdminSshKeys,
+        loadFleetOverview: (forceLive = false) => loadFleetOverview(forceLive),
+        loadFailedRuns,
+        loadHosts,
+        getLastRenderedAgentIds: () => lastRenderedAgentIds,
+        setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(v) ? v : []); return lastRenderedAgentIds; },
+        getHostSearchQuery: () => hostSearchQuery,
+        getCurrentAgentId: () => currentAgentId,
+        getLabelEnvFilter: () => labelEnvFilter,
+        getLabelRoleFilter: () => labelRoleFilter,
+        getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
+        setAllHosts: (hosts) => {
+          allHosts = syncHostFilterSelectionState('allHosts', Array.isArray(hosts) ? hosts : []);
+          try {
+            const hostListMod = window.phase3HostList;
+            if (hostListMod && typeof hostListMod.rebuildLabelFilterOptions === 'function') {
+              hostListMod.rebuildLabelFilterOptions(getHostListCtx());
+            }
+          } catch (_) { }
+          return allHosts;
+        },
+      };
+    }
+
+    async function loadFleetOverview(forceLive = false) {
+      const mod = window.phase3Overview;
+      if (mod && typeof mod.loadFleetOverview === 'function') {
+        return mod.loadFleetOverview(getOverviewCtx(), forceLive);
+      }
+    }
+
+    async function loadFailedRuns(hours = 24, showToastOnManual = false) {
+      const tbody = document.getElementById('overview-failed-runs');
+      const card = document.getElementById('failed-runs-card');
+      if (!tbody) return;
+      try {
+        setTableState(tbody, 5, 'loading', 'Loading…');
+        const r = await fetch(`/dashboard/failed-runs?hours=${encodeURIComponent(hours)}&limit=200`, { credentials: 'include' });
+        if (!r.ok) throw new Error(`failed-runs fetch failed (${r.status})`);
+        const d = await r.json();
+        const items = d?.items || [];
+        if (!items.length) {
+          if (card) card.style.display = 'none';
+          setTableState(tbody, 5, 'empty', 'No failed runs 🎯');
+          return;
+        }
+        if (card) card.style.display = '';
+        tbody.innerHTML = '';
+        const detailsByRunId = {};
+        for (const it of items) {
+          const when = formatShortTime(it.finished_at);
+          const host = it.agent_id || '–';
+          const job = `${it.job_type || 'job'}${it.job_key ? ' • ' + it.job_key : ''}`.trim();
+          const exit = (it.exit_code === null || it.exit_code === undefined) ? '–' : String(it.exit_code);
+          const err = (it.error || (it.stderr || '').split('\n').slice(-1)[0] || '').trim();
+          const runId = String(it.run_id || it.id || `${host}|${job}|${it.finished_at || ''}`);
+
+          const detail = [
+            `Host: ${host}`,
+            `Job: ${job}`,
+            it.finished_at ? `When: ${new Date(it.finished_at).toLocaleString()}` : '',
+            (it.exit_code === null || it.exit_code === undefined) ? '' : `Exit: ${it.exit_code}`,
+            '',
+            '--- error ---',
+            (it.error || ''),
+            '',
+            '--- stderr ---',
+            (it.stderr || ''),
+            '',
+            '--- stdout ---',
+            (it.stdout || ''),
+          ].filter(Boolean).join('\n');
+          detailsByRunId[runId] = detail;
+
+          const tr = document.createElement('tr');
+          tr.style.cursor = 'pointer';
+          tr.setAttribute('data-failed-run-id', runId);
+          tr.setAttribute('data-failed-run-detail', detail);
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(when)}</td>
+            <td><b>${escapeHtml(host)}</b></td>
+            <td>${escapeHtml(job)}</td>
+            <td style="text-align:right;">${escapeHtml(exit)}</td>
+            <td class="status-error">${escapeHtml(err || 'failed')} <button class="btn" data-copy-failed-run="${escapeHtml(runId)}" type="button" style="margin-left:0.4rem;padding:0.12rem 0.4rem;">Copy</button></td>
+          `;
+
+          tr.addEventListener('click', () => {
+            if (typeof window.openFailedRunDetailModal === 'function') {
+              window.openFailedRunDetailModal(detail, `${host} • ${job}`);
+            }
+          });
+
+          const copyBtn = tr.querySelector('button[data-copy-failed-run]');
+          copyBtn?.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(detail);
+              showToast('Failed run detail copied', 'success');
+            } catch {
+              if (typeof window.openFailedRunDetailModal === 'function') {
+                window.openFailedRunDetailModal(detail, `${host} • ${job}`);
+              }
+              showToast('Clipboard blocked. Opened detail view for manual copy.', 'error', 3800);
+            }
+          });
+
+          tbody.appendChild(tr);
+        }
+
+        const copyVisibleBtn = document.getElementById('failed-runs-copy-visible');
+        copyVisibleBtn?.replaceWith(copyVisibleBtn.cloneNode(true));
+        const copyVisibleBtn2 = document.getElementById('failed-runs-copy-visible');
+        copyVisibleBtn2?.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const rows = Array.from(tbody.querySelectorAll('tr[data-failed-run-id]'));
+          const chunks = rows.map((row, idx) => {
+            const detail = row.getAttribute('data-failed-run-detail') || '';
+            return `#${idx + 1}\n${detail}`;
+          }).filter(Boolean);
+          const text = chunks.join('\n\n');
+          if (!text) return;
+          try {
+            await navigator.clipboard.writeText(text);
+            showToast('Visible failed runs copied', 'success');
+          } catch {
+            if (typeof window.openFailedRunDetailModal === 'function') {
+              window.openFailedRunDetailModal(text, `Visible failed runs (${rows.length})`);
+            }
+            showToast('Clipboard blocked. Opened detail view for manual copy.', 'error', 3800);
+          }
+        });
+
+        if (showToastOnManual) showToast('Failed runs refreshed', 'success');
+      } catch (e) {
+        if (card) card.style.display = '';
+        setTableState(tbody, 5, 'error', e.message || String(e));
+        if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
+    function formatShortTime(iso) {
+      if (!iso) return '–';
+      try {
+        return new Date(iso).toLocaleString();
+      } catch {
+        return String(iso);
+      }
+    }
+
+    async function loadHostsTable() {
+      const mod = window.phase3Overview;
+      if (mod && typeof mod.loadHostsTable === 'function') {
+        return mod.loadHostsTable(getOverviewCtx());
+      }
+    }
+
+    function getSelectedHostAgentIds() {
+      const ids = [];
+      document.querySelectorAll('.hosts-row-select:checked').forEach(cb => {
+        const aid = cb.getAttribute('data-agent-id') || '';
+        if (aid) ids.push(aid);
+      });
+      return ids;
+    }
+
+    function initHostsTableControls() {
+      document.getElementById('hosts-reload')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        loadHostsTable();
+      });
+      document.getElementById('hosts-sort')?.addEventListener('change', loadHostsTable);
+      document.getElementById('hosts-order')?.addEventListener('change', loadHostsTable);
+
+      document.getElementById('hosts-select-all')?.addEventListener('change', (e) => {
+        const checked = !!e.target.checked;
+        document.querySelectorAll('.hosts-row-select').forEach(cb => { cb.checked = checked; });
+      });
+
+      async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {
+        try {
+          const r = await fetch('/jobs/preflight', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ agent_ids: agentIds }),
+          });
+          if (!r.ok) throw new Error(`preflight failed (${r.status})`);
+          const pre = await r.json();
+
+          const targeted = Array.isArray(pre?.targeted_hosts) ? pre.targeted_hosts : [];
+          const excluded = Array.isArray(pre?.excluded_by_scope) ? pre.excluded_by_scope : [];
+          const offline = Array.isArray(pre?.offline_or_unreachable) ? pre.offline_or_unreachable : [];
+
+          const summary = `${actionLabel}\n\nTargeted: ${targeted.length}\nExcluded by scope: ${excluded.length}\nOffline/unreachable: ${offline.length}`;
+          if (!targeted.length) {
+            showToast('No targeted hosts after preflight', 'error');
+            return { ok: false, preflight: pre };
+          }
+
+          if (targeted.length > threshold) {
+            const typed = prompt(`${summary}\n\nType APPLY to continue:`);
+            if ((typed || '').trim().toUpperCase() !== 'APPLY') return { ok: false, preflight: pre };
+          } else if (!confirm(`${summary}\n\nProceed?`)) {
+            return { ok: false, preflight: pre };
+          }
+
+          return { ok: true, preflight: pre };
+        } catch (e) {
+          showToast(e.message || String(e), 'error');
+          return { ok: false, preflight: null };
+        }
+      }
+
+      async function bulkPost(url, payload, okMsg) {
+        const statusEl = document.getElementById('hosts-bulk-status');
+        if (statusEl) statusEl.textContent = 'Working…';
+        try {
+          const r = await fetch(url, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!r.ok) throw new Error(`${url} failed (${r.status})`);
+          const d = await r.json();
+          showToast(okMsg, 'success');
+          if (statusEl) statusEl.textContent = '';
+          return d;
+        } catch (e) {
+          showToast(e.message, 'error');
+          if (statusEl) statusEl.textContent = '';
+        }
+      }
+
+      document.getElementById('hosts-bulk-inventory')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const ids = getSelectedHostAgentIds();
+        if (!ids.length) return showToast('Select hosts first', 'error');
+        await bulkPost('/jobs/inventory-now', { agent_ids: ids }, `Triggered inventory for ${ids.length} hosts`);
+      });
+
+      document.getElementById('hosts-bulk-security')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const ids = getSelectedHostAgentIds();
+        if (!ids.length) return showToast('Select hosts first', 'error');
+        const now = new Date();
+        const end = new Date(now.getTime() + 60 * 60 * 1000);
+        const payload = {
+          agent_ids: ids,
+          window_start: now.toISOString(),
+          window_end: end.toISOString(),
+          concurrency: 5,
+          reboot_if_needed: true,
+          include_kernel: false,
+        };
+        await bulkPost('/patching/campaigns/security-updates', payload, `Security campaign scheduled for ${ids.length} hosts`);
+      });
+
+      document.getElementById('hosts-bulk-dist')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const ids = getSelectedHostAgentIds();
+        if (!ids.length) return showToast('Select hosts first', 'error');
+        const check = await confirmBlastRadius(ids, 'dist-upgrade preflight');
+        if (!check.ok) return;
+        await bulkPost('/jobs/dist-upgrade', { agent_ids: ids }, `dist-upgrade queued for ${ids.length} hosts`);
+      });
+
+      // Remove selected hosts
+      document.getElementById('hosts-remove-selected')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const ids = getSelectedHostAgentIds();
+        if (!ids.length) return showToast('Select hosts first', 'error');
+
+        const previewResp = await fetch('/hosts/remove', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: ids, dry_run: true })
+        });
+        if (!previewResp.ok) {
+          showToast(`preview failed (${previewResp.status})`, 'error');
+          return;
+        }
+        const preview = await previewResp.json();
+        const found = Array.isArray(preview?.found_agent_ids) ? preview.found_agent_ids : [];
+        const missing = Array.isArray(preview?.missing_agent_ids) ? preview.missing_agent_ids : [];
+        const blockedLocal = Array.isArray(preview?.blocked_local_agent_ids) ? preview.blocked_local_agent_ids : [];
+        if (!found.length) {
+          if (blockedLocal.length) {
+            const force = confirm('Selected host is protected (srv-001 local agent).\n\nForce remove it from inventory?');
+            if (!force) return;
+            const forceResp = await fetch('/hosts/remove', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ agent_ids: ids, include_local: true })
+            });
+            if (!forceResp.ok) {
+              showToast(`force remove failed (${forceResp.status})`, 'error');
+              return;
+            }
+            const forceOut = await forceResp.json();
+            showToast(`Removed ${forceOut?.deleted?.length || 0} host(s)`, 'success');
+            await loadHosts();
+            await loadHostsTable();
+            return;
+          } else {
+            const sample = missing.slice(0, 3).join(', ');
+            showToast(sample ? `Selected host(s) not found: ${sample}` : 'None of the selected hosts exist anymore', 'error');
+          }
+          return;
+        }
+
+        const list = found.slice(0, 12).join('\n');
+        const more = found.length > 12 ? `\n… and ${found.length - 12} more` : '';
+        const missingMsg = missing.length ? `\n\nMissing: ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? '…' : ''}` : '';
+        const blockedMsg = blockedLocal.length ? `\n\nProtected local: ${blockedLocal.join(', ')} (not removable by default)` : '';
+        const ok = confirm(`This will REMOVE ${found.length} host(s) from inventory:\n\n${list}${more}${missingMsg}${blockedMsg}\n\nProceed?`);
+        if (!ok) return;
+
+        const resp = await fetch('/hosts/remove', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: ids })
+        });
+        if (!resp.ok) {
+          showToast(`remove failed (${resp.status})`, 'error');
+          return;
+        }
+        const out = await resp.json();
+        showToast(`Removed ${out?.deleted?.length || 0} host(s)`, 'success');
+
+        await loadHosts();
+        await loadHostsTable();
+      });
+
+      // Cleanup offline hosts
+      document.getElementById('hosts-cleanup-offline')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const minsStr = prompt('Delete hosts that have been offline for how many minutes?', '60');
+        if (minsStr === null) return;
+        const mins = parseInt((minsStr || '').trim(), 10);
+        if (!Number.isFinite(mins) || mins < 1) {
+          showToast('Enter a valid number of minutes (>= 1)', 'error');
+          return;
+        }
+
+        // Dry run preview
+        try {
+          const previewResp = await fetch(`/hosts/cleanup-offline?older_than_minutes=${encodeURIComponent(mins)}&dry_run=true`, {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (!previewResp.ok) throw new Error(`preview failed (${previewResp.status})`);
+          const preview = await previewResp.json();
+          const n = preview?.count || 0;
+          const agentIds = (preview?.agent_ids || []).slice(0, 12);
+          const more = (preview?.agent_ids || []).length > 12 ? `\n… and ${(preview.agent_ids.length - 12)} more` : '';
+
+          const msg = n
+            ? `This will DELETE ${n} host(s) last seen before ${preview.cutoff}.\n\n${agentIds.join('\n')}${more}\n\nProceed?`
+            : `No hosts are older than ${mins} minutes. (cutoff: ${preview.cutoff})`;
+
+          if (!n) {
+            showToast('No offline hosts to delete', 'success');
+            return;
+          }
+
+          if (!confirm(msg)) return;
+
+          const resp = await fetch(`/hosts/cleanup-offline?older_than_minutes=${encodeURIComponent(mins)}`, {
+            method: 'POST',
+            credentials: 'include'
+          });
+          if (!resp.ok) throw new Error(`cleanup failed (${resp.status})`);
+          const out = await resp.json();
+          showToast(`Deleted ${out?.deleted?.length || 0} host(s)`, 'success');
+
+          // Reload lists
+          await loadHosts();
+          await loadHostsTable();
+        } catch (err) {
+          showToast(err.message || String(err), 'error');
+        }
+      });
+
+      // Click-sort headers
+      function setSort(key) {
+        const sortSel = document.getElementById('hosts-sort');
+        const orderSel = document.getElementById('hosts-order');
+        if (!sortSel || !orderSel) return;
+        const cur = sortSel.value;
+        const curOrd = orderSel.value;
+        if (cur === key) orderSel.value = (curOrd === 'asc') ? 'desc' : 'asc';
+        else { sortSel.value = key; orderSel.value = 'asc'; }
+        updateHostsSortIndicators(sortSel.value, orderSel.value);
+        loadHostsTable();
+      }
+      const hostsSortSel = document.getElementById('hosts-sort');
+      const hostsOrderSel = document.getElementById('hosts-order');
+      updateHostsSortIndicators(hostsSortSel?.value || 'hostname', hostsOrderSel?.value || 'asc');
+      bindSortableHeader('hosts-th-host', () => setSort('hostname'));
+      bindSortableHeader('hosts-th-os', () => setSort('os_version'));
+      bindSortableHeader('hosts-th-upd', () => setSort('updates'));
+      bindSortableHeader('hosts-th-sec', () => setSort('security_updates'));
+      bindSortableHeader('hosts-th-last', () => setSort('last_seen'));
+    }
+
+    async function loadPendingUpdatesReport(showToastOnManual = false) {
+      const mod = window.phase3Overview;
+      if (mod && typeof mod.loadPendingUpdatesReport === 'function') {
+        return mod.loadPendingUpdatesReport(getOverviewCtx(), showToastOnManual);
+      }
+    }
+
+    function initFleetOverviewControls() {
+      const mod = window.phase3Overview;
+      if (mod && typeof mod.initFleetOverviewControls === 'function') {
+        return mod.initFleetOverviewControls(getOverviewCtx());
+      }
+    }
+
+    
+
+    async function loadCronjobs(showToastOnManual = false) {
+      const tbody = document.getElementById('cronjobs-table');
+      if (!tbody) return;
+      try {
+        setTableState(tbody, 6, 'loading', 'Loading…');
+        const r = await fetch('/cronjobs', { credentials: 'include' });
+        if (!r.ok) throw new Error(`cronjobs failed (${r.status})`);
+        const d = await r.json();
+        const items = d?.items || [];
+        if (!items.length) {
+          setTableState(tbody, 6, 'empty', 'No cronjobs yet');
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const it of items) {
+          const tr = document.createElement('tr');
+          const when = formatShortTime(it.run_at);
+          const targets = Array.isArray(it.selector?.agent_ids) ? it.selector.agent_ids.length : '–';
+          const status = it.status || '–';
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(when)}</td>
+            <td>${escapeHtml(it.name || '')}</td>
+            <td><code>${escapeHtml(it.action || '')}</code></td>
+            <td>${escapeHtml(String(targets))}</td>
+            <td>${escapeHtml(status)}</td>
+            <td style="text-align:right;">
+              ${(() => {
+                const jk = it.latest_run?.job_key || '';
+                if (jk && !jk.startsWith('patch-campaign:')) {
+                  return `<a class="btn" href="/jobs/${encodeURIComponent(jk)}/logs.zip" target="_blank" rel="noopener">Download logs</a>`;
+                }
+                return '';
+              })()}
+              ${status === 'scheduled' ? ` <button class="btn" data-cancel-id="${escapeHtml(it.id)}">Cancel</button>` : ''}
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+        // wire cancel buttons
+        tbody.querySelectorAll('button[data-cancel-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-cancel-id');
+            if (!id) return;
+            const r2 = await fetch(`/cronjobs/${encodeURIComponent(id)}/cancel`, { method: 'POST', credentials: 'include' });
+            if (!r2.ok) return showToast('Cancel failed', 'error');
+            showToast('Cronjob canceled', 'success');
+            loadCronjobs();
+          });
+        });
+        if (showToastOnManual) showToast('Cronjobs refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 6, 'error', e.message || String(e));
+        if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
+
+    // Cronjobs host picker (separate from Hosts tab selection)
+    const cronUiState = createUiStateAccess('cronHostPicker', { selectedAgentIds: new Set() });
+    const cronUiDefaults = (typeof window.initCronHostPickerState === 'function')
+      ? window.initCronHostPickerState(cronUiState)
+      : { selectedAgentIds: (cronUiState.get('selectedAgentIds') instanceof Set) ? cronUiState.get('selectedAgentIds') : new Set() };
+
+    function getCronSelectedAgentIds() {
+      return cronUiState.get('selectedAgentIds', cronUiDefaults.selectedAgentIds);
+    }
+
+    function setCronSelectedAgentIds(next) {
+      return cronUiState.set('selectedAgentIds', (next instanceof Set) ? next : new Set());
+    }
+
+    function setCronHostsPanelVisible(visible) {
+      const panel = document.getElementById('cron-hosts-panel');
+      if (!panel) return;
+      panel.style.display = visible ? 'block' : 'none';
+    }
+
+    function renderCronHostsList() {
+      const listEl = document.getElementById('cron-hosts-list');
+      const countEl = document.getElementById('cron-hosts-count');
+      if (!listEl) return;
+
+      const selectedAgentIds = getCronSelectedAgentIds();
+      const q = (document.getElementById('cron-hosts-search')?.value || '').trim().toLowerCase();
+      const hosts = (allHosts || []).slice();
+
+      listEl.innerHTML = '';
+      if (!hosts.length) {
+        listEl.innerHTML = '<div class="empty-state" style="padding:0.75rem;">No hosts loaded yet.</div>';
+        if (countEl) countEl.textContent = String(selectedAgentIds.size);
+        return;
+      }
+
+      for (const h of hosts) {
+        const aid = h.agent_id || '';
+        const name = h.hostname || aid;
+        const ip = h.ip_address || '';
+        const os = `${h.os_id || ''} ${h.os_version || ''}`.trim();
+        const hay = `${name} ${aid} ${ip} ${os}`.toLowerCase();
+        if (q && !hay.includes(q)) continue;
+
+        const row = document.createElement('label');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+        row.style.gap = '0.75rem';
+        row.style.padding = '0.5rem 0.6rem';
+        row.style.borderRadius = '8px';
+        row.style.cursor = 'pointer';
+        row.style.background = 'transparent';
+
+        const left = document.createElement('div');
+        left.style.display = 'flex';
+        left.style.flexDirection = 'column';
+        left.style.gap = '0.1rem';
+
+        const title = document.createElement('div');
+        title.innerHTML = `<b>${escapeHtml(name)}</b> <span class="status-muted" style="font-size:0.85rem;">${escapeHtml(aid)}</span>`;
+        const sub = document.createElement('div');
+        sub.style.color = 'var(--muted-2)';
+        sub.style.fontSize = '0.85rem';
+        sub.textContent = ip ? ip : '';
+
+        left.appendChild(title);
+        if (ip) left.appendChild(sub);
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = selectedAgentIds.has(aid);
+        cb.addEventListener('change', () => {
+          if (cb.checked) selectedAgentIds.add(aid);
+          else selectedAgentIds.delete(aid);
+          if (countEl) countEl.textContent = String(selectedAgentIds.size);
+        });
+
+        row.appendChild(left);
+        row.appendChild(cb);
+        row.addEventListener('mouseenter', () => { row.style.background = 'color-mix(in srgb, var(--panel) 55%, transparent)'; });
+        row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
+
+        listEl.appendChild(row);
+      }
+
+      if (countEl) countEl.textContent = String(selectedAgentIds.size);
+    }
+    function initCronjobsControls() {
+
+      setupCronScheduleUi();
+
+      setupCronHostPickerControls({
+        setPanelVisible: setCronHostsPanelVisible,
+        renderList: renderCronHostsList,
+        selectAll: () => {
+          const selectedAgentIds = getCronSelectedAgentIds();
+          (allHosts || []).forEach(h => { if (h.agent_id) selectedAgentIds.add(h.agent_id); });
+        },
+        clearSelection: () => {
+          setCronSelectedAgentIds(new Set());
+        },
+      });
+
+      const cronRefreshBtn = document.getElementById('cron-refresh');
+      wireBusyClick(cronRefreshBtn, 'Refreshing…', async () => {
+        await loadCronjobs(true);
+      });
+
+      const cronCreateBtn = document.getElementById('cron-create');
+      cronCreateBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        await handleCronCreate({
+          createBtn: cronCreateBtn,
+          statusEl: document.getElementById('cron-create-status'),
+          getSelectedAgentIds: () => Array.from(getCronSelectedAgentIds() || []),
+          setPanelVisible: setCronHostsPanelVisible,
+          renderList: renderCronHostsList,
+          loadCronjobs: loadCronjobs,
+          withBusyButton: withBusyButton,
+        });
+      });
+
+      const fromFilterBtn = document.getElementById('cron-from-filter-open');
+      const fromFilterRunNowBtn = document.getElementById('cron-from-filter-run-now');
+      const runbookInventoryBtn = document.getElementById('runbook-inventory-now');
+      const runbookSecurityBtn = document.getElementById('runbook-security-now');
+      const runbookDistBtn = document.getElementById('runbook-dist-now');
+
+      function getVisibleOrAllHostIds() {
+        const visibleIds = Array.from(lastRenderedAgentIds || []);
+        return visibleIds.length ? visibleIds : (allHosts || []).map(h => h.agent_id).filter(Boolean);
+      }
+
+      async function runImmediateForVisible(action) {
+        const statusEl = document.getElementById('cron-from-filter-status');
+        const ids = getVisibleOrAllHostIds();
+        if (!ids.length) {
+          if (statusEl) statusEl.textContent = 'No hosts available. Load hosts first.';
+          return;
+        }
+
+        try {
+          if (statusEl) statusEl.textContent = `Running ${action} for ${ids.length} hosts…`;
+          let r = null;
+          if (action === 'inventory-now') {
+            r = await fetch('/jobs/inventory-now', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent_ids: ids }) });
+          } else if (action === 'security-campaign') {
+            const now = new Date();
+            const end = new Date(now.getTime() + 60 * 60 * 1000);
+            r = await fetch('/patching/campaigns/security-updates', {
+              method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ agent_ids: ids, window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 5, reboot_if_needed: true, include_kernel: false })
+            });
+          } else {
+            const check = await confirmBlastRadius(ids, 'dist-upgrade preflight');
+            if (!check.ok) {
+              if (statusEl) statusEl.textContent = 'Cancelled.';
+              return;
+            }
+            r = await fetch('/jobs/dist-upgrade', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ agent_ids: ids }) });
+          }
+
+          if (!r || !r.ok) {
+            const raw = r ? await r.text() : '';
+            let detail = '';
+            try { const j = raw ? JSON.parse(raw) : null; detail = j?.detail || j?.error || ''; } catch (_) { detail = ''; }
+            throw new Error(detail || `request failed (${r ? r.status : 'n/a'})`);
+          }
+
+          let data = null;
+          try { data = await r.json(); } catch (_) { data = null; }
+          if (data && data.approval_required) {
+            if (statusEl) statusEl.textContent = `Approval required: request ${data.request_id}`;
+            showToast(`Approval required (${action}). Request: ${data.request_id}`, 'info', 5000);
+            return;
+          }
+
+          if (statusEl) statusEl.textContent = `Triggered ${action} for ${ids.length} hosts.`;
+          showToast(`Triggered ${action} for ${ids.length} hosts`, 'success');
+        } catch (err) {
+          const msg = (err && err.message) ? err.message : String(err);
+          if (statusEl) statusEl.textContent = msg;
+          showToast(msg, 'error');
+        }
+      }
+
+      fromFilterBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const statusEl = document.getElementById('cron-from-filter-status');
+        const action = document.getElementById('cron-from-filter-action')?.value || 'security-campaign';
+        const schedule = document.getElementById('cron-from-filter-schedule')?.value || 'weekly-sun-0200';
+
+        const ids = getVisibleOrAllHostIds();
+        if (!ids.length) {
+          if (statusEl) statusEl.textContent = 'No hosts available. Load hosts first.';
+          return;
+        }
+
+        // Switch to cron tab and prefill fields.
+        document.getElementById('nav-cronjobs')?.click();
+
+        setCronSelectedAgentIds(new Set(ids));
+        setCronHostsPanelVisible(true);
+        renderCronHostsList();
+
+        const actionEl = document.getElementById('cron-action');
+        if (actionEl) actionEl.value = action;
+
+        const nameEl = document.getElementById('cron-name');
+        const env = (document.getElementById('label-env')?.value || '').trim();
+        const role = (document.getElementById('label-role')?.value || '').trim();
+        const search = (document.getElementById('host-search')?.value || '').trim();
+        const scopeBits = [env ? `env:${env}` : '', role ? `role:${role}` : '', search ? `q:${search}` : ''].filter(Boolean).join(' ');
+        if (nameEl) nameEl.value = `${action} (${scopeBits || 'visible hosts'})`;
+
+        const kindEl = document.getElementById('cron-schedule-kind');
+        const runAtEl = document.getElementById('cron-run-at');
+        const timeEl = document.getElementById('cron-time');
+        const weekdayEl = document.getElementById('cron-weekday');
+
+        if (schedule === 'once-30m') {
+          if (kindEl) kindEl.value = 'once';
+          const dt = new Date(Date.now() + 30 * 60 * 1000);
+          const yyyy = dt.getFullYear();
+          const mm = String(dt.getMonth() + 1).padStart(2, '0');
+          const dd = String(dt.getDate()).padStart(2, '0');
+          const hh = String(dt.getHours()).padStart(2, '0');
+          const mi = String(dt.getMinutes()).padStart(2, '0');
+          if (runAtEl) runAtEl.value = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+        } else if (schedule === 'daily-0600') {
+          if (kindEl) kindEl.value = 'daily';
+          if (timeEl) timeEl.value = '06:00';
+        } else {
+          if (kindEl) kindEl.value = 'weekly';
+          if (weekdayEl) weekdayEl.value = '0'; // Sunday
+          if (timeEl) timeEl.value = '02:00';
+        }
+
+        kindEl?.dispatchEvent(new Event('change'));
+        if (statusEl) statusEl.textContent = `Prefilled cron with ${ids.length} hosts.`;
+      });
+
+      fromFilterRunNowBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const action = document.getElementById('cron-from-filter-action')?.value || 'security-campaign';
+        await runImmediateForVisible(action);
+      });
+
+      runbookInventoryBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible('inventory-now'); });
+      runbookSecurityBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible('security-campaign'); });
+      runbookDistBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible('dist-upgrade'); });
+    }
+
+    // SSH Keys UI
+    const sshUiState = createUiStateAccess('sshKeys', {
+      keysCache: [],
+      selectedKeyId: null,
+      selectedAgentIds: new Set(),
+    });
+    const sshUiDefaults = (typeof window.initSshKeysUiState === 'function')
+      ? window.initSshKeysUiState(sshUiState)
+      : {
+        keysCache: Array.isArray(sshUiState.get('keysCache')) ? sshUiState.get('keysCache') : [],
+        selectedKeyId: sshUiState.get('selectedKeyId', null) || null,
+        selectedAgentIds: (sshUiState.get('selectedAgentIds') instanceof Set) ? sshUiState.get('selectedAgentIds') : new Set(),
+      };
+
+    function getSshSelectedAgentIds() {
+      return sshUiState.get('selectedAgentIds', sshUiDefaults.selectedAgentIds);
+    }
+
+    function setSshSelectedAgentIds(next) {
+      return sshUiState.set('selectedAgentIds', (next instanceof Set) ? next : new Set());
+    }
+
+    function getSshSelectedKeyId() {
+      return sshUiState.get('selectedKeyId', sshUiDefaults.selectedKeyId);
+    }
+
+    function setSshSelectedKeyId(next) {
+      return sshUiState.set('selectedKeyId', next || null);
+    }
+
+    function getSshKeysCache() {
+      return sshUiState.get('keysCache', sshUiDefaults.keysCache);
+    }
+
+    function setSshKeysCache(next) {
+      return sshUiState.set('keysCache', Array.isArray(next) ? next : []);
+    }
+
+    function setSshHostsPanelVisible(v) {
+      setPanelVisibleById('sshkey-hosts-panel', v);
+    }
+
+    function renderSshHostsList() {
+      const selectedAgentIds = getSshSelectedAgentIds();
+      const nextSelected = renderSshHostsListView({
+        hosts: (allHosts || []),
+        selectedAgentIds: selectedAgentIds,
+        listId: 'sshkey-hosts-list',
+        countId: 'sshkey-hosts-count',
+        searchId: 'sshkey-hosts-search',
+      }) || selectedAgentIds;
+      setSshSelectedAgentIds(nextSelected);
+    }
+
+    async function loadSshKeys(showToastOnManual = false) {
+      const tbody = document.getElementById('sshkeys-table');
+      if (!tbody) return;
+      try {
+        setTableState(tbody, 4, 'loading', 'Loading…');
+        const r = await fetch('/sshkeys', { credentials: 'include' });
+        if (!r.ok) throw new Error(`sshkeys failed (${r.status})`);
+        const d = await r.json();
+        setSshKeysCache(d?.items || []);
+        if (!getSshKeysCache().length) {
+          setTableState(tbody, 4, 'empty', 'No keys yet');
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const k of getSshKeysCache()) {
+          const tr = document.createElement('tr');
+          tr.style.cursor = 'pointer';
+          const selectedKeyId = getSshSelectedKeyId();
+          const isSel = (selectedKeyId && selectedKeyId === k.id);
+          tr.innerHTML = `
+            <td>${escapeHtml(k.name || '')}</td>
+            <td><code>${escapeHtml(k.fingerprint || '')}</code></td>
+            <td style="max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><code>${escapeHtml(k.public_key || '')}</code></td>
+            <td style="text-align:right;"><button class="btn" data-revoke-id="${escapeHtml(k.id)}">Delete</button></td>
+          `;
+          if (isSel) tr.style.background = 'color-mix(in srgb, var(--primary) 12%, var(--panel))';
+          tr.setAttribute('data-key-id', k.id);
+          tr.addEventListener('click', (e) => {
+            if ((e.target && e.target.tagName || '').toLowerCase() === 'button') return;
+            setSshSelectedKeyId(k.id);
+            // Highlight immediately.
+            Array.from(tbody.querySelectorAll('tr[data-key-id]')).forEach(row => {
+              const rowId = row.getAttribute('data-key-id');
+              if (rowId && rowId === getSshSelectedKeyId()) {
+                row.style.background = 'color-mix(in srgb, var(--primary) 12%, var(--panel))';
+              } else {
+                row.style.background = '';
+              }
+            });
+          });
+          tbody.appendChild(tr);
+        }
+        tbody.querySelectorAll('button[data-revoke-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-revoke-id');
+            if (!id) return;
+            const r2 = await fetch(`/sshkeys/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
+            if (!r2.ok) return showToast('Delete failed', 'error');
+            if (getSshSelectedKeyId() === id) setSshSelectedKeyId(null);
+            showToast('Key deleted', 'success');
+            loadSshKeys();
+          });
+        });
+        if (showToastOnManual) showToast('SSH keys refreshed', 'success');
+      } catch (e) {
+        setTableState(tbody, 4, 'error', e.message || String(e));
+        if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
+    async function loadSshKeyRequests() {
+      const tbody = document.getElementById('sshkey-requests-table');
+      if (!tbody) return;
+      try {
+        setTableState(tbody, 7, 'loading', 'Loading…');
+        const r = await fetch('/sshkeys/deploy-requests', { credentials: 'include' });
+        if (!r.ok) throw new Error(`requests failed (${r.status})`);
+        const d = await r.json();
+        const items = d?.items || [];
+        if (!items.length) {
+          setTableState(tbody, 7, 'empty', 'No requests');
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const it of items) {
+          const tr = document.createElement('tr');
+          const sudoMode = String(it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none'));
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(formatShortTime(it.created_at))}</td>
+            <td><code>${escapeHtml(String(it.key_id || '')).slice(0,8)}</code></td>
+            <td>${escapeHtml(String((it.agent_ids||[]).length))}</td>
+            <td>${escapeHtml(sudoMode)}</td>
+            <td>${escapeHtml(it.status || '')}</td>
+            <td>${escapeHtml(it.approved_by || '')}</td>
+            <td class="status-error">${escapeHtml(it.error || '')}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+      } catch (e) {
+        setTableState(tbody, 7, 'error', e.message || String(e));
+      }
+    }
+
+    async function loadAdminSshKeys() {
+      const panel = document.getElementById('sshkey-admin-keys');
+      const tbody = document.getElementById('sshkey-admin-keys-table');
+      if (!panel || !tbody) return;
+
+      const isAdmin = (currentPermissions && String(currentPermissions.role||'').toLowerCase() === 'admin') || !!currentPermissions.can_manage_users;
+      if (!isAdmin) {
+        panel.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'block';
+
+      try {
+        setTableState(tbody, 5, 'loading', 'Loading…');
+        const r = await fetch('/sshkeys/admin/keys', { credentials: 'include' });
+        if (!r.ok) throw new Error(`admin keys failed (${r.status})`);
+        const d = await r.json();
+        const items = d?.items || [];
+        if (!items.length) {
+          setTableState(tbody, 5, 'empty', 'No keys');
+          return;
+        }
+        tbody.innerHTML = '';
+        for (const k of items) {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(formatShortTime(k.created_at))}</td>
+            <td>${escapeHtml(k.user_name || String(k.user_id||'').slice(0,8))}</td>
+            <td>${escapeHtml(k.name || '')}</td>
+            <td><code>${escapeHtml(k.fingerprint || '')}</code></td>
+            <td style="max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><code>${escapeHtml(k.public_key || '')}</code></td>
+          `;
+          tbody.appendChild(tr);
+        }
+      } catch (e) {
+        setTableState(tbody, 5, 'error', e.message || String(e));
+      }
+    }
+
+    async function maybeLoadSshKeyAdminQueue() {
+      const panel = document.getElementById('sshkey-admin-approvals');
+      const tbody = document.getElementById('sshkey-admin-table');
+      if (!panel || !tbody) return;
+      // Only show for admin users
+      const isAdmin = (currentPermissions && String(currentPermissions.role||'').toLowerCase() === 'admin') || !!currentPermissions.can_manage_users;
+      if (!isAdmin) {
+        panel.style.display = 'none';
+        const indicator = document.getElementById('sshkeys-approval-indicator');
+        if (indicator) indicator.style.display = 'none';
+        return;
+      }
+      panel.style.display = 'block';
+      try {
+        const r = await fetch('/sshkeys/admin/deploy-requests', { credentials: 'include' });
+        if (!r.ok) throw new Error(`admin queue failed (${r.status})`);
+        const d = await r.json();
+        const items = d?.items || [];
+
+        const indicator = document.getElementById('sshkeys-approval-indicator');
+        if (indicator) indicator.style.display = items.length ? 'inline' : 'none';
+
+        if (!items.length) {
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;" class="status-muted">No pending approvals</td></tr>';
+          return;
+        }
+        tbody.innerHTML = '';
+
+        const itemsById = new Map();
+        for (const it of items) itemsById.set(String(it.id), it);
+
+        const targetsLabel = (it) => {
+          const targets = it.targets || (it.agent_ids || []).map(aid => ({ agent_id: String(aid), hostname: String(aid) }));
+          const names = targets.map(t => t.hostname || t.agent_id).filter(Boolean);
+          const preview = names.slice(0, 3).join(', ');
+          const more = names.length > 3 ? ` (+${names.length - 3} more)` : '';
+          return { text: preview + more, title: names.join('\n') };
+        };
+
+        for (const it of items) {
+          const tr = document.createElement('tr');
+          const t = targetsLabel(it);
+          const sudoMode = String(it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none'));
+          tr.innerHTML = `
+            <td class="status-muted">${escapeHtml(formatShortTime(it.created_at))}</td>
+            <td>${escapeHtml(it.user_name || String(it.user_id||'').slice(0,8))}</td>
+            <td><code>${escapeHtml(String(it.key_name||'') || String(it.key_id||'').slice(0,8))}</code></td>
+            <td title="${escapeHtml(t.title)}">${escapeHtml(t.text || String((it.agent_ids||[]).length))}</td>
+            <td>${escapeHtml(sudoMode)}</td>
+            <td style="text-align:right;white-space:nowrap;">
+              <button class="btn" data-view-id="${escapeHtml(it.id)}">Details</button>
+              <button class="btn btn-primary" data-approve-id="${escapeHtml(it.id)}">Approve</button>
+              <button class="btn" data-reject-id="${escapeHtml(it.id)}">Reject</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        tbody.querySelectorAll('button[data-view-id]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-view-id');
+            const it = itemsById.get(String(id));
+            if (!it) return;
+            openSshKeyDeployApprovalModal(it);
+          });
+        });
+
+        tbody.querySelectorAll('button[data-approve-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-approve-id');
+            if (!id) return;
+
+            const it = itemsById.get(String(id));
+            if (it) {
+              const t = targetsLabel(it);
+              const keyShort = (String(it.key_id||'')).slice(0,8);
+              const keyLabel = (String(it.key_name||'').trim()) ? `${it.key_name} (${keyShort})` : keyShort;
+              const sudoMode = it.sudo_mode || (it.grant_sudo ? 'restricted' : 'none');
+              const revokeWarning = (String(sudoMode).toLowerCase() === 'none')
+                ? '\n\n⚠ No sudo will remove existing Fleet sudoers entry and sudo/wheel group access for this user on target hosts.'
+                : '';
+              const ok = confirm(`Approve deployment request?\n\nRequested by: ${it.user_name || it.user_id}\nKey: ${keyLabel}\nSudo mode: ${sudoMode}\nTargets:\n${t.title}${revokeWarning}`);
+              if (!ok) return;
+            }
+
+            const r2 = await fetch(`/sshkeys/admin/deploy-requests/${encodeURIComponent(id)}/approve`, { method: 'POST', credentials: 'include' });
+            const raw = await r2.text();
+            let data = null;
+            try { data = raw ? JSON.parse(raw) : null; } catch { }
+            if (!r2.ok) {
+              const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (raw || 'Approve failed');
+              return showToast(msg, 'error');
+            }
+            if (data && String(data.status||'') === 'failed') {
+              showToast(data.error || 'Request marked failed', 'error');
+              maybeLoadSshKeyAdminQueue();
+              return;
+            }
+
+            // If backend returned a job_id, poll and show outcome so admins get immediate feedback.
+            const jobId = data && (data.job_id || data.jobId);
+            if (jobId) {
+              showToast('Approved (waiting for agent result)…', 'info', 4500);
+              try {
+                const waitFn = (window.phase3Ansible && typeof window.phase3Ansible.waitForJobDone === 'function')
+                  ? window.phase3Ansible.waitForJobDone
+                  : (window.pollJob ? window.pollJob : null);
+                if (!waitFn) throw new Error('Job wait helper is not available');
+                const res = await waitFn(String(jobId), 60000);
+                const runSummary = (res.runs || []).map(r => `${r.agent_id}: ${r.status}${r.exit_code != null ? ` (exit ${r.exit_code})` : ''}${r.error ? ` — ${r.error}` : ''}`).join('\n');
+                if (res.done && (res.runs || []).every(r => r.status === 'success')) {
+                  showToast('Deployment completed successfully', 'success', 5000);
+                } else if (res.done) {
+                  showToast('Deployment finished with errors (open Details)', 'error', 6000);
+                } else {
+                  showToast('Deployment still running (check Jobs/logs)', 'info', 6000);
+                }
+
+                // Also open the details modal with targets + job outcome.
+                const it2 = itemsById.get(String(id)) || it;
+                if (it2) {
+                  openSshKeyDeployApprovalModal({ ...it2, job: res, job_id: jobId, job_summary: runSummary });
+                }
+              } catch (err) {
+                showToast(err.message || String(err), 'error', 6000);
+              }
+            } else {
+              showToast('Approved', 'success');
+            }
+
+            maybeLoadSshKeyAdminQueue();
+            loadAdminSshKeys();
+          });
+        });
+        tbody.querySelectorAll('button[data-reject-id]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const id = btn.getAttribute('data-reject-id');
+            if (!id) return;
+            const r2 = await fetch(`/sshkeys/admin/deploy-requests/${encodeURIComponent(id)}/reject`, { method: 'POST', credentials: 'include' });
+            const raw = await r2.text();
+            let data = null;
+            try { data = raw ? JSON.parse(raw) : null; } catch { }
+            if (!r2.ok) {
+              const msg = (data && (data.detail || data.error)) ? (data.detail || data.error) : (raw || 'Reject failed');
+              return showToast(msg, 'error');
+            }
+            showToast('Rejected', 'success');
+            maybeLoadSshKeyAdminQueue();
+            loadAdminSshKeys();
+          });
+        });
+      } catch (e) {
+        const indicator = document.getElementById('sshkeys-approval-indicator');
+        if (indicator) indicator.style.display = 'none';
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;" class="status-error">${escapeHtml(e.message)}</td></tr>`;
+      }
+    }
+
+    async function copyTextWithFallback(text, selectableEl) {
+      const value = String(text || '');
+      if (!value) return false;
+
+      // Modern async clipboard API (requires secure context/permissions)
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(value);
+          return true;
+        }
+      } catch {}
+
+      // Legacy fallback for locked-down environments
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand && document.execCommand('copy');
+        ta.remove();
+        if (ok) return true;
+      } catch {}
+
+      if (selectableEl && typeof selectableEl.focus === 'function') {
+        selectableEl.focus();
+        if (typeof selectableEl.select === 'function') selectableEl.select();
+      }
+      return false;
+    }
+
+    function initAuditDetailModalControls() {
+      const modal = document.getElementById('audit-detail-modal');
+      const closeBtn = document.getElementById('audit-detail-modal-close');
+      const copyBtn = document.getElementById('audit-detail-modal-copy');
+      const outEl = document.getElementById('audit-detail-modal-output');
+      if (!modal) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'audit-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl ? (outEl.value || '') : '';
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
+          showToast('Copied', 'success');
+        } else {
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+    }
+
+    function initApprovalDetailModalControls() {
+      const modal = document.getElementById('approval-detail-modal');
+      const closeBtn = document.getElementById('approval-detail-modal-close');
+      const copyBtn = document.getElementById('approval-detail-modal-copy');
+      const outEl = document.getElementById('approval-detail-modal-output');
+      if (!modal) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'approval-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl ? (outEl.value || '') : '';
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
+          showToast('Copied', 'success');
+        } else {
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+    }
+
+    function initFailedRunDetailModalControls() {
+      const modal = document.getElementById('failed-run-detail-modal');
+      const closeBtn = document.getElementById('failed-run-detail-modal-close');
+      const copyBtn = document.getElementById('failed-run-detail-modal-copy');
+      const outEl = document.getElementById('failed-run-detail-modal-output');
+      const metaEl = document.getElementById('failed-run-detail-modal-meta');
+      if (!modal || !outEl) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'failed-run-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl.value || '';
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
+          showToast('Copied', 'success');
+        } else {
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+
+      window.openFailedRunDetailModal = (text, meta) => {
+        outEl.value = text || '';
+        if (metaEl) metaEl.textContent = meta || '';
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        modal.classList.add('open');
+        setTimeout(() => { try { outEl.focus(); } catch { } }, 0);
+      };
+    }
+
+    function initApprovalsFilterControls() {
+      const ids = ['approvals-filter-action', 'approvals-filter-requester', 'approvals-filter-age', 'approvals-filter-mode', 'approvals-filter-sort'];
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const evt = (id === 'approvals-filter-action' || id === 'approvals-filter-requester') ? 'input' : 'change';
+        el.addEventListener(evt, () => { loadAdminApprovals(false); });
+      });
+
+      const dedupeKind = document.getElementById('dedupe-filter-kind');
+      const dedupeMinutes = document.getElementById('dedupe-filter-minutes');
+      dedupeKind?.addEventListener('input', () => { loadAdminNotificationDedupe(false); });
+      dedupeMinutes?.addEventListener('change', () => { loadAdminNotificationDedupe(false); });
+    }
+
+    function initHostActionControls() {
+      const mod = window.phase3HostActions;
+      if (mod && typeof mod.initHostActionControls === 'function') {
+        return mod.initHostActionControls({ showServerInfo, showTerminal, showUsers, showServices, showPackages });
+      }
+    }
+
+    function initHostMetadataEditor() {
+      const mod = window.phase3HostActions;
+      if (mod && typeof mod.initHostMetadataEditor === 'function') {
+        return mod.initHostMetadataEditor({
+          getCurrentAgentId: () => currentAgentId,
+          onMetadataSaved: (updatedHost) => {
+            if (!updatedHost || !updatedHost.agent_id) return;
+            const idx = (allHosts || []).findIndex(h => h.agent_id === updatedHost.agent_id);
+            if (idx >= 0) {
+              const prev = allHosts[idx] || {};
+              allHosts[idx] = { ...prev, hostname: updatedHost.hostname || prev.hostname, labels: updatedHost.labels || prev.labels || {} };
+            }
+
+            if (String(currentAgentId || '') === String(updatedHost.agent_id || '')) {
+              const labelsEl = document.getElementById('server-info-labels');
+              if (labelsEl) {
+                const labels = (updatedHost.labels && typeof updatedHost.labels === 'object') ? updatedHost.labels : {};
+                const envVars = (labels.env_vars && typeof labels.env_vars === 'object') ? labels.env_vars : {};
+                const env = labels.env ? String(labels.env) : (envVars.env ? String(envVars.env) : '');
+                const role = labels.role ? String(labels.role) : '';
+                const parts = [];
+                if (env) parts.push(`<span class="label-badge">env: <code>${escapeHtml(env)}</code></span>`);
+                if (role) parts.push(`<span class="label-badge">role: <code>${escapeHtml(role)}</code></span>`);
+                labelsEl.innerHTML = parts.length ? parts.join('') : `<span class="label-badge">env: <code>n/a</code></span><span class="label-badge">role: <code>n/a</code></span>`;
+              }
+
+              const headerNameEl = document.getElementById('server-info-hostname');
+              if (headerNameEl && updatedHost.hostname) headerNameEl.textContent = String(updatedHost.hostname);
+            }
+
+            rebuildLabelFilterOptions(allHosts);
+            applyHostFilters();
+          }
+        });
+      }
+    }
+
+    function getSshUiCtx() {
+      return {
+        loadSshKeys,
+        maybeLoadSshKeyAdminQueue,
+        loadAdminSshKeys,
+        loadAdminUsers,
+        loadAdminOidcEvents,
+        loadAdminApprovals,
+        loadAdminNotificationDedupe,
+        loadAdminAudit,
+        setSshHostsPanelVisible,
+        renderSshHostsList,
+        getSshSelectedAgentIds,
+        setSshSelectedAgentIds,
+        getSshSelectedKeyId,
+        loadSshKeyRequests,
+        getAllHosts: () => allHosts,
+      };
+    }
+
+    function initSshKeysControls() {
+      const mod = window.phase3SshUi;
+      if (mod && typeof mod.initSshKeysControls === 'function') {
+        return mod.initSshKeysControls(getSshUiCtx());
+      }
+    }
+
+    function getAnsibleCtx() {
+      return {
+        getAnsiblePlaybooks: () => ansiblePlaybooks,
+        setAnsiblePlaybooks: (v) => { ansiblePlaybooks = Array.isArray(v) ? v : []; return ansiblePlaybooks; },
+        getSelectedAgentIds: () => selectedAgentIds,
+        getLastRenderedAgentIds: () => lastRenderedAgentIds,
+        getCurrentAgentId: () => currentAgentId,
+      };
+    }
+
+    function initAnsibleSection() {
+      const mod = window.phase3Ansible;
+      if (mod && typeof mod.initAnsibleSection === 'function') {
+        return mod.initAnsibleSection(getAnsibleCtx());
+      }
+    }
+
+    function initGlobalSearch() {
+      const globalSearchEl = document.getElementById('global-search');
+      if (!globalSearchEl) return;
+
+      let timer = null;
+      const runSearch = () => {
+        const query = String(globalSearchEl.value || '').trim();
+        const navHosts = document.getElementById('nav-hosts');
+        const hostSearchEl = document.getElementById('host-search');
+        if (!hostSearchEl) return;
+
+        if (navHosts) navHosts.click();
+        hostSearchEl.value = query;
+        hostSearchEl.dispatchEvent(new Event('input', { bubbles: true }));
+        hostSearchEl.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+
+      globalSearchEl.addEventListener('input', () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(runSearch, 180);
+      });
+
+      globalSearchEl.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        runSearch();
+      });
+    }
+
+    function initReportsControls() {
+      const btn = document.getElementById('reports-user-presence-open');
+      if (!btn) return;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const u = String(document.getElementById('reports-user-presence-username')?.value || '').trim();
+        const exact = !!document.getElementById('reports-user-presence-exact')?.checked;
+        const liveScan = !!document.getElementById('reports-user-presence-live')?.checked;
+        if (!u) {
+          if (typeof showToast === 'function') showToast('Enter username', 'error');
+          return;
+        }
+        const qs = new URLSearchParams({ username: u, exact: String(exact), live_scan: String(liveScan) }).toString();
+        window.open(`/reports/user-presence.html?${qs}`, '_blank', 'noopener');
+      });
+    }
+
+// Load hosts on page load
+    function safeInit(name, fn) {
+      try { if (typeof fn === 'function') fn(); }
+      catch (e) { console.error('[init failed]', name, e); }
+    }
+
+    // Load auth state first so header + MFA flow are not blocked by later init errors.
+    loadAuthInfo().catch((e) => console.error('[loadAuthInfo failed]', e));
+
+    safeInit('initHostFilters', initHostFilters);
+    safeInit('initGlobalSearch', initGlobalSearch);
+    safeInit('initReportsControls', initReportsControls);
+    safeInit('initFleetOverviewControls', initFleetOverviewControls);
+    safeInit('initHostsTableControls', initHostsTableControls);
+    safeInit('initCronjobsControls', initCronjobsControls);
+    safeInit('initSshKeysControls', initSshKeysControls);
+    safeInit('initLoadTimeframeControls', initLoadTimeframeControls);
+    safeInit('initPackagesSearch', initPackagesSearch);
+    safeInit('initAdminPanel', initAdminPanel);
+    safeInit('initRbacExplain', initRbacExplain);
+    safeInit('initOidcMapPreview', initOidcMapPreview);
+    safeInit('initThemeToggle', initThemeToggle);
+    safeInit('initSettingsMenu', initSettingsMenu);
+    safeInit('initHostActionControls', initHostActionControls);
+    safeInit('initHostMetadataEditor', initHostMetadataEditor);
+    safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
+    safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
+    safeInit('initFailedRunDetailModalControls', initFailedRunDetailModalControls);
+    safeInit('initApprovalsFilterControls', initApprovalsFilterControls);
+    safeInit('bindDiskCardClick', () => {
+      const diskCard = document.getElementById('disk-card');
+      if (!diskCard) return;
+      diskCard.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (!currentAgentId) return;
+        openDiskModal(currentAgentId);
+      });
+    });
+    safeInit('bindDiskModalClose', () => {
+      document.getElementById('disk-modal-close')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (typeof closeDiskModal === 'function') closeDiskModal();
+      });
+      document.getElementById('disk-modal')?.addEventListener('click', (e) => {
+        if (e.target && e.target.id === 'disk-modal' && typeof closeDiskModal === 'function') closeDiskModal();
+      });
+    });
+    safeInit('initTerminalOnce', initTerminalOnce);
+    safeInit('attachTerminalInputHandlerOnce', attachTerminalInputHandlerOnce);
+    safeInit('initTerminalPendingCmdButton', () => {
+      const btn = document.getElementById('terminal-run-pending-cmd');
+      if (btn) btn.addEventListener('click', (e) => { e.preventDefault(); runPendingInteractivePackageCommand(); });
+      updateTerminalPendingCmdButton();
+    });
+    safeInit('initAnsibleSection', initAnsibleSection);
+    safeInit('bindAnsibleOpenFallback', () => {
+      const btn = document.getElementById('ansible-open');
+      const sel = document.getElementById('ansible-playbook');
+      const status = document.getElementById('ansible-status');
+      if (!btn || btn.dataset.boundAnsibleOpenFallback === '1') return;
+      btn.addEventListener('click', (e) => {
+        const mod = window.phase3Ansible;
+        if (!mod || typeof mod.openAnsibleModal !== 'function') return;
+        e.preventDefault();
+        const pb = sel ? (sel.value || '') : '';
+        if (!pb) {
+          if (status) status.textContent = 'Select playbook first.';
+          return;
+        }
+        mod.openAnsibleModal(getAnsibleCtx(), pb);
+      });
+      btn.dataset.boundAnsibleOpenFallback = '1';
+    });
+    safeInit('initTimelineFilters', initTimelineFilters);
+
+    safeInit('initCommonModalDismissHandlers', () => {
+      const hostActionsMod = window.phase3HostActions;
+      if (hostActionsMod && typeof hostActionsMod.initCommonModalDismissHandlers === 'function') {
+        hostActionsMod.initCommonModalDismissHandlers({
+          getCurrentMetricsAgentId: () => metricsLifecycleState.get('currentMetricsAgentId'),
+          openDiskModal,
+          closeDiskModal,
+          closeServiceModal,
+          closeUserModal,
+        });
+      }
+    });
+    const HOSTS_REFRESH_MS = 5000;
+    let hostsRefreshTimer = null;
+
+    function startHostRefresh() {
+      if (hostsRefreshTimer) return;
+      hostsRefreshTimer = setInterval(loadHosts, HOSTS_REFRESH_MS);
+    }
+
+    void loadHosts().catch((e) => {
+      console.error('[loadHosts failed]', e);
+      const hostsEl = document.getElementById('hosts');
+      if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
+    });
+
+    // Watchdog: never let hosts panel stay in perpetual loading state.
+    setTimeout(() => {
+      const hostsEl = document.getElementById('hosts');
+      if (!hostsEl) return;
+      const txt = (hostsEl.textContent || '').trim().toLowerCase();
+      if (txt.includes('loading hosts')) {
+        console.warn('[hosts-watchdog] still loading after 10s; forcing inline fallback');
+        hostsEl.innerHTML = '<div class="error">Hosts view was stuck loading. Retrying…</div>';
+        void loadHosts().catch((e) => {
+          hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
+        });
+      }
+    }, 10000);
+
+    void loadFleetOverview();
+    void refreshApprovalsIndicator();
+    startHostRefresh();
+    setInterval(() => { void loadFleetOverview(); }, 15000);
+    setInterval(() => { void refreshApprovalsIndicator(); }, 60000);
+  </script>
+</body>
+
+</html>
