@@ -158,6 +158,33 @@ async function loadAdminUsers(showToastOnManual = false) {
       });
     });
 
+    tbody.querySelectorAll('button[data-user-remove-enhanced]').forEach(btn => {
+      if (btn.dataset.removeBaseBound === '1') return;
+      btn.dataset.removeBaseBound = '1';
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const uname = btn.getAttribute('data-user-remove-enhanced') || '';
+        if (!uname) return;
+        const ok = confirm(`Permanently remove user '${uname}'?\n\nThis deletes the account and revokes sessions. This cannot be undone.`);
+        if (!ok) return;
+        try {
+          const r2 = await fetch(`/auth/users/${encodeURIComponent(uname)}/remove`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+          });
+          const raw2 = await r2.text();
+          let d2 = null; try { d2 = raw2 ? JSON.parse(raw2) : null; } catch {}
+          if (!r2.ok) throw new Error((d2 && (d2.detail || d2.error)) || raw2 || 'remove failed');
+          showToast(`User '${uname}' removed`, 'success');
+          loadAdminUsers();
+          loadAdminAudit();
+        } catch (err) {
+          showToast(err.message || String(err), 'error', 5000);
+        }
+      });
+    });
+
     if (showToastOnManual) showToast('Users refreshed', 'success');
   } catch (e) {
     setTableState(tbody, 6, 'error', e.message || String(e));
