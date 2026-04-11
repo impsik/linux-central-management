@@ -29,6 +29,7 @@
   <script src="/assets/fleet-phase3-metrics.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-overview.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-packages.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-reports.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-host-actions.js?v=__ASSET_VERSION__"></script>
   <link rel="stylesheet" href="/assets/index-MnFIflNy.css?v=__ASSET_VERSION__" />
   <link rel="stylesheet" href="/assets/fleet-ui.css?v=__ASSET_VERSION__" />
@@ -3379,23 +3380,6 @@ __PARTIAL_MODALS__
         if (e.key !== 'Enter') return;
         e.preventDefault();
         runSearch();
-      });
-    }
-
-    function initReportsControls() {
-      const btn = document.getElementById('reports-user-presence-open');
-      if (!btn) return;
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const u = String(document.getElementById('reports-user-presence-username')?.value || '').trim();
-        const exact = !!document.getElementById('reports-user-presence-exact')?.checked;
-        const liveScan = !!document.getElementById('reports-user-presence-live')?.checked;
-        if (!u) {
-          if (typeof showToast === 'function') showToast('Enter username', 'error');
-          return;
-        }
-        const qs = new URLSearchParams({ username: u, exact: String(exact), live_scan: String(liveScan) }).toString();
-        window.open(`/reports/user-presence.html?${qs}`, '_blank', 'noopener');
       });
     }
 
