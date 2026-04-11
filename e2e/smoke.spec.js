@@ -202,3 +202,46 @@ test('admin can filter hosts by owner in the hosts view', async ({ page }) => {
   await expect(page.locator('#hosts-table-body')).toContainText('ci-alice-host');
   await expect(page.locator('#hosts-table-body')).not.toContainText('ci-bob-host');
 });
+
+test('admin can assign owner scope and scoped user visibility follows it', async ({ browser }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  const username = `pw-owner-${Date.now()}`;
+  const password = 'pw-owner-pass-123';
+  const adminPage = await browser.newPage();
+  const scopedPage = await browser.newPage();
+
+  try {
+    await loginAs(adminPage, ADMIN_USERNAME, ADMIN_PASSWORD);
+    await adminPage.locator('#settings-btn').click();
+    await adminPage.locator('#admin-menu-item').click();
+    await expect(adminPage.locator('#admin-tab')).toHaveClass(/active/);
+
+    await adminPage.locator('#register-username').fill(username);
+    await adminPage.locator('#register-password').fill(password);
+    await adminPage.locator('#register-role').selectOption('readonly');
+    await adminPage.locator('#register-user-btn').click();
+    await expect(adminPage.locator('#admin-users-table')).toContainText(username, { timeout: 10000 });
+
+    const ownerInput = adminPage.locator(`[data-owner-scope-input="${username}"]`);
+    await expect(ownerInput).toBeVisible({ timeout: 10000 });
+    await ownerInput.fill('bob');
+    await adminPage.locator(`[data-owner-scope-save="${username}"]`).click();
+    await expect(adminPage.locator(`[data-owner-scope-status="${username}"]`)).toContainText('Restricted to owner: bob', { timeout: 10000 });
+
+    await loginAs(scopedPage, username, password);
+    await expect(scopedPage.locator('#hosts .host-item')).toContainText('ci-bob-host', { timeout: 15000 });
+    await expect(scopedPage.locator('#hosts .host-item')).not.toContainText('ci-alice-host');
+    await scopedPage.locator('#nav-hosts').click();
+    await expect(scopedPage.locator('#hosts-visible-counter')).toContainText('1 / 1', { timeout: 10000 });
+    await expect(scopedPage.locator('#hosts-table-body')).toContainText('ci-bob-host');
+    await expect(scopedPage.locator('#hosts-table-body')).not.toContainText('ci-alice-host');
+
+    adminPage.once('dialog', (dialog) => dialog.accept());
+    await adminPage.locator(`[data-user-remove-enhanced="${username}"]`).click();
+    await expect(adminPage.locator('#admin-users-table')).not.toContainText(username, { timeout: 10000 });
+  } finally {
+    await scopedPage.close();
+    await adminPage.close();
+  }
+});

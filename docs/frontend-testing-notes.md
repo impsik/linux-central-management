@@ -34,6 +34,7 @@
     - owner-scoped user can request SSH key deploy and admin can review/reject it
     - admin can create and cancel a one-time cronjob for a seeded host
     - admin can filter hosts by owner in the hosts view
+    - admin can assign owner scope and scoped user visibility follows it
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:
