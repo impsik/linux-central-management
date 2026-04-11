@@ -1,0 +1,102 @@
+    <div class="tab-content-custom" id="cronjobs-tab">
+      <div class="admin-content">
+        <div class="section-title">Cronjobs</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">One-shot scheduled actions (safe mode). Runs as the agent job type (e.g. dist-upgrade uses sudo on the host).</div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Create cronjob</div>
+          <div class="admin-card-body">
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;">
+              <div style="min-width:220px;flex:1;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Name (optional)</label>
+                <input id="cron-name" class="host-search" type="text" placeholder="e.g. weekly dist-upgrade" />
+              </div>
+              <div style="min-width:220px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Run at (your local time)</label>
+                <input id="cron-run-at" class="host-search" type="datetime-local" />
+              </div>
+              <div style="min-width:220px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Schedule</label>
+                <select id="cron-schedule-kind" class="host-search">
+                  <option value="once" selected>Once</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div style="min-width:220px;display:none;" id="cron-weekday-wrap">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Weekday</label>
+                <select id="cron-weekday" class="host-search">
+                  <option value="0">Mon</option><option value="1">Tue</option><option value="2">Wed</option><option value="3">Thu</option><option value="4">Fri</option><option value="5">Sat</option><option value="6">Sun</option>
+                </select>
+              </div>
+              <div style="min-width:220px;display:none;" id="cron-dom-wrap">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Day of month</label>
+                <input id="cron-day-of-month" class="host-search" type="number" min="1" max="31" placeholder="12" />
+              </div>
+              <div style="min-width:220px;display:none;" id="cron-time-wrap">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Time</label>
+                <input id="cron-time" class="host-search" type="time" />
+              </div>
+
+              <div style="min-width:220px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Action</label>
+                <select id="cron-action" class="host-search">
+                  <option value="dist-upgrade" selected>dist-upgrade</option>
+                  <option value="inventory-now">inventory-now</option>
+                  <option value="security-campaign">security campaign</option>
+                </select>
+              </div>
+              <button class="btn" id="cron-hosts-open" type="button">Choose hosts…</button>
+              <button class="btn btn-primary" id="cron-create" type="button">Create (selected hosts)</button>
+              <span id="cron-create-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-card" id="cron-hosts-panel" style="display:none;margin-bottom:1rem;">
+          <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <span>Select hosts for this cronjob</span>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+              <button class="btn" id="cron-hosts-select-all" type="button">Select all</button>
+              <button class="btn" id="cron-hosts-select-none" type="button">Select none</button>
+              <button class="btn" id="cron-hosts-close" type="button">Hide</button>
+            </div>
+          </div>
+          <div class="admin-card-body">
+            <div class="admin-note" style="margin-top:-0.25rem;">This selection is only for cronjobs (independent of the Hosts tab checkboxes).</div>
+            <div class="input-with-clear" style="max-width:520px;">
+              <input id="cron-hosts-search" class="host-search" type="text" placeholder="Filter hosts (name, id, IP)…" />
+              <button class="clear-btn" id="cron-hosts-search-clear" type="button" aria-label="Clear filter">×</button>
+            </div>
+            <div id="cron-hosts-list" style="margin-top:0.75rem;max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);padding:0.5rem;"></div>
+            <div style="margin-top:0.5rem;color:var(--muted-2);font-size:0.9rem;">Selected: <span id="cron-hosts-count">0</span></div>
+          </div>
+        </div>
+<div class="admin-card">
+          <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <span>My cronjobs</span>
+            <button class="btn" id="cron-refresh" type="button">Reload</button>
+          </div>
+          <div class="admin-card-body">
+            <div style="overflow-x:auto;">
+              <table class="process-table" style="min-width:900px;">
+                <thead>
+                  <tr>
+                    <th>Run at</th>
+                    <th>Name</th>
+                    <th>Action</th>
+                    <th>Targets</th>
+                    <th>Status</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="cronjobs-table">
+                  <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
