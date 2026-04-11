@@ -33,6 +33,7 @@
     - admin can create and remove a user from the admin panel
     - owner-scoped user can request SSH key deploy and admin can review/reject it
     - admin can create and cancel a one-time cronjob for a seeded host
+    - admin can filter hosts by owner in the hosts view
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:

@@ -183,3 +183,22 @@ test('admin can create and cancel a one-time cronjob for a seeded host', async (
   await cronRow.locator('button[data-cancel-id]').click();
   await expect(page.locator('#cronjobs-table')).not.toContainText(cronName, { timeout: 10000 });
 });
+
+test('admin can filter hosts by owner in the hosts view', async ({ page }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  await loginAs(page, ADMIN_USERNAME, ADMIN_PASSWORD);
+  await expect(page.locator('#hosts .host-item')).toContainText('ci-alice-host', { timeout: 15000 });
+  await expect(page.locator('#hosts .host-item')).toContainText('ci-bob-host', { timeout: 15000 });
+
+  await page.locator('#nav-hosts').click();
+  await expect(page.locator('#hosts-table-tab')).toHaveClass(/active/);
+  await expect(page.locator('#label-owner')).toBeVisible({ timeout: 10000 });
+  await page.locator('#label-owner').selectOption('alice');
+
+  await expect(page.locator('#hosts-visible-counter')).toContainText('1 / 2', { timeout: 10000 });
+  await expect(page.locator('#hosts')).toContainText('ci-alice-host');
+  await expect(page.locator('#hosts')).not.toContainText('ci-bob-host');
+  await expect(page.locator('#hosts-table-body')).toContainText('ci-alice-host');
+  await expect(page.locator('#hosts-table-body')).not.toContainText('ci-bob-host');
+});
