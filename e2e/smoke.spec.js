@@ -104,6 +104,13 @@ test('admin can create and remove a user from admin panel', async ({ page }) => 
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator(`[data-user-remove-enhanced="${username}"]`).click();
   await expect(page.locator('#admin-users-table')).not.toContainText(username, { timeout: 10000 });
+
+  const usersPayload = await page.evaluate(async () => {
+    const resp = await fetch('/auth/admin/users', { credentials: 'include' });
+    return await resp.json();
+  });
+  const usernames = Array.isArray(usersPayload?.items) ? usersPayload.items.map((it) => String(it?.username || '')) : [];
+  expect(usernames).not.toContain(username);
 });
 
 test('ssh key deploy request can be reviewed and rejected by admin', async ({ browser }) => {

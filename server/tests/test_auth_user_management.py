@@ -57,6 +57,11 @@ def test_admin_can_remove_user(monkeypatch):
         assert resp.status_code == 200, resp.text
         assert resp.json()['removed'] is True
 
+        users_after = client.get('/auth/admin/users')
+        assert users_after.status_code == 200, users_after.text
+        usernames_after = [str((it or {}).get('username') or '') for it in users_after.json().get('items', [])]
+        assert 'tarmo' not in usernames_after
+
         db_mod = importlib.import_module('app.db')
         models = importlib.import_module('app.models')
         with db_mod.SessionLocal() as db:
