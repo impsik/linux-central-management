@@ -37,10 +37,10 @@ describe('index shell integrity', () => {
     expect(src).toContain('__PARTIAL_USERS_TAB__');
     expect(src).toContain('__PARTIAL_TERMINAL_TAB__');
     expect(src).toContain('id="nav-overview"');
-    expect(src).toContain('safeInit(');
     expect(src).toContain('bootPhase3AppShell()');
     expect(src).toContain('/assets/fleet-phase3-contexts.js');
     expect(src).toContain('/assets/fleet-phase3-reports.js');
+    expect(src).toContain('/assets/fleet-phase3-shell-utils.js');
 
     expect(headerPartial).toContain('id="settings-btn"');
     expect(headerPartial).toContain('id="current-user"');

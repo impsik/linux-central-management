@@ -15,6 +15,7 @@
   <script src="/assets/fleet-phase3-auth-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-settings-menu.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-admin-users.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-shell-utils.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -3354,41 +3355,7 @@ __PARTIAL_MODALS__
       }
     }
 
-    function initGlobalSearch() {
-      const globalSearchEl = document.getElementById('global-search');
-      if (!globalSearchEl) return;
-
-      let timer = null;
-      const runSearch = () => {
-        const query = String(globalSearchEl.value || '').trim();
-        const navHosts = document.getElementById('nav-hosts');
-        const hostSearchEl = document.getElementById('host-search');
-        if (!hostSearchEl) return;
-
-        if (navHosts) navHosts.click();
-        hostSearchEl.value = query;
-        hostSearchEl.dispatchEvent(new Event('input', { bubbles: true }));
-        hostSearchEl.dispatchEvent(new Event('change', { bubbles: true }));
-      };
-
-      globalSearchEl.addEventListener('input', () => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(runSearch, 180);
-      });
-
-      globalSearchEl.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        runSearch();
-      });
-    }
-
 // Load hosts on page load
-    function safeInit(name, fn) {
-      try { if (typeof fn === 'function') fn(); }
-      catch (e) { console.error('[init failed]', name, e); }
-    }
-
     bootPhase3AppShell();
   </script>
 </body>
