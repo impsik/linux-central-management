@@ -26,6 +26,7 @@ async function loadAdminUsers(showToastOnManual = false) {
       const uname = String(u.username || '');
       const bootstrap = String(adminUsername || 'admin');
       const canToggleActive = !!(currentPermissions && currentPermissions.can_delete_app_users) && uname && uname !== bootstrap && uname !== currentUsername;
+      const canRemoveUser = !!(currentPermissions && currentPermissions.can_delete_app_users) && uname && uname !== bootstrap && uname !== currentUsername;
       const canResetMfa = !!(currentPermissions && currentPermissions.can_manage_users) && uname && uname !== currentUsername;
       const isActive = (u.active !== false);
 
@@ -39,6 +40,7 @@ async function loadAdminUsers(showToastOnManual = false) {
           <button class="btn" data-user-rbac-explain="${escapeHtml(uname)}" title="Explain host access for this user">Explain</button>
           <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
           <button class="btn" data-user-toggle-active="${escapeHtml(uname)}" data-user-active="${isActive ? '1' : '0'}" ${canToggleActive ? '' : 'disabled'} title="${canToggleActive ? (isActive ? 'Deactivate user' : 'Activate user') : 'Cannot change this user'}">${isActive ? 'Deactivate' : 'Activate'}</button>
+          <button class="btn btn-danger" data-user-remove-enhanced="${escapeHtml(uname)}" ${canRemoveUser ? '' : 'disabled'} title="${canRemoveUser ? 'Permanently remove this user' : 'Cannot remove this user'}">Remove</button>
         </td>
       `;
       tbody.appendChild(tr);

@@ -97,12 +97,9 @@
     return { wrap, input, btn, status };
   }
 
-  function buildRemoveButton(username, tr) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'btn btn-danger';
-    btn.textContent = 'Remove';
-    btn.setAttribute('data-user-remove-enhanced', username);
+  function wireRemoveButton(btn, username, tr) {
+    if (!btn || btn.dataset.removeEnhancedBound === '1') return btn;
+    btn.dataset.removeEnhancedBound = '1';
     btn.addEventListener('click', async (e) => {
       e.preventDefault();
       const ok = window.confirm(`Permanently remove user '${username}'?\n\nThis deletes the account and revokes sessions. This cannot be undone.`);
@@ -126,6 +123,15 @@
     return btn;
   }
 
+  function buildRemoveButton(username, tr) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-danger';
+    btn.textContent = 'Remove';
+    btn.setAttribute('data-user-remove-enhanced', username);
+    return wireRemoveButton(btn, username, tr);
+  }
+
   async function enhanceUserRow(tr) {
     if (!tr || tr.dataset.ownerScopeEnhanced === '1') return;
     const username = getUsernameFromRow(tr);
@@ -142,9 +148,9 @@
 
     const controls = buildControls(username);
     actionsCell.prepend(controls.wrap);
-    if (!actionsCell.querySelector(`[data-user-remove-enhanced="${CSS.escape(username)}"]`)) {
-      actionsCell.appendChild(buildRemoveButton(username, tr));
-    }
+    const existingRemoveBtn = actionsCell.querySelector(`[data-user-remove-enhanced="${CSS.escape(username)}"]`);
+    if (existingRemoveBtn) wireRemoveButton(existingRemoveBtn, username, tr);
+    else actionsCell.appendChild(buildRemoveButton(username, tr));
 
     try {
       controls.status.textContent = 'Loading…';
