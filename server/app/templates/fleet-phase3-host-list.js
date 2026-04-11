@@ -1,4 +1,6 @@
 (function (w) {
+  const shared = w.phase3Shared || {};
+
   function ensureOwnerFilterControl() {
     let ownerSel = document.getElementById('label-owner');
     if (ownerSel) return ownerSel;
@@ -60,9 +62,9 @@
     const vulnFilteredAgentIds = ctx.getVulnFilteredAgentIds();
     if (vulnFilteredAgentIds) filtered = filtered.filter(h => vulnFilteredAgentIds.has(h.agent_id));
 
-    const labelEnvFilter = (typeof ctx.getLabelEnvFilter === 'function') ? ctx.getLabelEnvFilter() : '';
-    const labelRoleFilter = (typeof ctx.getLabelRoleFilter === 'function') ? ctx.getLabelRoleFilter() : '';
-    const labelOwnerFilter = (typeof ctx.getLabelOwnerFilter === 'function') ? ctx.getLabelOwnerFilter() : '';
+    const labelEnvFilter = (typeof shared.getCtxString === 'function') ? shared.getCtxString(ctx, 'getLabelEnvFilter', '') : ((typeof ctx.getLabelEnvFilter === 'function') ? ctx.getLabelEnvFilter() : '');
+    const labelRoleFilter = (typeof shared.getCtxString === 'function') ? shared.getCtxString(ctx, 'getLabelRoleFilter', '') : ((typeof ctx.getLabelRoleFilter === 'function') ? ctx.getLabelRoleFilter() : '');
+    const labelOwnerFilter = (typeof shared.getCtxString === 'function') ? shared.getCtxString(ctx, 'getLabelOwnerFilter', '') : ((typeof ctx.getLabelOwnerFilter === 'function') ? ctx.getLabelOwnerFilter() : '');
     if (labelEnvFilter) filtered = filtered.filter(h => (w.hostLabel(h, 'env') || '') === labelEnvFilter);
     if (labelRoleFilter) filtered = filtered.filter(h => (w.hostLabel(h, 'role') || '') === labelRoleFilter);
     if (labelOwnerFilter) filtered = filtered.filter(h => (w.hostLabel(h, 'owner') || '') === labelOwnerFilter);

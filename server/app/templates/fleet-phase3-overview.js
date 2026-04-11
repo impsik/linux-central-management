@@ -1,4 +1,6 @@
 (function (w) {
+  const shared = w.phase3Shared || {};
+
   function formatDateSafe(value) {
     if (!value) return '–';
     const d = new Date(value);
@@ -6,6 +8,7 @@
   }
 
   function formatShortTimeSafe(ctx, value) {
+    if (typeof shared.formatShortTimeSafe === 'function') return shared.formatShortTimeSafe(ctx, value);
     if (ctx && typeof ctx.formatShortTime === 'function') return ctx.formatShortTime(value);
     if (typeof w.formatShortTime === 'function') return w.formatShortTime(value);
     return formatDateSafe(value);
