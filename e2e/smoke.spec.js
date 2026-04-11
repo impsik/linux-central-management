@@ -408,3 +408,24 @@ test('admin can reset another user password from admin panel', async ({ browser 
     await adminPage.close();
   }
 });
+
+test('reports tab exposes export links and opens user presence report', async ({ page }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  await loginAs(page, ADMIN_USERNAME, ADMIN_PASSWORD);
+  await page.locator('#nav-reports').click();
+  await expect(page.locator('#reports-tab')).toHaveClass(/active/);
+
+  const reportLinks = page.locator('#reports-tab a');
+  await expect(reportLinks.filter({ hasText: 'Open HTML report' }).first()).toHaveAttribute('href', '/reports/hosts-updates.html');
+  await expect(reportLinks.filter({ hasText: 'Download Excel (.xlsx)' })).toHaveAttribute('href', '/reports/hosts-updates.xlsx');
+  await expect(reportLinks.filter({ hasText: 'Export SLO CSV' })).toHaveAttribute('href', '/dashboard/slo.csv?hours=24&bucket_hours=6');
+
+  await page.locator('#reports-user-presence-username').fill('alice');
+  const popupPromise = page.waitForEvent('popup');
+  await page.locator('#reports-user-presence-open').click();
+  const popup = await popupPromise;
+  await popup.waitForLoadState('domcontentloaded');
+  await expect(popup).toHaveURL(/\/reports\/user-presence\.html\?username=alice&exact=true&live_scan=false/);
+  await popup.close();
+});

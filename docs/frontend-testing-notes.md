@@ -38,6 +38,7 @@
     - user can change their own password from the settings menu
     - admin can deactivate and reactivate a user from the admin panel
     - admin can reset another user password from the admin panel
+    - reports tab exposes export links and opens the user presence report
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:
