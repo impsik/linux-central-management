@@ -3252,14 +3252,19 @@ __PARTIAL_MODALS__
     function initHostActionControls() {
       const mod = window.phase3HostActions;
       if (mod && typeof mod.initHostActionControls === 'function') {
-        return mod.initHostActionControls({ showServerInfo, showTerminal, showUsers, showServices, showPackages });
+        const ctxDeps = { showServerInfo, showTerminal, showUsers, showServices, showPackages };
+        const ctxMod = window.phase3Contexts;
+        const ctx = (ctxMod && typeof ctxMod.createHostActionControlsCtx === 'function')
+          ? ctxMod.createHostActionControlsCtx(ctxDeps)
+          : ctxDeps;
+        return mod.initHostActionControls(ctx);
       }
     }
 
     function initHostMetadataEditor() {
       const mod = window.phase3HostActions;
       if (mod && typeof mod.initHostMetadataEditor === 'function') {
-        return mod.initHostMetadataEditor({
+        const ctxDeps = {
           getCurrentAgentId: () => currentAgentId,
           onMetadataSaved: (updatedHost) => {
             if (!updatedHost || !updatedHost.agent_id) return;
@@ -3289,7 +3294,12 @@ __PARTIAL_MODALS__
             rebuildLabelFilterOptions(allHosts);
             applyHostFilters();
           }
-        });
+        };
+        const ctxMod = window.phase3Contexts;
+        const ctx = (ctxMod && typeof ctxMod.createHostMetadataEditorCtx === 'function')
+          ? ctxMod.createHostMetadataEditorCtx(ctxDeps)
+          : ctxDeps;
+        return mod.initHostMetadataEditor(ctx);
       }
     }
 
@@ -3324,13 +3334,16 @@ __PARTIAL_MODALS__
     }
 
     function getAnsibleCtx() {
-      return {
+      const deps = {
         getAnsiblePlaybooks: () => ansiblePlaybooks,
         setAnsiblePlaybooks: (v) => { ansiblePlaybooks = Array.isArray(v) ? v : []; return ansiblePlaybooks; },
         getSelectedAgentIds: () => selectedAgentIds,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
         getCurrentAgentId: () => currentAgentId,
       };
+      const mod = window.phase3Contexts;
+      if (mod && typeof mod.createAnsibleCtx === 'function') return mod.createAnsibleCtx(deps);
+      return deps;
     }
 
     function initAnsibleSection() {

@@ -104,6 +104,36 @@
     };
   }
 
+  function createAnsibleCtx(deps) {
+    const d = deps || {};
+    return {
+      getAnsiblePlaybooks: d.getAnsiblePlaybooks || (() => []),
+      setAnsiblePlaybooks: d.setAnsiblePlaybooks || ((v) => v),
+      getSelectedAgentIds: d.getSelectedAgentIds || (() => new Set()),
+      getLastRenderedAgentIds: d.getLastRenderedAgentIds || (() => []),
+      getCurrentAgentId: d.getCurrentAgentId || (() => null),
+    };
+  }
+
+  function createHostActionControlsCtx(deps) {
+    const d = deps || {};
+    return {
+      showServerInfo: d.showServerInfo || (() => {}),
+      showTerminal: d.showTerminal || (() => {}),
+      showUsers: d.showUsers || (() => {}),
+      showServices: d.showServices || (() => {}),
+      showPackages: d.showPackages || (() => {}),
+    };
+  }
+
+  function createHostMetadataEditorCtx(deps) {
+    const d = deps || {};
+    return {
+      getCurrentAgentId: d.getCurrentAgentId || (() => null),
+      onMetadataSaved: d.onMetadataSaved || (() => {}),
+    };
+  }
+
   w.phase3Contexts = {
     createHostListCtx,
     createHostWorkflowsCtx,
@@ -111,5 +141,8 @@
     createMetricsCtx,
     createPackagesCtx,
     createSshUiCtx,
+    createAnsibleCtx,
+    createHostActionControlsCtx,
+    createHostMetadataEditorCtx,
   };
 })(window);
