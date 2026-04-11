@@ -152,7 +152,7 @@ test('ssh key deploy request can be reviewed and rejected by admin', async ({ br
   }
 });
 
-test('admin can create a one-time cronjob for a seeded host', async ({ page }) => {
+test('admin can create and cancel a one-time cronjob for a seeded host', async ({ page }) => {
   test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
 
   const cronName = `pw-cron-${Date.now()}`;
@@ -176,7 +176,10 @@ test('admin can create a one-time cronjob for a seeded host', async ({ page }) =
   await page.locator('#cron-hosts-list label', { hasText: 'ci-alice-host' }).locator('input[type="checkbox"]').check();
   await page.locator('#cron-create').click();
 
-  await expect(page.locator('#cronjobs-table')).toContainText(cronName, { timeout: 10000 });
-  await expect(page.locator('#cronjobs-table')).toContainText('inventory-now');
-  await expect(page.locator('#cronjobs-table')).toContainText('scheduled');
+  const cronRow = page.locator('#cronjobs-table tr', { hasText: cronName });
+  await expect(cronRow).toContainText('inventory-now', { timeout: 10000 });
+  await expect(cronRow).toContainText('scheduled');
+
+  await cronRow.locator('button[data-cancel-id]').click();
+  await expect(page.locator('#cronjobs-table')).not.toContainText(cronName, { timeout: 10000 });
 });
