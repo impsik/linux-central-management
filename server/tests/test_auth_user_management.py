@@ -67,3 +67,23 @@ def test_admin_can_remove_user(monkeypatch):
         with db_mod.SessionLocal() as db:
             user = db.execute(select(models.AppUser).where(models.AppUser.username == 'tarmo')).scalar_one_or_none()
             assert user is None
+
+
+def test_removed_user_cannot_log_in(monkeypatch):
+    app = bootstrap_test_app(monkeypatch, create_schema=True)
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        headers = login_test_client(client)
+        reg = client.post('/auth/register', json={'username': 'tarmo', 'password': 'tarmo-pass-123', 'role': 'readonly'}, headers=headers)
+        assert reg.status_code == 200, reg.text
+
+        resp = client.post('/auth/users/tarmo/remove', headers=headers)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()['removed'] is True
+
+    with TestClient(app) as removed_user_client:
+        login_resp = removed_user_client.post('/auth/login', json={'username': 'tarmo', 'password': 'tarmo-pass-123'})
+        assert login_resp.status_code == 401, login_resp.text
+        assert 'Invalid username or password' in login_resp.text
