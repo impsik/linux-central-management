@@ -30,8 +30,15 @@
     - Admin tab opens from the settings menu
 
 - CI wiring:
-  - `.github/workflows/ci.yml` currently runs `npm run test:frontend` on push/PR.
-  - Playwright smoke coverage is now available in-repo, but still needs CI wiring and credentials if we want it enforced there.
+  - `.github/workflows/ci.yml` runs:
+    - `npm run test:frontend`
+    - Playwright smoke tests in a dedicated `e2e-smoke` job
+    - backend pytest suites
+  - The `e2e-smoke` job starts the app with:
+    - sqlite database
+    - bootstrap admin password seeded from env
+    - privileged MFA disabled for CI login
+    - Playwright hitting the live app over `http://127.0.0.1:8000`
 
 ## Running Playwright smoke locally
 
@@ -70,12 +77,27 @@ Notes:
 - authenticated smoke checks are skipped unless both `PLAYWRIGHT_USERNAME` and `PLAYWRIGHT_PASSWORD` are set
 - the login-page smoke test still runs without credentials
 
+## CI assumptions for smoke tests
+
+The CI browser smoke job currently assumes:
+- `DATABASE_URL=sqlite+pysqlite:///./ci-smoke.db`
+- `DB_AUTO_CREATE_TABLES=true`
+- `DB_REQUIRE_MIGRATIONS_UP_TO_DATE=false`
+- `BOOTSTRAP_PASSWORD=ci-admin-password`
+- `MFA_REQUIRE_FOR_PRIVILEGED=false`
+- `UI_COOKIE_SECURE=false`
+- `UI_REVOKE_ALL_SESSIONS_ON_STARTUP=false`
+
+That is intentionally CI-only convenience, not a production recommendation.
+
 ## Remaining gap
 
 What is still missing after this step:
-- CI execution of Playwright smoke tests
-- stable CI/dev credentials or a dedicated smoke-test user
-- optional richer browser assertions for host selection, metadata save, and scoped visibility flows
+- richer browser assertions for host selection, metadata save, and scoped visibility flows
+- artifact/report polish for successful CI smoke runs
+- optional dedicated seed/test fixture path instead of relying on bootstrap admin login
 
 Recommended next step:
-- wire `npm run test:e2e:smoke` into CI with a disposable smoke user and a known app startup path
+- expand Playwright beyond boot smoke into one or two highest-risk authenticated flows:
+  - host metadata save
+  - owner-scoped visibility
