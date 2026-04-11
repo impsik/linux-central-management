@@ -1,0 +1,153 @@
+  <div class="modal-overlay" id="ansible-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="ansible-modal-title">
+      <div class="modal-header">
+        <div class="modal-title" id="ansible-modal-title">Run Ansible playbook</div>
+        <button class="btn modal-close" id="ansible-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta" id="ansible-modal-meta"></div>
+        <div class="modal-form" id="ansible-modal-form"></div>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="ansible-modal-run" type="button">Run</button>
+        </div>
+        <div class="modal-status" id="ansible-modal-status"></div>
+        <div class="modal-meta" id="ansible-modal-log"></div>
+        <pre class="modal-output" id="ansible-modal-output"></pre>
+        <div class="modal-actions" style="margin-top:12px;justify-content:space-between;">
+          <div class="modal-meta" id="ansible-logs-status"></div>
+          <button class="btn" id="ansible-logs-refresh" type="button">View logs</button>
+        </div>
+        <div class="modal-meta" id="ansible-logs-list"></div>
+        <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;">
+          <button class="btn" id="ansible-output-copy" type="button">Copy output</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="user-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="user-modal-title" style="width:min(1000px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="user-modal-title">User details</div>
+        <button class="btn modal-close" id="user-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="user-modal-meta"></div>
+        <div class="modal-output" id="user-modal-output" style="white-space:normal;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="service-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="service-modal-title" style="width:min(1000px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="service-modal-title">Service details</div>
+        <button class="btn modal-close" id="service-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="service-modal-meta"></div>
+        <div class="modal-output" id="service-modal-output" style="white-space:normal;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="disk-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="disk-modal-title" style="width:min(1400px,98vw);max-width:98vw;max-height:96vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="disk-modal-title">Disk usage (df -h)</div>
+        <button class="btn modal-close" id="disk-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;max-height:none;">
+        <div class="modal-meta" id="disk-modal-meta"></div>
+        <div class="modal-actions" style="margin:8px 0;justify-content:space-between;position:sticky;top:0;background:var(--panel-2, transparent);padding:6px 0;z-index:2;gap:12px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:8px;color:var(--muted-2);font-size:0.9rem;user-select:none;">
+            <input type="checkbox" id="disk-modal-show-virtual" />
+            Show virtual filesystems (tmpfs/overlay/squashfs)
+          </label>
+          <button class="btn" id="disk-modal-refresh" type="button">Refresh</button>
+        </div>
+        <div class="modal-output" id="disk-modal-output" style="white-space:normal;max-height:none;overflow:visible;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="sshkey-approval-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="sshkey-approval-modal-title">
+      <div class="modal-header">
+        <div class="modal-title" id="sshkey-approval-modal-title">Deployment approval details</div>
+        <button class="btn modal-close" id="sshkey-approval-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta" id="sshkey-approval-modal-meta"></div>
+        <div class="modal-actions" style="margin:8px 0;justify-content:flex-end;">
+          <a class="btn" id="sshkey-approval-modal-download-stdout" href="#" download style="display:none;">Download stdout</a>
+          <a class="btn" id="sshkey-approval-modal-download-stderr" href="#" download style="display:none;">Download stderr</a>
+          <a class="btn" id="sshkey-approval-modal-download-zip" href="#" download style="display:none;">Download logs.zip</a>
+        </div>
+        <pre class="modal-output" id="sshkey-approval-modal-targets" style="white-space:pre-wrap;"></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="mfa-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="mfa-modal-title" style="width:min(720px,96vw);max-width:96vw;">
+      <div class="modal-header">
+        <div class="modal-title" id="mfa-modal-title">MFA</div>
+        <!-- No close button: MFA is required for privileged roles -->
+      </div>
+      <div class="modal-body">
+        <div class="modal-meta" id="mfa-modal-status" style="color:var(--muted-2);"></div>
+        <div id="mfa-modal-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="audit-detail-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="audit-detail-modal-title" style="width:min(1100px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="audit-detail-modal-title">Audit event</div>
+        <button class="btn modal-close" id="audit-detail-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="audit-detail-modal-meta"></div>
+        <textarea id="audit-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
+        <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
+          <button class="btn" id="audit-detail-modal-copy" type="button">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="approval-detail-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="approval-detail-modal-title" style="width:min(1100px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="approval-detail-modal-title">Approval request</div>
+        <button class="btn modal-close" id="approval-detail-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="approval-detail-modal-meta"></div>
+        <textarea id="approval-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
+        <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
+          <button class="btn" id="approval-detail-modal-copy" type="button">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="failed-run-detail-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="failed-run-detail-modal-title" style="width:min(1100px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="failed-run-detail-modal-title">Failed run details</div>
+        <button class="btn modal-close" id="failed-run-detail-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="failed-run-detail-modal-meta"></div>
+        <textarea id="failed-run-detail-modal-output" readonly style="width:100%;min-height:420px;resize:vertical;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);color:var(--text);font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;user-select:text;"></textarea>
+        <div class="modal-actions" style="margin-top:12px;justify-content:flex-end;gap:8px;">
+          <button class="btn" id="failed-run-detail-modal-copy" type="button">Copy</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>

@@ -11,6 +11,7 @@ describe('index shell integrity', () => {
   const reportsPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/reports-panel.html'), 'utf8');
   const cronjobsPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/cronjobs-panel.html'), 'utf8');
   const sshkeysPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/sshkeys-panel.html'), 'utf8');
+  const modalsPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/modals.html'), 'utf8');
 
   it('ends with expected closing tags', () => {
     const trimmed = src.trim();
@@ -26,6 +27,7 @@ describe('index shell integrity', () => {
     expect(src).toContain('__PARTIAL_REPORTS_PANEL__');
     expect(src).toContain('__PARTIAL_CRONJOBS_PANEL__');
     expect(src).toContain('__PARTIAL_SSHKEYS_PANEL__');
+    expect(src).toContain('__PARTIAL_MODALS__');
     expect(src).toContain('id="nav-overview"');
     expect(src).toContain('safeInit(');
     expect(src).toContain('bootPhase3AppShell()');
@@ -46,5 +48,8 @@ describe('index shell integrity', () => {
     expect(sshkeysPartial).toContain('id="sshkeys-tab"');
     expect(sshkeysPartial).toContain('id="sshkey-refresh"');
     expect(sshkeysPartial).toContain('id="sshkey-admin-table"');
+    expect(modalsPartial).toContain('id="ansible-modal"');
+    expect(modalsPartial).toContain('id="audit-detail-modal"');
+    expect(modalsPartial).toContain('id="toast-container"');
   });
 });
