@@ -32,6 +32,7 @@
     - owner-scoped readonly user only sees their owned seeded host
     - admin can create and remove a user from the admin panel
     - owner-scoped user can request SSH key deploy and admin can review/reject it
+    - admin can create a one-time cronjob for a seeded host
 
 - CI wiring:
   - `.github/workflows/ci.yml` runs:

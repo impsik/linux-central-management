@@ -151,3 +151,32 @@ test('ssh key deploy request can be reviewed and rejected by admin', async ({ br
     await adminPage.close();
   }
 });
+
+test('admin can create a one-time cronjob for a seeded host', async ({ page }) => {
+  test.skip(!ADMIN_USERNAME || !ADMIN_PASSWORD, 'Set PLAYWRIGHT_USERNAME and PLAYWRIGHT_PASSWORD to run authenticated smoke checks.');
+
+  const cronName = `pw-cron-${Date.now()}`;
+  const runAt = new Date(Date.now() + 10 * 60 * 1000);
+  const yyyy = runAt.getFullYear();
+  const mm = String(runAt.getMonth() + 1).padStart(2, '0');
+  const dd = String(runAt.getDate()).padStart(2, '0');
+  const hh = String(runAt.getHours()).padStart(2, '0');
+  const min = String(runAt.getMinutes()).padStart(2, '0');
+  const localValue = `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+
+  await loginAs(page, ADMIN_USERNAME, ADMIN_PASSWORD);
+  await page.locator('#nav-cronjobs').click();
+  await expect(page.locator('#cronjobs-tab')).toHaveClass(/active/);
+
+  await page.locator('#cron-name').fill(cronName);
+  await page.locator('#cron-action').selectOption('inventory-now');
+  await page.locator('#cron-run-at').fill(localValue);
+  await page.locator('#cron-hosts-open').click();
+  await expect(page.locator('#cron-hosts-panel')).toBeVisible();
+  await page.locator('#cron-hosts-list label', { hasText: 'ci-alice-host' }).locator('input[type="checkbox"]').check();
+  await page.locator('#cron-create').click();
+
+  await expect(page.locator('#cronjobs-table')).toContainText(cronName, { timeout: 10000 });
+  await expect(page.locator('#cronjobs-table')).toContainText('inventory-now');
+  await expect(page.locator('#cronjobs-table')).toContainText('scheduled');
+});
