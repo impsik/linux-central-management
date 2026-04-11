@@ -330,38 +330,7 @@ __PARTIAL_HEADER_SHELL__
 __PARTIAL_HOST_INVENTORY__
 
 
-    <div class="tab-content-custom" id="reports-tab">
-      <div class="admin-content">
-        <div class="section-title">Reports</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">Export and open generated fleet reports.</div>
-
-        <div class="admin-card" style="margin-bottom:1rem;">
-          <div class="admin-card-title">Hosts updates report</div>
-          <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;">
-            <a class="btn btn-primary" href="/reports/hosts-updates.html" target="_blank" rel="noopener">Open HTML report</a>
-            <a class="btn" href="/reports/hosts-updates.xlsx" rel="noopener">Download Excel (.xlsx)</a>
-            <a class="btn" href="/dashboard/slo.csv?hours=24&bucket_hours=6" target="_blank" rel="noopener">Export SLO CSV</a>
-          </div>
-        </div>
-
-        <div class="admin-card" style="margin-bottom:1rem;">
-          <div class="admin-card-title">User presence report</div>
-          <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
-            <div style="min-width:260px;">
-              <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Username</label>
-              <input id="reports-user-presence-username" class="host-search" type="text" placeholder="e.g. mihkel" />
-            </div>
-            <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
-              <input id="reports-user-presence-exact" type="checkbox" checked /> Exact match
-            </label>
-            <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
-              <input id="reports-user-presence-live" type="checkbox" /> Refresh live before report
-            </label>
-            <button class="btn btn-primary" id="reports-user-presence-open" type="button">Open HTML report</button>
-          </div>
-        </div>
-      </div>
-    </div>
+__PARTIAL_REPORTS_PANEL__
 
     <div class="tab-content-custom" id="cronjobs-tab">
       <div class="admin-content">
