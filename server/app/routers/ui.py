@@ -56,6 +56,7 @@ def _render_template_with_nonce(name: str, request: Request) -> str:
     html = html.replace("__PARTIAL_SSHKEYS_PANEL__", _read_template("partials/sshkeys-panel.html"))
     html = html.replace("__PARTIAL_MODALS__", _read_template("partials/modals.html"))
     html = html.replace("__PARTIAL_PACKAGES_TAB__", _read_template("partials/packages-tab.html"))
+    html = html.replace("__PARTIAL_SERVICES_TAB__", _read_template("partials/services-tab.html"))
     html = html.replace("__ASSET_VERSION__", ASSET_VERSION)
     html = html.replace("__DASHBOARD_SHOW_FLEET_HEALTH__", "1" if bool(getattr(settings, "dashboard_show_fleet_health", True)) else "0")
     html = html.replace("__DASHBOARD_SHOW_MAINTENANCE_WINDOW__", "1" if bool(getattr(settings, "dashboard_show_maintenance_window", True)) else "0")
