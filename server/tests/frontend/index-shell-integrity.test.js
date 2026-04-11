@@ -10,6 +10,7 @@ describe('index shell integrity', () => {
   const hostInventoryPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/host-inventory.html'), 'utf8');
   const reportsPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/reports-panel.html'), 'utf8');
   const cronjobsPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/cronjobs-panel.html'), 'utf8');
+  const sshkeysPartial = fs.readFileSync(path.join(root, 'server/app/templates/partials/sshkeys-panel.html'), 'utf8');
 
   it('ends with expected closing tags', () => {
     const trimmed = src.trim();
@@ -24,6 +25,7 @@ describe('index shell integrity', () => {
     expect(src).toContain('__PARTIAL_HOST_INVENTORY__');
     expect(src).toContain('__PARTIAL_REPORTS_PANEL__');
     expect(src).toContain('__PARTIAL_CRONJOBS_PANEL__');
+    expect(src).toContain('__PARTIAL_SSHKEYS_PANEL__');
     expect(src).toContain('id="nav-overview"');
     expect(src).toContain('safeInit(');
     expect(src).toContain('bootPhase3AppShell()');
@@ -41,5 +43,8 @@ describe('index shell integrity', () => {
     expect(cronjobsPartial).toContain('id="cronjobs-tab"');
     expect(cronjobsPartial).toContain('id="cron-create"');
     expect(cronjobsPartial).toContain('id="cronjobs-table"');
+    expect(sshkeysPartial).toContain('id="sshkeys-tab"');
+    expect(sshkeysPartial).toContain('id="sshkey-refresh"');
+    expect(sshkeysPartial).toContain('id="sshkey-admin-table"');
   });
 });

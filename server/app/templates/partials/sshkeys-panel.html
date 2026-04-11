@@ -1,0 +1,159 @@
+    <div class="tab-content-custom" id="sshkeys-tab">
+      <div class="admin-content">
+        <div class="section-title">SSH Keys</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Upload your public key and request deployment to hosts. An admin must approve. You can choose sudo mode: none, restricted, or full (admin-like).</div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Add public key</div>
+          <div class="admin-card-body">
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap;align-items:flex-end;">
+              <div style="min-width:220px;flex:1;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Name (optional)</label>
+                <input id="sshkey-name" class="host-search" type="text" placeholder="e.g. laptop" />
+              </div>
+              <div style="min-width:520px;flex:3;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Public key</label>
+                <input id="sshkey-pub" class="host-search" type="text" placeholder="ssh-ed25519 AAAA... comment" />
+              </div>
+              <button class="btn btn-primary" id="sshkey-add" type="button">Add</button>
+              <span id="sshkey-add-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <span id="sshkeys-list-title">My keys</span>
+            <button class="btn" id="sshkey-refresh" type="button">Reload</button>
+          </div>
+          <div class="admin-card-body">
+            <div style="overflow-x:auto;">
+              <table class="process-table" style="min-width:900px;">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Fingerprint</th>
+                    <th>Public key</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="sshkeys-table">
+                  <tr><td colspan="4" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+              <button class="btn" id="sshkey-hosts-open" type="button">Choose hosts…</button>
+              <label class="sudo-mode-label">
+                <span>Sudo access:</span>
+                <select id="sshkey-sudo-mode" class="host-search" style="min-width:260px;font-weight:600;color:var(--text);">
+                  <option value="restricted" selected>Restricted sudo</option>
+                  <option value="full">Full sudo (admin-like)</option>
+                  <option value="none">No sudo</option>
+                </select>
+              </label>
+              <span style="color:var(--muted-2);font-size:0.85rem;">Note: selecting <strong>No sudo</strong> removes existing Fleet sudoers entry and sudo/wheel group access for that user on target hosts.</span>
+              <button class="btn btn-primary" id="sshkey-request-deploy" type="button">Request deploy (selected key + selected hosts)</button>
+              <span id="sshkey-request-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+            </div>
+
+            <div class="admin-card" id="sshkey-hosts-panel" style="display:none;margin-top:0.75rem;">
+              <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+                <span>Select hosts</span>
+                <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                  <button class="btn" id="sshkey-hosts-select-all" type="button">Select all</button>
+                  <button class="btn" id="sshkey-hosts-select-none" type="button">Select none</button>
+                  <button class="btn" id="sshkey-hosts-close" type="button">Hide</button>
+                </div>
+              </div>
+              <div class="admin-card-body">
+                <div class="input-with-clear" style="max-width:520px;">
+                  <input id="sshkey-hosts-search" class="host-search" type="text" placeholder="Filter hosts (name, id, IP, OS)…" />
+                  <button class="clear-btn" id="sshkey-hosts-search-clear" type="button" aria-label="Clear filter">×</button>
+                </div>
+                <div id="sshkey-hosts-list" style="margin-top:0.75rem;max-height:320px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);padding:0.5rem;"></div>
+                <div style="margin-top:0.5rem;color:var(--muted-2);font-size:0.9rem;">Selected: <span id="sshkey-hosts-count">0</span></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="admin-card">
+          <div class="admin-card-title">My deployment requests</div>
+          <div class="admin-card-body">
+            <div style="overflow-x:auto;">
+              <table class="process-table" style="min-width:900px;">
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>Key</th>
+                    <th>Targets</th>
+                    <th>Sudo</th>
+                    <th>Status</th>
+                    <th>Approved by</th>
+                    <th>Error</th>
+                  </tr>
+                </thead>
+                <tbody id="sshkey-requests-table">
+                  <tr><td colspan="7" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-card" id="sshkey-admin-keys" style="margin-top:1rem;display:none;">
+          <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <span>Admin: all users’ SSH keys</span>
+            <button class="btn" id="sshkey-admin-keys-refresh" type="button">Reload</button>
+          </div>
+          <div class="admin-card-body">
+            <div style="overflow-x:auto;">
+              <table class="process-table" style="min-width:900px;">
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>User</th>
+                    <th>Name</th>
+                    <th>Fingerprint</th>
+                    <th>Public key</th>
+                  </tr>
+                </thead>
+                <tbody id="sshkey-admin-keys-table">
+                  <tr><td colspan="5" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-card" id="sshkey-admin-approvals" style="margin-top:1rem;display:none;">
+          <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+            <span>Admin: pending deployment approvals</span>
+            <button class="btn" id="sshkey-admin-refresh" type="button">Reload</button>
+          </div>
+          <div class="admin-card-body">
+            <div style="overflow-x:auto;">
+              <table class="process-table" style="min-width:900px;">
+                <thead>
+                  <tr>
+                    <th>Created</th>
+                    <th>User</th>
+                    <th>Key</th>
+                    <th>Targets</th>
+                    <th>Sudo</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="sshkey-admin-table">
+                  <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
