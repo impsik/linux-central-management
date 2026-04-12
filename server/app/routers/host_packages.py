@@ -20,6 +20,7 @@ from ..services.host_job_dispatch import (
     require_successful_run,
     wait_for_host_job_or_504,
 )
+from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.package_names import sanitize_package_list
 from ..services.deb_version import is_vulnerable
 
