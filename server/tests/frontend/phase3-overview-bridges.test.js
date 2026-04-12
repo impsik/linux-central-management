@@ -20,6 +20,7 @@ describe('phase3 overview bridge extraction', () => {
     expect(moduleSrc).toContain('function loadFleetOverview(ctx, forceLive = false)');
     expect(moduleSrc).toContain('function loadPendingUpdatesReport(ctx, showToastOnManual = false)');
     expect(moduleSrc).toContain('function loadHostsTable(ctx)');
+    expect(moduleSrc).toContain('function initFleetOverviewControls(ctx)');
     expect(moduleSrc).toContain('w.phase3OverviewBridges = {');
   });
 });

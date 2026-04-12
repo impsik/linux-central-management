@@ -2159,9 +2159,9 @@ __PARTIAL_MODALS__
     }
 
     function initFleetOverviewControls() {
-      const mod = window.phase3Overview;
+      const mod = window.phase3OverviewBridges;
       if (mod && typeof mod.initFleetOverviewControls === 'function') {
-        return mod.initFleetOverviewControls(getOverviewCtx());
+        return mod.initFleetOverviewControls(getOverviewBridgeCtx());
       }
     }
 
