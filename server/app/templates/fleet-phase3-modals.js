@@ -274,6 +274,151 @@ function openSshKeyDeployApprovalModal(it) {
       modal.hidden = true;
     }
 
+async function copyTextWithFallback(text, selectableEl) {
+      const value = String(text || '');
+      if (!value) return false;
+
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(value);
+          return true;
+        }
+      } catch {}
+
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = value;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        const ok = document.execCommand && document.execCommand('copy');
+        ta.remove();
+        if (ok) return true;
+      } catch {}
+
+      if (selectableEl && typeof selectableEl.focus === 'function') {
+        selectableEl.focus();
+        if (typeof selectableEl.select === 'function') selectableEl.select();
+      }
+      return false;
+    }
+
+function initAuditDetailModalControls() {
+      const modal = document.getElementById('audit-detail-modal');
+      const closeBtn = document.getElementById('audit-detail-modal-close');
+      const copyBtn = document.getElementById('audit-detail-modal-copy');
+      const outEl = document.getElementById('audit-detail-modal-output');
+      if (!modal) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'audit-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl ? (outEl.value || '') : '';
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
+          showToast('Copied', 'success');
+        } else {
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+    }
+
+function initApprovalDetailModalControls() {
+      const modal = document.getElementById('approval-detail-modal');
+      const closeBtn = document.getElementById('approval-detail-modal-close');
+      const copyBtn = document.getElementById('approval-detail-modal-copy');
+      const outEl = document.getElementById('approval-detail-modal-output');
+      if (!modal) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'approval-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl ? (outEl.value || '') : '';
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
+          showToast('Copied', 'success');
+        } else {
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+    }
+
+function initFailedRunDetailModalControls() {
+      const modal = document.getElementById('failed-run-detail-modal');
+      const closeBtn = document.getElementById('failed-run-detail-modal-close');
+      const copyBtn = document.getElementById('failed-run-detail-modal-copy');
+      const outEl = document.getElementById('failed-run-detail-modal-output');
+      const metaEl = document.getElementById('failed-run-detail-modal-meta');
+      if (!modal || !outEl) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn?.addEventListener('click', (e) => { e.preventDefault(); close(); });
+      modal.addEventListener('click', (e) => { if (e.target && e.target.id === 'failed-run-detail-modal') close(); });
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.classList.contains('open')) close(); });
+
+      copyBtn?.addEventListener('click', async (e) => {
+        e.preventDefault();
+        const text = outEl.value || '';
+        const ok = await copyTextWithFallback(text, outEl);
+        if (ok) {
+          showToast('Copied', 'success');
+        } else {
+          showToast('Copy failed (clipboard blocked). Text selected—press Ctrl/Cmd+C.', 'error', 5000);
+        }
+      });
+
+      window.openFailedRunDetailModal = (text, meta) => {
+        outEl.value = text || '';
+        if (metaEl) metaEl.textContent = meta || '';
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        modal.classList.add('open');
+        setTimeout(() => { try { outEl.focus(); } catch { } }, 0);
+      };
+    }
+
+function initApprovalsFilterControls() {
+      const ids = ['approvals-filter-action', 'approvals-filter-requester', 'approvals-filter-age', 'approvals-filter-mode', 'approvals-filter-sort'];
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const evt = (id === 'approvals-filter-action' || id === 'approvals-filter-requester') ? 'input' : 'change';
+        el.addEventListener(evt, () => { loadAdminApprovals(false); });
+      });
+
+      const dedupeKind = document.getElementById('dedupe-filter-kind');
+      const dedupeMinutes = document.getElementById('dedupe-filter-minutes');
+      dedupeKind?.addEventListener('input', () => { loadAdminNotificationDedupe(false); });
+      dedupeMinutes?.addEventListener('change', () => { loadAdminNotificationDedupe(false); });
+    }
+
     async function openDiskModal(agentId) {
       const modal = document.getElementById('disk-modal');
       const metaEl = document.getElementById('disk-modal-meta');
