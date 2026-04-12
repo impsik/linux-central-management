@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
@@ -13,7 +12,7 @@ from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
 from ..services.jobs import create_job_with_runs, push_job_to_agents
-from ..services.maintenance import assert_action_allowed_now, evaluate_action_now
+from ..services.maintenance import assert_action_allowed_now, evaluate_action_now, maintenance_block_response
 from ..services.rbac import permissions_for
 from ..services.hosts import is_host_online
 from ..services.targets import resolve_agent_ids
@@ -350,16 +349,7 @@ async def dist_upgrade(payload: JobCreateDistUpgrade, request: Request, db: Sess
 
     decision = evaluate_action_now("dist-upgrade", db=db, agent_ids=targets, labels=payload.labels)
     if decision.get("decision") == "block":
-        return JSONResponse(
-            status_code=403,
-            content={
-                "detail": "Action 'dist-upgrade' is blocked outside maintenance window for matching targets",
-                "action": decision.get("action") or "dist-upgrade",
-                "reason_code": decision.get("reason_code") or "outside_scoped_window_blocked",
-                "matched_count": int(decision.get("matched_count") or 0),
-                "matched_windows": decision.get("matched_windows") or [],
-            },
-        )
+        return maintenance_block_response("dist-upgrade", decision)
 
     preflight = preflight_targets(JobPreflightRequest(agent_ids=payload.agent_ids, labels=payload.labels), db, user)
 

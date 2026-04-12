@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -190,18 +191,35 @@ def evaluate_action_now(action: str, *, db: Session | None = None, agent_ids: li
     }
 
 
+def maintenance_block_detail(action: str, decision: dict | None = None) -> str:
+    action_norm = (action or "").strip().lower()
+    info = decision or {}
+    if info.get("reason_code") == "outside_scoped_window_blocked":
+        return f"Action '{action_norm}' is blocked outside maintenance window for matching targets"
+
+    tz_name = (getattr(settings, "maintenance_window_timezone", "UTC") or "UTC").strip() or "UTC"
+    start = str(getattr(settings, "maintenance_window_start_hhmm", "01:00") or "01:00")
+    end = str(getattr(settings, "maintenance_window_end_hhmm", "05:00") or "05:00")
+    return f"Action '{action_norm}' is blocked outside maintenance window ({start}-{end} {tz_name})"
+
+
+def maintenance_block_response(action: str, decision: dict | None = None) -> JSONResponse:
+    info = decision or {}
+    return JSONResponse(
+        status_code=403,
+        content={
+            "detail": maintenance_block_detail(action, info),
+            "action": info.get("action") or (action or "").strip().lower(),
+            "reason_code": info.get("reason_code") or "outside_global_window_blocked",
+            "matched_count": int(info.get("matched_count") or 0),
+            "matched_windows": info.get("matched_windows") or [],
+        },
+    )
+
+
 def assert_action_allowed_now(action: str, *, db: Session | None = None, agent_ids: list[str] | None = None, labels: dict | None = None) -> None:
     decision = evaluate_action_now(action, db=db, agent_ids=agent_ids, labels=labels)
     if decision["decision"] != "block":
         return
 
-    action_norm = (action or "").strip().lower()
-    if decision["reason_code"] == "outside_scoped_window_blocked":
-        raise PermissionError(f"Action '{action_norm}' is blocked outside maintenance window for matching targets")
-
-    tz_name = (getattr(settings, "maintenance_window_timezone", "UTC") or "UTC").strip() or "UTC"
-    start = str(getattr(settings, "maintenance_window_start_hhmm", "01:00") or "01:00")
-    end = str(getattr(settings, "maintenance_window_end_hhmm", "05:00") or "05:00")
-    raise PermissionError(
-        f"Action '{action_norm}' is blocked outside maintenance window ({start}-{end} {tz_name})"
-    )
+    raise PermissionError(maintenance_block_detail(action, decision))
