@@ -37,7 +37,6 @@ async function loadAdminUsers(showToastOnManual = false) {
         <td>${escapeHtml(mfa)}</td>
         <td class="status-muted">${escapeHtml(created)}</td>
         <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end;">
-          <button class="btn" data-user-rbac-explain="${escapeHtml(uname)}" title="Explain host access for this user">Explain</button>
           <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
           <button class="btn" data-user-toggle-active="${escapeHtml(uname)}" data-user-active="${isActive ? '1' : '0'}" ${canToggleActive ? '' : 'disabled'} title="${canToggleActive ? (isActive ? 'Deactivate user' : 'Activate user') : 'Cannot change this user'}">${isActive ? 'Deactivate' : 'Activate'}</button>
           <button class="btn btn-danger" data-user-remove-enhanced="${escapeHtml(uname)}" ${canRemoveUser ? '' : 'disabled'} title="${canRemoveUser ? 'Permanently remove this user' : 'Cannot remove this user'}">Remove</button>
@@ -89,20 +88,6 @@ async function loadAdminUsers(showToastOnManual = false) {
         } catch (err) {
           showToast(err.message || String(err), 'error', 5000);
         }
-      });
-    });
-
-    tbody.querySelectorAll('button[data-user-rbac-explain]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const uname = btn.getAttribute('data-user-rbac-explain') || '';
-        if (!uname) return;
-        const userSel = document.getElementById('admin-rbac-user');
-        if (userSel) {
-          userSel.value = uname;
-          userSel.dispatchEvent(new Event('change'));
-        }
-        document.getElementById('admin-rbac-explain-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
 
