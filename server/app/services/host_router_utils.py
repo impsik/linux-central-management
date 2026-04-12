@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import Host
-from .rbac import permissions_for
+from .rbac import is_admin, permissions_for
 from .user_scopes import is_host_visible_to_user
 
 
@@ -24,6 +24,23 @@ def require_permission(user, permission_key: str, message: str) -> None:
     perms = permissions_for(user)
     if not perms.get(permission_key):
         raise HTTPException(403, message)
+
+
+def host_owned_by_user(user, host: Host | None) -> bool:
+    if user is None or host is None:
+        return False
+    if is_admin(user):
+        return True
+    labels = (getattr(host, 'labels', None) or {}) if host is not None else {}
+    owner = str(labels.get('owner', '') or '').strip()
+    username = str(getattr(user, 'username', '') or '').strip()
+    return bool(owner and username and owner == username)
+
+
+def require_host_control_permission(user, host: Host, permission_key: str, message: str) -> None:
+    if host_owned_by_user(user, host):
+        return
+    require_permission(user, permission_key, message)
 
 
 def get_visible_host_or_404(db: Session, user, agent_id: str) -> Host:

@@ -11,7 +11,7 @@ from ..db import get_db
 from ..deps import require_ui_user
 from ..models import CVEPackage, Host, HostPackage, HostPackageUpdate
 from ..services.db_utils import transaction
-from ..services.host_router_utils import get_visible_host_or_404
+from ..services.host_router_utils import get_visible_host_or_404, require_host_control_permission
 from ..services.hosts import is_host_online, seconds_since_seen
 from ..services.host_job_dispatch import (
     dispatch_host_job,
@@ -304,6 +304,7 @@ async def host_packages_action(
     user=Depends(require_ui_user),
 ):
     host = get_visible_host_or_404(db, user, agent_id)
+    require_host_control_permission(user, host, "can_manage_packages", "Insufficient permissions to manage packages")
 
     action = (payload.get("action") or "").strip()
     packages = payload.get("packages") or []

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..services.db_utils import transaction
-from ..services.host_router_utils import get_visible_host_or_404, require_permission
+from ..services.host_router_utils import get_visible_host_or_404, require_host_control_permission, require_permission
 from ..services.hosts import is_host_online, seconds_since_seen
 from ..services.host_job_dispatch import (
     dispatch_host_job,
@@ -61,7 +61,6 @@ async def control_user(
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
-    require_permission(user, "can_lock_users", "Insufficient permissions to lock or unlock users")
     action_norm = (action or "").strip().lower()
     if action_norm not in ("lock", "unlock"):
         raise HTTPException(400, "Invalid action. Must be lock or unlock.")
@@ -72,6 +71,7 @@ async def control_user(
         raise HTTPException(400, "Cannot lock root account")
 
     host = get_visible_host_or_404(db, user, agent_id)
+    require_host_control_permission(user, host, "can_lock_users", "Insufficient permissions to lock or unlock users")
 
     if not is_host_online(host):
         t = seconds_since_seen(host)

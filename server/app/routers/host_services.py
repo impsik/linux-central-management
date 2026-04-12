@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..services.db_utils import transaction
-from ..services.host_router_utils import get_visible_host_or_404, require_permission
+from ..services.host_router_utils import get_visible_host_or_404, require_host_control_permission, require_permission
 from ..services.hosts import is_host_online, seconds_since_seen
 from ..services.host_job_dispatch import (
     dispatch_host_job,
@@ -61,9 +61,8 @@ async def control_service(
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
-    require_permission(user, "can_manage_services", "Insufficient permissions to manage services")
-
     host = get_visible_host_or_404(db, user, agent_id)
+    require_host_control_permission(user, host, "can_manage_services", "Insufficient permissions to manage services")
 
     if not is_host_online(host):
         t = seconds_since_seen(host)

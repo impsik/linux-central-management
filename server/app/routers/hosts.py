@@ -23,6 +23,7 @@ from ..services.host_router_utils import (
     clean_optional_str,
     get_visible_host_or_404,
     normalize_env_map,
+    require_host_control_permission,
     require_permission,
 )
 from ..services.package_names import sanitize_package_list
@@ -63,9 +64,8 @@ def update_host_metadata(
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
-    require_permission(user, "can_manage_users", "Admin privileges required")
-
     host = get_visible_host_or_404(db, user, agent_id)
+    require_host_control_permission(user, host, "can_manage_users", "Admin privileges required")
 
     next_hostname = clean_optional_str(payload.hostname, field="hostname")
     next_role = clean_optional_str(payload.role, field="role")
@@ -92,9 +92,8 @@ async def reboot_host(
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
-    require_permission(user, "can_manage_packages", "Insufficient permissions to reboot hosts")
-
     host = get_visible_host_or_404(db, user, agent_id)
+    require_host_control_permission(user, host, "can_manage_packages", "Insufficient permissions to reboot hosts")
 
     if not is_host_online(host):
         t = seconds_since_seen(host)
