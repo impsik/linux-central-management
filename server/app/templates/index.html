@@ -19,6 +19,7 @@
   <script src="/assets/fleet-phase3-host-view-switching.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-cron-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-ssh-ui-state.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-terminal-runtime.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -361,62 +362,29 @@ __PARTIAL_MODALS__
     let term = null;
     let termFitAddon = null;
 
+    function getTerminalRuntimeCtx() {
+      return {
+        getTerm: () => term,
+        setTerm: (next) => { term = next; return term; },
+        getFitAddon: () => termFitAddon,
+        setFitAddon: (next) => { termFitAddon = next; return termFitAddon; },
+        getWs: () => ws,
+        getPendingCmd: () => pendingInteractivePackageCmd,
+        setPendingCmd: (next) => { pendingInteractivePackageCmd = next; return pendingInteractivePackageCmd; },
+        getInputHandlerAttached: () => terminalInputHandlerAttached,
+        setInputHandlerAttached: (next) => { terminalInputHandlerAttached = !!next; return terminalInputHandlerAttached; },
+        showToast,
+      };
+    }
+
     function fitTerminalViewport() {
-      if (!term) return;
-      const tab = document.getElementById('terminal-tab');
-      if (!tab || !tab.classList.contains('active')) return;
-      try {
-        if (termFitAddon && typeof termFitAddon.fit === 'function') {
-          termFitAddon.fit();
-        }
-      } catch (_) { }
-      try { term.focus(); } catch { }
+      const mod = window.phase3TerminalRuntime;
+      if (mod && typeof mod.fitTerminalViewport === 'function') return mod.fitTerminalViewport(getTerminalRuntimeCtx());
     }
 
     function initTerminalOnce() {
-      if (term) return;
-      const termEl = document.getElementById('terminal');
-      if (!termEl) return;
-      term = new Terminal({
-        convertEol: true,
-        theme: {
-          background: '#1e1e1e',
-          foreground: '#d4d4d4',
-          cursor: '#aeafad',
-          selection: '#264f78',
-          black: '#000000',
-          red: '#cd3131',
-          green: '#0dbc79',
-          yellow: '#e5e510',
-          blue: '#2472c8',
-          magenta: '#bc3fbc',
-          cyan: '#11a8cd',
-          white: '#e5e5e5',
-          brightBlack: '#666666',
-          brightRed: '#f14c4c',
-          brightGreen: '#23d18b',
-          brightYellow: '#f5f543',
-          brightBlue: '#3b8eea',
-          brightMagenta: '#d670d6',
-          brightCyan: '#29b8db',
-          brightWhite: '#e5e5e5'
-        }
-      });
-      term.open(termEl);
-      try {
-        if (window.FitAddon && typeof window.FitAddon.FitAddon === 'function') {
-          termFitAddon = new window.FitAddon.FitAddon();
-          term.loadAddon(termFitAddon);
-          termFitAddon.fit();
-        }
-      } catch (_) { }
-      // Ensure keystrokes go to xterm immediately (otherwise onData won't fire until focused).
-      try { term.focus(); } catch { }
-      termEl.addEventListener('mousedown', () => { try { term.focus(); } catch { } });
-      termEl.addEventListener('touchstart', () => { try { term.focus(); } catch { } }, { passive: true });
-      window.addEventListener('resize', () => {
-        window.requestAnimationFrame(fitTerminalViewport);
-      });
+      const mod = window.phase3TerminalRuntime;
+      if (mod && typeof mod.initTerminalOnce === 'function') return mod.initTerminalOnce(getTerminalRuntimeCtx());
     }
 
     let ws = null;
@@ -431,36 +399,18 @@ __PARTIAL_MODALS__
     // If we attach this inside connect(), it will stack and each keystroke gets sent multiple times.
     let terminalInputHandlerAttached = false;
     function attachTerminalInputHandlerOnce() {
-      if (!term || terminalInputHandlerAttached) return;
-      terminalInputHandlerAttached = true;
-      term.onData(data => {
-        if (ws && ws.readyState === 1) {
-          ws.send(new TextEncoder().encode(data));
-        }
-      });
+      const mod = window.phase3TerminalRuntime;
+      if (mod && typeof mod.attachTerminalInputHandlerOnce === 'function') return mod.attachTerminalInputHandlerOnce(getTerminalRuntimeCtx());
     }
 
     function updateTerminalPendingCmdButton() {
-      const btn = document.getElementById('terminal-run-pending-cmd');
-      if (!btn) return;
-      btn.style.display = pendingInteractivePackageCmd ? 'inline-flex' : 'none';
-      btn.disabled = !pendingInteractivePackageCmd;
+      const mod = window.phase3TerminalRuntime;
+      if (mod && typeof mod.updateTerminalPendingCmdButton === 'function') return mod.updateTerminalPendingCmdButton(getTerminalRuntimeCtx());
     }
 
     function runPendingInteractivePackageCommand() {
-      if (!pendingInteractivePackageCmd) return;
-      if (!(ws && ws.readyState === 1)) {
-        showToast('Terminal not connected yet.', 'error', 3500);
-        return;
-      }
-      try {
-        ws.send(new TextEncoder().encode(pendingInteractivePackageCmd + '\n'));
-        pendingInteractivePackageCmd = null;
-        updateTerminalPendingCmdButton();
-        showToast('Sent pending package command to terminal', 'success');
-      } catch (e) {
-        showToast(`Failed to send pending command: ${e.message || e}`, 'error', 5000);
-      }
+      const mod = window.phase3TerminalRuntime;
+      if (mod && typeof mod.runPendingInteractivePackageCommand === 'function') return mod.runPendingInteractivePackageCommand(getTerminalRuntimeCtx());
     }
 
     // Tab switching removed - tabs are now accessed via server info buttons only
