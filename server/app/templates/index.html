@@ -20,6 +20,7 @@
   <script src="/assets/fleet-phase3-cron-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-ssh-ui-state.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-terminal-runtime.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-host-history.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -842,157 +843,50 @@ __PARTIAL_MODALS__
         'query-pkg-info',
         'query-pkg-updates',
         'query-pkg-version',
-        'inventory-now',
-        'pkg-upgrade',
-        'dist-upgrade',
-      ]);
-      if (packageJobTypes.has(jt) || /(^|-)pkg(-|$)|(^|-)package(s)?(-|$)|(^|-)upgrade(-|$)|(^|-)inventory(-|$)/.test(jt)) return 'package';
+    function getHostHistoryCtx() {
+      return {
+        getTimelineFilter: () => hostTimelineFilter,
+        setTimelineFilter: (next) => { hostTimelineFilter = next || 'all'; return hostTimelineFilter; },
+        getTimelineItems: () => hostTimelineItemsCache || [],
+        getDriftChecks: () => hostDriftChecksCache || [],
+        getDriftCriticalOnly: () => !!hostDriftCriticalOnly,
+        setDriftCriticalOnly: (next) => { hostDriftCriticalOnly = !!next; return hostDriftCriticalOnly; },
+        showToast,
+      };
+    }
 
-      return 'other';
+    function timelineJobCategory(it) {
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.timelineJobCategory === 'function') return mod.timelineJobCategory(getHostHistoryCtx(), it);
+      return 'all';
     }
 
     function timelineFilterMatch(it) {
-      if (hostTimelineFilter === 'all') return true;
-      const st = String(it?.status || '').toLowerCase();
-      if (hostTimelineFilter === 'failed') return st === 'failed';
-      return timelineJobCategory(it) === hostTimelineFilter;
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.timelineFilterMatch === 'function') return mod.timelineFilterMatch(getHostHistoryCtx(), it);
+      return true;
     }
 
     function timelineJobEffect(it) {
-      const jtRaw = String(it?.job_type || '').toLowerCase();
-      const jt = jtRaw.replace(/[_\s]+/g, '-');
-      if (jt === 'query-pkg-updates' || jt === 'query-pkg-version' || jt === 'query-pkg-info' || jt === 'inventory-now') {
-        return {
-          kind: 'info',
-          label: 'Read-only check',
-          detail: 'Collects inventory/update status. Does not install packages.',
-        };
-      }
-      if (jt === 'pkg-upgrade' || jt === 'dist-upgrade' || jt === 'security-campaign') {
-        return {
-          kind: 'warn',
-          label: 'Installs/changes packages',
-          detail: 'This action can modify installed packages on the host.',
-        };
-      }
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.timelineJobEffect === 'function') return mod.timelineJobEffect(getHostHistoryCtx(), it);
       return null;
     }
 
     function renderHostTimeline() {
-      const el = document.getElementById('host-timeline-list');
-      const countEl = document.getElementById('host-timeline-count');
-      if (!el) return;
-
-      ['all', 'failed', 'security', 'package', 'service'].forEach((k) => {
-        const btn = document.getElementById(`timeline-filter-${k}`);
-        if (!btn) return;
-        btn.classList.toggle('btn-primary', hostTimelineFilter === k);
-        if (btn.dataset.boundTimelineFilterRender !== '1') {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            hostTimelineFilter = k;
-            renderHostTimeline();
-          });
-          btn.dataset.boundTimelineFilterRender = '1';
-        }
-      });
-
-      const allItems = (hostTimelineItemsCache || []);
-      const items = allItems.filter(timelineFilterMatch);
-      if (countEl) countEl.textContent = `(${items.length}/${allItems.length})`;
-      if (!items.length) {
-        el.innerHTML = '<div class="status-muted">No events for selected filter.</div>';
-        return;
-      }
-
-      el.innerHTML = items.map((it) => {
-        const t = it?.time ? new Date(it.time).toLocaleString() : 'n/a';
-        const st = String(it?.status || 'unknown');
-        const stClass = st === 'success' ? 'status-ok' : (st === 'failed' ? 'status-error' : 'status-muted');
-        const jobType = escapeHtml(String(it?.job_type || 'job'));
-        const jobId = escapeHtml(String(it?.job_id || ''));
-        const stdout = it?.stdout ? `<a class="status-link" href="${escapeHtml(String(it.stdout))}" target="_blank" rel="noopener">stdout</a>` : '';
-        const stderr = it?.stderr ? `<a class="status-link" href="${escapeHtml(String(it.stderr))}" target="_blank" rel="noopener">stderr</a>` : '';
-        const links = [stdout, stderr].filter(Boolean).join(' • ');
-        const effect = timelineJobEffect(it);
-        const effectTone = effect?.kind === 'warn' ? 'var(--warn)' : 'var(--muted-2)';
-        return `<div style="border:1px solid var(--border);border-radius:10px;padding:0.45rem 0.55rem;background:var(--panel-2);">
-          <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
-            <b>${jobType}</b>
-            <span class="${stClass}" style="font-size:0.8rem;">${escapeHtml(st)}</span>
-          </div>
-          ${effect ? `<div style="font-size:0.78rem;margin-top:0.18rem;color:${effectTone};">${escapeHtml(effect.label)} — ${escapeHtml(effect.detail)}</div>` : ''}
-          <div class="status-muted" style="font-size:0.82rem;margin-top:0.2rem;display:flex;justify-content:space-between;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-            <span>${escapeHtml(t)} • <code>${jobId}</code></span>
-            <button class="btn" data-copy-job-id="${jobId}" type="button" style="padding:0.16rem 0.45rem;">Copy job id</button>
-          </div>
-          ${links ? `<div style="font-size:0.8rem;margin-top:0.2rem;">${links}</div>` : ''}
-        </div>`;
-      }).join('');
-
-      el.querySelectorAll('button[data-copy-job-id]').forEach((btn) => {
-        if (btn.dataset.boundCopyJobId === '1') return;
-        btn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          const id = btn.getAttribute('data-copy-job-id') || '';
-          if (!id) return;
-          try {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-              await navigator.clipboard.writeText(id);
-            } else {
-              const ta = document.createElement('textarea');
-              ta.value = id;
-              document.body.appendChild(ta);
-              ta.select();
-              document.execCommand('copy');
-              document.body.removeChild(ta);
-            }
-            showToast('Job ID copied', 'success', 1800);
-          } catch (_) {
-            showToast('Failed to copy job ID', 'error', 2200);
-          }
-        });
-        btn.dataset.boundCopyJobId = '1';
-      });
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.renderHostTimeline === 'function') return mod.renderHostTimeline(getHostHistoryCtx());
     }
 
     function hostTimelineFilteredItems() {
-      return (hostTimelineItemsCache || []).filter(timelineFilterMatch);
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.hostTimelineFilteredItems === 'function') return mod.hostTimelineFilteredItems(getHostHistoryCtx());
+      return [];
     }
 
     function downloadHostTimeline(kind) {
-      const items = hostTimelineFilteredItems();
-      if (!items.length) {
-        showToast('No timeline entries to export', 'error', 2200);
-        return;
-      }
-      const now = new Date();
-      const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}-${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-      const base = `host-timeline-${hostTimelineFilter}-${stamp}`;
-      let blob;
-      let filename;
-      if (kind === 'csv') {
-        const esc = (v) => {
-          const s = String(v == null ? '' : v);
-          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-        };
-        const headers = ['time','job_id','job_type','status','exit_code','started_at','finished_at','created_by'];
-        const rows = [headers.join(',')].concat(items.map((it) => headers.map((h) => esc(it?.[h] ?? '')).join(',')));
-        blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' });
-        filename = `${base}.csv`;
-      } else {
-        blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json;charset=utf-8' });
-        filename = `${base}.json`;
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      showToast(`Exported ${items.length} timeline entr${items.length === 1 ? 'y' : 'ies'}`, 'success', 2000);
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.downloadHostTimeline === 'function') return mod.downloadHostTimeline(getHostHistoryCtx(), kind);
     }
 
     async function loadHostTimeline(agentId) {
@@ -1022,30 +916,8 @@ __PARTIAL_MODALS__
     }
 
     function renderHostDriftChecks() {
-      const listEl = document.getElementById('host-drift-list');
-      const toggleBtn = document.getElementById('host-drift-critical-only');
-      if (!listEl) return;
-      if (toggleBtn) toggleBtn.classList.toggle('btn-primary', hostDriftCriticalOnly);
-
-      const checks = (hostDriftChecksCache || []).filter((c) => {
-        if (!hostDriftCriticalOnly) return true;
-        const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
-        return sev === 'critical';
-      });
-
-      if (!checks.length) {
-        listEl.innerHTML = '<div class="status-muted">No checks for selected filter.</div>';
-        return;
-      }
-
-      listEl.innerHTML = checks.map((c) => {
-        const sev = String(c?.severity || (String(c?.status || '') === 'pass' ? 'ok' : 'warn'));
-        const sevClass = sev === 'critical' ? 'status-error' : (sev === 'warn' ? 'status-warn' : 'status-ok');
-        return `<div style="display:flex;justify-content:space-between;gap:0.6rem;align-items:flex-start;">
-          <div><b>${escapeHtml(String(c?.title || 'check'))}</b><div class="status-muted" style="font-size:0.82rem;">${escapeHtml(String(c?.detail || ''))}</div></div>
-          <span class="${sevClass}" style="font-size:0.75rem;">${escapeHtml(sev)}</span>
-        </div>`;
-      }).join('');
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.renderHostDriftChecks === 'function') return mod.renderHostDriftChecks(getHostHistoryCtx());
     }
 
     async function loadHostDrift(agentId) {
@@ -1137,16 +1009,8 @@ __PARTIAL_MODALS__
     }
 
     function initTimelineFilters() {
-      ['all', 'failed', 'security', 'package', 'service'].forEach((k) => {
-        const btn = document.getElementById(`timeline-filter-${k}`);
-        if (!btn || btn.dataset.boundTimelineFilter === '1') return;
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          hostTimelineFilter = k;
-          renderHostTimeline();
-        });
-        btn.dataset.boundTimelineFilter = '1';
-      });
+      const mod = window.phase3HostHistory;
+      if (mod && typeof mod.initTimelineFilters === 'function') return mod.initTimelineFilters(getHostHistoryCtx());
     }
 
     function getHostViewSwitchingCtx() {
