@@ -874,20 +874,32 @@
     const nextCronjobsOpenBtn = document.getElementById('overview-next-cronjobs-open');
     const containerEl = document.querySelector('.container');
 
-    function setGuardedButtonState(btn, blocked, message) {
-      if (!btn) return;
-      const original = btn.dataset.originalLabel || btn.textContent || '';
-      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = original;
-      if (blocked) {
-        btn.disabled = true;
-        btn.textContent = original.startsWith('🔒 ') ? original : `🔒 ${original}`;
-        btn.title = message || 'Blocked by maintenance window';
-      } else {
-        btn.disabled = false;
-        btn.textContent = original;
-        btn.title = '';
-      }
+  function setGuardedButtonState(btn, blocked, message) {
+    if (!btn) return;
+    const original = btn.dataset.originalText || btn.textContent || '';
+    if (!btn.dataset.originalText) btn.dataset.originalText = original;
+    if (blocked) {
+      btn.disabled = true;
+      btn.textContent = original.startsWith('🔒 ') ? original : `🔒 ${original}`;
+      btn.title = message || 'Blocked by maintenance window';
+    } else {
+      btn.disabled = false;
+      btn.textContent = original;
+      btn.title = '';
     }
+  }
+
+  function formatMaintenanceWindowBlockMessage(payload, fallback) {
+    const data = payload && typeof payload === 'object' ? payload : {};
+    const detail = String(data.detail || data.error || fallback || 'Blocked by maintenance window').trim();
+    const matched = Array.isArray(data.matched_windows) ? data.matched_windows : [];
+    if (!matched.length) return detail;
+    const names = matched.map((w) => String(w?.name || '').trim()).filter(Boolean);
+    if (!names.length) return detail;
+    const preview = names.slice(0, 2).join(', ');
+    const suffix = names.length > 2 ? ` (+${names.length - 2} more)` : '';
+    return `${detail} [${preview}${suffix}]`;
+  }
 
     async function refreshMaintenanceGuardButtons() {
       try {
@@ -1018,7 +1030,10 @@
       if (!r.ok) {
         const t = await r.text();
         let msg = 'Campaign creation failed';
-        try { const j = t ? JSON.parse(t) : null; msg = j?.detail || j?.error || msg; } catch (_) { }
+        try {
+          const j = t ? JSON.parse(t) : null;
+          msg = formatMaintenanceWindowBlockMessage(j, msg);
+        } catch (_) { }
         return w.showToast(msg, 'error');
       }
       const d = await r.json();
@@ -1035,7 +1050,10 @@
       if (!r.ok) {
         const t = await r.text();
         let msg = 'dist-upgrade job creation failed';
-        try { const j = t ? JSON.parse(t) : null; msg = j?.detail || j?.error || msg; } catch (_) { }
+        try {
+          const j = t ? JSON.parse(t) : null;
+          msg = formatMaintenanceWindowBlockMessage(j, msg);
+        } catch (_) { }
         return w.showToast(msg, 'error');
       }
       const d = await r.json();
