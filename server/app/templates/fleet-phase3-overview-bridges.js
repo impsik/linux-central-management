@@ -42,8 +42,16 @@
     }
   }
 
+  function loadPendingUpdatesReport(ctx, showToastOnManual = false) {
+    const mod = w.phase3Overview;
+    if (mod && typeof mod.loadPendingUpdatesReport === 'function') {
+      return mod.loadPendingUpdatesReport(getOverviewCtx(ctx), showToastOnManual);
+    }
+  }
+
   w.phase3OverviewBridges = {
     getOverviewCtx,
     loadFleetOverview,
+    loadPendingUpdatesReport,
   };
 })(window);

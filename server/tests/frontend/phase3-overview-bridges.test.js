@@ -18,6 +18,7 @@ describe('phase3 overview bridge extraction', () => {
   it('defines overview ctx/load bridge helpers in the module', () => {
     expect(moduleSrc).toContain('function getOverviewCtx(ctx)');
     expect(moduleSrc).toContain('function loadFleetOverview(ctx, forceLive = false)');
+    expect(moduleSrc).toContain('function loadPendingUpdatesReport(ctx, showToastOnManual = false)');
     expect(moduleSrc).toContain('w.phase3OverviewBridges = {');
   });
 });

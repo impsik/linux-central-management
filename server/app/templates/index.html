@@ -2152,9 +2152,9 @@ __PARTIAL_MODALS__
     }
 
     async function loadPendingUpdatesReport(showToastOnManual = false) {
-      const mod = window.phase3Overview;
+      const mod = window.phase3OverviewBridges;
       if (mod && typeof mod.loadPendingUpdatesReport === 'function') {
-        return mod.loadPendingUpdatesReport(getOverviewCtx(), showToastOnManual);
+        return mod.loadPendingUpdatesReport(getOverviewBridgeCtx(), showToastOnManual);
       }
     }
 
