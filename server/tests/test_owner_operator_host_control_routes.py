@@ -6,9 +6,11 @@ def _boot_owned_host_app(monkeypatch):
     app = bootstrap_test_app(monkeypatch, create_schema=True)
 
     import app.routers.host_services as host_services_router
+    import app.routers.host_users as host_users_router
     import app.routers.hosts as hosts_router
 
     monkeypatch.setattr(host_services_router, 'is_host_online', lambda *args, **kwargs: True)
+    monkeypatch.setattr(host_users_router, 'is_host_online', lambda *args, **kwargs: True)
     monkeypatch.setattr(hosts_router, 'is_host_online', lambda *args, **kwargs: True)
     return app
 
@@ -84,3 +86,63 @@ def test_owner_tagged_operator_can_reboot_owned_host(monkeypatch, auth_client_fa
     body = resp.json()
     assert body['job_id']
     assert body['agent_id'] == 'srv-imre'
+
+
+def test_owner_tagged_operator_can_lock_and_unlock_users_on_owned_host(monkeypatch, auth_client_factory):
+    app = _boot_owned_host_app(monkeypatch)
+    owner_client, owner_headers = _seed_owned_operator(app, auth_client_factory)
+
+    lock_resp = owner_client.post('/hosts/srv-imre/users/alice/lock?wait=false', headers=owner_headers)
+    assert lock_resp.status_code == 200, lock_resp.text
+    assert lock_resp.json()['status'] == 'queued'
+    assert lock_resp.json()['job_id']
+
+    unlock_resp = owner_client.post('/hosts/srv-imre/users/alice/unlock?wait=false', headers=owner_headers)
+    assert unlock_resp.status_code == 200, unlock_resp.text
+    assert unlock_resp.json()['status'] == 'queued'
+    assert unlock_resp.json()['job_id']
+
+
+def test_owner_tagged_operator_can_check_package_updates_on_owned_host(monkeypatch, auth_client_factory):
+    app = _boot_owned_host_app(monkeypatch)
+    owner_client, owner_headers = _seed_owned_operator(app, auth_client_factory)
+
+    resp = owner_client.post('/hosts/srv-imre/packages/check-updates?refresh=true&wait=false', headers=owner_headers)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body['status'] == 'queued'
+    assert body['job_id']
+
+
+def test_owner_tagged_operator_can_refresh_package_inventory_on_owned_host(monkeypatch, auth_client_factory):
+    app = _boot_owned_host_app(monkeypatch)
+    owner_client, owner_headers = _seed_owned_operator(app, auth_client_factory)
+
+    resp = owner_client.post('/hosts/srv-imre/packages/refresh?wait=false', headers=owner_headers)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body['status'] == 'queued'
+    assert body['job_id']
+
+
+def test_owner_reassignment_removes_previous_owner_access(monkeypatch, auth_client_factory):
+    app = _boot_owned_host_app(monkeypatch)
+    owner_client, owner_headers = _seed_owned_operator(app, auth_client_factory)
+
+    reassign = owner_client.patch(
+        '/hosts/srv-imre/metadata',
+        json={'owner': 'alice'},
+        headers=owner_headers,
+    )
+    assert reassign.status_code == 200, reassign.text
+    assert reassign.json()['host']['labels']['owner'] == 'alice'
+
+    hosts_resp = owner_client.get('/hosts', headers=owner_headers)
+    assert hosts_resp.status_code == 200, hosts_resp.text
+    hosts = hosts_resp.json()
+    assert all(h['agent_id'] != 'srv-imre' for h in hosts)
+
+    denied = owner_client.post('/hosts/srv-imre/packages/refresh?wait=false', headers=owner_headers)
+    assert denied.status_code == 404, denied.text
