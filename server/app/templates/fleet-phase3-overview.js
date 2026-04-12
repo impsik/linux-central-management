@@ -903,19 +903,43 @@
 
     async function refreshMaintenanceGuardButtons() {
       try {
-        const r = await fetch('/dashboard/maintenance-window', { credentials: 'include' });
-        if (!r.ok) return;
-        const m = await r.json();
-        const blocked = !!m.enabled && !m.within_window_now;
-        const msg = blocked ? `Blocked outside maintenance window (${m.start}-${m.end} ${m.timezone})` : '';
+        const agentIds = (ctx.getLastRenderedAgentIds && ctx.getLastRenderedAgentIds()) ? (ctx.getLastRenderedAgentIds() || []).slice().filter(Boolean) : [];
+        const actions = [
+          { action: 'security-campaign', buttonIds: ['overview-security-campaign', 'runbook-security-now'] },
+          { action: 'dist-upgrade', buttonIds: ['overview-dist-upgrade', 'runbook-dist-upgrade-now'] },
+        ];
 
-        // Overview risky actions
-        setGuardedButtonState(document.getElementById('overview-security-campaign'), blocked, msg);
-        setGuardedButtonState(document.getElementById('overview-dist-upgrade'), blocked, msg);
+        for (const entry of actions) {
+          let blocked = false;
+          let msg = '';
+          try {
+            const r = await fetch('/maintenance-windows/evaluate', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action: entry.action, agent_ids: agentIds }),
+            });
+            if (r.ok) {
+              const decision = await r.json();
+              blocked = decision?.decision === 'block';
+              msg = blocked ? formatMaintenanceWindowBlockMessage({
+                detail: `Blocked before execution for ${entry.action}`,
+                matched_windows: decision?.matched_windows || [],
+              }, 'Blocked by maintenance window') : '';
+            } else {
+              const fallback = await fetch('/dashboard/maintenance-window', { credentials: 'include' });
+              if (fallback.ok) {
+                const m = await fallback.json();
+                blocked = !!m.enabled && !m.within_window_now;
+                msg = blocked ? `Blocked outside maintenance window (${m.start}-${m.end} ${m.timezone})` : '';
+              }
+            }
+          } catch (_) { }
 
-        // Sidebar runbooks (risky ones)
-        setGuardedButtonState(document.getElementById('runbook-security-now'), blocked, msg);
-        setGuardedButtonState(document.getElementById('runbook-dist-now'), blocked, msg);
+          for (const id of entry.buttonIds) {
+            setGuardedButtonState(document.getElementById(id), blocked, msg);
+          }
+        }
       } catch (_) { }
     }
 
