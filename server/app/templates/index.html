@@ -23,6 +23,7 @@
   <script src="/assets/fleet-phase3-host-history.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-admin-bridges.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-host-list-bridges.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-overview-bridges.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -1717,8 +1718,8 @@ __PARTIAL_MODALS__
       }
     }
 
-    function getOverviewCtx() {
-      const deps = {
+    function getOverviewBridgeCtx() {
+      return {
         formatShortTime,
         selectHost,
         openDiskModal,
@@ -1756,15 +1757,18 @@ __PARTIAL_MODALS__
           return allHosts;
         },
       };
-      const mod = window.phase3Contexts;
-      if (mod && typeof mod.createOverviewCtx === 'function') return mod.createOverviewCtx(deps);
-      return deps;
+    }
+
+    function getOverviewCtx() {
+      const mod = window.phase3OverviewBridges;
+      if (mod && typeof mod.getOverviewCtx === 'function') return mod.getOverviewCtx(getOverviewBridgeCtx());
+      return getOverviewBridgeCtx();
     }
 
     async function loadFleetOverview(forceLive = false) {
-      const mod = window.phase3Overview;
+      const mod = window.phase3OverviewBridges;
       if (mod && typeof mod.loadFleetOverview === 'function') {
-        return mod.loadFleetOverview(getOverviewCtx(), forceLive);
+        return mod.loadFleetOverview(getOverviewBridgeCtx(), forceLive);
       }
     }
 
