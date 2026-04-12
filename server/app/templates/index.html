@@ -819,31 +819,6 @@ __PARTIAL_MODALS__
     let hostDriftCriticalOnly = false;
     let hostDriftChecksCache = [];
 
-    function timelineJobCategory(it) {
-      const jtRaw = String(it?.job_type || '').toLowerCase();
-      const jt = jtRaw.replace(/[_\s]+/g, '-');
-
-      const securityJobTypes = new Set([
-        'cve-check',
-        'security-campaign',
-        'security-updates',
-        'patch-security',
-      ]);
-      if (securityJobTypes.has(jt) || /(^|-)security(-|$)|(^|-)cve(-|$)/.test(jt)) return 'security';
-
-      const serviceJobTypes = new Set([
-        'query-services',
-        'query-service-details',
-        'service-restart',
-        'service-start',
-        'service-stop',
-      ]);
-      if (serviceJobTypes.has(jt) || /(^|-)service(s)?(-|$)/.test(jt)) return 'service';
-
-      const packageJobTypes = new Set([
-        'query-pkg-info',
-        'query-pkg-updates',
-        'query-pkg-version',
     function getHostHistoryCtx() {
       return {
         getTimelineFilter: () => hostTimelineFilter,
