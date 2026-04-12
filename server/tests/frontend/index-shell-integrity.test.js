@@ -41,6 +41,7 @@ describe('index shell integrity', () => {
     expect(src).toContain('/assets/fleet-phase3-contexts.js');
     expect(src).toContain('/assets/fleet-phase3-reports.js');
     expect(src).toContain('/assets/fleet-phase3-shell-utils.js');
+    expect(src).toContain('/assets/fleet-phase3-host-view-switching.js');
 
     expect(headerPartial).toContain('id="settings-btn"');
     expect(headerPartial).toContain('id="current-user"');

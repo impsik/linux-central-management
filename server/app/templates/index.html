@@ -16,6 +16,7 @@
   <script src="/assets/fleet-phase3-settings-menu.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-admin-users.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-shell-utils.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-host-view-switching.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -1196,57 +1197,45 @@ __PARTIAL_MODALS__
       });
     }
 
+    function getHostViewSwitchingCtx() {
+      return {
+        getCurrentAgentId: () => currentAgentId,
+        setHostActionActive,
+        stopMetricsPolling: () => stopMetricsPolling(metricsLifecycleState),
+        connect,
+        fitTerminalViewport,
+        loadUsers,
+        loadServices,
+        loadPackages,
+        refreshPackagesNow,
+        selectHost,
+        findCurrentHost: (agentId) => (allHosts || []).find(h => h.agent_id === agentId),
+      };
+    }
+
     function showTerminal() {
-      if (!currentAgentId) return;
-      setHostActionActive('terminal');
-      // Stop metrics updates when leaving server info view
-      stopMetricsPolling(metricsLifecycleState);
-      connect(currentAgentId);
-      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
-      document.getElementById('terminal-tab').classList.add('active');
-      window.requestAnimationFrame(() => {
-        fitTerminalViewport();
-        setTimeout(fitTerminalViewport, 60);
-      });
+      const mod = window.phase3HostViewSwitching;
+      if (mod && typeof mod.showTerminal === 'function') return mod.showTerminal(getHostViewSwitchingCtx());
     }
 
     function showUsers() {
-      if (!currentAgentId) return;
-      setHostActionActive('users');
-      // Stop metrics updates when leaving server info view
-      stopMetricsPolling(metricsLifecycleState);
-      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
-      document.getElementById('users-tab').classList.add('active');
-      loadUsers(currentAgentId);
+      const mod = window.phase3HostViewSwitching;
+      if (mod && typeof mod.showUsers === 'function') return mod.showUsers(getHostViewSwitchingCtx());
     }
 
     function showServices() {
-      if (!currentAgentId) return;
-      setHostActionActive('services');
-      // Stop metrics updates when leaving server info view
-      stopMetricsPolling(metricsLifecycleState);
-      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
-      document.getElementById('services-tab').classList.add('active');
-      loadServices(currentAgentId);
+      const mod = window.phase3HostViewSwitching;
+      if (mod && typeof mod.showServices === 'function') return mod.showServices(getHostViewSwitchingCtx());
     }
 
     function showPackages() {
-      if (!currentAgentId) return;
-      setHostActionActive('packages');
-      // Stop metrics updates when leaving server info view
-      stopMetricsPolling(metricsLifecycleState);
-      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
-      document.getElementById('packages-tab').classList.add('active');
-      // Load what's in DB immediately, then trigger an on-demand inventory refresh and reload.
-      loadPackages(currentAgentId);
-      refreshPackagesNow(currentAgentId);
+      const mod = window.phase3HostViewSwitching;
+      if (mod && typeof mod.showPackages === 'function') return mod.showPackages(getHostViewSwitchingCtx());
     }
 
     function showServerInfo() {
-      if (!currentAgentId) return;
-      const hostObj = (allHosts || []).find(h => h.agent_id === currentAgentId);
-      const hostname = hostObj?.hostname || currentAgentId;
-      selectHost(currentAgentId, hostname);
+      const mod = window.phase3HostViewSwitching;
+      if (mod && typeof mod.showServerInfo === 'function') return mod.showServerInfo(getHostViewSwitchingCtx());
     }
 
     async function loadAdminAudit(showToastOnManual = false) {
