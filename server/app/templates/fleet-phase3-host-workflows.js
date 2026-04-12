@@ -24,10 +24,12 @@
 
       usersList.innerHTML = data.users.map(user => {
         const isNew = !!user.is_new;
-        const canLockUsers = !!ctx.getCurrentPermissions()?.can_lock_users;
+        const currentUsername = String(ctx.getCurrentUsername?.() || '').trim();
+        const currentHostOwner = String(ctx.getCurrentHostOwner?.() || '').trim();
+        const canLockUsers = !!ctx.getCurrentPermissions()?.can_lock_users || !!(currentUsername && currentHostOwner && currentUsername === currentHostOwner);
         const isRoot = user.username === 'root';
         const disabledReason = !canLockUsers
-          ? 'Admin access required'
+          ? 'You can only manage users on hosts you own'
           : isRoot
             ? 'Cannot lock root account'
             : '';
@@ -265,8 +267,11 @@
   }
 
   async function controlUser(ctx, agentId, username, action) {
-    if (!ctx.getCurrentPermissions()?.can_lock_users) {
-      w.showToast('Admin access required to lock or unlock users.', 'error');
+    const currentUsername = String(ctx.getCurrentUsername?.() || '').trim();
+    const currentHostOwner = String(ctx.getCurrentHostOwner?.() || '').trim();
+    const canLockUsers = !!ctx.getCurrentPermissions()?.can_lock_users || !!(currentUsername && currentHostOwner && currentUsername === currentHostOwner);
+    if (!canLockUsers) {
+      w.showToast('You can only lock or unlock users on hosts you own.', 'error');
       return;
     }
     const targetCard = document.querySelector(`.user-card[data-username="${username}"]`);

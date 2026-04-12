@@ -1598,16 +1598,25 @@ __PARTIAL_MODALS__
     }
 
     function getHostWorkflowsCtx() {
+      const hostOwnerForCurrentAgent = () => {
+        const host = (allHosts || []).find(h => String(h?.agent_id || '') === String(currentAgentId || ''));
+        const labels = (host && host.labels && typeof host.labels === 'object') ? host.labels : {};
+        return String(labels.owner || '').trim();
+      };
       const mod = window.phase3Contexts;
       if (mod && typeof mod.createHostWorkflowsCtx === 'function') {
         return mod.createHostWorkflowsCtx({
           getCurrentPermissions: () => currentPermissions,
           getCurrentAgentId: () => currentAgentId,
+          getCurrentUsername: () => currentUsername,
+          getCurrentHostOwner: hostOwnerForCurrentAgent,
         });
       }
       return {
         getCurrentPermissions: () => currentPermissions,
         getCurrentAgentId: () => currentAgentId,
+        getCurrentUsername: () => currentUsername,
+        getCurrentHostOwner: hostOwnerForCurrentAgent,
       };
     }
 
