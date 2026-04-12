@@ -43,6 +43,7 @@ describe('index shell integrity', () => {
     expect(src).toContain('/assets/fleet-phase3-shell-utils.js');
     expect(src).toContain('/assets/fleet-phase3-host-view-switching.js');
     expect(src).toContain('/assets/fleet-phase3-cron-ui.js');
+    expect(src).toContain('/assets/fleet-phase3-ssh-ui-state.js');
 
     expect(headerPartial).toContain('id="settings-btn"');
     expect(headerPartial).toContain('id="current-user"');

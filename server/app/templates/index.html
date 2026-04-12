@@ -18,6 +18,7 @@
   <script src="/assets/fleet-phase3-shell-utils.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-host-view-switching.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-cron-ui.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-ssh-ui-state.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -2710,44 +2711,63 @@ __PARTIAL_MODALS__
         selectedAgentIds: (sshUiState.get('selectedAgentIds') instanceof Set) ? sshUiState.get('selectedAgentIds') : new Set(),
       };
 
+    function getSshUiStateCtx() {
+      return {
+        getSelectedAgentIds: () => sshUiState.get('selectedAgentIds', sshUiDefaults.selectedAgentIds),
+        setSelectedAgentIds: (next) => sshUiState.set('selectedAgentIds', (next instanceof Set) ? next : new Set()),
+        getSelectedKeyId: () => sshUiState.get('selectedKeyId', sshUiDefaults.selectedKeyId),
+        setSelectedKeyId: (next) => sshUiState.set('selectedKeyId', next || null),
+        getKeysCache: () => sshUiState.get('keysCache', sshUiDefaults.keysCache),
+        setKeysCache: (next) => sshUiState.set('keysCache', Array.isArray(next) ? next : []),
+        getAllHosts: () => allHosts,
+      };
+    }
+
     function getSshSelectedAgentIds() {
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.getSshSelectedAgentIds === 'function') return mod.getSshSelectedAgentIds(getSshUiStateCtx());
       return sshUiState.get('selectedAgentIds', sshUiDefaults.selectedAgentIds);
     }
 
     function setSshSelectedAgentIds(next) {
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.setSshSelectedAgentIds === 'function') return mod.setSshSelectedAgentIds(getSshUiStateCtx(), next);
       return sshUiState.set('selectedAgentIds', (next instanceof Set) ? next : new Set());
     }
 
     function getSshSelectedKeyId() {
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.getSshSelectedKeyId === 'function') return mod.getSshSelectedKeyId(getSshUiStateCtx());
       return sshUiState.get('selectedKeyId', sshUiDefaults.selectedKeyId);
     }
 
     function setSshSelectedKeyId(next) {
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.setSshSelectedKeyId === 'function') return mod.setSshSelectedKeyId(getSshUiStateCtx(), next);
       return sshUiState.set('selectedKeyId', next || null);
     }
 
     function getSshKeysCache() {
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.getSshKeysCache === 'function') return mod.getSshKeysCache(getSshUiStateCtx());
       return sshUiState.get('keysCache', sshUiDefaults.keysCache);
     }
 
     function setSshKeysCache(next) {
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.setSshKeysCache === 'function') return mod.setSshKeysCache(getSshUiStateCtx(), next);
       return sshUiState.set('keysCache', Array.isArray(next) ? next : []);
     }
 
     function setSshHostsPanelVisible(v) {
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.setSshHostsPanelVisible === 'function') return mod.setSshHostsPanelVisible(getSshUiStateCtx(), v);
       setPanelVisibleById('sshkey-hosts-panel', v);
     }
 
     function renderSshHostsList() {
-      const selectedAgentIds = getSshSelectedAgentIds();
-      const nextSelected = renderSshHostsListView({
-        hosts: (allHosts || []),
-        selectedAgentIds: selectedAgentIds,
-        listId: 'sshkey-hosts-list',
-        countId: 'sshkey-hosts-count',
-        searchId: 'sshkey-hosts-search',
-      }) || selectedAgentIds;
-      setSshSelectedAgentIds(nextSelected);
+      const mod = window.phase3SshUiState;
+      if (mod && typeof mod.renderSshHostsList === 'function') return mod.renderSshHostsList(getSshUiStateCtx());
     }
 
     async function loadSshKeys(showToastOnManual = false) {
