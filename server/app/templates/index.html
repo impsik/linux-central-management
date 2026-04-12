@@ -494,6 +494,7 @@ __PARTIAL_MODALS__
         lastRenderedAgentIds: [],
       };
     let allHosts = hostFilterSelectionDefaults.allHosts;
+    window.allHosts = allHosts;
     let hostSearchQuery = hostFilterSelectionDefaults.hostSearchQuery;
     let labelEnvFilter = hostFilterSelectionDefaults.labelEnvFilter;
     let labelRoleFilter = hostFilterSelectionDefaults.labelRoleFilter;
@@ -528,7 +529,7 @@ __PARTIAL_MODALS__
     function getHostListBridgeCtx() {
       return {
         getAllHosts: () => allHosts,
-        setAllHosts: (v) => { allHosts = syncHostFilterSelectionState('allHosts', v); return allHosts; },
+        setAllHosts: (v) => { allHosts = syncHostFilterSelectionState('allHosts', v); window.allHosts = allHosts; return allHosts; },
         getHostSearchQuery: () => hostSearchQuery,
         getLabelEnvFilter: () => labelEnvFilter,
         setLabelEnvFilter: (v) => { labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', v); return labelEnvFilter; },
@@ -578,6 +579,7 @@ __PARTIAL_MODALS__
 
     function clearCurrentHostSelection() {
       currentAgentId = null;
+      window.currentAgentId = currentAgentId;
       metricsLifecycleState.set('currentMetricsAgentId', null);
 
       // Stop any existing metrics updates
@@ -617,6 +619,7 @@ __PARTIAL_MODALS__
       const prevActiveTabId = document.querySelector('.tab-content-custom.active')?.id || 'server-info-tab';
 
       currentAgentId = agentId;
+      window.currentAgentId = currentAgentId;
 
       // Reset per-host package filters so they don't leak across hosts
       packagesUpdatesOnly = false;

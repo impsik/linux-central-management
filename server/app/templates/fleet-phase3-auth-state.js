@@ -77,6 +77,8 @@ function setAdminStatus(message, state) {
       currentUsername = meUser;
       currentPermissions = mePermissions || {};
       adminUsername = admin;
+      window.currentUsername = currentUsername;
+      window.currentPermissions = currentPermissions;
       const isAdmin = (currentPermissions && String(currentPermissions.role||'').toLowerCase() === 'admin') || !!currentPermissions.can_manage_users || !!(meUser && admin && meUser === admin);
 
       // Forced MFA flow (for admin/operator).

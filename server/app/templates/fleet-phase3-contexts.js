@@ -27,6 +27,8 @@
     return {
       getCurrentPermissions: d.getCurrentPermissions || (() => ({})),
       getCurrentAgentId: d.getCurrentAgentId || (() => null),
+      getCurrentUsername: d.getCurrentUsername || (() => ''),
+      getCurrentHostOwner: d.getCurrentHostOwner || (() => ''),
     };
   }
 
