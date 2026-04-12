@@ -49,9 +49,17 @@
     }
   }
 
+  function loadHostsTable(ctx) {
+    const mod = w.phase3Overview;
+    if (mod && typeof mod.loadHostsTable === 'function') {
+      return mod.loadHostsTable(getOverviewCtx(ctx));
+    }
+  }
+
   w.phase3OverviewBridges = {
     getOverviewCtx,
     loadFleetOverview,
     loadPendingUpdatesReport,
+    loadHostsTable,
   };
 })(window);

@@ -1892,9 +1892,9 @@ __PARTIAL_MODALS__
     }
 
     async function loadHostsTable() {
-      const mod = window.phase3Overview;
+      const mod = window.phase3OverviewBridges;
       if (mod && typeof mod.loadHostsTable === 'function') {
-        return mod.loadHostsTable(getOverviewCtx());
+        return mod.loadHostsTable(getOverviewBridgeCtx());
       }
     }
 
