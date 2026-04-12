@@ -22,6 +22,7 @@
   <script src="/assets/fleet-phase3-terminal-runtime.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-host-history.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-admin-bridges.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-host-list-bridges.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -523,29 +524,7 @@ __PARTIAL_MODALS__
     let selectedPackages = new Set();
     let currentPackageName = null;
 
-    function getHostListCtx() {
-      const mod = window.phase3Contexts;
-      if (mod && typeof mod.createHostListCtx === 'function') {
-        return mod.createHostListCtx({
-          getAllHosts: () => allHosts,
-          setAllHosts: (v) => { allHosts = syncHostFilterSelectionState('allHosts', v); return allHosts; },
-          getHostSearchQuery: () => hostSearchQuery,
-          getLabelEnvFilter: () => labelEnvFilter,
-          setLabelEnvFilter: (v) => { labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', v); return labelEnvFilter; },
-          getLabelRoleFilter: () => labelRoleFilter,
-          setLabelRoleFilter: (v) => { labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', v); return labelRoleFilter; },
-          getLabelOwnerFilter: () => labelOwnerFilter,
-          setLabelOwnerFilter: (v) => { labelOwnerFilter = syncHostFilterSelectionState('labelOwnerFilter', v); return labelOwnerFilter; },
-          getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
-          getSelectedAgentIds: () => selectedAgentIds,
-          setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', v); return lastRenderedAgentIds; },
-          getCurrentAgentId: () => currentAgentId,
-          getLastPkgVerification: () => lastPkgVerification,
-          selectHost,
-          updateUpgradeControls: () => updateUpgradeControlsFn(),
-          renderHosts: (hosts) => renderHosts(hosts),
-        });
-      }
+    function getHostListBridgeCtx() {
       return {
         getAllHosts: () => allHosts,
         setAllHosts: (v) => { allHosts = syncHostFilterSelectionState('allHosts', v); return allHosts; },
@@ -564,26 +543,29 @@ __PARTIAL_MODALS__
         selectHost,
         updateUpgradeControls: () => updateUpgradeControlsFn(),
         renderHosts: (hosts) => renderHosts(hosts),
+        applyHostsTableFilters: () => {
+          const overviewMod = window.phase3Overview;
+          if (overviewMod && typeof overviewMod.applyHostsTableFilters === 'function') {
+            overviewMod.applyHostsTableFilters(getHostListCtx());
+          }
+        },
       };
     }
 
+    function getHostListCtx() {
+      const mod = window.phase3HostListBridges;
+      if (mod && typeof mod.getHostListCtx === 'function') return mod.getHostListCtx(getHostListBridgeCtx());
+      return getHostListBridgeCtx();
+    }
+
     function rebuildLabelFilterOptions(hosts) {
-      const mod = window.phase3HostList;
-      if (mod && typeof mod.rebuildLabelFilterOptions === 'function') {
-        if (Array.isArray(hosts)) getHostListCtx().setAllHosts(hosts);
-        return mod.rebuildLabelFilterOptions(getHostListCtx());
-      }
+      const mod = window.phase3HostListBridges;
+      if (mod && typeof mod.rebuildLabelFilterOptions === 'function') return mod.rebuildLabelFilterOptions(getHostListBridgeCtx(), hosts);
     }
 
     function applyHostFilters() {
-      const listMod = window.phase3HostList;
-      if (listMod && typeof listMod.applyHostFilters === 'function') {
-        listMod.applyHostFilters(getHostListCtx());
-      }
-      const overviewMod = window.phase3Overview;
-      if (overviewMod && typeof overviewMod.applyHostsTableFilters === 'function') {
-        overviewMod.applyHostsTableFilters(getHostListCtx());
-      }
+      const mod = window.phase3HostListBridges;
+      if (mod && typeof mod.applyHostFilters === 'function') return mod.applyHostFilters(getHostListBridgeCtx());
     }
 
     function renderHosts(hosts) {
@@ -1564,37 +1546,8 @@ __PARTIAL_MODALS__
     }
 
     async function loadHosts() {
-      const hostsEl = document.getElementById('hosts');
-      const mod = window.phase3HostList;
-      try {
-        if (mod && typeof mod.loadHosts === 'function') {
-          await mod.loadHosts(getHostListCtx());
-          return;
-        }
-
-        // Fallback path so UI doesn't stay stuck when module fails to load.
-        console.error('[loadHosts] phase3HostList module missing; using inline fallback');
-        const r = await fetch('/hosts?online_only=true', { credentials: 'include' });
-        if (!r.ok) throw new Error(`hosts failed (${r.status})`);
-        const items = await r.json();
-        const hosts = Array.isArray(items) ? items : [];
-        if (!hostsEl) return;
-        if (!hosts.length) {
-          hostsEl.innerHTML = '<div class="empty-state">No hosts found</div>';
-          return;
-        }
-        hostsEl.innerHTML = hosts.map(h => `
-          <div class="host-item">
-            <div class="host-meta">
-              <div class="host-row-top"><div class="host-name">${escapeHtml(h.hostname || h.agent_id || '')}</div></div>
-              <div class="host-subline"><span class="host-subitem">${escapeHtml(h.agent_id || '')}</span></div>
-            </div>
-          </div>
-        `).join('');
-      } catch (e) {
-        console.error('[loadHosts failed]', e);
-        if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
-      }
+      const mod = window.phase3HostListBridges;
+      if (mod && typeof mod.loadHosts === 'function') return mod.loadHosts(getHostListBridgeCtx());
     }
 
     function initHostFilters() {

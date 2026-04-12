@@ -47,6 +47,7 @@ describe('index shell integrity', () => {
     expect(src).toContain('/assets/fleet-phase3-terminal-runtime.js');
     expect(src).toContain('/assets/fleet-phase3-host-history.js');
     expect(src).toContain('/assets/fleet-phase3-admin-bridges.js');
+    expect(src).toContain('/assets/fleet-phase3-host-list-bridges.js');
 
     expect(headerPartial).toContain('id="settings-btn"');
     expect(headerPartial).toContain('id="current-user"');
