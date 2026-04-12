@@ -21,6 +21,7 @@
   <script src="/assets/fleet-phase3-ssh-ui-state.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-terminal-runtime.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-host-history.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-phase3-admin-bridges.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-app-shell.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-core-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-auth-state.js?v=__ASSET_VERSION__"></script>
@@ -2863,62 +2864,42 @@ __PARTIAL_MODALS__
       }
     }
 
-    function initHostActionControls() {
-      const mod = window.phase3HostActions;
-      if (mod && typeof mod.initHostActionControls === 'function') {
-        const ctxDeps = { showServerInfo, showTerminal, showUsers, showServices, showPackages };
-        const ctxMod = window.phase3Contexts;
-        const ctx = (ctxMod && typeof ctxMod.createHostActionControlsCtx === 'function')
-          ? ctxMod.createHostActionControlsCtx(ctxDeps)
-          : ctxDeps;
-        return mod.initHostActionControls(ctx);
-      }
-    }
-
-    function initHostMetadataEditor() {
-      const mod = window.phase3HostActions;
-      if (mod && typeof mod.initHostMetadataEditor === 'function') {
-        const ctxDeps = {
-          getCurrentAgentId: () => currentAgentId,
-          onMetadataSaved: (updatedHost) => {
-            if (!updatedHost || !updatedHost.agent_id) return;
-            const idx = (allHosts || []).findIndex(h => h.agent_id === updatedHost.agent_id);
-            if (idx >= 0) {
-              const prev = allHosts[idx] || {};
-              allHosts[idx] = { ...prev, hostname: updatedHost.hostname || prev.hostname, labels: updatedHost.labels || prev.labels || {} };
-            }
-
-            if (String(currentAgentId || '') === String(updatedHost.agent_id || '')) {
-              const labelsEl = document.getElementById('server-info-labels');
-              if (labelsEl) {
-                const labels = (updatedHost.labels && typeof updatedHost.labels === 'object') ? updatedHost.labels : {};
-                const envVars = (labels.env_vars && typeof labels.env_vars === 'object') ? labels.env_vars : {};
-                const env = labels.env ? String(labels.env) : (envVars.env ? String(envVars.env) : '');
-                const role = labels.role ? String(labels.role) : '';
-                const parts = [];
-                if (env) parts.push(`<span class="label-badge">env: <code>${escapeHtml(env)}</code></span>`);
-                if (role) parts.push(`<span class="label-badge">role: <code>${escapeHtml(role)}</code></span>`);
-                labelsEl.innerHTML = parts.length ? parts.join('') : `<span class="label-badge">env: <code>n/a</code></span><span class="label-badge">role: <code>n/a</code></span>`;
-              }
-
-              const headerNameEl = document.getElementById('server-info-hostname');
-              if (headerNameEl && updatedHost.hostname) headerNameEl.textContent = String(updatedHost.hostname);
-            }
-
-            rebuildLabelFilterOptions(allHosts);
-            applyHostFilters();
+    function getAdminBridgeCtx() {
+      return {
+        showServerInfo,
+        showTerminal,
+        showUsers,
+        showServices,
+        showPackages,
+        getCurrentAgentId: () => currentAgentId,
+        onMetadataSaved: (updatedHost) => {
+          if (!updatedHost || !updatedHost.agent_id) return;
+          const idx = (allHosts || []).findIndex(h => h.agent_id === updatedHost.agent_id);
+          if (idx >= 0) {
+            const prev = allHosts[idx] || {};
+            allHosts[idx] = { ...prev, hostname: updatedHost.hostname || prev.hostname, labels: updatedHost.labels || prev.labels || {} };
           }
-        };
-        const ctxMod = window.phase3Contexts;
-        const ctx = (ctxMod && typeof ctxMod.createHostMetadataEditorCtx === 'function')
-          ? ctxMod.createHostMetadataEditorCtx(ctxDeps)
-          : ctxDeps;
-        return mod.initHostMetadataEditor(ctx);
-      }
-    }
 
-    function getSshUiCtx() {
-      const deps = {
+          if (String(currentAgentId || '') === String(updatedHost.agent_id || '')) {
+            const labelsEl = document.getElementById('server-info-labels');
+            if (labelsEl) {
+              const labels = (updatedHost.labels && typeof updatedHost.labels === 'object') ? updatedHost.labels : {};
+              const envVars = (labels.env_vars && typeof labels.env_vars === 'object') ? labels.env_vars : {};
+              const env = labels.env ? String(labels.env) : (envVars.env ? String(envVars.env) : '');
+              const role = labels.role ? String(labels.role) : '';
+              const parts = [];
+              if (env) parts.push(`<span class="label-badge">env: <code>${escapeHtml(env)}</code></span>`);
+              if (role) parts.push(`<span class="label-badge">role: <code>${escapeHtml(role)}</code></span>`);
+              labelsEl.innerHTML = parts.length ? parts.join('') : `<span class="label-badge">env: <code>n/a</code></span><span class="label-badge">role: <code>n/a</code></span>`;
+            }
+
+            const headerNameEl = document.getElementById('server-info-hostname');
+            if (headerNameEl && updatedHost.hostname) headerNameEl.textContent = String(updatedHost.hostname);
+          }
+
+          rebuildLabelFilterOptions(allHosts);
+          applyHostFilters();
+        },
         loadSshKeys,
         maybeLoadSshKeyAdminQueue,
         loadAdminSshKeys,
@@ -2934,37 +2915,43 @@ __PARTIAL_MODALS__
         getSshSelectedKeyId,
         loadSshKeyRequests,
         getAllHosts: () => allHosts,
-      };
-      const mod = window.phase3Contexts;
-      if (mod && typeof mod.createSshUiCtx === 'function') return mod.createSshUiCtx(deps);
-      return deps;
-    }
-
-    function initSshKeysControls() {
-      const mod = window.phase3SshUi;
-      if (mod && typeof mod.initSshKeysControls === 'function') {
-        return mod.initSshKeysControls(getSshUiCtx());
-      }
-    }
-
-    function getAnsibleCtx() {
-      const deps = {
         getAnsiblePlaybooks: () => ansiblePlaybooks,
         setAnsiblePlaybooks: (v) => { ansiblePlaybooks = Array.isArray(v) ? v : []; return ansiblePlaybooks; },
         getSelectedAgentIds: () => selectedAgentIds,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
-        getCurrentAgentId: () => currentAgentId,
       };
-      const mod = window.phase3Contexts;
-      if (mod && typeof mod.createAnsibleCtx === 'function') return mod.createAnsibleCtx(deps);
-      return deps;
+    }
+
+    function initHostActionControls() {
+      const mod = window.phase3AdminBridges;
+      if (mod && typeof mod.initHostActionControls === 'function') return mod.initHostActionControls(getAdminBridgeCtx());
+    }
+
+    function initHostMetadataEditor() {
+      const mod = window.phase3AdminBridges;
+      if (mod && typeof mod.initHostMetadataEditor === 'function') return mod.initHostMetadataEditor(getAdminBridgeCtx());
+    }
+
+    function getSshUiCtx() {
+      const mod = window.phase3AdminBridges;
+      if (mod && typeof mod.getSshUiCtx === 'function') return mod.getSshUiCtx(getAdminBridgeCtx());
+      return getAdminBridgeCtx();
+    }
+
+    function initSshKeysControls() {
+      const mod = window.phase3AdminBridges;
+      if (mod && typeof mod.initSshKeysControls === 'function') return mod.initSshKeysControls(getAdminBridgeCtx());
+    }
+
+    function getAnsibleCtx() {
+      const mod = window.phase3AdminBridges;
+      if (mod && typeof mod.getAnsibleCtx === 'function') return mod.getAnsibleCtx(getAdminBridgeCtx());
+      return getAdminBridgeCtx();
     }
 
     function initAnsibleSection() {
-      const mod = window.phase3Ansible;
-      if (mod && typeof mod.initAnsibleSection === 'function') {
-        return mod.initAnsibleSection(getAnsibleCtx());
-      }
+      const mod = window.phase3AdminBridges;
+      if (mod && typeof mod.initAnsibleSection === 'function') return mod.initAnsibleSection(getAdminBridgeCtx());
     }
 
 // Load hosts on page load
