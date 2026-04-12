@@ -1009,6 +1009,20 @@ body {
   gap: 0.65rem;
 }
 
+.admin-audit-table-wrap {
+  overflow: auto;
+  max-height: 29rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.admin-audit-table-wrap .process-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+
 .admin-note {
   font-size: 0.9rem;
   color: var(--muted-2);
