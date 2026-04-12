@@ -1,6 +1,11 @@
 (function (w) {
   async function loadUsers(ctx, agentId) {
     const usersList = document.getElementById('users-list');
+    const usersAccessNote = document.getElementById('users-access-note');
+    const currentUsername = String(ctx.getCurrentUsername?.() || '').trim();
+    const currentHostOwner = String(ctx.getCurrentHostOwner?.() || '').trim();
+    const canLockUsers = !!ctx.getCurrentPermissions()?.can_lock_users || !!(currentUsername && currentHostOwner && currentUsername === currentHostOwner);
+    if (usersAccessNote) usersAccessNote.style.display = 'none';
     usersList.innerHTML = '<div class="loading">Loading users...</div>';
 
     try {
@@ -17,6 +22,8 @@
       }
       const data = await response.json();
 
+      if (usersAccessNote) usersAccessNote.style.display = canLockUsers ? 'none' : 'block';
+
       if (!data.users || data.users.length === 0) {
         usersList.innerHTML = '<div class="empty-state">No users found</div>';
         return;
@@ -24,9 +31,6 @@
 
       usersList.innerHTML = data.users.map(user => {
         const isNew = !!user.is_new;
-        const currentUsername = String(ctx.getCurrentUsername?.() || '').trim();
-        const currentHostOwner = String(ctx.getCurrentHostOwner?.() || '').trim();
-        const canLockUsers = !!ctx.getCurrentPermissions()?.can_lock_users || !!(currentUsername && currentHostOwner && currentUsername === currentHostOwner);
         const isRoot = user.username === 'root';
         const disabledReason = !canLockUsers
           ? 'You can only manage users on hosts you own'

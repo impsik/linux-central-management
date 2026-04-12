@@ -115,16 +115,6 @@ function setAdminStatus(message, state) {
         logoutBtn.style.display = meUser ? 'flex' : 'none';
       }
 
-      const usersAccessNote = document.getElementById('users-access-note');
-      if (usersAccessNote) {
-        const host = (window.allHosts || []).find((h) => String(h?.agent_id || '') === String(window.currentAgentId || ''));
-        const labels = (host && host.labels && typeof host.labels === 'object') ? host.labels : {};
-        const currentHostOwner = String(labels.owner || '').trim();
-        const currentUser = String(window.currentUsername || '').trim();
-        const canManageHostUsers = !!currentPermissions.can_lock_users || !!(currentUser && currentHostOwner && currentUser === currentHostOwner);
-        usersAccessNote.style.display = canManageHostUsers ? 'none' : 'block';
-      }
-
       updateSshKeysLabels();
     }
 
