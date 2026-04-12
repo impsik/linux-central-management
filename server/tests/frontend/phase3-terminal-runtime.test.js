@@ -22,6 +22,7 @@ describe('phase3 terminal runtime extraction', () => {
     expect(moduleSrc).toContain('function updateTerminalPendingCmdButton(ctx)');
     expect(moduleSrc).toContain('function runPendingInteractivePackageCommand(ctx)');
     expect(moduleSrc).toContain('function initTerminalPendingCmdButton(ctx)');
+    expect(moduleSrc).toContain('function connect(ctx, agentId)');
     expect(moduleSrc).toContain('w.phase3TerminalRuntime = {');
   });
 });

@@ -1717,25 +1717,10 @@ __PARTIAL_MODALS__
     };
 
     function connect(agentId) {
-      const run = window.connectTerminalSession;
-      if (typeof run === 'function') {
-        run({
-          agentId,
-          term,
-          getWs: () => ws,
-          setWs: (next) => { ws = next; },
-          setCurrentAgentId: (next) => { currentAgentId = next; }
-        });
-        return;
+      const mod = window.phase3TerminalRuntime;
+      if (mod && typeof mod.connect === 'function') {
+        return mod.connect(getTerminalRuntimeCtx(), agentId);
       }
-
-      currentAgentId = agentId;
-      if (ws) { try { ws.close(); } catch { } }
-      term.clear();
-      term.write(`Connecting to ${agentId}...\r\n`);
-      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${agentId}`);
-      ws.binaryType = "arraybuffer";
     }
 
     async function loadHosts() {

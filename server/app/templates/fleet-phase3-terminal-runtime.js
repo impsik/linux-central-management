@@ -112,6 +112,32 @@
     updateTerminalPendingCmdButton(api);
   }
 
+  function connect(ctx, agentId) {
+    const api = ctx || {};
+    const run = w.connectTerminalSession;
+    if (typeof run === 'function') {
+      run({
+        agentId,
+        term: api.getTerm?.(),
+        getWs: () => api.getWs?.(),
+        setWs: (next) => api.setWs?.(next),
+        setCurrentAgentId: (next) => api.setCurrentAgentId?.(next),
+      });
+      return;
+    }
+
+    api.setCurrentAgentId?.(agentId);
+    const currentWs = api.getWs?.();
+    if (currentWs) { try { currentWs.close(); } catch {} }
+    const term = api.getTerm?.();
+    term?.clear();
+    term?.write(`Connecting to ${agentId}...\r\n`);
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${agentId}`);
+    ws.binaryType = 'arraybuffer';
+    api.setWs?.(ws);
+  }
+
   w.phase3TerminalRuntime = {
     fitTerminalViewport,
     initTerminalOnce,
@@ -119,5 +145,6 @@
     updateTerminalPendingCmdButton,
     runPendingInteractivePackageCommand,
     initTerminalPendingCmdButton,
+    connect,
   };
 })(window);
