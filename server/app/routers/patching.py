@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -12,7 +13,7 @@ from ..models import HighRiskActionRequest, Host, HostPackageUpdate, PatchCampai
 from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.high_risk_approval import is_approval_required
-from ..services.maintenance import assert_action_allowed_now
+from ..services.maintenance import assert_action_allowed_now, evaluate_action_now
 from ..services.patching import (
     build_security_wave_plan,
     create_patch_campaign,
@@ -146,10 +147,18 @@ def create_security_updates_campaign(
     if not scoped_targets:
         raise HTTPException(400, "No targets resolved within your scope")
 
-    try:
-        assert_action_allowed_now("security-campaign", db=db, agent_ids=scoped_targets, labels=labels)
-    except PermissionError as e:
-        raise HTTPException(403, str(e))
+    decision = evaluate_action_now("security-campaign", db=db, agent_ids=scoped_targets, labels=labels)
+    if decision.get("decision") == "block":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "Action 'security-campaign' is blocked outside maintenance window for matching targets",
+                "action": decision.get("action") or "security-campaign",
+                "reason_code": decision.get("reason_code") or "outside_scoped_window_blocked",
+                "matched_count": int(decision.get("matched_count") or 0),
+                "matched_windows": decision.get("matched_windows") or [],
+            },
+        )
 
     if is_approval_required("security-campaign"):
         with transaction(db):
