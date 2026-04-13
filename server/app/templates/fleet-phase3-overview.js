@@ -1,10 +1,58 @@
 (function (w) {
+<<<<<<< HEAD
+=======
+  const shared = w.phase3Shared || {};
+
+>>>>>>> 801e53c (Fix hosts actions menu toggle visibility)
   function formatDateSafe(value) {
     if (!value) return '–';
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
   }
 
+<<<<<<< HEAD
+=======
+  function formatShortTimeSafe(ctx, value) {
+    if (typeof shared.formatShortTimeSafe === 'function') return shared.formatShortTimeSafe(ctx, value);
+    if (ctx && typeof ctx.formatShortTime === 'function') return ctx.formatShortTime(value);
+    if (typeof w.formatShortTime === 'function') return w.formatShortTime(value);
+    return formatDateSafe(value);
+  }
+
+  function ensureBulkOwnerButtons() {
+    let selectedBtn = document.getElementById('hosts-bulk-owner');
+    let visibleBtn = document.getElementById('hosts-bulk-owner-visible');
+    if (selectedBtn && visibleBtn) return { selectedBtn, visibleBtn };
+    const anchor = document.getElementById('hosts-remove-selected') || document.getElementById('hosts-reload');
+    const parent = anchor ? anchor.parentElement : null;
+    if (!anchor || !parent) return { selectedBtn: null, visibleBtn: null };
+    if (!visibleBtn) {
+      visibleBtn = document.createElement('button');
+      visibleBtn.type = 'button';
+      visibleBtn.className = 'btn';
+      visibleBtn.id = 'hosts-bulk-owner-visible';
+      visibleBtn.textContent = 'Set owner (visible)…';
+      anchor.insertAdjacentElement('beforebegin', visibleBtn);
+    }
+    if (!selectedBtn) {
+      selectedBtn = document.createElement('button');
+      selectedBtn.type = 'button';
+      selectedBtn.className = 'btn';
+      selectedBtn.id = 'hosts-bulk-owner';
+      selectedBtn.textContent = 'Set owner (selected)…';
+      visibleBtn.insertAdjacentElement('beforebegin', selectedBtn);
+    }
+    return { selectedBtn, visibleBtn };
+  }
+
+  function getSelectedHostAgentIds() {
+    return Array.from(document.querySelectorAll('.host-select:checked, .hosts-row-select:checked'))
+      .map((el) => String(el.getAttribute('data-agent-id') || '').trim())
+      .filter(Boolean)
+      .filter((v, i, arr) => arr.indexOf(v) === i);
+  }
+
+>>>>>>> 801e53c (Fix hosts actions menu toggle visibility)
   async function buildHttpError(resp, label) {
     let detail = '';
     try {
@@ -196,7 +244,7 @@
               const agentId = String(it.agent_id || '');
               const hostName = String(it.hostname || it.agent_id || '');
               const host = w.escapeHtml(hostName);
-              const last = it.last_seen ? w.escapeHtml(ctx.formatShortTime(it.last_seen)) : '–';
+              const last = it.last_seen ? w.escapeHtml(formatShortTimeSafe(ctx, it.last_seen)) : '–';
               const issuesHtml = (it.issues || []).map(x => {
                 const kind = String(x.kind || '');
                 const msg = String(x.message || '');
@@ -281,17 +329,19 @@
     const q = String((ctx && typeof ctx.getHostSearchQuery === 'function') ? (ctx.getHostSearchQuery() || '') : '').trim().toLowerCase();
     const labelEnv = String((ctx && typeof ctx.getLabelEnvFilter === 'function') ? (ctx.getLabelEnvFilter() || '') : '').trim();
     const labelRole = String((ctx && typeof ctx.getLabelRoleFilter === 'function') ? (ctx.getLabelRoleFilter() || '') : '').trim();
+    const labelOwner = String((ctx && typeof ctx.getLabelOwnerFilter === 'function') ? (ctx.getLabelOwnerFilter() || '') : (document.getElementById('label-owner')?.value || '')).trim();
     const vulnSet = (ctx && typeof ctx.getVulnFilteredAgentIds === 'function') ? ctx.getVulnFilteredAgentIds() : null;
 
     if (vulnSet instanceof Set) {
       out = out.filter((it) => vulnSet.has(String(it.agent_id || '')));
     }
 
-    if (labelEnv || labelRole) {
+    if (labelEnv || labelRole || labelOwner) {
       out = out.filter((it) => {
         const labels = (it && it.labels && typeof it.labels === 'object') ? it.labels : {};
         if (labelEnv && String(labels.env || '') !== labelEnv) return false;
         if (labelRole && String(labels.role || '') !== labelRole) return false;
+        if (labelOwner && String(labels.owner || '') !== labelOwner) return false;
         return true;
       });
     }
@@ -337,10 +387,24 @@
       const all = Number(it.updates || 0);
       const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
       const reboot = it.reboot_required ? '<span class="status-warn">required</span>' : '<span class="status-muted">no</span>';
-      const rebootAction = it.reboot_required
-        ? ('<button type="button" class="btn host-reboot-btn" data-agent-id="' + w.escapeHtml(it.agent_id || '') + '" data-hostname="' + w.escapeHtml(hostName) + '" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Reboot</button>')
-        : '<span class="status-muted">—</span>';
-      const lastSeen = ctx.formatShortTime(it.last_seen);
+      const hostActionsMenu = `
+        <div class="host-actions-wrap" style="position:relative;display:inline-block;text-align:left;">
+          <button type="button" class="btn host-actions-toggle" aria-haspopup="menu" aria-expanded="false" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Actions ▾</button>
+          <div class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;gap:0.25rem;">
+            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.15rem 0.35rem 0;">Observe</div>
+            <button type="button" class="btn host-check-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Check updates</button>
+            <button type="button" class="btn host-refresh-inventory-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Refresh inventory</button>
+            <div style="height:1px;background:var(--border);margin:0.2rem 0;"></div>
+            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.05rem 0.35rem 0;">Remediate</div>
+            <button type="button" class="btn host-security-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install security updates</button>
+            <button type="button" class="btn host-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install updates + reboot if required</button>
+            <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot host</button>
+            <div style="height:1px;background:var(--border);margin:0.2rem 0;"></div>
+            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.05rem 0.35rem 0;">Destructive</div>
+            <button type="button" class="btn btn-danger host-remove-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Remove host</button>
+          </div>
+        </div>`;
+      const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
 
       const tr = document.createElement('tr');
       tr.style.cursor = 'pointer';
@@ -354,7 +418,6 @@
         <td>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
             <b>${w.escapeHtml(hostName)}</b>
-            <button type="button" class="btn btn-danger host-remove-btn" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.2rem 0.45rem;font-size:0.8rem;">Remove</button>
           </div>
           <div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div>
         </td>
@@ -365,7 +428,7 @@
         <td>${reboot}</td>
         <td>${online}</td>
         <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
-        <td style="text-align:right;">${rebootAction}</td>
+        <td style="text-align:right;">${hostActionsMenu}</td>
       `;
 
       tr.addEventListener('click', () => {
@@ -389,11 +452,42 @@
         });
       }
 
-      const removeBtn = tr.querySelector('.host-remove-btn');
+      const actionsWrap = tr.querySelector('.host-actions-wrap');
+      const actionsToggle = tr.querySelector('.host-actions-toggle');
+      const actionsMenu = tr.querySelector('.host-actions-menu');
+      const closeActionsMenu = () => {
+        if (!actionsMenu) return;
+        actionsMenu.hidden = true;
+        actionsMenu.style.display = 'none';
+        actionsToggle?.setAttribute('aria-expanded', 'false');
+      };
+      const openActionsMenu = () => {
+        if (!actionsMenu) return;
+        document.querySelectorAll('.host-actions-menu').forEach((el) => {
+          if (el !== actionsMenu) {
+            el.hidden = true;
+            el.style.display = 'none';
+          }
+        });
+        actionsMenu.hidden = false;
+        actionsMenu.style.display = 'grid';
+        actionsToggle?.setAttribute('aria-expanded', 'true');
+      };
+      actionsToggle?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!actionsMenu) return;
+        if (actionsMenu.hidden) openActionsMenu();
+        else closeActionsMenu();
+      });
+      actionsWrap?.addEventListener('click', (e) => e.stopPropagation());
+
+      const removeBtn = tr.querySelector('.host-remove-action');
       if (removeBtn) {
         removeBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
+          closeActionsMenu();
           const agentId = String(removeBtn.getAttribute('data-agent-id') || '').trim();
           const hostnameLabel = String(removeBtn.getAttribute('data-hostname') || '').trim() || agentId;
           if (!agentId) return;
@@ -450,11 +544,12 @@
         });
       }
 
-      const rebootBtn = tr.querySelector('.host-reboot-btn');
+      const rebootBtn = tr.querySelector('.host-reboot-action');
       if (rebootBtn) {
         rebootBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
+          closeActionsMenu();
           const agentId = String(rebootBtn.getAttribute('data-agent-id') || '').trim();
           const hostnameLabel = String(rebootBtn.getAttribute('data-hostname') || '').trim() || agentId;
           if (!agentId) return;
@@ -476,9 +571,188 @@
         });
       }
 
+      const checkUpdatesBtn = tr.querySelector('.host-check-updates-action');
+      if (checkUpdatesBtn) {
+        checkUpdatesBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(checkUpdatesBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(checkUpdatesBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const resp = await fetch(`/hosts/${encodeURIComponent(agentId)}/packages/check-updates`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `check updates failed (${resp.status})`);
+            }
+            const updateCount = Number(data?.updates || 0);
+            w.showToast(`Checked updates for ${hostnameLabel}: ${updateCount} available`, 'success');
+            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
+            if (ctx && typeof ctx.loadPendingUpdatesReport === 'function') await ctx.loadPendingUpdatesReport(false);
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
+      const refreshInventoryBtn = tr.querySelector('.host-refresh-inventory-action');
+      if (refreshInventoryBtn) {
+        refreshInventoryBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(refreshInventoryBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(refreshInventoryBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const resp = await fetch(`/hosts/${encodeURIComponent(agentId)}/packages/refresh?wait=true`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `refresh inventory failed (${resp.status})`);
+            }
+            w.showToast(`Inventory refreshed for ${hostnameLabel}`, 'success');
+            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
+            if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
+      const securityUpdatesBtn = tr.querySelector('.host-security-updates-action');
+      if (securityUpdatesBtn) {
+        securityUpdatesBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(securityUpdatesBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(securityUpdatesBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const preflightResp = await fetch('/jobs/preflight', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action: 'security-campaign', agent_ids: [agentId] }),
+            });
+            const preflightText = await preflightResp.text();
+            let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
+            if (preflightResp.ok && preflightData) {
+              const preflightMsg = summarizePreflight(preflightData);
+              w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
+              if (typeof w.openPreflightResultsModal === 'function') {
+                w.openPreflightResultsModal(preflightData, `host security-updates dry run · ${hostnameLabel}`);
+              }
+              if (preflightData?.has_blockers) return;
+            }
+          } catch (_) {
+            // continue to explicit confirm if preflight lookup itself fails
+          }
+          if (!confirm(`Install security updates on host "${hostnameLabel}" (${agentId})?`)) return;
+          try {
+            const now = new Date();
+            const end = new Date(now.getTime() + 60 * 60 * 1000);
+            const payload = { agent_ids: [agentId], window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 1, reboot_if_needed: false, include_kernel: false };
+            const resp = await fetch('/patching/campaigns/security-updates', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `security update campaign failed (${resp.status})`);
+            }
+            if (data && data.approval_required) {
+              w.showToast(`Approval required (security-campaign): ${data.request_id}`, 'info', 5000);
+              return;
+            }
+            w.showToast(`Security update campaign scheduled for ${hostnameLabel}: ${data.campaign_id}`, 'success');
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
+      const upgradeRebootBtn = tr.querySelector('.host-upgrade-reboot-action');
+      if (upgradeRebootBtn) {
+        upgradeRebootBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(upgradeRebootBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(upgradeRebootBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const preflightResp = await fetch('/jobs/preflight', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action: 'security-campaign', agent_ids: [agentId] }),
+            });
+            const preflightText = await preflightResp.text();
+            let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
+            if (preflightResp.ok && preflightData) {
+              const preflightMsg = summarizePreflight(preflightData);
+              w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
+              if (typeof w.openPreflightResultsModal === 'function') {
+                w.openPreflightResultsModal(preflightData, `host update+reboot dry run · ${hostnameLabel}`);
+              }
+              if (preflightData?.has_blockers) return;
+            }
+          } catch (_) {
+            // continue to explicit confirm if preflight lookup itself fails
+          }
+          if (!confirm(`Install available updates on host "${hostnameLabel}" (${agentId}) and reboot if required?`)) return;
+          try {
+            const now = new Date();
+            const end = new Date(now.getTime() + 60 * 60 * 1000);
+            const payload = { agent_ids: [agentId], window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 1, reboot_if_needed: true, include_kernel: false };
+            const resp = await fetch('/patching/campaigns/security-updates', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `update campaign failed (${resp.status})`);
+            }
+            if (data && data.approval_required) {
+              w.showToast(`Approval required (security-campaign): ${data.request_id}`, 'info', 5000);
+              return;
+            }
+            w.showToast(`Update campaign scheduled for ${hostnameLabel}: ${data.campaign_id}`, 'success');
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
       tbody.appendChild(tr);
     }
   }
+
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.host-actions-menu').forEach((el) => {
+      el.hidden = true;
+      el.style.display = 'none';
+    });
+    document.querySelectorAll('.host-actions-toggle[aria-expanded="true"]').forEach((el) => {
+      el.setAttribute('aria-expanded', 'false');
+    });
+  });
 
   function applyHostsTableFilters(ctx) {
     const tbody = document.getElementById('hosts-table-body');
@@ -528,12 +802,23 @@
 
     try {
       w.setTableState(tbody, 10, 'loading', 'Loading…');
-      const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=500`;
+      const effectiveSort = sort === 'owner' ? 'hostname' : sort;
+      const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(effectiveSort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include' });
       if (!r.ok) throw await buildHttpError(r, 'hosts report failed');
       const d = await r.json();
       const items = d?.items || [];
       hostsTableItemsCache = Array.isArray(items) ? items : [];
+      if (sort === 'owner') {
+        const dir = order === 'desc' ? -1 : 1;
+        hostsTableItemsCache.sort((a, b) => {
+          const ao = String(a?.labels?.owner || '').trim();
+          const bo = String(b?.labels?.owner || '').trim();
+          const ownerCmp = ao.localeCompare(bo, undefined, { sensitivity: 'base' });
+          if (ownerCmp !== 0) return ownerCmp * dir;
+          return String(a?.hostname || a?.agent_id || '').localeCompare(String(b?.hostname || b?.agent_id || ''), undefined, { sensitivity: 'base' }) * dir;
+        });
+      }
       if (!hostsTableItemsCache.length) {
         if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
         updateHostsUpdatesHint();
@@ -563,7 +848,7 @@
       if (hostsEl && hostText.includes('loading hosts')) {
         hostsEl.innerHTML = hostsTableItemsCache.map((it) => {
           const ip = it.ip_address || '';
-          const lastSeen = ctx.formatShortTime(it.last_seen);
+          const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
           const labels = (it.labels && typeof it.labels === 'object') ? it.labels : {};
           const env = labels.env || '';
           const role = labels.role || '';
@@ -629,7 +914,7 @@
         const sec = Number(it.security_updates || 0);
         const all = Number(it.updates || 0);
         const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
-        const lastSeen = ctx.formatShortTime(it.last_seen);
+        const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
 
         const tr = document.createElement('tr');
         tr.innerHTML = `
@@ -819,36 +1104,83 @@
     const nextCronjobsOpenBtn = document.getElementById('overview-next-cronjobs-open');
     const containerEl = document.querySelector('.container');
 
-    function setGuardedButtonState(btn, blocked, message) {
-      if (!btn) return;
-      const original = btn.dataset.originalLabel || btn.textContent || '';
-      if (!btn.dataset.originalLabel) btn.dataset.originalLabel = original;
-      if (blocked) {
-        btn.disabled = true;
-        btn.textContent = original.startsWith('🔒 ') ? original : `🔒 ${original}`;
-        btn.title = message || 'Blocked by maintenance window';
-      } else {
-        btn.disabled = false;
-        btn.textContent = original;
-        btn.title = '';
-      }
+  function setGuardedButtonState(btn, blocked, message) {
+    if (!btn) return;
+    const original = btn.dataset.originalText || btn.textContent || '';
+    if (!btn.dataset.originalText) btn.dataset.originalText = original;
+    if (blocked) {
+      btn.disabled = true;
+      btn.textContent = original.startsWith('🔒 ') ? original : `🔒 ${original}`;
+      btn.title = message || 'Blocked by maintenance window';
+    } else {
+      btn.disabled = false;
+      btn.textContent = original;
+      btn.title = '';
     }
+  }
+
+  function formatMaintenanceWindowBlockMessage(payload, fallback) {
+    const data = payload && typeof payload === 'object' ? payload : {};
+    const detail = String(data.detail || data.error || fallback || 'Blocked by maintenance window').trim();
+    const matched = Array.isArray(data.matched_windows) ? data.matched_windows : [];
+    if (!matched.length) return detail;
+    const names = matched.map((w) => String(w?.name || '').trim()).filter(Boolean);
+    if (!names.length) return detail;
+    const preview = names.slice(0, 2).join(', ');
+    const suffix = names.length > 2 ? ` (+${names.length - 2} more)` : '';
+    return `${detail} [${preview}${suffix}]`;
+  }
+
+  function summarizePreflight(preflight) {
+    const p = preflight && typeof preflight === 'object' ? preflight : {};
+    const blockers = Number(p.blocker_count || 0);
+    const warnings = Number(p.warning_count || 0);
+    const failed = Array.isArray(p.failed_checks) ? p.failed_checks : [];
+    const preview = failed.slice(0, 2).map((item) => String(item?.detail || item?.reason_code || item?.kind || '').trim()).filter(Boolean).join('; ');
+    let summary = `Preflight: ${blockers} blocker(s), ${warnings} warning(s)`;
+    if (preview) summary += ` — ${preview}`;
+    return summary;
+  }
 
     async function refreshMaintenanceGuardButtons() {
       try {
-        const r = await fetch('/dashboard/maintenance-window', { credentials: 'include' });
-        if (!r.ok) return;
-        const m = await r.json();
-        const blocked = !!m.enabled && !m.within_window_now;
-        const msg = blocked ? `Blocked outside maintenance window (${m.start}-${m.end} ${m.timezone})` : '';
+        const agentIds = (ctx.getLastRenderedAgentIds && ctx.getLastRenderedAgentIds()) ? (ctx.getLastRenderedAgentIds() || []).slice().filter(Boolean) : [];
+        const actions = [
+          { action: 'security-campaign', buttonIds: ['overview-security-campaign', 'runbook-security-now'] },
+          { action: 'dist-upgrade', buttonIds: ['overview-dist-upgrade', 'runbook-dist-upgrade-now'] },
+        ];
 
-        // Overview risky actions
-        setGuardedButtonState(document.getElementById('overview-security-campaign'), blocked, msg);
-        setGuardedButtonState(document.getElementById('overview-dist-upgrade'), blocked, msg);
+        for (const entry of actions) {
+          let blocked = false;
+          let msg = '';
+          try {
+            const r = await fetch('/maintenance-windows/evaluate', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action: entry.action, agent_ids: agentIds }),
+            });
+            if (r.ok) {
+              const decision = await r.json();
+              blocked = decision?.decision === 'block';
+              msg = blocked ? formatMaintenanceWindowBlockMessage({
+                detail: `Blocked before execution for ${entry.action}`,
+                matched_windows: decision?.matched_windows || [],
+              }, 'Blocked by maintenance window') : '';
+            } else {
+              const fallback = await fetch('/dashboard/maintenance-window', { credentials: 'include' });
+              if (fallback.ok) {
+                const m = await fallback.json();
+                blocked = !!m.enabled && !m.within_window_now;
+                msg = blocked ? `Blocked outside maintenance window (${m.start}-${m.end} ${m.timezone})` : '';
+              }
+            }
+          } catch (_) { }
 
-        // Sidebar runbooks (risky ones)
-        setGuardedButtonState(document.getElementById('runbook-security-now'), blocked, msg);
-        setGuardedButtonState(document.getElementById('runbook-dist-now'), blocked, msg);
+          for (const id of entry.buttonIds) {
+            setGuardedButtonState(document.getElementById(id), blocked, msg);
+          }
+        }
       } catch (_) { }
     }
 
@@ -913,6 +1245,9 @@
     const invBtn = document.getElementById('overview-inventory-now');
     const secBtn = document.getElementById('overview-security-campaign');
     const distBtn = document.getElementById('overview-dist-upgrade');
+    const bulkOwnerButtons = ensureBulkOwnerButtons();
+    const bulkOwnerBtn = bulkOwnerButtons.selectedBtn;
+    const bulkOwnerVisibleBtn = bulkOwnerButtons.visibleBtn;
     const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
@@ -956,11 +1291,33 @@
       const now = new Date();
       const end = new Date(now.getTime() + 60 * 60 * 1000);
       const payload = { agent_ids: agentIds, window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 5, reboot_if_needed: true, include_kernel: false };
+      try {
+        const preflightResp = await fetch('/jobs/preflight', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'security-campaign', agent_ids: agentIds }),
+        });
+        const preflightText = await preflightResp.text();
+        let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
+        if (preflightResp.ok && preflightData) {
+          const preflightMsg = summarizePreflight(preflightData);
+          w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
+          if (typeof w.openPreflightResultsModal === 'function') {
+            w.openPreflightResultsModal(preflightData, `security-campaign dry run · ${agentIds.length} host(s)`);
+          }
+        }
+      } catch (_) {
+        // Additive only; proceed with the existing create flow.
+      }
       const r = await fetch('/patching/campaigns/security-updates', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       if (!r.ok) {
         const t = await r.text();
         let msg = 'Campaign creation failed';
-        try { const j = t ? JSON.parse(t) : null; msg = j?.detail || j?.error || msg; } catch (_) { }
+        try {
+          const j = t ? JSON.parse(t) : null;
+          msg = formatMaintenanceWindowBlockMessage(j, msg);
+        } catch (_) { }
         return w.showToast(msg, 'error');
       }
       const d = await r.json();
@@ -977,14 +1334,101 @@
       if (!r.ok) {
         const t = await r.text();
         let msg = 'dist-upgrade job creation failed';
-        try { const j = t ? JSON.parse(t) : null; msg = j?.detail || j?.error || msg; } catch (_) { }
+        try {
+          const j = t ? JSON.parse(t) : null;
+          msg = formatMaintenanceWindowBlockMessage(j, msg);
+        } catch (_) { }
         return w.showToast(msg, 'error');
       }
       const d = await r.json();
+      const preflightMsg = summarizePreflight(d?.preflight);
       if (d && d.approval_required) {
-        return w.showToast(`Approval required (dist-upgrade): ${d.request_id}`, 'info', 5000);
+        w.showToast(`Approval required (dist-upgrade): ${d.request_id}`, 'info', 5000);
+        w.showToast(preflightMsg, d?.preflight?.has_blockers ? 'error' : (d?.preflight?.has_warnings ? 'info' : 'success'), 7000);
+        if (d?.preflight && typeof w.openPreflightResultsModal === 'function') {
+          w.openPreflightResultsModal(d.preflight, `dist-upgrade · approval ${d.request_id}`);
+        }
+        return;
       }
       w.showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
+      if (d?.preflight) {
+        w.showToast(preflightMsg, d?.preflight?.has_blockers ? 'error' : (d?.preflight?.has_warnings ? 'info' : 'success'), 7000);
+        if (typeof w.openPreflightResultsModal === 'function') {
+          w.openPreflightResultsModal(d.preflight, `dist-upgrade · job ${d.job_id}`);
+        }
+      }
+    });
+
+    w.wireBusyClick(bulkOwnerBtn, 'Saving…', async () => {
+      const agentIds = getSelectedHostAgentIds();
+      if (!agentIds.length) return w.showToast('Select at least one host first', 'error');
+
+      const owner = String(window.prompt('Set owner for selected hosts to:', '') || '').trim();
+      if (!owner) return;
+
+      const csrf = typeof w.getCookie === 'function' ? (w.getCookie('fleet_csrf') || '') : '';
+      const failures = [];
+      for (const agentId of agentIds) {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/metadata`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            'X-CSRF-Token': csrf,
+          },
+          body: JSON.stringify({ owner }),
+        });
+        if (!r.ok) failures.push(agentId);
+      }
+
+      if (failures.length) {
+        const sample = failures.slice(0, 3).join(', ');
+        return w.showToast(`Owner update failed for ${failures.length} host(s)${sample ? `: ${sample}` : ''}`, 'error', 6000);
+      }
+
+      w.showToast(`Updated owner to ${owner} for ${agentIds.length} host(s)`, 'success');
+      await Promise.allSettled([
+        ctx.loadHostsTable(),
+        ctx.loadHosts(),
+        ctx.loadPendingUpdatesReport(false),
+        ctx.loadFleetOverview(true),
+      ]);
+    });
+
+    w.wireBusyClick(bulkOwnerVisibleBtn, 'Saving…', async () => {
+      const agentIds = ((ctx.getLastRenderedAgentIds && ctx.getLastRenderedAgentIds()) || []).slice().filter(Boolean);
+      if (!agentIds.length) return w.showToast('No visible hosts to update', 'error');
+
+      const owner = String(window.prompt('Set owner for all currently visible hosts to:', '') || '').trim();
+      if (!owner) return;
+
+      const csrf = typeof w.getCookie === 'function' ? (w.getCookie('fleet_csrf') || '') : '';
+      const failures = [];
+      for (const agentId of agentIds) {
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/metadata`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            'X-CSRF-Token': csrf,
+          },
+          body: JSON.stringify({ owner }),
+        });
+        if (!r.ok) failures.push(agentId);
+      }
+
+      if (failures.length) {
+        const sample = failures.slice(0, 3).join(', ');
+        return w.showToast(`Visible-owner update failed for ${failures.length} host(s)${sample ? `: ${sample}` : ''}`, 'error', 6000);
+      }
+
+      w.showToast(`Updated owner to ${owner} for ${agentIds.length} visible host(s)`, 'success');
+      await Promise.allSettled([
+        ctx.loadHostsTable(),
+        ctx.loadHosts(),
+        ctx.loadPendingUpdatesReport(false),
+        ctx.loadFleetOverview(true),
+      ]);
     });
 
     const reportRefresh = document.getElementById('report-refresh');
