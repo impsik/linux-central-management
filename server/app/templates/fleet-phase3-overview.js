@@ -381,9 +381,14 @@
       const all = Number(it.updates || 0);
       const online = it.is_online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
       const reboot = it.reboot_required ? '<span class="status-warn">required</span>' : '<span class="status-muted">no</span>';
-      const rebootAction = it.reboot_required
-        ? ('<button type="button" class="btn host-reboot-btn" data-agent-id="' + w.escapeHtml(it.agent_id || '') + '" data-hostname="' + w.escapeHtml(hostName) + '" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Reboot</button>')
-        : '<span class="status-muted">—</span>';
+      const hostActionsMenu = `
+        <div class="host-actions-wrap" style="position:relative;display:inline-block;text-align:left;">
+          <button type="button" class="btn host-actions-toggle" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Actions ▾</button>
+          <div class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;display:grid;gap:0.25rem;">
+            <button type="button" class="btn host-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install updates + reboot if required</button>
+            <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot host</button>
+          </div>
+        </div>`;
       const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
 
       const tr = document.createElement('tr');
@@ -409,7 +414,7 @@
         <td>${reboot}</td>
         <td>${online}</td>
         <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
-        <td style="text-align:right;">${rebootAction}</td>
+        <td style="text-align:right;">${hostActionsMenu}</td>
       `;
 
       tr.addEventListener('click', () => {
@@ -494,11 +499,35 @@
         });
       }
 
-      const rebootBtn = tr.querySelector('.host-reboot-btn');
+      const actionsWrap = tr.querySelector('.host-actions-wrap');
+      const actionsToggle = tr.querySelector('.host-actions-toggle');
+      const actionsMenu = tr.querySelector('.host-actions-menu');
+      const closeActionsMenu = () => {
+        if (!actionsMenu) return;
+        actionsMenu.hidden = true;
+        actionsToggle?.setAttribute('aria-expanded', 'false');
+      };
+      const openActionsMenu = () => {
+        if (!actionsMenu) return;
+        document.querySelectorAll('.host-actions-menu').forEach((el) => { if (el !== actionsMenu) el.hidden = true; });
+        actionsMenu.hidden = false;
+        actionsToggle?.setAttribute('aria-expanded', 'true');
+      };
+      actionsToggle?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!actionsMenu) return;
+        if (actionsMenu.hidden) openActionsMenu();
+        else closeActionsMenu();
+      });
+      actionsWrap?.addEventListener('click', (e) => e.stopPropagation());
+
+      const rebootBtn = tr.querySelector('.host-reboot-action');
       if (rebootBtn) {
         rebootBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
+          closeActionsMenu();
           const agentId = String(rebootBtn.getAttribute('data-agent-id') || '').trim();
           const hostnameLabel = String(rebootBtn.getAttribute('data-hostname') || '').trim() || agentId;
           if (!agentId) return;
@@ -520,9 +549,74 @@
         });
       }
 
+      const upgradeRebootBtn = tr.querySelector('.host-upgrade-reboot-action');
+      if (upgradeRebootBtn) {
+        upgradeRebootBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(upgradeRebootBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(upgradeRebootBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const preflightResp = await fetch('/jobs/preflight', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action: 'security-campaign', agent_ids: [agentId] }),
+            });
+            const preflightText = await preflightResp.text();
+            let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
+            if (preflightResp.ok && preflightData) {
+              const preflightMsg = summarizePreflight(preflightData);
+              w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
+              if (typeof w.openPreflightResultsModal === 'function') {
+                w.openPreflightResultsModal(preflightData, `host update+reboot dry run · ${hostnameLabel}`);
+              }
+              if (preflightData?.has_blockers) return;
+            }
+          } catch (_) {
+            // continue to explicit confirm if preflight lookup itself fails
+          }
+          if (!confirm(`Install available updates on host "${hostnameLabel}" (${agentId}) and reboot if required?`)) return;
+          try {
+            const now = new Date();
+            const end = new Date(now.getTime() + 60 * 60 * 1000);
+            const payload = { agent_ids: [agentId], window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 1, reboot_if_needed: true, include_kernel: false };
+            const resp = await fetch('/patching/campaigns/security-updates', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `update campaign failed (${resp.status})`);
+            }
+            if (data && data.approval_required) {
+              w.showToast(`Approval required (security-campaign): ${data.request_id}`, 'info', 5000);
+              return;
+            }
+            w.showToast(`Update campaign scheduled for ${hostnameLabel}: ${data.campaign_id}`, 'success');
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
       tbody.appendChild(tr);
     }
   }
+
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.host-actions-menu').forEach((el) => {
+      el.hidden = true;
+    });
+    document.querySelectorAll('.host-actions-toggle[aria-expanded="true"]').forEach((el) => {
+      el.setAttribute('aria-expanded', 'false');
+    });
+  });
 
   function applyHostsTableFilters(ctx) {
     const tbody = document.getElementById('hosts-table-body');
