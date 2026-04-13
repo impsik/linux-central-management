@@ -46,6 +46,16 @@ def test_job_preflight_reports_package_manager_lock_failed_check(monkeypatch, au
             'percent_used': 71.0,
         },
     )
+    monkeypatch.setattr(
+        jobs_router,
+        '_probe_package_db_health',
+        lambda db, agent_id: {
+            'blocked': False,
+            'reason_code': 'package_db_ok',
+            'detail': 'Package database health checks passed',
+            'audit_summary': '',
+        },
+    )
 
     with auth_client_factory(app) as (client, headers):
         resp = client.post('/jobs/preflight', json={'action': 'dist-upgrade', 'agent_ids': ['srv-locked']}, headers=headers)

@@ -466,6 +466,20 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
 		return
 
+	case "query-pkg-health":
+		stdout, stderr, code, errMsg := queryPkgHealth(ctx)
+		if code == 0 && errMsg == "" {
+			ev.Status = "success"
+		} else {
+			ev.Status = "failed"
+		}
+		ev.ExitCode = &code
+		ev.Stdout = stdout
+		ev.Stderr = stderr
+		ev.Error = errMsg
+		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
+		return
+
 	case "query-users":
 		stdout, stderr, code, errMsg := queryUsers(ctx)
 		if code == 0 && errMsg == "" {
@@ -1086,6 +1100,43 @@ func queryPkgLocks(ctx context.Context) (string, string, int, string) {
 		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", jerr)
 	}
 	return string(j), "", 0, ""
+}
+
+func queryPkgHealth(ctx context.Context) (string, string, int, string) {
+	queryCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	auditCmd := exec.CommandContext(queryCtx, "sudo", "-n", "dpkg", "--audit")
+	auditOut, auditErr := auditCmd.CombinedOutput()
+	auditText := strings.TrimSpace(string(auditOut))
+	if auditErr != nil && auditText == "" {
+		return string(auditOut), "", 1, fmt.Sprintf("dpkg --audit failed: %v", auditErr)
+	}
+
+	checkCmd := exec.CommandContext(queryCtx, "sudo", "-n", "apt-get", "check")
+	checkOut, checkErr := checkCmd.CombinedOutput()
+	checkText := strings.TrimSpace(string(checkOut))
+	blocked := auditText != "" || checkErr != nil
+	result := map[string]any{
+		"blocked": blocked,
+		"reason_code": "package_db_ok",
+		"detail": "Package database health checks passed",
+		"audit_summary": auditText,
+	}
+	if blocked {
+		result["reason_code"] = "package_db_unhealthy"
+		if auditText != "" {
+			result["detail"] = "dpkg audit reported package database problems"
+		} else {
+			result["detail"] = "apt-get check reported package dependency problems"
+			result["audit_summary"] = checkText
+		}
+	}
+	j, jerr := json.Marshal(result)
+	if jerr != nil {
+		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", jerr)
+	}
+	return string(j), string(checkOut), 0, ""
 }
 
 func queryPkgUpdates(ctx context.Context, refresh bool) (string, string, int, string) {

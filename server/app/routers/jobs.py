@@ -184,6 +184,37 @@ def _probe_disk_space(db: Session, agent_id: str) -> dict:
     }
 
 
+def _probe_package_db_health(db: Session, agent_id: str) -> dict:
+    created, job_id, push_kwargs = dispatch_host_job(
+        db=db,
+        agent_id=agent_id,
+        job_type='query-pkg-health',
+        payload={},
+    )
+    asyncio.run(push_dispatched_host_job(push_kwargs=push_kwargs))
+    run = asyncio.run(
+        wait_for_host_job_or_504(
+            job_id=job_id,
+            agent_id=agent_id,
+            timeout_s=12,
+            timeout_message='Timeout waiting for package DB health query',
+        )
+    )
+    if run.status == 'failed':
+        return {
+            'blocked': False,
+            'reason_code': 'package_db_probe_failed',
+            'detail': run.error or run.stderr or 'Package DB health probe failed',
+        }
+    data = parse_json_run_stdout(run, {}) or {}
+    return {
+        'blocked': bool(data.get('blocked') or False),
+        'reason_code': str(data.get('reason_code') or 'package_db_ok'),
+        'detail': str(data.get('detail') or ''),
+        'audit_summary': data.get('audit_summary'),
+    }
+
+
 @router.post("/preflight")
 def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     base_targets = _resolve_unscoped_agent_ids(db, payload.agent_ids, payload.labels)
@@ -264,6 +295,20 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
                             'avail_gb': disk_info.get('avail_gb'),
                             'threshold_gb': disk_info.get('threshold_gb'),
                             'percent_used': disk_info.get('percent_used'),
+                        },
+                    })
+                health_info = _probe_package_db_health(db, aid)
+                if health_info.get('blocked'):
+                    blocked_by_preflight.append(aid)
+                    failed_checks.append({
+                        'kind': 'package_db_health',
+                        'severity': 'error',
+                        'agent_id': aid,
+                        'reason_code': health_info.get('reason_code') or 'package_db_unhealthy',
+                        'detail': health_info.get('detail') or 'Package database health check failed',
+                        'matched_windows': [],
+                        'meta': {
+                            'audit_summary': health_info.get('audit_summary'),
                         },
                     })
 
