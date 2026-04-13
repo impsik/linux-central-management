@@ -42,6 +42,10 @@ def test_jobs_preflight_and_dry_run_no_job_creation(monkeypatch):
         pre = p.json()
         assert "srv-online" in pre["targeted_hosts"]
         assert "srv-unknown" in pre["offline_or_unreachable"]
+        failed_checks = pre["failed_checks"]
+        offline = next(item for item in failed_checks if item["agent_id"] == "srv-unknown")
+        assert offline["kind"] == "offline_or_unreachable"
+        assert offline["severity"] == "warn"
 
         before = client.get("/jobs", params={"type": "dist-upgrade", "limit": 200}, headers=headers)
         assert before.status_code == 200, before.text

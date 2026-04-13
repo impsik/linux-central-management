@@ -12,7 +12,7 @@ from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
 from ..services.jobs import create_job_with_runs, push_job_to_agents
-from ..services.maintenance import assert_action_allowed_now, evaluate_action_now, maintenance_block_response
+from ..services.maintenance import assert_action_allowed_now, evaluate_action_now, maintenance_block_detail, maintenance_block_response
 from ..services.rbac import permissions_for
 from ..services.hosts import is_host_online
 from ..services.targets import resolve_agent_ids
@@ -80,6 +80,17 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
         if not h or not is_host_online(h):
             offline_or_unreachable.append(aid)
 
+    failed_checks: list[dict] = []
+    for aid in sorted(set(offline_or_unreachable)):
+        failed_checks.append({
+            'kind': 'offline_or_unreachable',
+            'severity': 'warn',
+            'agent_id': aid,
+            'reason_code': 'offline_or_unreachable',
+            'detail': 'Host appears offline or unreachable',
+            'matched_windows': [],
+        })
+
     blocked_by_preflight: list[str] = []
     preflight_reason_code = None
     matched_windows = []
@@ -89,9 +100,18 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
             decision = evaluate_action_now(action, db=db, agent_ids=[aid], labels=None)
             if decision.get('decision') == 'block':
                 blocked_by_preflight.append(aid)
+                item_windows = decision.get('matched_windows') or []
+                failed_checks.append({
+                    'kind': 'maintenance_window',
+                    'severity': 'error',
+                    'agent_id': aid,
+                    'reason_code': decision.get('reason_code') or 'outside_global_window_blocked',
+                    'detail': maintenance_block_detail(action, decision),
+                    'matched_windows': item_windows,
+                })
                 if preflight_reason_code is None:
                     preflight_reason_code = decision.get('reason_code')
-                    matched_windows = decision.get('matched_windows') or []
+                    matched_windows = item_windows
 
     return {
         "targeted_hosts": sorted(targeted_hosts),
@@ -100,6 +120,7 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
         "blocked_by_preflight": sorted(blocked_by_preflight),
         "preflight_reason_code": preflight_reason_code,
         "matched_windows": matched_windows,
+        "failed_checks": failed_checks,
     }
 
 

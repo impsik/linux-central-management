@@ -47,3 +47,13 @@ def test_job_preflight_reports_maintenance_window_blocks_for_risky_action(monkey
         assert body['blocked_by_preflight'] == ['srv-prod-001']
         assert body['preflight_reason_code'] == 'outside_scoped_window_blocked'
         assert body['matched_windows'][0]['name'] == 'Prod dist-upgrade window'
+        failed_checks = body['failed_checks']
+        assert len(failed_checks) == 2
+        kinds = {item['kind'] for item in failed_checks}
+        assert 'offline_or_unreachable' in kinds
+        assert 'maintenance_window' in kinds
+        mw = next(item for item in failed_checks if item['kind'] == 'maintenance_window')
+        assert mw['agent_id'] == 'srv-prod-001'
+        assert mw['severity'] == 'error'
+        assert mw['reason_code'] == 'outside_scoped_window_blocked'
+        assert mw['matched_windows'][0]['name'] == 'Prod dist-upgrade window'
