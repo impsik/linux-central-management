@@ -389,6 +389,7 @@
             <button type="button" class="btn host-refresh-inventory-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Refresh inventory</button>
             <button type="button" class="btn host-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install updates + reboot if required</button>
             <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot host</button>
+            <button type="button" class="btn btn-danger host-remove-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Remove host</button>
           </div>
         </div>`;
       const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
@@ -405,7 +406,6 @@
         <td>
           <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
             <b>${w.escapeHtml(hostName)}</b>
-            <button type="button" class="btn btn-danger host-remove-btn" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.2rem 0.45rem;font-size:0.8rem;">Remove</button>
           </div>
           <div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div>
         </td>
@@ -440,11 +440,12 @@
         });
       }
 
-      const removeBtn = tr.querySelector('.host-remove-btn');
+      const removeBtn = tr.querySelector('.host-remove-action');
       if (removeBtn) {
         removeBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
+          closeActionsMenu();
           const agentId = String(removeBtn.getAttribute('data-agent-id') || '').trim();
           const hostnameLabel = String(removeBtn.getAttribute('data-hostname') || '').trim() || agentId;
           if (!agentId) return;
