@@ -385,6 +385,8 @@
         <div class="host-actions-wrap" style="position:relative;display:inline-block;text-align:left;">
           <button type="button" class="btn host-actions-toggle" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Actions ▾</button>
           <div class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;display:grid;gap:0.25rem;">
+            <button type="button" class="btn host-check-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Check updates</button>
+            <button type="button" class="btn host-refresh-inventory-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Refresh inventory</button>
             <button type="button" class="btn host-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install updates + reboot if required</button>
             <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot host</button>
           </div>
@@ -543,6 +545,63 @@
               throw new Error((data && (data.detail || data.error)) || `reboot failed (${resp.status})`);
             }
             w.showToast(`Reboot queued for ${hostnameLabel}`, 'success');
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
+      const checkUpdatesBtn = tr.querySelector('.host-check-updates-action');
+      if (checkUpdatesBtn) {
+        checkUpdatesBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(checkUpdatesBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(checkUpdatesBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const resp = await fetch(`/hosts/${encodeURIComponent(agentId)}/packages/check-updates`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `check updates failed (${resp.status})`);
+            }
+            const updateCount = Number(data?.updates || 0);
+            w.showToast(`Checked updates for ${hostnameLabel}: ${updateCount} available`, 'success');
+            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
+            if (ctx && typeof ctx.loadPendingUpdatesReport === 'function') await ctx.loadPendingUpdatesReport(false);
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
+      const refreshInventoryBtn = tr.querySelector('.host-refresh-inventory-action');
+      if (refreshInventoryBtn) {
+        refreshInventoryBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(refreshInventoryBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(refreshInventoryBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const resp = await fetch(`/hosts/${encodeURIComponent(agentId)}/packages/refresh?wait=true`, {
+              method: 'POST',
+              credentials: 'include',
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `refresh inventory failed (${resp.status})`);
+            }
+            w.showToast(`Inventory refreshed for ${hostnameLabel}`, 'success');
+            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
+            if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
           } catch (err) {
             w.showToast(err?.message || String(err), 'error');
           }

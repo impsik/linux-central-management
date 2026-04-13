@@ -13,9 +13,13 @@ describe('hosts row actions menu', () => {
     expect(src).toContain('Actions ▾');
   });
 
-  it('includes reboot and install-updates-reboot-if-required actions in the host menu', () => {
+  it('includes reboot, update, check-updates, and refresh-inventory actions in the host menu', () => {
     expect(src).toContain('host-reboot-action');
     expect(src).toContain('host-upgrade-reboot-action');
+    expect(src).toContain('host-check-updates-action');
+    expect(src).toContain('host-refresh-inventory-action');
     expect(src).toContain('Install updates + reboot if required');
+    expect(src).toContain('Check updates');
+    expect(src).toContain('Refresh inventory');
   });
 });
