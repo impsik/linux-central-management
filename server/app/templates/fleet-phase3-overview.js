@@ -383,7 +383,7 @@
       const reboot = it.reboot_required ? '<span class="status-warn">required</span>' : '<span class="status-muted">no</span>';
       const hostActionsMenu = `
         <div class="host-actions-wrap" style="position:relative;display:inline-block;text-align:left;">
-          <button type="button" class="btn host-actions-toggle" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Actions ▾</button>
+          <button type="button" class="btn host-actions-toggle" aria-haspopup="menu" aria-expanded="false" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Actions ▾</button>
           <div class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;display:grid;gap:0.25rem;">
             <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.15rem 0.35rem 0;">Observe</div>
             <button type="button" class="btn host-check-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Check updates</button>
@@ -446,6 +446,29 @@
         });
       }
 
+      const actionsWrap = tr.querySelector('.host-actions-wrap');
+      const actionsToggle = tr.querySelector('.host-actions-toggle');
+      const actionsMenu = tr.querySelector('.host-actions-menu');
+      const closeActionsMenu = () => {
+        if (!actionsMenu) return;
+        actionsMenu.hidden = true;
+        actionsToggle?.setAttribute('aria-expanded', 'false');
+      };
+      const openActionsMenu = () => {
+        if (!actionsMenu) return;
+        document.querySelectorAll('.host-actions-menu').forEach((el) => { if (el !== actionsMenu) el.hidden = true; });
+        actionsMenu.hidden = false;
+        actionsToggle?.setAttribute('aria-expanded', 'true');
+      };
+      actionsToggle?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!actionsMenu) return;
+        if (actionsMenu.hidden) openActionsMenu();
+        else closeActionsMenu();
+      });
+      actionsWrap?.addEventListener('click', (e) => e.stopPropagation());
+
       const removeBtn = tr.querySelector('.host-remove-action');
       if (removeBtn) {
         removeBtn.addEventListener('click', async (e) => {
@@ -507,29 +530,6 @@
           }
         });
       }
-
-      const actionsWrap = tr.querySelector('.host-actions-wrap');
-      const actionsToggle = tr.querySelector('.host-actions-toggle');
-      const actionsMenu = tr.querySelector('.host-actions-menu');
-      const closeActionsMenu = () => {
-        if (!actionsMenu) return;
-        actionsMenu.hidden = true;
-        actionsToggle?.setAttribute('aria-expanded', 'false');
-      };
-      const openActionsMenu = () => {
-        if (!actionsMenu) return;
-        document.querySelectorAll('.host-actions-menu').forEach((el) => { if (el !== actionsMenu) el.hidden = true; });
-        actionsMenu.hidden = false;
-        actionsToggle?.setAttribute('aria-expanded', 'true');
-      };
-      actionsToggle?.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!actionsMenu) return;
-        if (actionsMenu.hidden) openActionsMenu();
-        else closeActionsMenu();
-      });
-      actionsWrap?.addEventListener('click', (e) => e.stopPropagation());
 
       const rebootBtn = tr.querySelector('.host-reboot-action');
       if (rebootBtn) {

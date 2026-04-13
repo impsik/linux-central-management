@@ -11,6 +11,7 @@ describe('hosts row actions menu', () => {
     expect(src).toContain('host-actions-toggle');
     expect(src).toContain('host-actions-menu');
     expect(src).toContain('Actions ▾');
+    expect(src).toContain('aria-haspopup="menu" aria-expanded="false"');
   });
 
   it('includes reboot, security-install, update, check-updates, refresh-inventory, and remove actions in the host menu', () => {
