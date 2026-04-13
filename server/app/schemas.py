@@ -55,6 +55,7 @@ class JobCreateDistUpgrade(BaseModel):
 class JobPreflightRequest(BaseModel):
     agent_ids: Optional[List[str]] = None
     labels: Optional[Dict[str, str]] = None
+    action: Optional[str] = None
 
 class JobEvent(BaseModel):
     agent_id: str

@@ -80,10 +80,26 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
         if not h or not is_host_online(h):
             offline_or_unreachable.append(aid)
 
+    blocked_by_preflight: list[str] = []
+    preflight_reason_code = None
+    matched_windows = []
+    action = (payload.action or '').strip().lower()
+    if action:
+        for aid in scoped_targets:
+            decision = evaluate_action_now(action, db=db, agent_ids=[aid], labels=None)
+            if decision.get('decision') == 'block':
+                blocked_by_preflight.append(aid)
+                if preflight_reason_code is None:
+                    preflight_reason_code = decision.get('reason_code')
+                    matched_windows = decision.get('matched_windows') or []
+
     return {
         "targeted_hosts": sorted(targeted_hosts),
         "excluded_by_scope": excluded_by_scope,
         "offline_or_unreachable": sorted(offline_or_unreachable),
+        "blocked_by_preflight": sorted(blocked_by_preflight),
+        "preflight_reason_code": preflight_reason_code,
+        "matched_windows": matched_windows,
     }
 
 
