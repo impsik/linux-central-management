@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
@@ -12,6 +14,7 @@ from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
 from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.host_job_dispatch import dispatch_host_job, push_dispatched_host_job, wait_for_host_job_or_504, parse_json_run_stdout
 from ..services.maintenance import assert_action_allowed_now, evaluate_action_now, maintenance_block_detail, maintenance_block_response
 from ..services.rbac import permissions_for
 from ..services.hosts import is_host_online
@@ -60,6 +63,41 @@ def _resolve_unscoped_agent_ids(db: Session, agent_ids: list[str] | None, labels
                 out.append(h.agent_id)
         return sorted(list(set(out)))
     return []
+
+
+def _needs_package_manager_lock_check(action: str) -> bool:
+    return action in {"dist-upgrade", "pkg-upgrade", "pkg-install", "pkg-reinstall", "pkg-remove", "security-campaign"}
+
+
+def _probe_package_manager_lock(db: Session, agent_id: str) -> dict:
+    created, job_id, push_kwargs = dispatch_host_job(
+        db=db,
+        agent_id=agent_id,
+        job_type="query-pkg-locks",
+        payload={},
+    )
+    asyncio.run(push_dispatched_host_job(push_kwargs=push_kwargs))
+    run = asyncio.run(
+        wait_for_host_job_or_504(
+            job_id=job_id,
+            agent_id=agent_id,
+            timeout_s=10,
+            timeout_message="Timeout waiting for package manager lock check",
+        )
+    )
+    if run.status == "failed":
+        return {
+            "blocked": False,
+            "reason_code": "lock_probe_failed",
+            "detail": run.error or run.stderr or "Package-manager lock probe failed",
+        }
+    data = parse_json_run_stdout(run, {}) or {}
+    return {
+        "blocked": bool(data.get("blocked") or False),
+        "reason_code": str(data.get("reason_code") or "apt_lock_clear"),
+        "detail": str(data.get("detail") or ""),
+        "lock_holder": data.get("lock_holder"),
+    }
 
 
 @router.post("/preflight")
@@ -112,6 +150,21 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
                 if preflight_reason_code is None:
                     preflight_reason_code = decision.get('reason_code')
                     matched_windows = item_windows
+            if _needs_package_manager_lock_check(action) and aid not in offline_or_unreachable:
+                lock_info = _probe_package_manager_lock(db, aid)
+                if lock_info.get('blocked'):
+                    blocked_by_preflight.append(aid)
+                    failed_checks.append({
+                        'kind': 'package_manager_lock',
+                        'severity': 'error',
+                        'agent_id': aid,
+                        'reason_code': lock_info.get('reason_code') or 'apt_lock_held',
+                        'detail': lock_info.get('detail') or 'apt/dpkg lock appears to be held',
+                        'matched_windows': [],
+                        'meta': {
+                            'lock_holder': lock_info.get('lock_holder'),
+                        },
+                    })
 
     return {
         "targeted_hosts": sorted(targeted_hosts),

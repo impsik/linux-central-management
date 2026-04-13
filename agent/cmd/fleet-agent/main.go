@@ -452,6 +452,20 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
 		return
 
+	case "query-pkg-locks":
+		stdout, stderr, code, errMsg := queryPkgLocks(ctx)
+		if code == 0 && errMsg == "" {
+			ev.Status = "success"
+		} else {
+			ev.Status = "failed"
+		}
+		ev.ExitCode = &code
+		ev.Stdout = stdout
+		ev.Stderr = stderr
+		ev.Error = errMsg
+		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
+		return
+
 	case "query-users":
 		stdout, stderr, code, errMsg := queryUsers(ctx)
 		if code == 0 && errMsg == "" {
@@ -1033,6 +1047,43 @@ func queryPkgInfo(ctx context.Context, pkgName string) (string, string, int, str
 	j, err := json.Marshal(info)
 	if err != nil {
 		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
+	}
+	return string(j), "", 0, ""
+}
+
+func queryPkgLocks(ctx context.Context) (string, string, int, string) {
+	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	lockPaths := []string{"/var/lib/dpkg/lock-frontend", "/var/lib/dpkg/lock", "/var/cache/apt/archives/lock"}
+	holder := ""
+	for _, p := range lockPaths {
+		cmd := exec.CommandContext(queryCtx, "sudo", "-n", "fuser", p)
+		out, err := cmd.CombinedOutput()
+		if err == nil && strings.TrimSpace(string(out)) != "" {
+			holder = strings.TrimSpace(string(out))
+			result := map[string]any{
+				"blocked": true,
+				"reason_code": "apt_lock_held",
+				"detail": "apt/dpkg lock appears to be held",
+				"lock_holder": holder,
+			}
+			j, jerr := json.Marshal(result)
+			if jerr != nil {
+				return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", jerr)
+			}
+			return string(j), "", 0, ""
+		}
+	}
+
+	result := map[string]any{
+		"blocked": false,
+		"reason_code": "apt_lock_clear",
+		"detail": "No apt/dpkg lock detected",
+	}
+	j, jerr := json.Marshal(result)
+	if jerr != nil {
+		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", jerr)
 	}
 	return string(j), "", 0, ""
 }
