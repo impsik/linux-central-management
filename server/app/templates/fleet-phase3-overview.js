@@ -1061,6 +1061,25 @@
       const now = new Date();
       const end = new Date(now.getTime() + 60 * 60 * 1000);
       const payload = { agent_ids: agentIds, window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 5, reboot_if_needed: true, include_kernel: false };
+      try {
+        const preflightResp = await fetch('/jobs/preflight', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'security-campaign', agent_ids: agentIds }),
+        });
+        const preflightText = await preflightResp.text();
+        let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
+        if (preflightResp.ok && preflightData) {
+          const preflightMsg = summarizePreflight(preflightData);
+          w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
+          if (typeof w.openPreflightResultsModal === 'function') {
+            w.openPreflightResultsModal(preflightData, `security-campaign dry run · ${agentIds.length} host(s)`);
+          }
+        }
+      } catch (_) {
+        // Additive only; proceed with the existing create flow.
+      }
       const r = await fetch('/patching/campaigns/security-updates', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
       if (!r.ok) {
         const t = await r.text();
