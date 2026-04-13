@@ -15,6 +15,10 @@ describe('hosts row actions menu', () => {
 
   it('includes reboot, security-install, update, check-updates, refresh-inventory, and remove actions in the host menu', () => {
     expect(src).toContain('host-reboot-action');
+    expect(src).toContain('host-actions-section-label');
+    expect(src).toContain('Observe');
+    expect(src).toContain('Remediate');
+    expect(src).toContain('Destructive');
     expect(src).toContain('host-security-updates-action');
     expect(src).toContain('host-upgrade-reboot-action');
     expect(src).toContain('host-check-updates-action');

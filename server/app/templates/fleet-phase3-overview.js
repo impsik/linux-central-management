@@ -385,11 +385,16 @@
         <div class="host-actions-wrap" style="position:relative;display:inline-block;text-align:left;">
           <button type="button" class="btn host-actions-toggle" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Actions ▾</button>
           <div class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;display:grid;gap:0.25rem;">
+            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.15rem 0.35rem 0;">Observe</div>
             <button type="button" class="btn host-check-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Check updates</button>
             <button type="button" class="btn host-refresh-inventory-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Refresh inventory</button>
+            <div style="height:1px;background:var(--border);margin:0.2rem 0;"></div>
+            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.05rem 0.35rem 0;">Remediate</div>
             <button type="button" class="btn host-security-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install security updates</button>
             <button type="button" class="btn host-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install updates + reboot if required</button>
             <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot host</button>
+            <div style="height:1px;background:var(--border);margin:0.2rem 0;"></div>
+            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.05rem 0.35rem 0;">Destructive</div>
             <button type="button" class="btn btn-danger host-remove-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Remove host</button>
           </div>
         </div>`;
