@@ -387,6 +387,7 @@
           <div class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;display:grid;gap:0.25rem;">
             <button type="button" class="btn host-check-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Check updates</button>
             <button type="button" class="btn host-refresh-inventory-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Refresh inventory</button>
+            <button type="button" class="btn host-security-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install security updates</button>
             <button type="button" class="btn host-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install updates + reboot if required</button>
             <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot host</button>
             <button type="button" class="btn btn-danger host-remove-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Remove host</button>
@@ -603,6 +604,62 @@
             w.showToast(`Inventory refreshed for ${hostnameLabel}`, 'success');
             if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
             if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
+          } catch (err) {
+            w.showToast(err?.message || String(err), 'error');
+          }
+        });
+      }
+
+      const securityUpdatesBtn = tr.querySelector('.host-security-updates-action');
+      if (securityUpdatesBtn) {
+        securityUpdatesBtn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeActionsMenu();
+          const agentId = String(securityUpdatesBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(securityUpdatesBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          if (!agentId) return;
+          try {
+            const preflightResp = await fetch('/jobs/preflight', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ action: 'security-campaign', agent_ids: [agentId] }),
+            });
+            const preflightText = await preflightResp.text();
+            let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
+            if (preflightResp.ok && preflightData) {
+              const preflightMsg = summarizePreflight(preflightData);
+              w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
+              if (typeof w.openPreflightResultsModal === 'function') {
+                w.openPreflightResultsModal(preflightData, `host security-updates dry run · ${hostnameLabel}`);
+              }
+              if (preflightData?.has_blockers) return;
+            }
+          } catch (_) {
+            // continue to explicit confirm if preflight lookup itself fails
+          }
+          if (!confirm(`Install security updates on host "${hostnameLabel}" (${agentId})?`)) return;
+          try {
+            const now = new Date();
+            const end = new Date(now.getTime() + 60 * 60 * 1000);
+            const payload = { agent_ids: [agentId], window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 1, reboot_if_needed: false, include_kernel: false };
+            const resp = await fetch('/patching/campaigns/security-updates', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            });
+            const raw = await resp.text();
+            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+            if (!resp.ok) {
+              throw new Error((data && (data.detail || data.error)) || `security update campaign failed (${resp.status})`);
+            }
+            if (data && data.approval_required) {
+              w.showToast(`Approval required (security-campaign): ${data.request_id}`, 'info', 5000);
+              return;
+            }
+            w.showToast(`Security update campaign scheduled for ${hostnameLabel}: ${data.campaign_id}`, 'success');
           } catch (err) {
             w.showToast(err?.message || String(err), 'error');
           }

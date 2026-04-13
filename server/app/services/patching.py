@@ -304,7 +304,7 @@ def create_patch_campaign(
             "concurrency": concurrency,
             "reboot_if_needed": reboot_if_needed,
             "rollout_controls": c.rollout_meta,
-            "note": "Security classification not implemented yet; campaign applies all upgradable packages.",
+            "note": "Security-updates campaigns target cached updates marked as security fixes; kernel/meta packages stay excluded unless include_kernel=true.",
         },
     )
 
