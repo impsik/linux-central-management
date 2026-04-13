@@ -901,6 +901,17 @@
     return `${detail} [${preview}${suffix}]`;
   }
 
+  function summarizePreflight(preflight) {
+    const p = preflight && typeof preflight === 'object' ? preflight : {};
+    const blockers = Number(p.blocker_count || 0);
+    const warnings = Number(p.warning_count || 0);
+    const failed = Array.isArray(p.failed_checks) ? p.failed_checks : [];
+    const preview = failed.slice(0, 2).map((item) => String(item?.detail || item?.reason_code || item?.kind || '').trim()).filter(Boolean).join('; ');
+    let summary = `Preflight: ${blockers} blocker(s), ${warnings} warning(s)`;
+    if (preview) summary += ` — ${preview}`;
+    return summary;
+  }
+
     async function refreshMaintenanceGuardButtons() {
       try {
         const agentIds = (ctx.getLastRenderedAgentIds && ctx.getLastRenderedAgentIds()) ? (ctx.getLastRenderedAgentIds() || []).slice().filter(Boolean) : [];
@@ -1081,10 +1092,15 @@
         return w.showToast(msg, 'error');
       }
       const d = await r.json();
+      const preflightMsg = summarizePreflight(d?.preflight);
       if (d && d.approval_required) {
-        return w.showToast(`Approval required (dist-upgrade): ${d.request_id}`, 'info', 5000);
+        w.showToast(`Approval required (dist-upgrade): ${d.request_id}`, 'info', 5000);
+        return w.showToast(preflightMsg, d?.preflight?.has_blockers ? 'error' : (d?.preflight?.has_warnings ? 'info' : 'success'), 7000);
       }
       w.showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
+      if (d?.preflight) {
+        w.showToast(preflightMsg, d?.preflight?.has_blockers ? 'error' : (d?.preflight?.has_warnings ? 'info' : 'success'), 7000);
+      }
     });
 
     w.wireBusyClick(bulkOwnerBtn, 'Saving…', async () => {
