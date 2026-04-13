@@ -150,4 +150,17 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="preflight-results-modal" aria-hidden="true" hidden>
+    <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="preflight-results-modal-title" style="width:min(1100px,96vw);max-width:96vw;max-height:92vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <div class="modal-title" id="preflight-results-modal-title">Preflight results</div>
+        <button class="btn modal-close" id="preflight-results-modal-close" type="button">Close</button>
+      </div>
+      <div class="modal-body" style="flex:1;min-height:0;overflow:auto;">
+        <div class="modal-meta" id="preflight-results-modal-meta"></div>
+        <div class="modal-output" id="preflight-results-modal-output" style="white-space:normal;"></div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>

@@ -1095,11 +1095,18 @@
       const preflightMsg = summarizePreflight(d?.preflight);
       if (d && d.approval_required) {
         w.showToast(`Approval required (dist-upgrade): ${d.request_id}`, 'info', 5000);
-        return w.showToast(preflightMsg, d?.preflight?.has_blockers ? 'error' : (d?.preflight?.has_warnings ? 'info' : 'success'), 7000);
+        w.showToast(preflightMsg, d?.preflight?.has_blockers ? 'error' : (d?.preflight?.has_warnings ? 'info' : 'success'), 7000);
+        if (d?.preflight && typeof w.openPreflightResultsModal === 'function') {
+          w.openPreflightResultsModal(d.preflight, `dist-upgrade · approval ${d.request_id}`);
+        }
+        return;
       }
       w.showToast(`dist-upgrade queued: ${d.job_id}`, 'success');
       if (d?.preflight) {
         w.showToast(preflightMsg, d?.preflight?.has_blockers ? 'error' : (d?.preflight?.has_warnings ? 'info' : 'success'), 7000);
+        if (typeof w.openPreflightResultsModal === 'function') {
+          w.openPreflightResultsModal(d.preflight, `dist-upgrade · job ${d.job_id}`);
+        }
       }
     });
 

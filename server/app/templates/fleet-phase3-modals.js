@@ -404,6 +404,63 @@ function initFailedRunDetailModalControls() {
       };
     }
 
+function initPreflightResultsModalControls() {
+      const modal = document.getElementById('preflight-results-modal');
+      const closeBtn = document.getElementById('preflight-results-modal-close');
+      const outEl = document.getElementById('preflight-results-modal-output');
+      const metaEl = document.getElementById('preflight-results-modal-meta');
+      if (!modal || !closeBtn || !outEl || !metaEl) return;
+
+      const close = () => {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.hidden = true;
+      };
+
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        close();
+      });
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) close();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('open')) close();
+      });
+
+      window.openPreflightResultsModal = (preflight, meta) => {
+        const p = preflight && typeof preflight === 'object' ? preflight : {};
+        const failed = Array.isArray(p.failed_checks) ? p.failed_checks : [];
+        const blockers = Number(p.blocker_count || 0);
+        const warnings = Number(p.warning_count || 0);
+        metaEl.textContent = meta || `Blockers: ${blockers} · Warnings: ${warnings}`;
+        outEl.innerHTML = [
+          `<div class="kv-row"><strong>Summary:</strong> <code>${escapeHtml(`Blockers ${blockers} · Warnings ${warnings}`)}</code></div>`,
+          failed.length ? '<div style="display:grid;gap:0.5rem;margin-top:0.75rem;">' + failed.map((item) => {
+            const severity = String(item?.severity || 'info');
+            const kind = String(item?.kind || 'check');
+            const detail = String(item?.detail || item?.reason_code || kind);
+            const agent = String(item?.agent_id || '');
+            const metaBits = item?.meta && typeof item.meta === 'object'
+              ? Object.entries(item.meta).filter(([, v]) => v !== null && v !== undefined && v !== '').map(([k, v]) => `${k}: ${v}`).join(' · ')
+              : '';
+            return `<div style="border:1px solid var(--border);border-radius:10px;padding:0.65rem 0.75rem;background:var(--panel-2);">
+              <div style="display:flex;justify-content:space-between;gap:0.5rem;align-items:center;">
+                <strong>${escapeHtml(kind)}</strong>
+                <span class="status-badge ${severity === 'error' ? 'warn' : 'ok'}">${escapeHtml(severity)}</span>
+              </div>
+              <div class="status-muted" style="margin-top:0.35rem;">${escapeHtml(detail)}</div>
+              ${agent ? `<div class="status-muted" style="margin-top:0.25rem;">Host: ${escapeHtml(agent)}</div>` : ''}
+              ${metaBits ? `<div class="status-muted" style="margin-top:0.25rem;">${escapeHtml(metaBits)}</div>` : ''}
+            </div>`;
+          }).join('') + '</div>' : '<div class="status-muted" style="margin-top:0.75rem;">No failed checks.</div>'
+        ].join('');
+        modal.hidden = false;
+        modal.setAttribute('aria-hidden', 'false');
+        modal.classList.add('open');
+      };
+    }
+
 function initApprovalsFilterControls() {
       const ids = ['approvals-filter-action', 'approvals-filter-requester', 'approvals-filter-age', 'approvals-filter-mode', 'approvals-filter-sort'];
       ids.forEach((id) => {

@@ -170,6 +170,9 @@
             if (dryRunResp.ok && dryRunData?.preflight) {
               const preflightMsg = summarizePreflight(dryRunData.preflight);
               w.showToast(preflightMsg, dryRunData.preflight?.has_blockers ? 'error' : (dryRunData.preflight?.has_warnings ? 'info' : 'success'), 7000);
+              if (typeof w.openPreflightResultsModal === 'function') {
+                w.openPreflightResultsModal(dryRunData.preflight, `pkg-upgrade dry run · ${st.currentAgentId}`);
+              }
             }
           } catch (_) {
             // Dry-run preflight is additive only; do not block the existing action flow here.

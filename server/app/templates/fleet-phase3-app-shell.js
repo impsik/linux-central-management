@@ -28,6 +28,7 @@ function bootPhase3AppShell() {
   safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
   safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
   safeInit('initFailedRunDetailModalControls', initFailedRunDetailModalControls);
+  safeInit('initPreflightResultsModalControls', initPreflightResultsModalControls);
   safeInit('initApprovalsFilterControls', initApprovalsFilterControls);
   safeInit('bindDiskCardClick', () => {
     const diskCard = document.getElementById('disk-card');
