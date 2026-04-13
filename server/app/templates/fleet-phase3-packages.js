@@ -1,4 +1,15 @@
 (function (w) {
+  function summarizePreflight(preflight) {
+    const p = preflight && typeof preflight === 'object' ? preflight : {};
+    const blockers = Number(p.blocker_count || 0);
+    const warnings = Number(p.warning_count || 0);
+    const failed = Array.isArray(p.failed_checks) ? p.failed_checks : [];
+    const preview = failed.slice(0, 2).map((item) => String(item?.detail || item?.reason_code || item?.kind || '').trim()).filter(Boolean).join('; ');
+    let summary = `Preflight: ${blockers} blocker(s), ${warnings} warning(s)`;
+    if (preview) summary += ` — ${preview}`;
+    return summary;
+  }
+
   function getState(ctx) {
     return (ctx && typeof ctx.getState === 'function') ? ctx.getState() : {};
   }
@@ -143,6 +154,25 @@
           if (ok) {
             if (statusEl) statusEl.textContent = `Interactive ${action} command sent to terminal.`;
             return;
+          }
+        }
+
+        if (action === 'upgrade') {
+          try {
+            const dryRunResp = await fetch('/jobs/pkg-upgrade', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ agent_ids: [st.currentAgentId], packages: selected, dry_run: true }),
+            });
+            const dryRunText = await dryRunResp.text();
+            let dryRunData = null; try { dryRunData = dryRunText ? JSON.parse(dryRunText) : null; } catch {}
+            if (dryRunResp.ok && dryRunData?.preflight) {
+              const preflightMsg = summarizePreflight(dryRunData.preflight);
+              w.showToast(preflightMsg, dryRunData.preflight?.has_blockers ? 'error' : (dryRunData.preflight?.has_warnings ? 'info' : 'success'), 7000);
+            }
+          } catch (_) {
+            // Dry-run preflight is additive only; do not block the existing action flow here.
           }
         }
 
