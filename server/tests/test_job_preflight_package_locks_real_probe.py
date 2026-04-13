@@ -36,6 +36,19 @@ def test_job_preflight_uses_package_lock_probe_for_online_targets(monkeypatch, a
         }
 
     monkeypatch.setattr(jobs_router, '_probe_package_manager_lock', fake_probe)
+    monkeypatch.setattr(
+        jobs_router,
+        '_probe_disk_space',
+        lambda db, agent_id: {
+            'blocked': False,
+            'reason_code': 'disk_space_ok',
+            'detail': 'Root filesystem free space is within threshold',
+            'mountpoint': '/',
+            'avail_gb': 12.0,
+            'threshold_gb': 2.0,
+            'percent_used': 71.0,
+        },
+    )
 
     with auth_client_factory(app) as (client, headers):
         resp = client.post('/jobs/preflight', json={'action': 'dist-upgrade', 'agent_ids': ['srv-locked']}, headers=headers)

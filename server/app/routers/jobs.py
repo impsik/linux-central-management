@@ -100,6 +100,90 @@ def _probe_package_manager_lock(db: Session, agent_id: str) -> dict:
     }
 
 
+def _parse_root_df(stdout: str) -> dict:
+    text = str(stdout or '').replace('\r\n', '\n')
+    for raw in text.split('\n'):
+        line = raw.strip()
+        if not line or line.lower().startswith('filesystem') or line.lower().startswith('source'):
+            continue
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        target = parts[-1]
+        pcent = parts[-2]
+        avail = parts[-3]
+        if target != '/':
+            continue
+        try:
+            percent_used = float(str(pcent).strip().rstrip('%'))
+        except Exception:
+            percent_used = None
+        avail_text = str(avail).strip().upper()
+        mult = 1 / 1024
+        if avail_text.endswith('T'):
+            mult = 1024
+            avail_value = avail_text[:-1]
+        elif avail_text.endswith('G'):
+            mult = 1
+            avail_value = avail_text[:-1]
+        elif avail_text.endswith('M'):
+            mult = 1 / 1024
+            avail_value = avail_text[:-1]
+        elif avail_text.endswith('K'):
+            mult = 1 / (1024 * 1024)
+            avail_value = avail_text[:-1]
+        else:
+            avail_value = avail_text
+        try:
+            avail_gb = round(float(avail_value) * mult, 2)
+        except Exception:
+            avail_gb = None
+        return {
+            'mountpoint': '/',
+            'avail_gb': avail_gb,
+            'percent_used': percent_used,
+        }
+    return {}
+
+
+def _probe_disk_space(db: Session, agent_id: str) -> dict:
+    threshold_gb = 2.0
+    created, job_id, push_kwargs = dispatch_host_job(
+        db=db,
+        agent_id=agent_id,
+        job_type='query-df',
+        payload={},
+    )
+    asyncio.run(push_dispatched_host_job(push_kwargs=push_kwargs))
+    run = asyncio.run(
+        wait_for_host_job_or_504(
+            job_id=job_id,
+            agent_id=agent_id,
+            timeout_s=12,
+            timeout_message='Timeout waiting for disk usage query',
+        )
+    )
+    if run.status == 'failed':
+        return {
+            'blocked': False,
+            'reason_code': 'disk_probe_failed',
+            'detail': run.error or run.stderr or 'Disk-space probe failed',
+        }
+    root = _parse_root_df(run.stdout or '')
+    avail_gb = root.get('avail_gb')
+    percent_used = root.get('percent_used')
+    blocked = avail_gb is not None and float(avail_gb) < threshold_gb
+    return {
+        'blocked': blocked,
+        'reason_code': 'disk_space_below_threshold' if blocked else 'disk_space_ok',
+        'detail': 'Root filesystem free space is below threshold' if blocked else 'Root filesystem free space is within threshold',
+        'mountpoint': root.get('mountpoint') or '/',
+        'avail_gb': avail_gb,
+        'threshold_gb': threshold_gb,
+        'percent_used': percent_used,
+    }
+
+
 @router.post("/preflight")
 def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     base_targets = _resolve_unscoped_agent_ids(db, payload.agent_ids, payload.labels)
@@ -163,6 +247,23 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
                         'matched_windows': [],
                         'meta': {
                             'lock_holder': lock_info.get('lock_holder'),
+                        },
+                    })
+                disk_info = _probe_disk_space(db, aid)
+                if disk_info.get('blocked'):
+                    blocked_by_preflight.append(aid)
+                    failed_checks.append({
+                        'kind': 'disk_space',
+                        'severity': 'error',
+                        'agent_id': aid,
+                        'reason_code': disk_info.get('reason_code') or 'disk_space_below_threshold',
+                        'detail': disk_info.get('detail') or 'Root filesystem free space is below threshold',
+                        'matched_windows': [],
+                        'meta': {
+                            'mountpoint': disk_info.get('mountpoint'),
+                            'avail_gb': disk_info.get('avail_gb'),
+                            'threshold_gb': disk_info.get('threshold_gb'),
+                            'percent_used': disk_info.get('percent_used'),
                         },
                     })
 
