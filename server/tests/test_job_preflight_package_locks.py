@@ -62,6 +62,10 @@ def test_job_preflight_reports_package_manager_lock_failed_check(monkeypatch, au
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body['blocked_by_preflight'] == ['srv-locked']
+        assert body['has_blockers'] is True
+        assert body['blocker_count'] == 1
+        assert body['has_warnings'] is False
+        assert body['warning_count'] == 0
         failed_checks = body['failed_checks']
         pkg = next(item for item in failed_checks if item['kind'] == 'package_manager_lock')
         assert pkg['agent_id'] == 'srv-locked'

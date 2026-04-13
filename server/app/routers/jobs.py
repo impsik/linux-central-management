@@ -312,6 +312,9 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
                         },
                     })
 
+    blocker_count = sum(1 for item in failed_checks if str(item.get('severity') or '').lower() == 'error')
+    warning_count = sum(1 for item in failed_checks if str(item.get('severity') or '').lower() == 'warn')
+
     return {
         "targeted_hosts": sorted(targeted_hosts),
         "excluded_by_scope": excluded_by_scope,
@@ -320,6 +323,10 @@ def preflight_targets(payload: JobPreflightRequest, db: Session = Depends(get_db
         "preflight_reason_code": preflight_reason_code,
         "matched_windows": matched_windows,
         "failed_checks": failed_checks,
+        "has_blockers": blocker_count > 0,
+        "blocker_count": blocker_count,
+        "has_warnings": warning_count > 0,
+        "warning_count": warning_count,
     }
 
 
