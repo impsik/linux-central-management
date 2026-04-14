@@ -1,17 +1,12 @@
 (function (w) {
-<<<<<<< HEAD
-=======
   const shared = w.phase3Shared || {};
 
->>>>>>> 801e53c (Fix hosts actions menu toggle visibility)
   function formatDateSafe(value) {
     if (!value) return '–';
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
   }
 
-<<<<<<< HEAD
-=======
   function formatShortTimeSafe(ctx, value) {
     if (typeof shared.formatShortTimeSafe === 'function') return shared.formatShortTimeSafe(ctx, value);
     if (ctx && typeof ctx.formatShortTime === 'function') return ctx.formatShortTime(value);
@@ -52,7 +47,6 @@
       .filter((v, i, arr) => arr.indexOf(v) === i);
   }
 
->>>>>>> 801e53c (Fix hosts actions menu toggle visibility)
   async function buildHttpError(resp, label) {
     let detail = '';
     try {
