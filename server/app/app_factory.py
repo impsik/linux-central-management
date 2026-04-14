@@ -45,14 +45,19 @@ def _is_non_local_deployment() -> bool:
 
     Signals considered non-local:
     - ALLOW_INSECURE_NO_AGENT_TOKEN is false
-    - DATABASE_URL host is not localhost/loopback
+    - otherwise, DATABASE_URL host is not localhost/loopback
+
+    Important: explicit insecure dev/LAN mode must win, even when running
+    through Docker Compose where the DB host is typically `db` rather than a
+    loopback hostname. That mode is intentionally used for HTTP-only LAN test
+    deployments.
     """
     from urllib.parse import urlparse
 
     from .config import settings
 
-    if not bool(getattr(settings, "allow_insecure_no_agent_token", False)):
-        return True
+    if bool(getattr(settings, "allow_insecure_no_agent_token", False)):
+        return False
 
     db_url = str(getattr(settings, "database_url", "") or "")
     try:
@@ -121,6 +126,8 @@ def _startup() -> None:
     _enforce_non_local_security_guardrails()
 
     if bool(getattr(settings, "db_auto_create_tables", True)):
+        import app.models  # ensure all model tables are registered in Base.metadata before create_all()
+
         Base.metadata.create_all(bind=engine)
         logger.info("DB auto-create enabled: ensured database tables exist")
 
