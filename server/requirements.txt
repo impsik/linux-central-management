@@ -15,7 +15,7 @@ bcrypt==4.0.1
 pyotp==2.9.0
 cryptography==46.0.7
 qrcode==7.4.2
-pillow==12.1.1
+pillow==12.2.0
 
 # HTTP Client (for CVE Sync)
 aiohttp==3.13.4
