@@ -14,22 +14,32 @@ describe('hosts row actions menu', () => {
     expect(src).toContain('aria-haspopup="menu" aria-expanded="false"');
   });
 
-  it('includes reboot, security-install, update, check-updates, refresh-inventory, and remove actions in the host menu', () => {
+  it('includes only full-upgrade, reboot, and remove actions in the host menu', () => {
     expect(src).toContain('host-reboot-action');
-    expect(src).toContain('host-actions-section-label');
-    expect(src).toContain('Observe');
-    expect(src).toContain('Remediate');
-    expect(src).toContain('Destructive');
-    expect(src).toContain('host-security-updates-action');
     expect(src).toContain('host-upgrade-reboot-action');
-    expect(src).toContain('host-check-updates-action');
-    expect(src).toContain('host-refresh-inventory-action');
     expect(src).toContain('host-remove-action');
-    expect(src).toContain('Install security updates');
-    expect(src).toContain('Install updates + reboot if required');
-    expect(src).toContain('Check updates');
-    expect(src).toContain('Refresh inventory');
+    expect(src).toContain('Install all updates and reboot');
+    expect(src).toContain('Reboot');
     expect(src).toContain('Remove host');
+
+    expect(src).not.toContain('host-security-updates-action');
+    expect(src).not.toContain('host-check-updates-action');
+    expect(src).not.toContain('host-refresh-inventory-action');
+    expect(src).not.toContain('Install security updates');
+    expect(src).not.toContain('Check updates');
+    expect(src).not.toContain('Refresh inventory');
+  });
+
+  it('routes the host full-upgrade action through dist-upgrade and separately queues reboot', () => {
+    const marker = "const upgradeRebootBtn = tr.querySelector('.host-upgrade-reboot-action');";
+    const start = src.indexOf(marker);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const section = src.slice(start, start + 4200);
+
+    expect(section).toContain("body: JSON.stringify({ action: 'dist-upgrade', agent_ids: [agentId] })");
+    expect(section).toContain("await fetch('/jobs/dist-upgrade'");
+    expect(section).toContain("await fetch(`/hosts/${encodeURIComponent(agentId)}/reboot`");
+    expect(section).not.toContain("await fetch('/patching/campaigns/security-updates'");
   });
 
   it('does not defeat hidden menu state with inline display grid and explicitly toggles display in JS', () => {
