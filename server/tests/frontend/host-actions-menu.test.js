@@ -42,9 +42,12 @@ describe('hosts row actions menu', () => {
     expect(section).not.toContain("await fetch('/patching/campaigns/security-updates'");
   });
 
-  it('does not defeat hidden menu state with inline display grid and explicitly toggles display in JS', () => {
+  it('opens the actions menu with explicit JS positioning instead of relying on clipped in-row absolute layout', () => {
     expect(src).not.toContain('class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;display:grid;gap:0.25rem;"');
     expect(src).toContain("actionsMenu.style.display = 'grid';");
     expect(src).toContain("actionsMenu.style.display = 'none';");
+    expect(src).toContain("actionsMenu.style.position = 'fixed';");
+    expect(src).toContain("actionsMenu.style.left = `${left}px`;");
+    expect(src).toContain("actionsMenu.style.top = `${Math.min(rect.bottom + 4, viewportHeight - 40)}px`;");
   });
 });

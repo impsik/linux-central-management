@@ -450,6 +450,22 @@
         actionsMenu.style.display = 'none';
         actionsToggle?.setAttribute('aria-expanded', 'false');
       };
+      const positionActionsMenu = () => {
+        if (!actionsMenu || !actionsToggle) return;
+        const rect = actionsToggle.getBoundingClientRect();
+        const menuWidth = Math.max(actionsMenu.offsetWidth || 260, 260);
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 1280;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 720;
+        const left = Math.max(8, Math.min(rect.right - menuWidth, viewportWidth - menuWidth - 8));
+        const maxHeight = Math.max(180, viewportHeight - rect.bottom - 16);
+        actionsMenu.style.position = 'fixed';
+        actionsMenu.style.left = `${left}px`;
+        actionsMenu.style.top = `${Math.min(rect.bottom + 4, viewportHeight - 40)}px`;
+        actionsMenu.style.right = 'auto';
+        actionsMenu.style.minWidth = `${menuWidth}px`;
+        actionsMenu.style.maxHeight = `${maxHeight}px`;
+        actionsMenu.style.overflowY = 'auto';
+      };
       const openActionsMenu = () => {
         if (!actionsMenu) return;
         document.querySelectorAll('.host-actions-menu').forEach((el) => {
@@ -460,6 +476,7 @@
         });
         actionsMenu.hidden = false;
         actionsMenu.style.display = 'grid';
+        positionActionsMenu();
         actionsToggle?.setAttribute('aria-expanded', 'true');
       };
       actionsToggle?.addEventListener('click', (e) => {
@@ -470,6 +487,10 @@
         else closeActionsMenu();
       });
       actionsWrap?.addEventListener('click', (e) => e.stopPropagation());
+      window.addEventListener('resize', () => {
+        if (!actionsMenu || actionsMenu.hidden) return;
+        positionActionsMenu();
+      });
 
       const removeBtn = tr.querySelector('.host-remove-action');
       if (removeBtn) {
