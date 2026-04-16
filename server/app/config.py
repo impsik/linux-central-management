@@ -5,7 +5,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://fleet:fleet@localhost:5432/fleet"
 
     # Database schema management
-    # For production: set db_auto_create_tables=false and run `alembic upgrade head` during deploy.
+    # Docker startup auto-runs `alembic upgrade head`; db_auto_create_tables remains a
+    # local/dev safety net for model-defined tables that may not exist yet.
     db_auto_create_tables: bool = True
     db_require_migrations_up_to_date: bool = True
 

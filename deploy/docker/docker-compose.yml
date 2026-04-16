@@ -34,9 +34,10 @@ services:
       UI_COOKIE_SECURE: ${UI_COOKIE_SECURE:-false}
       UI_REVOKE_ALL_SESSIONS_ON_STARTUP: ${UI_REVOKE_ALL_SESSIONS_ON_STARTUP:-false}
 
-      # Once Alembic is in use, disable auto-create in production deployments:
+      # The container auto-runs `alembic upgrade head` before starting uvicorn.
+      # Auto-create remains enabled as a local/dev safety net for model-defined tables.
       DB_AUTO_CREATE_TABLES: ${DB_AUTO_CREATE_TABLES:-true}
-      # In production, keep this true so the server fails fast if migrations are not applied.
+      # Keep this true so startup still fails if schema is unexpectedly behind.
       DB_REQUIRE_MIGRATIONS_UP_TO_DATE: ${DB_REQUIRE_MIGRATIONS_UP_TO_DATE:-true}
       # Admin migration endpoint should remain disabled in production:
       ADMIN_ENABLE_MIGRATIONS_ENDPOINT: ${ADMIN_ENABLE_MIGRATIONS_ENDPOINT:-false}
