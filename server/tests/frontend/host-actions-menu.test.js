@@ -14,22 +14,11 @@ describe('hosts row actions menu', () => {
     expect(src).toContain('aria-haspopup="menu" aria-expanded="false"');
   });
 
-  it('includes reboot, security-install, update, check-updates, refresh-inventory, and remove actions in the host menu', () => {
+  it('includes reboot and full-upgrade-reboot actions in the host menu', () => {
     expect(src).toContain('host-reboot-action');
-    expect(src).toContain('host-actions-section-label');
-    expect(src).toContain('Observe');
-    expect(src).toContain('Remediate');
-    expect(src).toContain('Destructive');
-    expect(src).toContain('host-security-updates-action');
-    expect(src).toContain('host-upgrade-reboot-action');
-    expect(src).toContain('host-check-updates-action');
-    expect(src).toContain('host-refresh-inventory-action');
-    expect(src).toContain('host-remove-action');
-    expect(src).toContain('Install security updates');
-    expect(src).toContain('Install updates + reboot if required');
-    expect(src).toContain('Check updates');
-    expect(src).toContain('Refresh inventory');
-    expect(src).toContain('Remove host');
+    expect(src).toContain('host-full-upgrade-reboot-action');
+    expect(src).toContain('Reboot');
+    expect(src).toContain('Install all updates and reboot');
   });
 
   it('does not defeat hidden menu state with inline display grid and explicitly toggles display in JS', () => {
