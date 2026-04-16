@@ -229,15 +229,7 @@
                 <div style="color:var(--muted-2);font-size:0.95rem;">Last updated: <span id="guardian-last-updated">—</span> · environment: production</div>
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
-                <select id="kpi-timeframe" class="host-search" style="width:auto;padding:0.35rem 0.5rem;max-width:180px;">
-                  <option value="24" selected>KPI: 24h</option>
-                  <option value="168">KPI: 7d</option>
-                  <option value="720">KPI: 30d</option>
-                </select>
                 <button class="btn" id="overview-refresh" type="button">Refresh</button>
-                <a class="btn btn-primary" id="overview-export-report" href="/dashboard/slo.csv?hours=24&bucket_hours=6" target="_blank" rel="noopener">Export report</a>
-                <button class="btn btn-primary" id="overview-inventory-now" type="button">Inventory now</button>
-                <button class="btn" id="overview-dist-upgrade" type="button">Full upgrade (dist-upgrade)</button>
               </div>
             </div>
 
