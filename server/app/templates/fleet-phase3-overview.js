@@ -385,17 +385,8 @@
         <div class="host-actions-wrap" style="position:relative;display:inline-block;text-align:left;">
           <button type="button" class="btn host-actions-toggle" aria-haspopup="menu" aria-expanded="false" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="padding:0.15rem 0.4rem;font-size:0.78rem;">Actions ▾</button>
           <div class="host-actions-menu" hidden style="position:absolute;right:0;top:calc(100% + 4px);min-width:260px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:0.35rem;z-index:30;gap:0.25rem;">
-            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.15rem 0.35rem 0;">Observe</div>
-            <button type="button" class="btn host-check-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Check updates</button>
-            <button type="button" class="btn host-refresh-inventory-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Refresh inventory</button>
-            <div style="height:1px;background:var(--border);margin:0.2rem 0;"></div>
-            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.05rem 0.35rem 0;">Remediate</div>
-            <button type="button" class="btn host-security-updates-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install security updates</button>
-            <button type="button" class="btn host-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install updates + reboot if required</button>
-            <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot host</button>
-            <div style="height:1px;background:var(--border);margin:0.2rem 0;"></div>
-            <div class="host-actions-section-label" style="font-size:0.72rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--muted-2);padding:0.05rem 0.35rem 0;">Destructive</div>
-            <button type="button" class="btn btn-danger host-remove-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Remove host</button>
+            <button type="button" class="btn host-reboot-btn host-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Reboot</button>
+            <button type="button" class="btn host-full-upgrade-reboot-action" data-agent-id="${w.escapeHtml(it.agent_id || '')}" data-hostname="${w.escapeHtml(hostName)}" style="justify-content:flex-start;">Install all updates and reboot</button>
           </div>
         </div>`;
       const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
@@ -476,68 +467,6 @@
       });
       actionsWrap?.addEventListener('click', (e) => e.stopPropagation());
 
-      const removeBtn = tr.querySelector('.host-remove-action');
-      if (removeBtn) {
-        removeBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          closeActionsMenu();
-          const agentId = String(removeBtn.getAttribute('data-agent-id') || '').trim();
-          const hostnameLabel = String(removeBtn.getAttribute('data-hostname') || '').trim() || agentId;
-          if (!agentId) return;
-
-          try {
-            const previewResp = await fetch('/hosts/remove', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ agent_ids: [agentId], dry_run: true })
-            });
-            if (!previewResp.ok) throw new Error(`preview failed (${previewResp.status})`);
-            const preview = await previewResp.json();
-            const found = Array.isArray(preview?.found_agent_ids) ? preview.found_agent_ids : [];
-            const blockedLocal = Array.isArray(preview?.blocked_local_agent_ids) ? preview.blocked_local_agent_ids : [];
-            if (!found.length) {
-              if (blockedLocal.includes(agentId)) {
-                const force = confirm('Host is protected (srv-001 local agent).\n\nForce remove it from inventory?');
-                if (!force) return;
-                const forceResp = await fetch('/hosts/remove', {
-                  method: 'POST',
-                  credentials: 'include',
-                  headers: { 'content-type': 'application/json' },
-                  body: JSON.stringify({ agent_ids: [agentId], include_local: true })
-                });
-                if (!forceResp.ok) throw new Error(`force remove failed (${forceResp.status})`);
-                w.showToast(`Removed host ${hostnameLabel}`, 'success');
-                if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
-                else await loadHostsTable(ctx);
-                if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
-                return;
-              }
-              else w.showToast('Host no longer exists', 'error');
-              return;
-            }
-
-            if (!confirm(`Remove host "${hostnameLabel}" (${agentId}) from inventory?`)) return;
-
-            const resp = await fetch('/hosts/remove', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ agent_ids: [agentId] })
-            });
-            if (!resp.ok) throw new Error(`remove failed (${resp.status})`);
-
-            w.showToast(`Removed host ${hostnameLabel}`, 'success');
-            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
-            else await loadHostsTable(ctx);
-            if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
-          } catch (err) {
-            w.showToast(err?.message || String(err), 'error');
-          }
-        });
-      }
-
       const rebootBtn = tr.querySelector('.host-reboot-action');
       if (rebootBtn) {
         rebootBtn.addEventListener('click', async (e) => {
@@ -565,78 +494,21 @@
         });
       }
 
-      const checkUpdatesBtn = tr.querySelector('.host-check-updates-action');
-      if (checkUpdatesBtn) {
-        checkUpdatesBtn.addEventListener('click', async (e) => {
+      const fullUpgradeRebootBtn = tr.querySelector('.host-full-upgrade-reboot-action');
+      if (fullUpgradeRebootBtn) {
+        fullUpgradeRebootBtn.addEventListener('click', async (e) => {
           e.preventDefault();
           e.stopPropagation();
           closeActionsMenu();
-          const agentId = String(checkUpdatesBtn.getAttribute('data-agent-id') || '').trim();
-          const hostnameLabel = String(checkUpdatesBtn.getAttribute('data-hostname') || '').trim() || agentId;
-          if (!agentId) return;
-          try {
-            const resp = await fetch(`/hosts/${encodeURIComponent(agentId)}/packages/check-updates`, {
-              method: 'POST',
-              credentials: 'include',
-            });
-            const raw = await resp.text();
-            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
-            if (!resp.ok) {
-              throw new Error((data && (data.detail || data.error)) || `check updates failed (${resp.status})`);
-            }
-            const updateCount = Number(data?.updates || 0);
-            w.showToast(`Checked updates for ${hostnameLabel}: ${updateCount} available`, 'success');
-            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
-            if (ctx && typeof ctx.loadPendingUpdatesReport === 'function') await ctx.loadPendingUpdatesReport(false);
-          } catch (err) {
-            w.showToast(err?.message || String(err), 'error');
-          }
-        });
-      }
-
-      const refreshInventoryBtn = tr.querySelector('.host-refresh-inventory-action');
-      if (refreshInventoryBtn) {
-        refreshInventoryBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          closeActionsMenu();
-          const agentId = String(refreshInventoryBtn.getAttribute('data-agent-id') || '').trim();
-          const hostnameLabel = String(refreshInventoryBtn.getAttribute('data-hostname') || '').trim() || agentId;
-          if (!agentId) return;
-          try {
-            const resp = await fetch(`/hosts/${encodeURIComponent(agentId)}/packages/refresh?wait=true`, {
-              method: 'POST',
-              credentials: 'include',
-            });
-            const raw = await resp.text();
-            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
-            if (!resp.ok) {
-              throw new Error((data && (data.detail || data.error)) || `refresh inventory failed (${resp.status})`);
-            }
-            w.showToast(`Inventory refreshed for ${hostnameLabel}`, 'success');
-            if (ctx && typeof ctx.loadHostsTable === 'function') await ctx.loadHostsTable();
-            if (ctx && typeof ctx.loadHosts === 'function') await ctx.loadHosts();
-          } catch (err) {
-            w.showToast(err?.message || String(err), 'error');
-          }
-        });
-      }
-
-      const securityUpdatesBtn = tr.querySelector('.host-security-updates-action');
-      if (securityUpdatesBtn) {
-        securityUpdatesBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          closeActionsMenu();
-          const agentId = String(securityUpdatesBtn.getAttribute('data-agent-id') || '').trim();
-          const hostnameLabel = String(securityUpdatesBtn.getAttribute('data-hostname') || '').trim() || agentId;
+          const agentId = String(fullUpgradeRebootBtn.getAttribute('data-agent-id') || '').trim();
+          const hostnameLabel = String(fullUpgradeRebootBtn.getAttribute('data-hostname') || '').trim() || agentId;
           if (!agentId) return;
           try {
             const preflightResp = await fetch('/jobs/preflight', {
               method: 'POST',
               credentials: 'include',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ action: 'security-campaign', agent_ids: [agentId] }),
+              body: JSON.stringify({ action: 'dist-upgrade', agent_ids: [agentId] }),
             });
             const preflightText = await preflightResp.text();
             let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
@@ -644,90 +516,31 @@
               const preflightMsg = summarizePreflight(preflightData);
               w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
               if (typeof w.openPreflightResultsModal === 'function') {
-                w.openPreflightResultsModal(preflightData, `host security-updates dry run · ${hostnameLabel}`);
+                w.openPreflightResultsModal(preflightData, `dist-upgrade dry run · ${hostnameLabel}`);
               }
               if (preflightData?.has_blockers) return;
             }
           } catch (_) {
             // continue to explicit confirm if preflight lookup itself fails
           }
-          if (!confirm(`Install security updates on host "${hostnameLabel}" (${agentId})?`)) return;
+          if (!confirm(`Install ALL updates (dist-upgrade) on host "${hostnameLabel}" (${agentId}) and reboot?`)) return;
           try {
-            const now = new Date();
-            const end = new Date(now.getTime() + 60 * 60 * 1000);
-            const payload = { agent_ids: [agentId], window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 1, reboot_if_needed: false, include_kernel: false };
-            const resp = await fetch('/patching/campaigns/security-updates', {
+            const resp = await fetch('/jobs/dist-upgrade', {
               method: 'POST',
               credentials: 'include',
               headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(payload),
+              body: JSON.stringify({ agent_ids: [agentId] }),
             });
             const raw = await resp.text();
             let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
             if (!resp.ok) {
-              throw new Error((data && (data.detail || data.error)) || `security update campaign failed (${resp.status})`);
+              throw new Error((data && (data.detail || data.error)) || `dist-upgrade failed (${resp.status})`);
             }
             if (data && data.approval_required) {
-              w.showToast(`Approval required (security-campaign): ${data.request_id}`, 'info', 5000);
+              w.showToast(`Approval required (dist-upgrade): ${data.request_id}`, 'info', 5000);
               return;
             }
-            w.showToast(`Security update campaign scheduled for ${hostnameLabel}: ${data.campaign_id}`, 'success');
-          } catch (err) {
-            w.showToast(err?.message || String(err), 'error');
-          }
-        });
-      }
-
-      const upgradeRebootBtn = tr.querySelector('.host-upgrade-reboot-action');
-      if (upgradeRebootBtn) {
-        upgradeRebootBtn.addEventListener('click', async (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          closeActionsMenu();
-          const agentId = String(upgradeRebootBtn.getAttribute('data-agent-id') || '').trim();
-          const hostnameLabel = String(upgradeRebootBtn.getAttribute('data-hostname') || '').trim() || agentId;
-          if (!agentId) return;
-          try {
-            const preflightResp = await fetch('/jobs/preflight', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({ action: 'security-campaign', agent_ids: [agentId] }),
-            });
-            const preflightText = await preflightResp.text();
-            let preflightData = null; try { preflightData = preflightText ? JSON.parse(preflightText) : null; } catch {}
-            if (preflightResp.ok && preflightData) {
-              const preflightMsg = summarizePreflight(preflightData);
-              w.showToast(preflightMsg, preflightData?.has_blockers ? 'error' : (preflightData?.has_warnings ? 'info' : 'success'), 7000);
-              if (typeof w.openPreflightResultsModal === 'function') {
-                w.openPreflightResultsModal(preflightData, `host update+reboot dry run · ${hostnameLabel}`);
-              }
-              if (preflightData?.has_blockers) return;
-            }
-          } catch (_) {
-            // continue to explicit confirm if preflight lookup itself fails
-          }
-          if (!confirm(`Install available updates on host "${hostnameLabel}" (${agentId}) and reboot if required?`)) return;
-          try {
-            const now = new Date();
-            const end = new Date(now.getTime() + 60 * 60 * 1000);
-            const payload = { agent_ids: [agentId], window_start: now.toISOString(), window_end: end.toISOString(), concurrency: 1, reboot_if_needed: true, include_kernel: false };
-            const resp = await fetch('/patching/campaigns/security-updates', {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(payload),
-            });
-            const raw = await resp.text();
-            let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
-            if (!resp.ok) {
-              throw new Error((data && (data.detail || data.error)) || `update campaign failed (${resp.status})`);
-            }
-            if (data && data.approval_required) {
-              w.showToast(`Approval required (security-campaign): ${data.request_id}`, 'info', 5000);
-              return;
-            }
-            w.showToast(`Update campaign scheduled for ${hostnameLabel}: ${data.campaign_id}`, 'success');
+            w.showToast(`Dist-upgrade queued for ${hostnameLabel}: ${data.job_id}`, 'success');
           } catch (err) {
             w.showToast(err?.message || String(err), 'error');
           }
