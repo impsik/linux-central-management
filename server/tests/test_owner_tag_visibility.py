@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 
-from app.services import user_scopes
-
 
 def test_non_admin_without_explicit_scopes_only_sees_matching_owner_tag(monkeypatch):
+    from app.services import user_scopes
+
     monkeypatch.setattr(user_scopes, 'get_user_scope_selectors', lambda db, user: [])
 
     user = SimpleNamespace(username='imre', role='operator', id='u1')
