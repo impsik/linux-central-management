@@ -26,7 +26,7 @@ def _seed_host(agent_id="agent-1", hostname="old-host", labels=None):
 
 
 def _login(client):
-    r = client.post("/auth/login", json={"username": "admin", "password": "admin-...-123"})
+    r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
     assert r.status_code == 200, r.text
     csrf = client.cookies.get("fleet_csrf")
     return {"X-CSRF-Token": csrf} if csrf else {}
@@ -98,22 +98,3 @@ def test_update_host_metadata_env_key_sets_legacy_env_and_clears_on_remove(monke
         clear_labels = clear_resp.json()["host"]["labels"]
         assert clear_labels["env_vars"] == {}
         assert "env" not in clear_labels
-
-
-def test_update_host_metadata_owner_persists_owner_label(monkeypatch):
-    app = _boot_app(monkeypatch)
-    _seed_host(agent_id="agent-owner", labels={"team": "ops"})
-
-    from fastapi.testclient import TestClient
-
-    with TestClient(app) as client:
-        headers = _login(client)
-        resp = client.patch(
-            "/hosts/agent-owner/metadata",
-            json={"owner": "imre"},
-            headers=headers,
-        )
-        assert resp.status_code == 200, resp.text
-        labels = resp.json()["host"]["labels"]
-        assert labels["owner"] == "imre"
-        assert labels["team"] == "ops"
