@@ -1,7 +1,5 @@
 from types import SimpleNamespace
 
-from app.routers import reports
-
 
 class _Result:
     def __init__(self, rows):
@@ -20,6 +18,8 @@ class _DB:
 
 
 def test_hosts_updates_report_filters_rows_by_owner_visibility(monkeypatch):
+    from app.routers import reports
+
     rows = [
         SimpleNamespace(
             agent_id='a1', hostname='owned', fqdn=None, ip_address=None,
