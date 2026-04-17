@@ -39,6 +39,12 @@ function initAdminPanel() {
           setAdminStatus(`User ${createdUser} created.`, 'success');
           showToast(`User ${createdUser} created.`, 'success');
           passwordInput.value = '';
+          if (typeof window.loadAdminUsers === 'function') {
+            try { await window.loadAdminUsers(); } catch (_) { }
+          }
+          if (typeof window.loadAdminAudit === 'function') {
+            try { await window.loadAdminAudit(); } catch (_) { }
+          }
         } catch (e) {
           const msg = e.message || String(e);
           setAdminStatus(msg, 'error');

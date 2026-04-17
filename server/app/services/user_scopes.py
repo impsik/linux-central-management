@@ -57,20 +57,24 @@ def user_has_scope_limits(db: Session, user: AppUser) -> bool:
 def is_host_visible_to_user(db: Session, user: AppUser, host: Host) -> bool:
     if is_admin(user):
         return True
-    selectors = get_user_scope_selectors(db, user)
-    if not selectors:
-        return True
 
     labels = (getattr(host, "labels", None) or {}) if host is not None else {}
-    for sel in selectors:
-        ok = True
-        for k, allowed in sel.items():
-            if str(labels.get(k, "")).strip() not in allowed:
-                ok = False
-                break
-        if ok:
-            return True
-    return False
+    selectors = get_user_scope_selectors(db, user)
+    if selectors:
+        for sel in selectors:
+            ok = True
+            for k, allowed in sel.items():
+                if str(labels.get(k, "")).strip() not in allowed:
+                    ok = False
+                    break
+            if ok:
+                return True
+        return False
+
+    username = str(getattr(user, "username", "") or "").strip()
+    if not username:
+        return False
+    return str(labels.get("owner", "")).strip() == username
 
 
 def filter_agent_ids_for_user(db: Session, user: AppUser, agent_ids: list[str]) -> list[str]:
