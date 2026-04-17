@@ -712,6 +712,10 @@
       const d = await r.json();
       const items = d?.items || [];
       hostsTableItemsCache = Array.isArray(items) ? items : [];
+      const currentAgentId = (ctx && typeof ctx.getCurrentAgentId === 'function') ? (ctx.getCurrentAgentId() || '') : '';
+      if (currentAgentId && !hostsTableItemsCache.some((it) => String(it?.agent_id || '') === String(currentAgentId))) {
+        if (ctx && typeof ctx.clearCurrentHostSelection === 'function') ctx.clearCurrentHostSelection();
+      }
       if (sort === 'owner') {
         const dir = order === 'desc' ? -1 : 1;
         hostsTableItemsCache.sort((a, b) => {

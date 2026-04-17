@@ -162,6 +162,10 @@
       const hosts = await response.json();
       const list = Array.isArray(hosts) ? hosts : [];
       ctx.setAllHosts(list);
+      const currentAgentId = (typeof ctx.getCurrentAgentId === 'function') ? (ctx.getCurrentAgentId() || '') : '';
+      if (currentAgentId && !list.some((h) => String(h?.agent_id || '') === String(currentAgentId))) {
+        if (typeof ctx.clearCurrentHostSelection === 'function') ctx.clearCurrentHostSelection();
+      }
       rebuildLabelFilterOptions(ctx);
 
       if (list.length === 0) {
