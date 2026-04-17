@@ -77,6 +77,7 @@ def update_host_metadata(
 
     next_hostname = _clean_optional_str(payload.hostname, field="hostname")
     next_role = _clean_optional_str(payload.role, field="role")
+    next_owner = _clean_optional_str(payload.owner, field="owner")
 
     next_env: dict[str, str] | None = None
     if payload.env is not None:
@@ -98,6 +99,8 @@ def update_host_metadata(
         host.hostname = next_hostname
     if next_role is not None:
         labels["role"] = next_role
+    if next_owner is not None:
+        labels["owner"] = next_owner
     if next_env is not None:
         # Replace env_vars with what UI sends (supports true deletes from UI row removal).
         labels["env_vars"] = dict(next_env)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import case, func, select
@@ -10,6 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostPackageUpdate
+from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -120,9 +122,13 @@ def hosts_updates_report(
     col = sort_col_map[sort]
     q = q.order_by(col.asc() if order == "asc" else col.desc())
 
-    total = db.execute(select(func.count()).select_from(q.subquery())).scalar_one()
-
-    rows = db.execute(q.limit(limit).offset(offset)).all()
+    all_rows = db.execute(q).all()
+    visible_rows = [
+        r for r in all_rows
+        if is_host_visible_to_user(db, user, SimpleNamespace(labels=r.labels or {}))
+    ]
+    total = len(visible_rows)
+    rows = visible_rows[offset:offset + limit]
 
     items = []
     for r in rows:
