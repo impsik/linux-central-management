@@ -1900,11 +1900,10 @@ body.fleet-report {
   white-space: nowrap;
 }
 
-/* 1080p: make Hosts table fit without horizontal scroll */
+/* Hosts table: let columns size naturally to their content */
 .hosts-table {
   width: 100%;
-  table-layout: fixed;
-  /* enables predictable column sizing */
+  table-layout: auto;
 }
 
 /* Slightly tighter table to save width, use percentage/flex where possible */
@@ -1940,11 +1939,11 @@ body.fleet-report {
   min-width: 100px;
 }
 
-/* Kernel: flexible */
+/* Kernel: size to actual kernel string instead of reserving a large fixed slice */
 .hosts-table th:nth-child(4),
 .hosts-table td:nth-child(4) {
-  width: 20%;
-  min-width: 140px;
+  width: 1%;
+  min-width: 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
