@@ -1157,13 +1157,12 @@ def auth_admin_rbac_explain(
 
     matched_selector = None
     selector_results: list[dict] = []
+    host_owner = str(labels.get("owner", "") or "").strip()
+    target_username = str(getattr(target, "username", "") or "").strip()
 
     if role == "admin":
         allowed = True
         reason = "admin role grants host visibility"
-    elif not selectors:
-        allowed = True
-        reason = "no scope limits configured for user"
     else:
         for sel in selectors:
             misses = []
@@ -1180,14 +1179,13 @@ def auth_admin_rbac_explain(
             if matched and matched_selector is None:
                 matched_selector = _sanitize_selector(sel)
 
-        allowed = bool(matched_selector is not None)
-        reason = "matched at least one selector" if allowed else "no selector matched host labels"
-
-    # Double-check with canonical helper to prevent drift.
-    helper_allowed = is_host_visible_to_user(db, target, host)
-    if helper_allowed != allowed:
-        allowed = helper_allowed
-        reason = f"helper override: {reason}"
+        allowed = bool(host_owner) and host_owner == target_username
+        if not host_owner:
+            reason = "host has no owner label; non-admin visibility is denied"
+        elif host_owner != target_username:
+            reason = "host owner does not match username"
+        else:
+            reason = "host owner matches username"
 
     out = {
         "allowed": allowed,
