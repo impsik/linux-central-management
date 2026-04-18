@@ -385,6 +385,11 @@
                     <option value="">Role: Any</option>
                   </select>
                 </div>
+                <div class="vuln-row">
+                  <select id="label-owner" class="host-search">
+                    <option value="">Owner: Any</option>
+                  </select>
+                </div>
                 <div class="vuln-actions">
                   <button class="btn" id="labels-clear">Clear</button>
                 </div>
@@ -1507,6 +1512,7 @@
       hostSearchQuery: '',
       labelEnvFilter: '',
       labelRoleFilter: '',
+      labelOwnerFilter: '',
       vulnFilteredAgentIds: null,
       selectedAgentIds: new Set(),
       lastRenderedAgentIds: [],
@@ -1518,6 +1524,7 @@
         hostSearchQuery: '',
         labelEnvFilter: '',
         labelRoleFilter: '',
+        labelOwnerFilter: '',
         vulnFilteredAgentIds: null,
         selectedAgentIds: new Set(),
         lastRenderedAgentIds: [],
@@ -1526,6 +1533,7 @@
     let hostSearchQuery = hostFilterSelectionDefaults.hostSearchQuery;
     let labelEnvFilter = hostFilterSelectionDefaults.labelEnvFilter;
     let labelRoleFilter = hostFilterSelectionDefaults.labelRoleFilter;
+    let labelOwnerFilter = hostFilterSelectionDefaults.labelOwnerFilter;
     let vulnFilteredAgentIds = hostFilterSelectionDefaults.vulnFilteredAgentIds; // Set<string> or null
     let selectedAgentIds = hostFilterSelectionDefaults.selectedAgentIds;
     let lastRenderedAgentIds = hostFilterSelectionDefaults.lastRenderedAgentIds; // string[]
@@ -1562,6 +1570,8 @@
         setLabelEnvFilter: (v) => { labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', v); return labelEnvFilter; },
         getLabelRoleFilter: () => labelRoleFilter,
         setLabelRoleFilter: (v) => { labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', v); return labelRoleFilter; },
+        getLabelOwnerFilter: () => labelOwnerFilter,
+        setLabelOwnerFilter: (v) => { labelOwnerFilter = syncHostFilterSelectionState('labelOwnerFilter', v); return labelOwnerFilter; },
         getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
         getSelectedAgentIds: () => selectedAgentIds,
         setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', v); return lastRenderedAgentIds; },
@@ -2886,6 +2896,7 @@
           hostSearchQuery,
           labelEnvFilter,
           labelRoleFilter,
+          labelOwnerFilter,
           vulnFilteredAgentIds,
           selectedAgentIds,
           lastRenderedAgentIds,
@@ -2901,6 +2912,7 @@
           if (Object.prototype.hasOwnProperty.call(patch, 'hostSearchQuery')) hostSearchQuery = syncHostFilterSelectionState('hostSearchQuery', patch.hostSearchQuery || '');
           if (Object.prototype.hasOwnProperty.call(patch, 'labelEnvFilter')) labelEnvFilter = syncHostFilterSelectionState('labelEnvFilter', patch.labelEnvFilter || '');
           if (Object.prototype.hasOwnProperty.call(patch, 'labelRoleFilter')) labelRoleFilter = syncHostFilterSelectionState('labelRoleFilter', patch.labelRoleFilter || '');
+          if (Object.prototype.hasOwnProperty.call(patch, 'labelOwnerFilter')) labelOwnerFilter = syncHostFilterSelectionState('labelOwnerFilter', patch.labelOwnerFilter || '');
           if (Object.prototype.hasOwnProperty.call(patch, 'vulnFilteredAgentIds')) vulnFilteredAgentIds = syncHostFilterSelectionState('vulnFilteredAgentIds', patch.vulnFilteredAgentIds);
           if (Object.prototype.hasOwnProperty.call(patch, 'selectedAgentIds')) selectedAgentIds = syncHostFilterSelectionState('selectedAgentIds', (patch.selectedAgentIds instanceof Set) ? patch.selectedAgentIds : new Set());
           if (Object.prototype.hasOwnProperty.call(patch, 'lastRenderedAgentIds')) lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(patch.lastRenderedAgentIds) ? patch.lastRenderedAgentIds : []);
@@ -3062,6 +3074,7 @@
         getCurrentAgentId: () => currentAgentId,
         getLabelEnvFilter: () => labelEnvFilter,
         getLabelRoleFilter: () => labelRoleFilter,
+        getLabelOwnerFilter: () => labelOwnerFilter,
         getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
         setAllHosts: (hosts) => {
           allHosts = syncHostFilterSelectionState('allHosts', Array.isArray(hosts) ? hosts : []);
