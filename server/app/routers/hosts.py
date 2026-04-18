@@ -75,9 +75,12 @@ def update_host_metadata(
     if not host or not is_host_visible_to_user(db, user, host):
         raise HTTPException(404, "Host not found")
 
+    provided_fields = set(getattr(payload, "model_fields_set", getattr(payload, "__fields_set__", set())) or set())
+
     next_hostname = _clean_optional_str(payload.hostname, field="hostname")
     next_role = _clean_optional_str(payload.role, field="role")
     next_owner = _clean_optional_str(payload.owner, field="owner")
+    owner_provided = "owner" in provided_fields
 
     next_env: dict[str, str] | None = None
     if payload.env is not None:
@@ -99,8 +102,11 @@ def update_host_metadata(
         host.hostname = next_hostname
     if next_role is not None:
         labels["role"] = next_role
-    if next_owner is not None:
-        labels["owner"] = next_owner
+    if owner_provided:
+        if next_owner:
+            labels["owner"] = next_owner
+        else:
+            labels.pop("owner", None)
     if next_env is not None:
         # Replace env_vars with what UI sends (supports true deletes from UI row removal).
         labels["env_vars"] = dict(next_env)
