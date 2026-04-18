@@ -57,15 +57,17 @@
   function populateHostMetadataEditor(host) {
     const nameEl = document.getElementById('host-meta-name');
     const roleEl = document.getElementById('host-meta-role');
+    const ownerEl = document.getElementById('host-meta-owner');
     const list = document.getElementById('host-meta-env-list');
     const statusEl = document.getElementById('host-meta-status');
-    if (!nameEl || !roleEl || !list) return;
+    if (!nameEl || !roleEl || !ownerEl || !list) return;
 
     const labels = (host && typeof host.labels === 'object' && host.labels) ? host.labels : {};
     const envVars = (labels && typeof labels.env_vars === 'object' && labels.env_vars) ? labels.env_vars : {};
 
     nameEl.value = String(host?.hostname || host?.agent_id || '');
     roleEl.value = String(labels.role || '');
+    ownerEl.value = String(labels.owner || '');
     list.innerHTML = '';
     const pairs = Object.entries(envVars);
     if (!pairs.length) appendEnvRow('', '');
@@ -85,6 +87,7 @@
     return {
       hostname: String(src.hostname || '').trim(),
       role: String(src.role || '').trim(),
+      owner: String(src.owner || '').trim(),
       env,
     };
   }
@@ -107,6 +110,7 @@
       const payload = normalizeHostMetadataPayload({
         hostname: document.getElementById('host-meta-name')?.value || '',
         role: document.getElementById('host-meta-role')?.value || '',
+        owner: document.getElementById('host-meta-owner')?.value || '',
         env: collectEnvEntriesFromDom(),
       });
 
