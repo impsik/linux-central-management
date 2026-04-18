@@ -10,7 +10,7 @@ from ..db import get_db
 from ..deps import require_ui_user
 from ..config import settings
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
-from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage, CronJob
+from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage, CronJob, AppUser
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
@@ -81,6 +81,11 @@ def update_host_metadata(
     next_role = _clean_optional_str(payload.role, field="role")
     next_owner = _clean_optional_str(payload.owner, field="owner")
     owner_provided = "owner" in provided_fields
+
+    if owner_provided and next_owner:
+        owner_user = db.execute(select(AppUser).where(AppUser.username == next_owner, AppUser.is_active == True)).scalar_one_or_none()  # noqa: E712
+        if not owner_user:
+            raise HTTPException(400, f"owner user '{next_owner}' does not exist")
 
     next_env: dict[str, str] | None = None
     if payload.env is not None:
