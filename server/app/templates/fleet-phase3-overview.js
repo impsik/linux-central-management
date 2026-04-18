@@ -375,6 +375,7 @@
     tbody.innerHTML = '';
     for (const it of items) {
       const hostName = it.hostname || it.agent_id;
+      const owner = String(it?.labels?.owner || '').trim();
       const os = `${it.os_id || ''} ${it.os_version || ''}`.trim() || '–';
       const kernel = it.kernel || '–';
       const sec = Number(it.security_updates || 0);
@@ -410,6 +411,7 @@
           </div>
           <div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''}</div>
         </td>
+        <td>${owner ? `<code>${w.escapeHtml(owner)}</code>` : '<span class="status-muted">—</span>'}</td>
         <td>${w.escapeHtml(os)}</td>
         <td><code>${w.escapeHtml(kernel)}</code></td>
         <td style="text-align:right;"><b>${sec}</b></td>

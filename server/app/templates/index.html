@@ -509,6 +509,7 @@
             <label style="color:var(--muted-2);font-size:0.9rem;">Sort</label>
           <select id="hosts-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
             <option value="hostname" selected>Host</option>
+            <option value="owner">Owner</option>
             <option value="os_version">OS</option>
             <option value="updates">Pending updates</option>
             <option value="security_updates">Security updates</option>
@@ -538,6 +539,7 @@
               <tr>
                 <th style="width:36px;"><input type="checkbox" id="hosts-select-all" /></th>
                 <th class="sortable-col" id="hosts-th-host" title="Sort by host" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col" id="hosts-th-owner" title="Sort by owner" tabindex="0" role="button">Owner <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th class="sortable-col" id="hosts-th-os" title="Sort by OS" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
                 <th>Kernel</th>
                 <th class="sortable-col" style="text-align:right;" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security pkgs <span class="sort-indicator" aria-hidden="true">↕</span></th>
@@ -3454,6 +3456,7 @@
       const hostsOrderSel = document.getElementById('hosts-order');
       updateHostsSortIndicators(hostsSortSel?.value || 'hostname', hostsOrderSel?.value || 'asc');
       bindSortableHeader('hosts-th-host', () => setSort('hostname'));
+      bindSortableHeader('hosts-th-owner', () => setSort('owner'));
       bindSortableHeader('hosts-th-os', () => setSort('os_version'));
       bindSortableHeader('hosts-th-upd', () => setSort('updates'));
       bindSortableHeader('hosts-th-sec', () => setSort('security_updates'));
