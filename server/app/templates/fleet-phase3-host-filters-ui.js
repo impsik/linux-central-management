@@ -10,6 +10,7 @@
     const searchEl = document.getElementById('host-search');
     const envSel = document.getElementById('label-env');
     const roleSel = document.getElementById('label-role');
+    const ownerSel = document.getElementById('label-owner');
     const labelsClearBtn = document.getElementById('labels-clear');
     const labelsSection = document.getElementById('labels-filter-section');
     const labelsToggle = document.getElementById('labels-filter-toggle');
@@ -98,6 +99,7 @@
         hostSearchQuery: searchEl?.value || '',
         labelEnvFilter: envSel?.value || '',
         labelRoleFilter: roleSel?.value || '',
+        labelOwnerFilter: ownerSel?.value || '',
       };
     }
 
@@ -116,15 +118,18 @@
       const hostSearchQuery = String(view.hostSearchQuery || '');
       const labelEnv = String(view.labelEnvFilter || '');
       const labelRole = String(view.labelRoleFilter || '');
+      const labelOwner = String(view.labelOwnerFilter || '');
 
       if (searchEl) searchEl.value = hostSearchQuery;
       if (envSel) envSel.value = labelEnv;
       if (roleSel) roleSel.value = labelRole;
+      if (ownerSel) ownerSel.value = labelOwner;
 
       syncSelectionState('hostSearchQuery', hostSearchQuery);
       syncSelectionState('labelEnvFilter', labelEnv);
       syncSelectionState('labelRoleFilter', labelRole);
-      setPatch({ hostSearchQuery, labelEnvFilter: labelEnv, labelRoleFilter: labelRole });
+      syncSelectionState('labelOwnerFilter', labelOwner);
+      setPatch({ hostSearchQuery, labelEnvFilter: labelEnv, labelRoleFilter: labelRole, labelOwnerFilter: labelOwner });
       applyHostFilters();
 
       if (options.setUrl !== false) {
@@ -146,7 +151,7 @@
     setVulnOpen(false);
 
     labelsToggle?.addEventListener('click', function (e) {
-      if (e.target && (e.target.id === 'label-env' || e.target.id === 'label-role')) return;
+      if (e.target && (e.target.id === 'label-env' || e.target.id === 'label-role' || e.target.id === 'label-owner')) return;
       e.preventDefault();
       const isOpen = labelsSection?.classList.contains('open');
       setLabelsOpen(!isOpen);
@@ -166,20 +171,25 @@
     function onLabelsChanged() {
       const env = envSel?.value || '';
       const role = roleSel?.value || '';
+      const owner = ownerSel?.value || '';
       syncSelectionState('labelEnvFilter', env);
       syncSelectionState('labelRoleFilter', role);
-      setPatch({ labelEnvFilter: env, labelRoleFilter: role });
+      syncSelectionState('labelOwnerFilter', owner);
+      setPatch({ labelEnvFilter: env, labelRoleFilter: role, labelOwnerFilter: owner });
       applyHostFilters();
     }
     envSel?.addEventListener('change', onLabelsChanged);
     roleSel?.addEventListener('change', onLabelsChanged);
+    ownerSel?.addEventListener('change', onLabelsChanged);
     labelsClearBtn?.addEventListener('click', function (e) {
       e.preventDefault();
       if (envSel) envSel.value = '';
       if (roleSel) roleSel.value = '';
+      if (ownerSel) ownerSel.value = '';
       syncSelectionState('labelEnvFilter', '');
       syncSelectionState('labelRoleFilter', '');
-      setPatch({ labelEnvFilter: '', labelRoleFilter: '' });
+      syncSelectionState('labelOwnerFilter', '');
+      setPatch({ labelEnvFilter: '', labelRoleFilter: '', labelOwnerFilter: '' });
       applyHostFilters();
     });
 
