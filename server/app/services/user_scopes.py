@@ -59,32 +59,23 @@ def is_host_visible_to_user(db: Session, user: AppUser, host: Host) -> bool:
         return True
 
     labels = (getattr(host, "labels", None) or {}) if host is not None else {}
-    selectors = get_user_scope_selectors(db, user)
-    if selectors:
-        for sel in selectors:
-            ok = True
-            for k, allowed in sel.items():
-                if str(labels.get(k, "")).strip() not in allowed:
-                    ok = False
-                    break
-            if ok:
-                return True
-        return False
-
     username = str(getattr(user, "username", "") or "").strip()
     if not username:
         return False
-    return str(labels.get("owner", "")).strip() == username
+
+    owner = str(labels.get("owner", "") or "").strip()
+    if not owner:
+        return False
+    return owner == username
 
 
 def filter_agent_ids_for_user(db: Session, user: AppUser, agent_ids: list[str]) -> list[str]:
     if is_admin(user):
         return sorted(list(set([a for a in agent_ids if a])))
 
-    selectors = get_user_scope_selectors(db, user)
     uniq = sorted(list(set([a for a in agent_ids if a])))
-    if not selectors:
-        return uniq
+    if not uniq:
+        return []
 
     hosts = db.execute(select(Host).where(Host.agent_id.in_(uniq))).scalars().all()
     host_by_agent = {h.agent_id: h for h in hosts}

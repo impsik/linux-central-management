@@ -33,6 +33,7 @@ def test_admin_rbac_explain_allow_and_deny(monkeypatch):
                 "labels": {
                     "env": "prod",
                     "team": "core",
+                    "owner": "op1",
                     "secret_token": "VERY_SECRET_TOKEN_" + ("x" * 120),
                 },
             },
@@ -62,7 +63,7 @@ def test_admin_rbac_explain_allow_and_deny(monkeypatch):
         reg = client.post("/auth/register", json={"username": "op1", "password": "pw-123456"}, headers=headers)
         assert reg.status_code == 200, reg.text
 
-        # set scoped selector env=prod
+        # set a legacy selector too; owner-based visibility should still be decisive
         set_scope = client.post(
             "/auth/admin/users/op1/scopes",
             json={"selectors": [{"env": ["prod"]}]},
