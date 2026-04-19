@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -47,8 +48,11 @@ def _request_is_https(request: Request | None) -> bool:
 
 
 def _cookie_secure_for(request: Request | None) -> bool:
-    # Explicit setting wins; otherwise auto-detect from request/proxy headers.
-    return bool(getattr(settings, "ui_cookie_secure", False) or _request_is_https(request))
+    # Explicit env setting wins; only auto-detect when UI_COOKIE_SECURE is truly unset.
+    raw = os.getenv("UI_COOKIE_SECURE")
+    if raw is not None:
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return _request_is_https(request)
 
 
 def _compute_session_expiry(now: datetime) -> datetime:
