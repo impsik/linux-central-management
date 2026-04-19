@@ -688,6 +688,7 @@
                   <tr>
                     <th>Run at</th>
                     <th>Name</th>
+                    <th>Owner</th>
                     <th>Action</th>
                     <th>Targets</th>
                     <th>Status</th>
@@ -3496,24 +3497,26 @@
       const tbody = document.getElementById('cronjobs-table');
       if (!tbody) return;
       try {
-        setTableState(tbody, 6, 'loading', 'Loading…');
+        setTableState(tbody, 7, 'loading', 'Loading…');
         const r = await fetch('/cronjobs', { credentials: 'include' });
         if (!r.ok) throw new Error(`cronjobs failed (${r.status})`);
         const d = await r.json();
         const items = d?.items || [];
         if (!items.length) {
-          setTableState(tbody, 6, 'empty', 'No cronjobs yet');
+          setTableState(tbody, 7, 'empty', 'No cronjobs yet');
           return;
         }
         tbody.innerHTML = '';
         for (const it of items) {
           const tr = document.createElement('tr');
           const when = formatShortTime(it.run_at);
+          const owner = String(it.owner_username || '').trim();
           const targets = Array.isArray(it.selector?.agent_ids) ? it.selector.agent_ids.length : '–';
           const status = it.status || '–';
           tr.innerHTML = `
             <td class="status-muted">${escapeHtml(when)}</td>
             <td>${escapeHtml(it.name || '')}</td>
+            <td>${owner ? `<code>${escapeHtml(owner)}</code>` : '<span class="status-muted">—</span>'}</td>
             <td><code>${escapeHtml(it.action || '')}</code></td>
             <td>${escapeHtml(String(targets))}</td>
             <td>${escapeHtml(status)}</td>
@@ -3544,7 +3547,7 @@
         });
         if (showToastOnManual) showToast('Cronjobs refreshed', 'success');
       } catch (e) {
-        setTableState(tbody, 6, 'error', e.message || String(e));
+        setTableState(tbody, 7, 'error', e.message || String(e));
         if (showToastOnManual) showToast(e.message, 'error');
       }
     }
