@@ -511,8 +511,8 @@ async def dashboard_attention(
                 except Exception:
                     pass
     except Exception:
-        # Cache is best-effort
-        pass
+        # Cache is best-effort. Roll back so a failed snapshot query does not poison the rest of the request.
+        db.rollback()
 
     # Live metrics (disk % and cpu load ratio)
     # Only query hosts missing recent cached metrics.
