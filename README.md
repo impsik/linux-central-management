@@ -87,8 +87,8 @@ cp env.example .env
 ```bash
 docker compose up -d --build
 
-# Apply DB migrations (recommended for any deployment with existing DB volume)
-docker compose exec server alembic upgrade head
+# The server container now runs `alembic upgrade head` automatically before uvicorn starts.
+# Manual `docker compose exec server alembic upgrade head` is only needed for unusual recovery work.
 
 curl -s http://localhost:8000/health
 ```

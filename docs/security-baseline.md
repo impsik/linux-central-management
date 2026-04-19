@@ -43,8 +43,9 @@ Mode selection:
 ```bash
 cd deploy/docker
 docker compose up -d --build
-docker compose exec server alembic upgrade head
 ```
+
+The standard Docker server container now runs `alembic upgrade head` automatically before uvicorn starts. Manual Alembic commands should only be needed for unusual recovery or debugging work.
 
 ## 5) Secrets management
 Do not commit secrets. Prefer:
