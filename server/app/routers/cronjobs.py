@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
-from ..models import CronJob, CronJobRun
+from ..models import CronJob, CronJobRun, AppUser
 from ..services.db_utils import transaction
 from ..services.user_scopes import filter_agent_ids_for_user
+from ..services.rbac import is_admin
 
 router = APIRouter(prefix="/cronjobs", tags=["cronjobs"])
 
@@ -40,19 +41,20 @@ class CronJobCreate(BaseModel):
 
 @router.get("")
 def list_cronjobs(db: Session = Depends(get_db), user=Depends(require_ui_user)):
-    rows = (
-        db.execute(
-            select(CronJob)
-            .where(CronJob.user_id == user.id, CronJob.status != "canceled")
-            .order_by(CronJob.run_at.desc())
-            .limit(200)
-        )
-        .scalars()
-        .all()
+    q = (
+        select(CronJob, AppUser.username)
+        .join(AppUser, AppUser.id == CronJob.user_id)
+        .where(CronJob.status != "canceled")
+        .order_by(CronJob.run_at.desc())
+        .limit(200)
     )
+    if not is_admin(user):
+        q = q.where(CronJob.user_id == user.id)
+
+    rows = db.execute(q).all()
 
     items = []
-    for c in rows:
+    for c, owner_username in rows:
         # one-shot for now: take most recent run
         last_run = (
             db.execute(
@@ -71,6 +73,7 @@ def list_cronjobs(db: Session = Depends(get_db), user=Depends(require_ui_user)):
                 "name": c.name,
                 "run_at": c.run_at.isoformat() if c.run_at else None,
                 "action": c.action,
+                "owner_username": owner_username,
                 "selector": c.selector,
                 "status": c.status,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
@@ -209,7 +212,10 @@ def create_cronjob(payload: CronJobCreate, db: Session = Depends(get_db), user=D
 
 @router.post("/{cron_id}/cancel")
 def cancel_cronjob(cron_id: str, db: Session = Depends(get_db), user=Depends(require_ui_user)):
-    cj = db.execute(select(CronJob).where(CronJob.id == cron_id, CronJob.user_id == user.id)).scalar_one_or_none()
+    q = select(CronJob).where(CronJob.id == cron_id)
+    if not is_admin(user):
+        q = q.where(CronJob.user_id == user.id)
+    cj = db.execute(q).scalar_one_or_none()
     if not cj:
         raise HTTPException(404, "unknown cronjob")
 
@@ -224,7 +230,10 @@ def cancel_cronjob(cron_id: str, db: Session = Depends(get_db), user=Depends(req
 
 @router.get("/{cron_id}/runs")
 def cronjob_runs(cron_id: str, db: Session = Depends(get_db), user=Depends(require_ui_user)):
-    cj = db.execute(select(CronJob).where(CronJob.id == cron_id, CronJob.user_id == user.id)).scalar_one_or_none()
+    q = select(CronJob).where(CronJob.id == cron_id)
+    if not is_admin(user):
+        q = q.where(CronJob.user_id == user.id)
+    cj = db.execute(q).scalar_one_or_none()
     if not cj:
         raise HTTPException(404, "unknown cronjob")
 
