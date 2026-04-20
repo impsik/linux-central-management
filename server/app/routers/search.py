@@ -7,8 +7,9 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostCVEStatus, HostPackage, CVEPackage
-from ..services.user_scopes import is_host_visible_to_user
+from ..services.user_scopes import filter_agent_ids_for_user
 from ..services.deb_version import is_vulnerable
+from ..services.rbac import is_admin
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -46,16 +47,15 @@ def search_packages(name: str, version: str | None = None, db: Session = Depends
             cve_map[c.release] = []
         cve_map[c.release].append((c.cve_id, c.fixed_version))
 
-    allowed = {
-        h.agent_id
-        for h in db.execute(select(Host)).scalars().all()
-        if is_host_visible_to_user(db, user, h)
-    }
-    
+    allowed = None
+    if not is_admin(user):
+        matched_agent_ids = [r[1] for r in rows]
+        allowed = set(filter_agent_ids_for_user(db, user, matched_agent_ids))
+
     results = []
     for r in rows:
         # r = (hostname, agent_id, version, arch, os_version)
-        if r[1] not in allowed:
+        if allowed is not None and r[1] not in allowed:
             continue
             
         cves = []
@@ -96,13 +96,12 @@ def search_cve(cve: str, affected: bool = True, db: Session = Depends(get_db), u
         stmt = stmt.where(HostCVEStatus.affected == True)  # noqa: E712
 
     rows = db.execute(stmt).all()
-    allowed = {
-        h.agent_id
-        for h in db.execute(select(Host)).scalars().all()
-        if is_host_visible_to_user(db, user, h)
-    }
+    allowed = None
+    if not is_admin(user):
+        matched_agent_ids = [r[1] for r in rows]
+        allowed = set(filter_agent_ids_for_user(db, user, matched_agent_ids))
     return [
         {"hostname": r[0], "agent_id": r[1], "affected": bool(r[2]), "checked_at": r[3]}
         for r in rows
-        if r[1] in allowed
+        if allowed is None or r[1] in allowed
     ]
