@@ -12,10 +12,10 @@ from ..dispatcher import dispatcher
 from ..models import Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
-from ..services.agent_auth import require_agent_token
+from ..services.agent_auth import require_agent_token, require_agent_token_dep
 from ..services.db_utils import transaction
 
-router = APIRouter(prefix="/agent", tags=["agent"])
+router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_token_dep)])
 
 
 @router.post("/register")

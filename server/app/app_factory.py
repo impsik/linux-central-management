@@ -107,11 +107,11 @@ def _enforce_non_local_security_guardrails() -> None:
 def _startup() -> None:
     from .config import settings
 
-    # Security guardrail: require AGENT_SHARED_TOKEN unless explicitly running insecure dev mode.
+    # Security guardrail: require AGENT_SHARED_TOKEN unless explicitly running insecure local dev mode.
     if not getattr(settings, "agent_shared_token", None) and not bool(getattr(settings, "allow_insecure_no_agent_token", False)):
         raise RuntimeError(
-            "AGENT_SHARED_TOKEN is required to start the server (agent endpoints would be unauthenticated). "
-            "Set AGENT_SHARED_TOKEN or set ALLOW_INSECURE_NO_AGENT_TOKEN=true for local dev only."
+            "AGENT_SHARED_TOKEN is required to start the server. "
+            "If you intentionally run without it, ALLOW_INSECURE_NO_AGENT_TOKEN only permits loopback/test-client agent calls."
         )
 
     # OIDC config sanity checks (enabled path only)
