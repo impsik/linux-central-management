@@ -230,10 +230,11 @@ All agent endpoints require a shared token (required by default):
 - Server: `AGENT_SHARED_TOKEN`
 - Agent: `FLEET_AGENT_TOKEN`
 
-For local development only, you can bypass this requirement by setting:
+For local development only, you can relax this requirement by setting:
 - `ALLOW_INSECURE_NO_AGENT_TOKEN=true`
 
-Do **not** use that on anything exposed beyond a trusted LAN.
+That bypass is now limited to loopback/test-client agent calls only. Remote agents still need `AGENT_SHARED_TOKEN`.
+Do **not** use that as a substitute for real agent auth on a LAN or production deployment.
 
 ### Token/env checklist (what to set, where)
 No new secret tokens were introduced for backup verification or rollout controls.
@@ -250,7 +251,7 @@ Blocked conditions:
 - `DB_AUTO_CREATE_TABLES=true`
 - terminal enabled with `AGENT_TERMINAL_SCHEME=ws` (requires `wss`)
 
-Local dev remains supported with `ALLOW_INSECURE_NO_AGENT_TOKEN=true` and local DB settings.
+Local dev remains supported with `ALLOW_INSECURE_NO_AGENT_TOKEN=true` for loopback/test-client agent calls and local DB settings.
 
 **Server (`deploy/docker/.env`)**
 - `BOOTSTRAP_PASSWORD` (required)
