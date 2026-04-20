@@ -112,9 +112,13 @@ def test_cve_search_filters_visibility_without_full_host_scan_fallback(monkeypat
             ]
 
 
-def test_host_cve_search_index_migration_exists():
+def test_host_cve_search_index_migration_repairs_legacy_schema_before_indexing():
     path = Path(__file__).resolve().parents[1] / 'alembic' / 'versions' / '20260420_00_host_cve_search_indexes.py'
     src = path.read_text()
 
+    assert 'inspector.get_columns("host_cve_status")' in src
+    assert 'if "affected" not in columns:' in src
+    assert 'UPDATE host_cve_status SET affected = CASE' in src
+    assert 'if "checked_at" not in columns:' in src
     assert 'CREATE INDEX IF NOT EXISTS ix_host_cve_status_cve ON host_cve_status (cve)' in src
     assert 'CREATE INDEX IF NOT EXISTS ix_host_cve_status_cve_affected ON host_cve_status (cve, affected)' in src
