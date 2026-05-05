@@ -211,6 +211,7 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     if require_mfa or has_pending_enroll:
         body["mfa_setup_required"] = bool((require_mfa and not mfa_enabled) or has_pending_enroll)
         body["mfa_required"] = bool(require_mfa and mfa_enabled)
+        body["mfa_redirect"] = "/?mfa=required"
 
     resp = JSONResponse(body)
 
