@@ -58,6 +58,7 @@ async def sync_cve_definitions(db: AsyncSession):
             values.append({
                 "cve_id": cve_id,
                 "definition_data": data,
+                "severity": data.get("severity"),
                 "last_updated_at": datetime.now(timezone.utc)
             })
         
@@ -66,6 +67,7 @@ async def sync_cve_definitions(db: AsyncSession):
             index_elements=[CVEDefinition.cve_id],
             set_={
                 "definition_data": stmt.excluded.definition_data,
+                "severity": stmt.excluded.severity,
                 "last_updated_at": stmt.excluded.last_updated_at
             }
         )
@@ -92,7 +94,8 @@ async def sync_cve_definitions(db: AsyncSession):
                     "package_name": pkg_name,
                     "release": release,
                     "fixed_version": pkg_info.get("fixed_version", "0"),
-                    "status": pkg_info.get("status", "unknown")
+                    "status": pkg_info.get("status", "unknown"),
+                    "severity": data.get("severity"),
                 })
                 
                 # Bulk insert in chunks
@@ -189,6 +192,31 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                 if not cve_id.startswith("CVE-"):
                     continue
 
+                severity = None
+                metadata_node = None
+                for child in elem:
+                    if local_tag(child.tag) == "metadata":
+                        metadata_node = child
+                        break
+                if metadata_node is not None:
+                    for meta_child in metadata_node.iter():
+                        tag_name = local_tag(meta_child.tag).lower()
+                        text = (meta_child.text or "").strip()
+                        if not text:
+                            continue
+                        if tag_name.endswith("severity"):
+                            try:
+                                severity = float(text)
+                                break
+                            except Exception:
+                                continue
+                        if "cvss" in tag_name and "score" in tag_name:
+                            try:
+                                severity = float(text)
+                                break
+                            except Exception:
+                                continue
+
                 pkgs_for_cve = {}
                 
                 # BFS/DFS traversal of criteria
@@ -233,6 +261,8 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                         master_cve_map[cve_id] = {}
                     if codename not in master_cve_map[cve_id]:
                         master_cve_map[cve_id][codename] = {}
+                    if severity is not None:
+                        master_cve_map[cve_id]["severity"] = severity
                     
                     if "packages" not in master_cve_map[cve_id][codename]:
                          master_cve_map[cve_id][codename]["packages"] = {}
