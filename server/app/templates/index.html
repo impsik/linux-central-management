@@ -4413,27 +4413,35 @@
       catch (e) { console.error('[init failed]', name, e); }
     }
 
-    // Load auth state first so header + MFA flow are not blocked by later init errors.
-    loadAuthInfo().catch((e) => console.error('[loadAuthInfo failed]', e));
+    async function bootUi() {
+      // Load auth state first so header + MFA flow are not blocked by later init errors.
+      await loadAuthInfo();
 
-    safeInit('initHostFilters', initHostFilters);
-    safeInit('initReportsControls', initReportsControls);
-    safeInit('initFleetOverviewControls', initFleetOverviewControls);
-    safeInit('initHostsTableControls', initHostsTableControls);
-    safeInit('initCronjobsControls', initCronjobsControls);
-    safeInit('initSshKeysControls', initSshKeysControls);
-    safeInit('initLoadTimeframeControls', initLoadTimeframeControls);
-    safeInit('initPackagesSearch', initPackagesSearch);
-    safeInit('initAdminPanel', initAdminPanel);
-    safeInit('initOidcMapPreview', initOidcMapPreview);
-    safeInit('initThemeToggle', initThemeToggle);
-    safeInit('initSettingsMenu', initSettingsMenu);
-    safeInit('initHostActionControls', initHostActionControls);
-    safeInit('initHostMetadataEditor', initHostMetadataEditor);
-    safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
-    safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
-    safeInit('initFailedRunDetailModalControls', initFailedRunDetailModalControls);
-    safeInit('initApprovalsFilterControls', initApprovalsFilterControls);
+      const mfa = window.__mfa || null;
+      const mfaPending = !!(mfa && (mfa.setup_required || mfa.verify_required));
+      if (mfaPending) return;
+
+      safeInit('initHostFilters', initHostFilters);
+      safeInit('initReportsControls', initReportsControls);
+      safeInit('initFleetOverviewControls', initFleetOverviewControls);
+      safeInit('initHostsTableControls', initHostsTableControls);
+      safeInit('initCronjobsControls', initCronjobsControls);
+      safeInit('initSshKeysControls', initSshKeysControls);
+      safeInit('initLoadTimeframeControls', initLoadTimeframeControls);
+      safeInit('initPackagesSearch', initPackagesSearch);
+      safeInit('initAdminPanel', initAdminPanel);
+      safeInit('initOidcMapPreview', initOidcMapPreview);
+      safeInit('initThemeToggle', initThemeToggle);
+      safeInit('initSettingsMenu', initSettingsMenu);
+      safeInit('initHostActionControls', initHostActionControls);
+      safeInit('initHostMetadataEditor', initHostMetadataEditor);
+      safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
+      safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
+      safeInit('initFailedRunDetailModalControls', initFailedRunDetailModalControls);
+      safeInit('initApprovalsFilterControls', initApprovalsFilterControls);
+    }
+
+    bootUi().catch((e) => console.error('[bootUi failed]', e));
     safeInit('bindDiskCardClick', () => {
       const diskCard = document.getElementById('disk-card');
       if (!diskCard) return;

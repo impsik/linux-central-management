@@ -137,12 +137,14 @@
         }
         let data = null;
         try { data = await resp.json(); } catch { data = null; }
-        if (data && (data.mfa_required || data.mfa_setup_required)) {
+        const mfaPending = !!(data && (data.mfa_required || data.mfa_setup_required));
+        if (mfaPending) {
           showToast('Signed in. MFA required—complete setup/verification.', 'info', 3500);
         } else {
           showToast('Signed in.', 'success');
         }
-        setTimeout(() => { window.location.href = '/'; }, 400);
+        const nextUrl = (mfaPending && data && data.mfa_redirect) ? data.mfa_redirect : '/';
+        setTimeout(() => { window.location.href = nextUrl; }, 400);
       } catch (e) {
         const msg = e.message || String(e);
         showToast(msg, 'error');
