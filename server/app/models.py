@@ -476,6 +476,7 @@ class CVEDefinition(Base):
     #   "noble": { "status": "needs-triage", "package": "openssl" }
     # }
     definition_data = Column(JSON, nullable=False, default=dict)
+    severity = Column(String)
 
     last_updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -493,6 +494,7 @@ class CVEPackage(Base):
     
     # Status (released, needs-triage, etc.)
     status = Column(String, nullable=False, default="unknown")
+    severity = Column(String)
 
     __table_args__ = (
         Index("ix_cve_packages_lookup", "release", "package_name"),
