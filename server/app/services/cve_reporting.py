@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+import smtplib
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
+from email.utils import format_datetime
+from zoneinfo import ZoneInfo
 
 from packaging.version import InvalidVersion
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..models import CVEDefinition, CVEPackage, Host, HostPackage, HostPackageUpdate
+from ..db import SessionLocal
+from ..models import AppUser, CVEDefinition, CVEPackage, CronJob, Host, HostPackage, HostPackageUpdate
+from .db_utils import transaction
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -153,3 +163,130 @@ def collect_high_severity_findings(db: Session, *, min_severity: float = 7.0) ->
 
     findings.sort(key=lambda item: (-item.severity, item.hostname, item.package_name, item.cve_id))
     return findings
+
+
+def format_report(findings: list[SeverityFinding]) -> str:
+    now = datetime.now(timezone.utc)
+    lines = [
+        f"High severity CVE report generated at {now.isoformat()}",
+        f"Threshold: severity > 7",
+        f"Affected findings: {len(findings)}",
+        "",
+    ]
+    current_host = None
+    for item in findings:
+        if item.hostname != current_host:
+            if current_host is not None:
+                lines.append("")
+            current_host = item.hostname
+            lines.append(f"Host: {item.hostname} ({item.agent_id}) [{item.release}]")
+        candidate = item.candidate_version or "unknown"
+        lines.append(
+            f"- {item.cve_id} severity={item.severity:.1f} package={item.package_name} installed={item.installed_version} candidate={candidate} fixed={item.fixed_version}"
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def send_report_via_smtp(*, recipient: str, subject: str, body: str) -> None:
+    msg = EmailMessage()
+    msg["To"] = recipient
+    msg["From"] = "linux-central-management@localhost"
+    msg["Subject"] = subject
+    msg["Date"] = format_datetime(datetime.now(timezone.utc))
+    msg.set_content(body)
+
+    with smtplib.SMTP("localhost") as smtp:
+        smtp.send_message(msg)
+
+
+def next_local_3am_utc(now: datetime | None = None) -> datetime:
+    tz_name = str(getattr(settings, "maintenance_window_timezone", "Europe/Tallinn") or "Europe/Tallinn")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = timezone.utc
+    base = (now or datetime.now(timezone.utc)).astimezone(tz)
+    candidate = datetime(base.year, base.month, base.day, 3, 0, 0, tzinfo=tz)
+    if candidate <= base:
+        candidate = candidate + timedelta(days=1)
+    return candidate.astimezone(timezone.utc)
+
+
+def ensure_patch_cronjob(db: Session, *, findings: list[SeverityFinding]) -> str | None:
+    if not findings:
+        return None
+    agent_ids = sorted({item.agent_id for item in findings})
+    target_user = db.execute(select(AppUser).where(AppUser.username == "admin")).scalar_one_or_none()
+    if not target_user:
+        logger.warning("Cannot create CVE patch cronjob: admin user missing")
+        return None
+
+    existing = db.execute(select(CronJob).where(CronJob.name == "Auto patch high severity CVEs at 03:00")).scalar_one_or_none()
+    run_at = next_local_3am_utc()
+    payload = {
+        "schedule": {
+            "kind": "daily",
+            "timezone": str(getattr(settings, "maintenance_window_timezone", "Europe/Tallinn") or "Europe/Tallinn"),
+            "time_hhmm": "03:00",
+            "weekday": None,
+            "day_of_month": None,
+        },
+        "source": "cve-high-severity-reporter",
+        "package_names": sorted({item.package_name for item in findings}),
+        "cves": sorted({item.cve_id for item in findings}),
+    }
+
+    with transaction(db):
+        if existing:
+            existing.user_id = target_user.id
+            existing.run_at = run_at
+            existing.action = "security-campaign"
+            existing.payload = payload
+            existing.selector = {"agent_ids": agent_ids}
+            existing.status = "scheduled"
+            existing.started_at = None
+            existing.finished_at = None
+            existing.last_error = None
+            return str(existing.id)
+
+        cj = CronJob(
+            user_id=target_user.id,
+            name="Auto patch high severity CVEs at 03:00",
+            run_at=run_at,
+            action="security-campaign",
+            payload=payload,
+            selector={"agent_ids": agent_ids},
+            status="scheduled",
+        )
+        db.add(cj)
+        db.flush()
+        return str(cj.id)
+
+
+def run_hourly_report_once(db: Session, *, min_severity: float = 7.0, recipient: str = "imre@localhost") -> dict[str, object]:
+    findings = collect_high_severity_findings(db, min_severity=min_severity)
+    cron_id = ensure_patch_cronjob(db, findings=findings)
+    if not findings:
+        return {"sent": False, "finding_count": 0, "cronjob_id": cron_id}
+
+    body = format_report(findings)
+    send_report_via_smtp(
+        recipient=recipient,
+        subject=f"High severity CVE report ({len(findings)} findings)",
+        body=body,
+    )
+    return {"sent": True, "finding_count": len(findings), "cronjob_id": cron_id}
+
+
+async def cve_reporting_loop(stop_event: asyncio.Event, *, interval_s: float = 3600.0) -> None:
+    while not stop_event.is_set():
+        try:
+            with SessionLocal() as db:
+                run_hourly_report_once(db)
+        except Exception:
+            logger.exception("CVE reporting tick failed")
+
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval_s)
+        except asyncio.TimeoutError:
+            pass
