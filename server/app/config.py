@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # Optional hard cap in hours (absolute timeout). 0 disables this extra cap.
     ui_session_max_hours: int = 24
     # If true, revoke all UI sessions on server startup (restart => forced relogin).
-    ui_revoke_all_sessions_on_startup: bool = True
+    ui_revoke_all_sessions_on_startup: bool = False
 
     # MFA (TOTP)
     # Required for admin/operator when mfa_require_for_privileged=true
