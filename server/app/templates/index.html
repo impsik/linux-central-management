@@ -581,6 +581,39 @@
         </div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">High severity CVE report</div>
+          <div class="admin-card-body" style="display:grid;gap:0.75rem;">
+            <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+              <div style="min-width:180px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Min severity</label>
+                <input id="reports-cve-min-severity" class="host-search" type="number" min="0" max="10" step="0.1" value="7.0" />
+              </div>
+              <button class="btn btn-primary" id="reports-cve-refresh" type="button">Refresh</button>
+              <span id="reports-cve-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+            </div>
+            <div style="overflow:auto;">
+              <table class="process-table hosts-table">
+                <thead>
+                  <tr>
+                    <th>Host</th>
+                    <th>CVE</th>
+                    <th style="text-align:right;">Severity</th>
+                    <th>Package</th>
+                    <th>Installed</th>
+                    <th>Candidate</th>
+                    <th>Fixed</th>
+                    <th>Release</th>
+                  </tr>
+                </thead>
+                <tbody id="reports-cve-table-body">
+                  <tr><td colspan="8" class="status-muted" style="text-align:center;">Press Refresh to load report…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">User presence report</div>
           <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
             <div style="min-width:260px;">
@@ -4391,19 +4424,77 @@
     }
 
     function initReportsControls() {
-      const btn = document.getElementById('reports-user-presence-open');
-      if (!btn) return;
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const u = String(document.getElementById('reports-user-presence-username')?.value || '').trim();
-        const exact = !!document.getElementById('reports-user-presence-exact')?.checked;
-        const liveScan = !!document.getElementById('reports-user-presence-live')?.checked;
-        if (!u) {
-          if (typeof showToast === 'function') showToast('Enter username', 'error');
-          return;
+      const esc = (value) => String(value == null ? '' : value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+      async function loadHighSeverityCveReport(showToastOnManual = false) {
+        const bodyEl = document.getElementById('reports-cve-table-body');
+        const statusEl = document.getElementById('reports-cve-status');
+        const minSeverity = String(document.getElementById('reports-cve-min-severity')?.value || '7.0').trim() || '7.0';
+        if (!bodyEl) return;
+        bodyEl.innerHTML = '<tr><td colspan="8" class="status-muted" style="text-align:center;">Loading…</td></tr>';
+        if (statusEl) statusEl.textContent = 'Loading…';
+        try {
+          const qs = new URLSearchParams({ min_severity: minSeverity, sort: 'severity', order: 'desc', limit: '200' }).toString();
+          const r = await fetch(`/reports/cve-high-severity?${qs}`, { credentials: 'include' });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          const data = await r.json();
+          const items = Array.isArray(data?.items) ? data.items : [];
+          if (!items.length) {
+            bodyEl.innerHTML = '<tr><td colspan="8" class="status-ok" style="text-align:center;">No high severity CVEs found on online hosts.</td></tr>';
+          } else {
+            bodyEl.innerHTML = items.map((it) => {
+              const sev = Number(it?.severity || 0);
+              const sevCls = sev >= 9 ? 'status-error' : 'status-warn';
+              return `<tr>
+                <td><b>${esc(it.hostname || it.agent_id || '')}</b><div class="status-muted">${esc(it.agent_id || '')}</div></td>
+                <td><code>${esc(it.cve_id || '')}</code></td>
+                <td style="text-align:right;"><span class="${sevCls}">${esc(sev.toFixed ? sev.toFixed(1) : sev)}</span></td>
+                <td><code>${esc(it.package_name || '')}</code></td>
+                <td><code>${esc(it.installed_version || '')}</code></td>
+                <td><code>${esc(it.candidate_version || '-')}</code></td>
+                <td><code>${esc(it.fixed_version || '')}</code></td>
+                <td>${esc(it.release || '')}</td>
+              </tr>`;
+            }).join('');
+          }
+          if (statusEl) statusEl.textContent = `${items.length} finding${items.length === 1 ? '' : 's'} shown`; 
+          if (showToastOnManual && typeof showToast === 'function') showToast('CVE report refreshed', 'success');
+        } catch (e) {
+          console.error('[loadHighSeverityCveReport failed]', e);
+          bodyEl.innerHTML = '<tr><td colspan="8" class="status-error" style="text-align:center;">Failed to load CVE report.</td></tr>';
+          if (statusEl) statusEl.textContent = 'Load failed';
+          if (showToastOnManual && typeof showToast === 'function') showToast('Failed to load CVE report', 'error');
         }
-        const qs = new URLSearchParams({ username: u, exact: String(exact), live_scan: String(liveScan) }).toString();
-        window.open(`/reports/user-presence.html?${qs}`, '_blank', 'noopener');
+      }
+
+      document.getElementById('reports-cve-refresh')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void loadHighSeverityCveReport(true);
+      });
+
+      const btn = document.getElementById('reports-user-presence-open');
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const u = String(document.getElementById('reports-user-presence-username')?.value || '').trim();
+          const exact = !!document.getElementById('reports-user-presence-exact')?.checked;
+          const liveScan = !!document.getElementById('reports-user-presence-live')?.checked;
+          if (!u) {
+            if (typeof showToast === 'function') showToast('Enter username', 'error');
+            return;
+          }
+          const qs = new URLSearchParams({ username: u, exact: String(exact), live_scan: String(liveScan) }).toString();
+          window.open(`/reports/user-presence.html?${qs}`, '_blank', 'noopener');
+        });
+      }
+
+      document.getElementById('nav-reports')?.addEventListener('click', () => {
+        void loadHighSeverityCveReport(false);
       });
     }
 
