@@ -598,6 +598,7 @@
                   <tr>
                     <th>Host</th>
                     <th>Package</th>
+                    <th>CVE</th>
                     <th style="text-align:right;">Max severity</th>
                     <th style="text-align:right;">Merged CVEs</th>
                     <th>Installed</th>
@@ -4454,6 +4455,7 @@
               return `<tr>
                 <td><b>${esc(it.hostname || it.agent_id || '')}</b><div class="status-muted">${esc(it.agent_id || '')}</div></td>
                 <td><code>${esc(it.package_name || '')}</code></td>
+                <td>${(Array.isArray(it.cve_ids) ? it.cve_ids : []).map((cve) => `<a href="https://ubuntu.com/security/${encodeURIComponent(cve)}" target="_blank" rel="noopener noreferrer"><code>${esc(cve)}</code></a>`).join('<br>') || '-'}</td>
                 <td style="text-align:right;"><span class="${sevCls}">${esc(sev.toFixed ? sev.toFixed(1) : sev)}</span></td>
                 <td style="text-align:right;">${esc(it.cve_count || 0)}</td>
                 <td><code>${esc(it.installed_version || '')}</code></td>
