@@ -105,7 +105,7 @@ def test_hourly_cve_report_and_patch_cronjob_created(app, monkeypatch):
             assert cron.payload["schedule"]["time_hhmm"] == "03:00"
 
     assert sent["recipient"] == "imre@localhost"
-    assert "CVE-2026-0001" in sent["body"]
+    assert "Affected packages:" in sent["body"]
     assert "package=openssl" in sent["body"]
     assert "srv1" in sent["body"]
 

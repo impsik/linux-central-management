@@ -589,6 +589,7 @@
                 <input id="reports-cve-min-severity" class="host-search" type="number" min="0" max="10" step="0.1" value="7.0" />
               </div>
               <button class="btn btn-primary" id="reports-cve-refresh" type="button">Refresh</button>
+              <button class="btn" id="reports-cve-html" type="button">Open HTML report</button>
               <span id="reports-cve-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
             </div>
             <div style="overflow:auto;">
@@ -596,9 +597,9 @@
                 <thead>
                   <tr>
                     <th>Host</th>
-                    <th>CVE</th>
-                    <th style="text-align:right;">Severity</th>
                     <th>Package</th>
+                    <th style="text-align:right;">Max severity</th>
+                    <th style="text-align:right;">Merged CVEs</th>
                     <th>Installed</th>
                     <th>Candidate</th>
                     <th>Fixed</th>
@@ -4452,9 +4453,9 @@
               const sevCls = sev >= 9 ? 'status-error' : 'status-warn';
               return `<tr>
                 <td><b>${esc(it.hostname || it.agent_id || '')}</b><div class="status-muted">${esc(it.agent_id || '')}</div></td>
-                <td><code>${esc(it.cve_id || '')}</code></td>
-                <td style="text-align:right;"><span class="${sevCls}">${esc(sev.toFixed ? sev.toFixed(1) : sev)}</span></td>
                 <td><code>${esc(it.package_name || '')}</code></td>
+                <td style="text-align:right;"><span class="${sevCls}">${esc(sev.toFixed ? sev.toFixed(1) : sev)}</span></td>
+                <td style="text-align:right;">${esc(it.cve_count || 0)}</td>
                 <td><code>${esc(it.installed_version || '')}</code></td>
                 <td><code>${esc(it.candidate_version || '-')}</code></td>
                 <td><code>${esc(it.fixed_version || '')}</code></td>
@@ -4475,6 +4476,13 @@
       document.getElementById('reports-cve-refresh')?.addEventListener('click', (e) => {
         e.preventDefault();
         void loadHighSeverityCveReport(true);
+      });
+
+      document.getElementById('reports-cve-html')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const minSeverity = String(document.getElementById('reports-cve-min-severity')?.value || '7.0').trim() || '7.0';
+        const qs = new URLSearchParams({ min_severity: minSeverity, sort: 'severity', order: 'desc' }).toString();
+        window.open(`/reports/cve-high-severity.html?${qs}`, '_blank', 'noopener');
       });
 
       const btn = document.getElementById('reports-user-presence-open');

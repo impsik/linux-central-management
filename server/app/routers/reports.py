@@ -11,7 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostPackageUpdate
-from ..services.cve_reporting import collect_high_severity_findings
+from ..services.cve_reporting import collect_high_severity_findings, merge_findings_by_package
 from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -196,18 +196,19 @@ def cve_high_severity_report(
         raise HTTPException(400, "invalid order (asc|desc)")
 
     findings = collect_high_severity_findings(db, min_severity=float(min_severity))
+    package_findings = merge_findings_by_package(findings)
     visible = []
-    for item in findings:
+    for item in package_findings:
         host = db.execute(select(Host).where(Host.id == item.host_id)).scalar_one_or_none()
         if host and is_host_visible_to_user(db, user, host):
             visible.append(item)
 
     reverse = order == "desc"
     key_map = {
-        "severity": lambda item: (item.severity, item.hostname, item.package_name, item.cve_id),
-        "hostname": lambda item: (item.hostname, item.severity, item.package_name, item.cve_id),
-        "package_name": lambda item: (item.package_name, item.severity, item.hostname, item.cve_id),
-        "cve_id": lambda item: (item.cve_id, item.severity, item.hostname, item.package_name),
+        "severity": lambda item: (item.severity, item.hostname, item.package_name, item.cve_ids[0] if item.cve_ids else ""),
+        "hostname": lambda item: (item.hostname, item.severity, item.package_name, item.cve_ids[0] if item.cve_ids else ""),
+        "package_name": lambda item: (item.package_name, item.severity, item.hostname, item.cve_ids[0] if item.cve_ids else ""),
+        "cve_id": lambda item: (item.cve_ids[0] if item.cve_ids else "", item.severity, item.hostname, item.package_name),
     }
     visible.sort(key=key_map[sort], reverse=reverse)
 
@@ -228,7 +229,9 @@ def cve_high_severity_report(
                 "installed_version": item.installed_version,
                 "candidate_version": item.candidate_version,
                 "fixed_version": item.fixed_version,
-                "cve_id": item.cve_id,
+                "cve_id": item.cve_ids[0] if item.cve_ids else None,
+                "cve_ids": list(item.cve_ids),
+                "cve_count": item.cve_count,
                 "severity": item.severity,
                 "release": item.release,
             }

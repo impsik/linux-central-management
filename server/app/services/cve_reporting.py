@@ -35,6 +35,24 @@ class SeverityFinding:
     release: str
 
 
+@dataclass(frozen=True)
+class PackageSeverityFinding:
+    host_id: object
+    agent_id: str
+    hostname: str
+    package_name: str
+    installed_version: str
+    candidate_version: str | None
+    severity: float
+    fixed_version: str
+    release: str
+    cve_ids: tuple[str, ...]
+
+    @property
+    def cve_count(self) -> int:
+        return len(self.cve_ids)
+
+
 def _online_cutoff() -> datetime:
     grace = max(5, int(getattr(settings, "agent_online_grace_seconds", 30) or 30))
     return datetime.now(timezone.utc) - timedelta(seconds=grace)
@@ -175,16 +193,47 @@ def collect_high_severity_findings(db: Session, *, min_severity: float = 7.0) ->
     return findings
 
 
+def merge_findings_by_package(findings: list[SeverityFinding]) -> list[PackageSeverityFinding]:
+    grouped: dict[tuple[object, str, str], list[SeverityFinding]] = {}
+    for item in findings:
+        grouped.setdefault((item.host_id, item.release, item.package_name), []).append(item)
+
+    merged: list[PackageSeverityFinding] = []
+    for rows in grouped.values():
+        rows = sorted(rows, key=lambda item: (-item.severity, item.cve_id))
+        top = rows[0]
+        fixed_versions = sorted({item.fixed_version for item in rows if item.fixed_version})
+        merged.append(
+            PackageSeverityFinding(
+                host_id=top.host_id,
+                agent_id=top.agent_id,
+                hostname=top.hostname,
+                package_name=top.package_name,
+                installed_version=top.installed_version,
+                candidate_version=top.candidate_version,
+                severity=max(item.severity for item in rows),
+                fixed_version=", ".join(fixed_versions),
+                release=top.release,
+                cve_ids=tuple(sorted({item.cve_id for item in rows})),
+            )
+        )
+
+    merged.sort(key=lambda item: (-item.severity, item.hostname, item.package_name))
+    return merged
+
+
 def format_report(findings: list[SeverityFinding]) -> str:
     now = datetime.now(timezone.utc)
+    package_findings = merge_findings_by_package(findings)
     lines = [
         f"High severity CVE report generated at {now.isoformat()}",
         f"Threshold: severity > 7",
-        f"Affected findings: {len(findings)}",
+        f"Affected packages: {len(package_findings)}",
+        f"Merged CVEs: {len(findings)}",
         "",
     ]
     current_host = None
-    for item in findings:
+    for item in package_findings:
         if item.hostname != current_host:
             if current_host is not None:
                 lines.append("")
@@ -192,7 +241,7 @@ def format_report(findings: list[SeverityFinding]) -> str:
             lines.append(f"Host: {item.hostname} ({item.agent_id}) [{item.release}]")
         candidate = item.candidate_version or "unknown"
         lines.append(
-            f"- {item.cve_id} severity={item.severity:.1f} package={item.package_name} installed={item.installed_version} candidate={candidate} fixed={item.fixed_version}"
+            f"- package={item.package_name} severity={item.severity:.1f} installed={item.installed_version} candidate={candidate} fixed={item.fixed_version} cve_count={item.cve_count}"
         )
     return "\n".join(lines).rstrip() + "\n"
 

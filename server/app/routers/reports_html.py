@@ -14,6 +14,7 @@ from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostUser
 from ..routers.reports import hosts_updates_report
+from ..services.cve_reporting import collect_high_severity_findings, merge_findings_by_package
 from ..services.db_utils import transaction
 from ..services.hosts import is_host_online
 from ..services.job_wait import wait_for_job_run
@@ -125,6 +126,97 @@ def hosts_updates_html(
           <th class='num'>{sort_link('All updates','updates')}</th>
           <th>Online</th>
           <th>{sort_link('Last seen','last_seen')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {body}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>""",
+        media_type="text/html",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/cve-high-severity.html", response_class=HTMLResponse)
+def cve_high_severity_html(
+    min_severity: float = 7.0,
+    sort: str = "severity",
+    order: str = "desc",
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    findings = collect_high_severity_findings(db, min_severity=float(min_severity))
+    rows = []
+    for item in merge_findings_by_package(findings):
+        host = db.execute(select(Host).where(Host.id == item.host_id)).scalar_one_or_none()
+        if host and is_host_visible_to_user(db, user, host):
+            rows.append(item)
+
+    reverse = (order or "desc").lower() == "desc"
+    key_map = {
+        "severity": lambda item: (item.severity, item.hostname, item.package_name),
+        "hostname": lambda item: (item.hostname, item.severity, item.package_name),
+        "package_name": lambda item: (item.package_name, item.severity, item.hostname),
+    }
+    rows.sort(key=key_map.get(sort, key_map["severity"]), reverse=reverse)
+
+    now = datetime.now(timezone.utc)
+    ts = now.isoformat()
+
+    def esc(s: str) -> str:
+        return (
+            str(s)
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    html_rows = []
+    for r in rows:
+        sev_cls = "critical" if r.severity >= 9.0 else "high"
+        html_rows.append(
+            f"<tr>"
+            f"<td><b>{esc(r.hostname)}</b><div class='report-muted'>{esc(r.agent_id)}</div></td>"
+            f"<td><code class='report-code'>{esc(r.package_name)}</code></td>"
+            f"<td class='num'><span class='report-pill {sev_cls}'>{r.severity:.1f}</span></td>"
+            f"<td><code class='report-code'>{esc(r.installed_version)}</code></td>"
+            f"<td><code class='report-code'>{esc(r.candidate_version or '-')}</code></td>"
+            f"<td><code class='report-code'>{esc(r.fixed_version or '-')}</code></td>"
+            f"<td>{esc(r.release)}</td>"
+            f"<td class='num'>{r.cve_count}</td>"
+            f"</tr>"
+        )
+
+    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='8' class='report-muted'>No affected packages found on online hosts.</td></tr>"
+
+    return HTMLResponse(
+        content=f"""<!doctype html>
+<html>
+<head>
+  <meta charset='utf-8' />
+  <title>Fleet Report - High Severity CVE Packages</title>
+  <link rel='stylesheet' href='/assets/fleet-ui.css' />
+  <script src='/assets/fleet-theme-bootstrap.js'></script>
+</head>
+<body class='fleet-report'>
+  <h1>High Severity CVE Package Report</h1>
+  <div class='report-meta'>Generated: {esc(ts)} UTC • min_severity={esc(str(min_severity))} • rows={len(rows)} • CVEs are merged per host/package for security-team review.</div>
+  <div class='report-wrap'>
+    <table class='report-table'>
+      <thead>
+        <tr>
+          <th>Host</th>
+          <th>Package</th>
+          <th class='num'>Max severity</th>
+          <th>Installed</th>
+          <th>Candidate</th>
+          <th>Fixed version(s)</th>
+          <th>Release</th>
+          <th class='num'>Merged CVEs</th>
         </tr>
       </thead>
       <tbody>
