@@ -108,6 +108,7 @@ def test_cve_high_severity_report_api(monkeypatch):
         item = next((it for it in data["items"] if it["hostname"] == "srv-cve-1" and it["package_name"] == "openssl"), None)
         assert item is not None
         assert item["cve_count"] == 2
+        assert item["candidate_fixes"] is True
         assert not any(it["package_name"] == "udisks2" for it in data["items"])
         assert set(item["cve_ids"]) == {"CVE-2026-9998", "CVE-2026-9999"}
         assert float(item["severity"]) == 9.1
@@ -116,4 +117,5 @@ def test_cve_high_severity_report_api(monkeypatch):
         assert r.status_code == 200, r.text
         assert "High Severity CVE Package Report" in r.text
         assert "openssl" in r.text
+        assert "Upgrade fixes" in r.text
         assert "https://ubuntu.com/security/CVE-2026-9998" in r.text

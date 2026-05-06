@@ -228,6 +228,7 @@ def cve_high_severity_report(
                 "package_name": item.package_name,
                 "installed_version": item.installed_version,
                 "candidate_version": item.candidate_version,
+                "candidate_fixes": item.candidate_fixes,
                 "fixed_version": item.fixed_version,
                 "cve_id": item.cve_ids[0] if item.cve_ids else None,
                 "cve_ids": list(item.cve_ids),

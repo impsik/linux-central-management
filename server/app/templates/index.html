@@ -603,12 +603,13 @@
                     <th style="text-align:right;">Merged CVEs</th>
                     <th>Installed</th>
                     <th>Candidate</th>
+                    <th>Remediation</th>
                     <th>Fixed</th>
                     <th>Release</th>
                   </tr>
                 </thead>
                 <tbody id="reports-cve-table-body">
-                  <tr><td colspan="8" class="status-muted" style="text-align:center;">Press Refresh to load report…</td></tr>
+                  <tr><td colspan="10" class="status-muted" style="text-align:center;">Press Refresh to load report…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -4438,7 +4439,7 @@
         const statusEl = document.getElementById('reports-cve-status');
         const minSeverity = String(document.getElementById('reports-cve-min-severity')?.value || '7.0').trim() || '7.0';
         if (!bodyEl) return;
-        bodyEl.innerHTML = '<tr><td colspan="8" class="status-muted" style="text-align:center;">Loading…</td></tr>';
+        bodyEl.innerHTML = '<tr><td colspan="10" class="status-muted" style="text-align:center;">Loading…</td></tr>';
         if (statusEl) statusEl.textContent = 'Loading…';
         try {
           const qs = new URLSearchParams({ min_severity: minSeverity, sort: 'severity', order: 'desc', limit: '200' }).toString();
@@ -4447,11 +4448,13 @@
           const data = await r.json();
           const items = Array.isArray(data?.items) ? data.items : [];
           if (!items.length) {
-            bodyEl.innerHTML = '<tr><td colspan="8" class="status-ok" style="text-align:center;">No high severity CVEs found on online hosts.</td></tr>';
+            bodyEl.innerHTML = '<tr><td colspan="10" class="status-ok" style="text-align:center;">No high severity CVEs found on online hosts.</td></tr>';
           } else {
             bodyEl.innerHTML = items.map((it) => {
               const sev = Number(it?.severity || 0);
               const sevCls = sev >= 9 ? 'status-error' : 'status-warn';
+              const remediation = it.candidate_fixes === true ? 'Upgrade fixes' : (it.candidate_fixes === false ? 'No fixed candidate' : 'Candidate unknown');
+              const remediationCls = it.candidate_fixes === true ? 'status-ok' : (it.candidate_fixes === false ? 'status-error' : 'status-warn');
               return `<tr>
                 <td><b>${esc(it.hostname || it.agent_id || '')}</b><div class="status-muted">${esc(it.agent_id || '')}</div></td>
                 <td><code>${esc(it.package_name || '')}</code></td>
@@ -4460,6 +4463,7 @@
                 <td style="text-align:right;">${esc(it.cve_count || 0)}</td>
                 <td><code>${esc(it.installed_version || '')}</code></td>
                 <td><code>${esc(it.candidate_version || '-')}</code></td>
+                <td><span class="${remediationCls}">${esc(remediation)}</span></td>
                 <td><code>${esc(it.fixed_version || '')}</code></td>
                 <td>${esc(it.release || '')}</td>
               </tr>`;
@@ -4469,7 +4473,7 @@
           if (showToastOnManual && typeof showToast === 'function') showToast('CVE report refreshed', 'success');
         } catch (e) {
           console.error('[loadHighSeverityCveReport failed]', e);
-          bodyEl.innerHTML = '<tr><td colspan="8" class="status-error" style="text-align:center;">Failed to load CVE report.</td></tr>';
+          bodyEl.innerHTML = '<tr><td colspan="10" class="status-error" style="text-align:center;">Failed to load CVE report.</td></tr>';
           if (statusEl) statusEl.textContent = 'Load failed';
           if (showToastOnManual && typeof showToast === 'function') showToast('Failed to load CVE report', 'error');
         }
