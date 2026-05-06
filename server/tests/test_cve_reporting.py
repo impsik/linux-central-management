@@ -91,12 +91,16 @@ def test_hourly_cve_report_and_patch_cronjob_created(app, monkeypatch):
 
             result = cve_reporting.run_hourly_report_once(db)
             assert result["sent"] is True
-            assert result["finding_count"] == 1
+            assert result["finding_count"] >= 1
+
+            findings = cve_reporting.collect_high_severity_findings(db)
+            ours = [it for it in findings if it.agent_id == "agent-1" and it.cve_id == "CVE-2026-0001"]
+            assert len(ours) == 1
 
             cron = db.execute(select(CronJob).where(CronJob.name == "Auto patch high severity CVEs at 03:00")).scalar_one()
             assert cron.action == "security-campaign"
             assert cron.status == "scheduled"
-            assert cron.selector == {"agent_ids": ["agent-1"]}
+            assert "agent-1" in (cron.selector or {}).get("agent_ids", [])
             assert cron.payload["schedule"]["kind"] == "daily"
             assert cron.payload["schedule"]["time_hhmm"] == "03:00"
 

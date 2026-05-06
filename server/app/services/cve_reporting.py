@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import SessionLocal
-from ..models import AppUser, CVEPackage, CronJob, Host, HostPackage, HostPackageUpdate
+from ..models import AppUser, CVEDefinition, CVEPackage, CronJob, Host, HostPackage, HostPackageUpdate
 from .db_utils import transaction
 
 logger = logging.getLogger(__name__)
@@ -83,13 +83,11 @@ def _version_lt(installed: str, fixed: str) -> bool:
 
 
 def _load_cve_severity_map(db: Session, cve_ids: list[str]) -> dict[str, float]:
-    from ..models import CVEDefinition
-
     rows = db.execute(select(CVEDefinition).where(CVEDefinition.cve_id.in_(cve_ids))).scalars().all()
     result: dict[str, float] = {}
     for row in rows:
         data = row.definition_data if isinstance(row.definition_data, dict) else {}
-        sev = _parse_severity(data.get("severity"))
+        sev = _parse_severity(getattr(row, "severity", None) or data.get("severity"))
         if sev is not None:
             result[str(row.cve_id)] = sev
     return result
@@ -142,7 +140,7 @@ def collect_high_severity_findings(db: Session, *, min_severity: float = 7.0) ->
             if not pkg:
                 continue
             for cve_row in by_release_pkg.get((release, pkg_name), []):
-                severity = severity_map.get(str(cve_row.cve_id))
+                severity = severity_map.get(str(cve_row.cve_id)) or _parse_severity(getattr(cve_row, "severity", None))
                 if severity is None or severity <= float(min_severity):
                     continue
                 if not _version_lt(pkg.version, cve_row.fixed_version):

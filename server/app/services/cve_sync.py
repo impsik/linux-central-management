@@ -204,13 +204,7 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                         text = (meta_child.text or "").strip()
                         if not text:
                             continue
-                        if tag_name.endswith("severity"):
-                            try:
-                                severity = float(text)
-                                break
-                            except Exception:
-                                continue
-                        if "cvss" in tag_name and "score" in tag_name:
+                        if tag_name.endswith("severity") or ("cvss" in tag_name and "score" in tag_name):
                             try:
                                 severity = float(text)
                                 break

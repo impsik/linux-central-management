@@ -11,6 +11,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import Host, HostPackageUpdate
+from ..services.cve_reporting import collect_high_severity_findings
 from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/reports", tags=["reports"])
@@ -23,6 +24,13 @@ ALLOWED_SORT = {
     "updates": "updates",
     "security_updates": "security_updates",
     "last_seen": "last_seen",
+}
+
+ALLOWED_CVE_SORT = {
+    "severity": "severity",
+    "hostname": "hostname",
+    "package_name": "package_name",
+    "cve_id": "cve_id",
 }
 
 
@@ -64,7 +72,6 @@ def hosts_updates_report(
     grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
     online_cutoff = now.timestamp() - grace_s
 
-    # Aggregate updates per host
     updates_total = func.coalesce(
         func.sum(case((HostPackageUpdate.update_available == True, 1), else_=0)),  # noqa: E712
         0,
@@ -106,10 +113,8 @@ def hosts_updates_report(
         q = q.where(Host.last_seen.is_not(None), func.extract("epoch", Host.last_seen) >= online_cutoff)
 
     if only_pending:
-        # Keep hosts that have at least one pending update
         q = q.having(updates_total > 0)
 
-    # Order by
     sort_col_map = {
         "hostname": Host.hostname,
         "agent_id": Host.agent_id,
@@ -132,7 +137,6 @@ def hosts_updates_report(
 
     items = []
     for r in rows:
-        # online hint
         is_online = False
         if r.last_seen is not None:
             try:
@@ -164,4 +168,70 @@ def hosts_updates_report(
         "limit": limit,
         "offset": offset,
         "items": items,
+    }
+
+
+@router.get("/cve-high-severity")
+def cve_high_severity_report(
+    min_severity: float = 7.0,
+    sort: str = "severity",
+    order: str = "desc",
+    limit: int = 500,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    if limit < 1:
+        limit = 1
+    if limit > 5000:
+        limit = 5000
+    if offset < 0:
+        offset = 0
+
+    sort = (sort or "severity").strip()
+    order = (order or "desc").strip().lower()
+    if sort not in ALLOWED_CVE_SORT:
+        raise HTTPException(400, f"invalid sort (allowed: {', '.join(sorted(ALLOWED_CVE_SORT))})")
+    if order not in ("asc", "desc"):
+        raise HTTPException(400, "invalid order (asc|desc)")
+
+    findings = collect_high_severity_findings(db, min_severity=float(min_severity))
+    visible = []
+    for item in findings:
+        host = db.execute(select(Host).where(Host.id == item.host_id)).scalar_one_or_none()
+        if host and is_host_visible_to_user(db, user, host):
+            visible.append(item)
+
+    reverse = order == "desc"
+    key_map = {
+        "severity": lambda item: (item.severity, item.hostname, item.package_name, item.cve_id),
+        "hostname": lambda item: (item.hostname, item.severity, item.package_name, item.cve_id),
+        "package_name": lambda item: (item.package_name, item.severity, item.hostname, item.cve_id),
+        "cve_id": lambda item: (item.cve_id, item.severity, item.hostname, item.package_name),
+    }
+    visible.sort(key=key_map[sort], reverse=reverse)
+
+    total = len(visible)
+    rows = visible[offset:offset + limit]
+
+    return {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "min_severity": float(min_severity),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "items": [
+            {
+                "agent_id": item.agent_id,
+                "hostname": item.hostname,
+                "package_name": item.package_name,
+                "installed_version": item.installed_version,
+                "candidate_version": item.candidate_version,
+                "fixed_version": item.fixed_version,
+                "cve_id": item.cve_id,
+                "severity": item.severity,
+                "release": item.release,
+            }
+            for item in rows
+        ],
     }
