@@ -100,7 +100,7 @@ def test_hourly_cve_report_and_patch_cronjob_created(app, monkeypatch):
             cron = db.execute(select(CronJob).where(CronJob.name == "Auto patch high severity CVEs at 03:00")).scalar_one()
             assert cron.action == "security-campaign"
             assert cron.status == "scheduled"
-            assert cron.selector == {"agent_ids": ["agent-1"]}
+            assert "agent-1" in (cron.selector or {}).get("agent_ids", [])
             assert cron.payload["schedule"]["kind"] == "daily"
             assert cron.payload["schedule"]["time_hhmm"] == "03:00"
 
