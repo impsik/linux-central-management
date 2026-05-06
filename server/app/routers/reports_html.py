@@ -178,10 +178,15 @@ def cve_high_severity_html(
     html_rows = []
     for r in rows:
         sev_cls = "critical" if r.severity >= 9.0 else "high"
+        cve_links = "<br>".join(
+            f"<a href='https://ubuntu.com/security/{esc(cve)}' target='_blank' rel='noopener noreferrer'><code class='report-code'>{esc(cve)}</code></a>"
+            for cve in r.cve_ids
+        ) or "-"
         html_rows.append(
             f"<tr>"
             f"<td><b>{esc(r.hostname)}</b><div class='report-muted'>{esc(r.agent_id)}</div></td>"
             f"<td><code class='report-code'>{esc(r.package_name)}</code></td>"
+            f"<td>{cve_links}</td>"
             f"<td class='num'><span class='report-pill {sev_cls}'>{r.severity:.1f}</span></td>"
             f"<td><code class='report-code'>{esc(r.installed_version)}</code></td>"
             f"<td><code class='report-code'>{esc(r.candidate_version or '-')}</code></td>"
@@ -191,7 +196,7 @@ def cve_high_severity_html(
             f"</tr>"
         )
 
-    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='8' class='report-muted'>No affected packages found on online hosts.</td></tr>"
+    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='9' class='report-muted'>No affected packages found on online hosts.</td></tr>"
 
     return HTMLResponse(
         content=f"""<!doctype html>
@@ -211,6 +216,7 @@ def cve_high_severity_html(
         <tr>
           <th>Host</th>
           <th>Package</th>
+          <th>CVE</th>
           <th class='num'>Max severity</th>
           <th>Installed</th>
           <th>Candidate</th>

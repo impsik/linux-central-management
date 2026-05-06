@@ -94,3 +94,4 @@ def test_cve_high_severity_report_api(monkeypatch):
         assert r.status_code == 200, r.text
         assert "High Severity CVE Package Report" in r.text
         assert "openssl" in r.text
+        assert "https://ubuntu.com/security/CVE-2026-9998" in r.text
