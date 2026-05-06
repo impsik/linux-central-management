@@ -11,6 +11,24 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+UBUNTU_PRIORITY_SCORES = {
+    "negligible": 0.1,
+    "low": 3.9,
+    "medium": 6.9,
+    "high": 8.9,
+    "critical": 10.0,
+}
+
+
+def parse_ubuntu_severity(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except Exception:
+        return UBUNTU_PRIORITY_SCORES.get(str(value).strip().lower())
+
+
 # Official Ubuntu OVAL definitions
 SUPPORTED_RELEASES = ["focal", "jammy", "noble"]
 OVAL_URL_TEMPLATE = "https://security-metadata.canonical.com/oval/com.ubuntu.{}.cve.oval.xml.bz2"
@@ -205,11 +223,10 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                         if not text:
                             continue
                         if tag_name.endswith("severity") or ("cvss" in tag_name and "score" in tag_name):
-                            try:
-                                severity = float(text)
+                            parsed_severity = parse_ubuntu_severity(text)
+                            if parsed_severity is not None:
+                                severity = parsed_severity
                                 break
-                            except Exception:
-                                continue
 
                 pkgs_for_cve = {}
                 
