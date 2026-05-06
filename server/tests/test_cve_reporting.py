@@ -110,6 +110,23 @@ def test_hourly_cve_report_and_patch_cronjob_created(app, monkeypatch):
     assert "srv1" in sent["body"]
 
 
+def test_version_compare_handles_debian_epoch_when_apt_pkg_unavailable(monkeypatch):
+    import builtins
+    from app.services import cve_reporting
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "apt_pkg":
+            raise ImportError("apt_pkg unavailable")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    assert cve_reporting._version_lt("2.10.1-6ubuntu1.3", "0:2.10.1-6ubuntu1.2") is False
+    assert cve_reporting._version_lt("2.10.1-6ubuntu1.1", "0:2.10.1-6ubuntu1.2") is True
+
+
 def test_hourly_cve_report_skips_offline_hosts(app, monkeypatch):
     from app.db import SessionLocal
     from app.models import CVEDefinition, CVEPackage, Host, HostPackage
