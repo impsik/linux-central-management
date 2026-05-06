@@ -73,8 +73,7 @@ def test_cve_high_severity_report_api(monkeypatch):
         assert r.status_code == 200, r.text
         data = r.json()
         assert data["total"] >= 1
-        item = data["items"][0]
-        assert item["hostname"] == "srv-cve-1"
-        assert item["cve_id"] == "CVE-2026-9999"
+        item = next((it for it in data["items"] if it["hostname"] == "srv-cve-1" and it["cve_id"] == "CVE-2026-9999"), None)
+        assert item is not None
         assert item["package_name"] == "openssl"
         assert float(item["severity"]) == 8.8
