@@ -18,6 +18,50 @@ def _boot_app(monkeypatch):
     return app_factory.create_app()
 
 
+def test_backup_verification_policy_tick_handles_sqlite_naive_next_run_at(monkeypatch, tmp_path):
+    app = _boot_app(monkeypatch)
+
+    db_path = tmp_path / "backup.sqlite"
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+    cur.execute("PRAGMA user_version=1;")
+    cur.execute("CREATE TABLE sample(id INTEGER PRIMARY KEY, name TEXT);")
+    conn.commit()
+    conn.close()
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app):
+        from app.db import SessionLocal
+        from app.models import BackupVerificationPolicy, BackupVerificationRun
+        from app.services.backup_verification_policy import run_policy_tick_once
+
+        with SessionLocal() as db:
+            db.add(
+                BackupVerificationPolicy(
+                    enabled=True,
+                    backup_path=str(db_path),
+                    expected_schema_version=1,
+                    schedule_kind="daily",
+                    timezone="UTC",
+                    time_hhmm="03:00",
+                    next_run_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(minutes=1),
+                )
+            )
+            db.commit()
+
+            run_policy_tick_once(db)
+
+            p = db.query(BackupVerificationPolicy).first()
+            assert p.last_status == "verified"
+            assert p.last_run_at is not None
+            assert p.next_run_at is not None
+
+            db.query(BackupVerificationRun).delete()
+            db.query(BackupVerificationPolicy).delete()
+            db.commit()
+
+
 def test_backup_verification_policy_run_now_and_notifications(monkeypatch, tmp_path):
     app = _boot_app(monkeypatch)
 

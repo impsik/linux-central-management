@@ -28,7 +28,22 @@ def _parse_hhmm(hhmm: str | None, default: time = time(3, 0)) -> time:
         return default
 
 
+def _as_aware_utc(value: datetime | None) -> datetime | None:
+    """Normalize DB datetimes to timezone-aware UTC.
+
+    SQLite returns naive datetimes even for DateTime(timezone=True).  Treat those
+    values as UTC so scheduler comparisons work the same in tests/dev SQLite and
+    production Postgres.
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def _next_run(now_utc: datetime, policy: BackupVerificationPolicy) -> datetime:
+    now_utc = _as_aware_utc(now_utc) or datetime.now(timezone.utc)
     tz_name = (policy.timezone or "UTC").strip() or "UTC"
     try:
         tz = ZoneInfo(tz_name)
@@ -58,12 +73,14 @@ def run_policy_tick_once(db: Session) -> None:
     policy = db.execute(select(BackupVerificationPolicy).order_by(BackupVerificationPolicy.created_at.asc()).limit(1)).scalar_one_or_none()
     if not policy or not policy.enabled:
         return
-    if not policy.next_run_at or policy.next_run_at > now:
+    next_run_at = _as_aware_utc(policy.next_run_at)
+    if not next_run_at or next_run_at > now:
         return
 
     with transaction(db):
         p = db.execute(select(BackupVerificationPolicy).where(BackupVerificationPolicy.id == policy.id)).scalar_one()
-        if not p.enabled or not p.next_run_at or p.next_run_at > now:
+        p_next_run_at = _as_aware_utc(p.next_run_at)
+        if not p.enabled or not p_next_run_at or p_next_run_at > now:
             return
         # advance first to avoid duplicate dispatch
         p.next_run_at = _next_run(now, p)
@@ -109,9 +126,10 @@ def run_policy_tick_once(db: Session) -> None:
     # Alerts: failure and stale
     latest = db.execute(select(BackupVerificationRun).order_by(desc(BackupVerificationRun.finished_at)).limit(1)).scalar_one_or_none()
     stale = False
-    if latest and latest.finished_at and p.stale_after_hours:
+    latest_finished_at = _as_aware_utc(latest.finished_at) if latest and latest.finished_at else None
+    if latest_finished_at and p.stale_after_hours:
         stale_cutoff = now - timedelta(hours=int(p.stale_after_hours))
-        stale = latest.finished_at < stale_cutoff
+        stale = latest_finished_at < stale_cutoff
 
     should_alert_failure = bool(p.alert_on_failure and (run_status == "failed"))
     should_alert_stale = bool(p.alert_on_stale and stale)
