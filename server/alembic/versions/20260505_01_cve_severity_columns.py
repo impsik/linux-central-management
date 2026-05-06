@@ -1,24 +1,23 @@
-"""add cve severity columns
+"""compatibility no-op for duplicate cve severity migration
 
 Revision ID: 20260505_01
-Revises: 20260420_00
+Revises: 20260505_00
 Create Date: 2026-05-05
 """
 
-from alembic import op
-import sqlalchemy as sa
-
 revision = "20260505_01"
-down_revision = "20260420_00"
+down_revision = "20260505_00"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("cve_definitions", sa.Column("severity", sa.String(), nullable=True))
-    op.add_column("cve_packages", sa.Column("severity", sa.String(), nullable=True))
+    # 20260505_00 already adds these columns.  This revision is kept so any
+    # database that has seen the duplicate revision id remains understandable to
+    # Alembic, while new upgrades have a single linear head.
+    pass
 
 
 def downgrade() -> None:
-    op.drop_column("cve_packages", "severity")
-    op.drop_column("cve_definitions", "severity")
+    # Keep downgrade non-destructive here; dropping belongs to 20260505_00.
+    pass
