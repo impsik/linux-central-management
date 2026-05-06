@@ -57,6 +57,7 @@ def test_cve_high_severity_report_api(monkeypatch):
                 )
             )
             db.add(CVEDefinition(cve_id="CVE-2026-9999", definition_data={"severity": 8.8}, severity="8.8"))
+            db.add(CVEDefinition(cve_id="CVE-2026-9998", definition_data={"severity": 9.1}, severity="9.1"))
             db.add(
                 CVEPackage(
                     cve_id="CVE-2026-9999",
@@ -67,13 +68,29 @@ def test_cve_high_severity_report_api(monkeypatch):
                     severity="8.8",
                 )
             )
+            db.add(
+                CVEPackage(
+                    cve_id="CVE-2026-9998",
+                    package_name="openssl",
+                    release="noble",
+                    fixed_version="1.0.3",
+                    status="released",
+                    severity="9.1",
+                )
+            )
             db.commit()
 
         r = client.get("/reports/cve-high-severity?min_severity=7.0&sort=severity&order=desc&limit=50")
         assert r.status_code == 200, r.text
         data = r.json()
         assert data["total"] >= 1
-        item = next((it for it in data["items"] if it["hostname"] == "srv-cve-1" and it["cve_id"] == "CVE-2026-9999"), None)
+        item = next((it for it in data["items"] if it["hostname"] == "srv-cve-1" and it["package_name"] == "openssl"), None)
         assert item is not None
-        assert item["package_name"] == "openssl"
-        assert float(item["severity"]) == 8.8
+        assert item["cve_count"] == 2
+        assert set(item["cve_ids"]) == {"CVE-2026-9998", "CVE-2026-9999"}
+        assert float(item["severity"]) == 9.1
+
+        r = client.get("/reports/cve-high-severity.html?min_severity=7.0")
+        assert r.status_code == 200, r.text
+        assert "High Severity CVE Package Report" in r.text
+        assert "openssl" in r.text

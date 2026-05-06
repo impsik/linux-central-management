@@ -1616,6 +1616,16 @@ body.fleet-report {
   color: var(--report-pill-offline-text);
 }
 
+.fleet-report .report-pill.high {
+  background: rgba(245, 158, 11, 0.18);
+  color: #92400e;
+}
+
+.fleet-report .report-pill.critical {
+  background: rgba(220, 38, 38, 0.16);
+  color: #991b1b;
+}
+
 .empty-state svg {
   width: 64px;
   height: 64px;
