@@ -182,6 +182,8 @@ def cve_high_severity_html(
             f"<a href='https://ubuntu.com/security/{esc(cve)}' target='_blank' rel='noopener noreferrer'><code class='report-code'>{esc(cve)}</code></a>"
             for cve in r.cve_ids
         ) or "-"
+        remediation = "Upgrade fixes" if r.candidate_fixes is True else "No fixed candidate" if r.candidate_fixes is False else "Candidate unknown"
+        remediation_cls = "online" if r.candidate_fixes is True else "offline" if r.candidate_fixes is False else "high"
         html_rows.append(
             f"<tr>"
             f"<td><b>{esc(r.hostname)}</b><div class='report-muted'>{esc(r.agent_id)}</div></td>"
@@ -190,13 +192,14 @@ def cve_high_severity_html(
             f"<td class='num'><span class='report-pill {sev_cls}'>{r.severity:.1f}</span></td>"
             f"<td><code class='report-code'>{esc(r.installed_version)}</code></td>"
             f"<td><code class='report-code'>{esc(r.candidate_version or '-')}</code></td>"
+            f"<td><span class='report-pill {remediation_cls}'>{esc(remediation)}</span></td>"
             f"<td><code class='report-code'>{esc(r.fixed_version or '-')}</code></td>"
             f"<td>{esc(r.release)}</td>"
             f"<td class='num'>{r.cve_count}</td>"
             f"</tr>"
         )
 
-    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='9' class='report-muted'>No affected packages found on online hosts.</td></tr>"
+    body = "\n".join(html_rows) if html_rows else "<tr><td colspan='10' class='report-muted'>No affected packages found on online hosts.</td></tr>"
 
     return HTMLResponse(
         content=f"""<!doctype html>
@@ -220,6 +223,7 @@ def cve_high_severity_html(
           <th class='num'>Max severity</th>
           <th>Installed</th>
           <th>Candidate</th>
+          <th>Remediation</th>
           <th>Fixed version(s)</th>
           <th>Release</th>
           <th class='num'>Merged CVEs</th>

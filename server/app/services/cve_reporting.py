@@ -28,6 +28,7 @@ class SeverityFinding:
     package_name: str
     installed_version: str
     candidate_version: str | None
+    candidate_fixes: bool | None
     cve_id: str
     severity: float
     fixed_version: str
@@ -42,6 +43,7 @@ class PackageSeverityFinding:
     package_name: str
     installed_version: str
     candidate_version: str | None
+    candidate_fixes: bool | None
     severity: float
     fixed_version: str
     release: str
@@ -245,6 +247,7 @@ def collect_high_severity_findings(db: Session, *, min_severity: float = 7.0) ->
                         package_name=str(pkg_name),
                         installed_version=str(pkg.version),
                         candidate_version=str(upd.candidate_version) if upd and upd.candidate_version else None,
+                        candidate_fixes=(not _version_lt(str(upd.candidate_version), cve_row.fixed_version)) if upd and upd.candidate_version else None,
                         cve_id=str(cve_row.cve_id),
                         severity=severity,
                         fixed_version=str(cve_row.fixed_version),
@@ -274,6 +277,7 @@ def merge_findings_by_package(findings: list[SeverityFinding]) -> list[PackageSe
                 package_name=top.package_name,
                 installed_version=top.installed_version,
                 candidate_version=top.candidate_version,
+                candidate_fixes=all(item.candidate_fixes is True for item in rows) if top.candidate_version else None,
                 severity=max(item.severity for item in rows),
                 fixed_version=", ".join(fixed_versions),
                 release=top.release,
@@ -303,8 +307,9 @@ def format_report(findings: list[SeverityFinding]) -> str:
             current_host = item.hostname
             lines.append(f"Host: {item.hostname} ({item.agent_id}) [{item.release}]")
         candidate = item.candidate_version or "unknown"
+        remediation = "upgrade fixes" if item.candidate_fixes is True else "no fixed candidate" if item.candidate_fixes is False else "candidate unknown"
         lines.append(
-            f"- package={item.package_name} severity={item.severity:.1f} installed={item.installed_version} candidate={candidate} fixed={item.fixed_version} cve_count={item.cve_count}"
+            f"- package={item.package_name} severity={item.severity:.1f} installed={item.installed_version} candidate={candidate} fixed={item.fixed_version} remediation={remediation} cve_count={item.cve_count}"
         )
     return "\n".join(lines).rstrip() + "\n"
 
