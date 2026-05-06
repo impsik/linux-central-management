@@ -9,7 +9,7 @@ from email.message import EmailMessage
 from email.utils import format_datetime
 from zoneinfo import ZoneInfo
 
-from packaging.version import InvalidVersion
+from packaging.version import parse as parse_version
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -90,6 +90,29 @@ def _parse_severity(value) -> float | None:
         return priority_scores.get(text)
 
 
+def _normalize_debian_version(value: str) -> str:
+    text = str(value or "").strip()
+    if ":" in text:
+        epoch, rest = text.split(":", 1)
+        if epoch.isdigit():
+            text = rest
+    if "-" in text:
+        upstream, revision = text.split("-", 1)
+        text = f"{upstream}+{revision}"
+    return text.replace("ubuntu", ".ubuntu")
+
+
+def _fallback_version_compare(installed: str, fixed: str) -> int:
+    left = _normalize_debian_version(installed)
+    right = _normalize_debian_version(fixed)
+    try:
+        left_v = parse_version(left)
+        right_v = parse_version(right)
+        return (left_v > right_v) - (left_v < right_v)
+    except Exception:
+        return (left > right) - (left < right)
+
+
 def _version_lt(installed: str, fixed: str) -> bool:
     if not installed or not fixed:
         return False
@@ -102,12 +125,7 @@ def _version_lt(installed: str, fixed: str) -> bool:
             pass
         return apt_pkg.version_compare(str(installed), str(fixed)) < 0
     except Exception:
-        try:
-            from packaging.version import Version
-
-            return Version(str(installed)) < Version(str(fixed))
-        except (InvalidVersion, Exception):
-            return str(installed) != str(fixed)
+        return _fallback_version_compare(str(installed), str(fixed)) < 0
 
 
 def _load_cve_severity_map(db: Session, cve_ids: list[str]) -> dict[str, float]:
