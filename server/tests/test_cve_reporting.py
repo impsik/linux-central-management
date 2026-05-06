@@ -125,6 +125,9 @@ def test_version_compare_handles_debian_epoch_when_apt_pkg_unavailable(monkeypat
 
     assert cve_reporting._version_lt("2.10.1-6ubuntu1.3", "0:2.10.1-6ubuntu1.2") is False
     assert cve_reporting._version_lt("2.10.1-6ubuntu1.1", "0:2.10.1-6ubuntu1.2") is True
+    assert cve_reporting._version_lt("1:1.0-1", "2:0.1-1") is True
+    assert cve_reporting._version_lt("1.0~rc1-1", "1.0-1") is True
+    assert cve_reporting._version_lt("1.0-1ubuntu10", "1.0-1ubuntu2") is False
 
 
 def test_hourly_cve_report_skips_offline_hosts(app, monkeypatch):
