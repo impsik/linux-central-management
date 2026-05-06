@@ -59,7 +59,17 @@ def _parse_severity(value) -> float | None:
     try:
         return float(value)
     except Exception:
-        return None
+        text = str(value).strip().lower()
+        # Ubuntu OVAL uses textual priorities rather than CVSS numbers.
+        # Map them to stable numeric buckets so UI thresholds still work.
+        priority_scores = {
+            "negligible": 0.1,
+            "low": 3.9,
+            "medium": 6.9,
+            "high": 8.9,
+            "critical": 10.0,
+        }
+        return priority_scores.get(text)
 
 
 def _version_lt(installed: str, fixed: str) -> bool:
