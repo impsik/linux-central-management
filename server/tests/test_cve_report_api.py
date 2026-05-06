@@ -56,8 +56,19 @@ def test_cve_high_severity_report_api(monkeypatch):
                     checked_at=datetime.now(timezone.utc),
                 )
             )
+            db.add(
+                HostPackage(
+                    host_id=host.id,
+                    name="udisks2",
+                    arch="amd64",
+                    version="2.10.1-6ubuntu1.3",
+                    manager="apt",
+                    collected_at=datetime.now(timezone.utc),
+                )
+            )
             db.add(CVEDefinition(cve_id="CVE-2026-9999", definition_data={"severity": 8.8}, severity="8.8"))
             db.add(CVEDefinition(cve_id="CVE-2026-9998", definition_data={"severity": 9.1}, severity="9.1"))
+            db.add(CVEDefinition(cve_id="CVE-2025-6019", definition_data={"severity": 8.9}, severity="8.9"))
             db.add(
                 CVEPackage(
                     cve_id="CVE-2026-9999",
@@ -78,6 +89,16 @@ def test_cve_high_severity_report_api(monkeypatch):
                     severity="9.1",
                 )
             )
+            db.add(
+                CVEPackage(
+                    cve_id="CVE-2025-6019",
+                    package_name="udisks2",
+                    release="noble",
+                    fixed_version="0:2.10.1-6ubuntu1.2",
+                    status="released",
+                    severity="8.9",
+                )
+            )
             db.commit()
 
         r = client.get("/reports/cve-high-severity?min_severity=7.0&sort=severity&order=desc&limit=50")
@@ -87,6 +108,7 @@ def test_cve_high_severity_report_api(monkeypatch):
         item = next((it for it in data["items"] if it["hostname"] == "srv-cve-1" and it["package_name"] == "openssl"), None)
         assert item is not None
         assert item["cve_count"] == 2
+        assert not any(it["package_name"] == "udisks2" for it in data["items"])
         assert set(item["cve_ids"]) == {"CVE-2026-9998", "CVE-2026-9999"}
         assert float(item["severity"]) == 9.1
 

@@ -9,7 +9,6 @@ from email.message import EmailMessage
 from email.utils import format_datetime
 from zoneinfo import ZoneInfo
 
-from packaging.version import parse as parse_version
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -90,27 +89,73 @@ def _parse_severity(value) -> float | None:
         return priority_scores.get(text)
 
 
-def _normalize_debian_version(value: str) -> str:
+def _split_debian_version(value: str) -> tuple[int, str, str]:
     text = str(value or "").strip()
+    epoch = 0
     if ":" in text:
-        epoch, rest = text.split(":", 1)
-        if epoch.isdigit():
-            text = rest
+        epoch_text, text = text.split(":", 1)
+        if epoch_text.isdigit():
+            epoch = int(epoch_text)
     if "-" in text:
-        upstream, revision = text.split("-", 1)
-        text = f"{upstream}+{revision}"
-    return text.replace("ubuntu", ".ubuntu")
+        upstream, revision = text.rsplit("-", 1)
+    else:
+        upstream, revision = text, "0"
+    return epoch, upstream, revision
+
+
+def _debian_char_order(ch: str) -> int:
+    if ch == "":
+        return 0
+    if ch == "~":
+        return -1
+    if ch.isalpha():
+        return ord(ch)
+    return ord(ch) + 256
+
+
+def _compare_debian_part(left: str, right: str) -> int:
+    left = str(left or "")
+    right = str(right or "")
+    i = j = 0
+    while i < len(left) or j < len(right):
+        while (i < len(left) and not left[i].isdigit()) or (j < len(right) and not right[j].isdigit()):
+            lch = left[i] if i < len(left) and not left[i].isdigit() else ""
+            rch = right[j] if j < len(right) and not right[j].isdigit() else ""
+            l_order = _debian_char_order(lch)
+            r_order = _debian_char_order(rch)
+            if l_order != r_order:
+                return (l_order > r_order) - (l_order < r_order)
+            if lch:
+                i += 1
+            if rch:
+                j += 1
+
+        l_start = i
+        while i < len(left) and left[i].isdigit():
+            i += 1
+        r_start = j
+        while j < len(right) and right[j].isdigit():
+            j += 1
+
+        l_num = left[l_start:i].lstrip("0") or "0"
+        r_num = right[r_start:j].lstrip("0") or "0"
+        if len(l_num) != len(r_num):
+            return (len(l_num) > len(r_num)) - (len(l_num) < len(r_num))
+        if l_num != r_num:
+            return (l_num > r_num) - (l_num < r_num)
+
+    return 0
 
 
 def _fallback_version_compare(installed: str, fixed: str) -> int:
-    left = _normalize_debian_version(installed)
-    right = _normalize_debian_version(fixed)
-    try:
-        left_v = parse_version(left)
-        right_v = parse_version(right)
-        return (left_v > right_v) - (left_v < right_v)
-    except Exception:
-        return (left > right) - (left < right)
+    left_epoch, left_upstream, left_revision = _split_debian_version(installed)
+    right_epoch, right_upstream, right_revision = _split_debian_version(fixed)
+    if left_epoch != right_epoch:
+        return (left_epoch > right_epoch) - (left_epoch < right_epoch)
+    upstream_cmp = _compare_debian_part(left_upstream, right_upstream)
+    if upstream_cmp:
+        return upstream_cmp
+    return _compare_debian_part(left_revision, right_revision)
 
 
 def _version_lt(installed: str, fixed: str) -> bool:
