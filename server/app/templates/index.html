@@ -645,7 +645,7 @@
                     <th>Host</th>
                     <th>Service</th>
                     <th>Status</th>
-                    <th>Enabled</th>
+                    <th>Autostart</th>
                     <th>Description</th>
                     <th>Last seen</th>
                   </tr>
@@ -4882,7 +4882,7 @@
             <td><b>${esc(it.hostname || agentId)}</b><div class="status-muted">${esc(agentId)}${it.ip_address ? ` • ${esc(it.ip_address)}` : ''}${osName ? ` • ${esc(osName)}` : ''}</div></td>
             <td><code>${esc(it.service_name || '')}</code></td>
             <td><span class="${statusCls}">${esc(status || '-')}</span></td>
-            <td><span class="${it.enabled ? 'status-warn' : 'status-muted'}">${it.enabled ? 'enabled' : 'disabled'}</span></td>
+            <td><span class="${it.enabled ? 'status-warn' : 'status-muted'}">${it.enabled ? 'yes' : 'manual'}</span></td>
             <td>${esc(it.description || '-')}</td>
             <td class="status-muted">${esc(it.last_seen || '')}</td>
           </tr>`;
