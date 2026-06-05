@@ -130,6 +130,39 @@ def test_version_compare_handles_debian_epoch_when_apt_pkg_unavailable(monkeypat
     assert cve_reporting._version_lt("1.0-1ubuntu10", "1.0-1ubuntu2") is False
 
 
+def test_hourly_cve_report_tolerates_smtp_unavailable(monkeypatch):
+    from app.services import cve_reporting
+
+    finding = cve_reporting.SeverityFinding(
+        host_id="host-1",
+        agent_id="agent-1",
+        hostname="srv1",
+        package_name="openssl",
+        installed_version="1.0.0",
+        candidate_version="1.0.2",
+        candidate_fixes=True,
+        cve_id="CVE-2026-0001",
+        severity=8.4,
+        fixed_version="1.0.2",
+        release="noble",
+    )
+
+    monkeypatch.setattr(cve_reporting, "collect_high_severity_findings", lambda db, min_severity=7.0: [finding])
+    monkeypatch.setattr(cve_reporting, "ensure_patch_cronjob", lambda db, findings: "cron-1")
+
+    def smtp_refused(*, recipient: str, subject: str, body: str):
+        raise ConnectionRefusedError(111, "Connection refused")
+
+    monkeypatch.setattr(cve_reporting, "send_report_via_smtp", smtp_refused)
+
+    result = cve_reporting.run_hourly_report_once(object())
+
+    assert result["sent"] is False
+    assert result["finding_count"] == 1
+    assert result["cronjob_id"] == "cron-1"
+    assert "Connection refused" in result["email_error"]
+
+
 def test_hourly_cve_report_skips_offline_hosts(app, monkeypatch):
     from app.db import SessionLocal
     from app.models import CVEDefinition, CVEPackage, Host, HostPackage

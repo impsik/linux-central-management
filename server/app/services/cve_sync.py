@@ -32,11 +32,13 @@ def parse_ubuntu_severity(value) -> float | None:
 # Official Ubuntu OVAL definitions
 SUPPORTED_RELEASES = ["focal", "jammy", "noble"]
 OVAL_URL_TEMPLATE = "https://security-metadata.canonical.com/oval/com.ubuntu.{}.cve.oval.xml.bz2"
+CVE_SYNC_HTTP_TIMEOUT_SECONDS = 30
 
 async def sync_cve_definitions(db: AsyncSession):
     master_cve_map = {}
 
-    async with aiohttp.ClientSession() as session:
+    timeout = aiohttp.ClientTimeout(total=CVE_SYNC_HTTP_TIMEOUT_SECONDS)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         for codename in SUPPORTED_RELEASES:
             url = OVAL_URL_TEMPLATE.format(codename)
             logger.info(f"Downloading OVAL data for {codename} from {url}...")

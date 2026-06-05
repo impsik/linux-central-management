@@ -13,3 +13,10 @@ def test_ubuntu_textual_severity_mapping_is_present():
     assert '"high": 8.9' in src
     assert '"critical": 10.0' in src
     assert 'parse_ubuntu_severity(text)' in src
+
+
+def test_cve_sync_uses_bounded_http_timeout():
+    src = Path('server/app/services/cve_sync.py').read_text(encoding='utf-8')
+    assert 'CVE_SYNC_HTTP_TIMEOUT_SECONDS = 30' in src
+    assert 'aiohttp.ClientTimeout(total=CVE_SYNC_HTTP_TIMEOUT_SECONDS)' in src
+    assert 'aiohttp.ClientSession(timeout=timeout)' in src
