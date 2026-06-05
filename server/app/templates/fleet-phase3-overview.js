@@ -1008,6 +1008,7 @@
     const navOverview = document.getElementById('nav-overview');
     const navHosts = document.getElementById('nav-hosts');
     const navUserManagement = document.getElementById('nav-user-management');
+    const navServiceManagement = document.getElementById('nav-service-management');
     const navCronjobs = document.getElementById('nav-cronjobs');
     const navSshKeys = document.getElementById('nav-sshkeys');
     const navReports = document.getElementById('nav-reports');
@@ -1130,6 +1131,14 @@
       if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
+    function showServiceManagementTab() {
+      ctx.stopMetricsPolling();
+      ctx.clearCurrentHostSelection();
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('service-management-tab')?.classList.add('active');
+      if (containerEl) containerEl.classList.add('sidebar-collapsed');
+    }
+
     function showSshKeysTab() {
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
@@ -1151,6 +1160,7 @@
     navOverview?.addEventListener('click', (e) => { e.preventDefault(); showOverviewTab(); });
     navHosts?.addEventListener('click', (e) => { e.preventDefault(); showHostsTab(); });
     navUserManagement?.addEventListener('click', (e) => { e.preventDefault(); showUserManagementTab(); });
+    navServiceManagement?.addEventListener('click', (e) => { e.preventDefault(); showServiceManagementTab(); });
     navCronjobs?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
     navSshKeys?.addEventListener('click', (e) => { e.preventDefault(); showSshKeysTab(); });
     navReports?.addEventListener('click', (e) => { e.preventDefault(); showReportsTab(); });
