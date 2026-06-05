@@ -1718,15 +1718,9 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 
 	// Check enabled state for each service
 	for name, svc := range serviceMap {
-		// Check if service is enabled using systemctl is-enabled
-		enabledCmd := exec.CommandContext(queryCtx, "systemctl", "is-enabled", name+".service")
-		enabledOut, err := enabledCmd.Output()
-		svc.Enabled = false
-		if err == nil {
-			enabledState := strings.TrimSpace(string(enabledOut))
-			svc.Enabled = isEnabledState(enabledState)
-		}
-		// If command fails (e.g., service not found), Enabled remains false
+		svc.Enabled = serviceInventoryEnabled(name, func(unitName string) bool {
+			return isSystemdUnitEnabled(queryCtx, unitName)
+		})
 	}
 
 	// Convert map to slice
@@ -1753,6 +1747,21 @@ func isEnabledState(state string) bool {
 	default:
 		return false
 	}
+}
+
+func isSystemdUnitEnabled(ctx context.Context, unitName string) bool {
+	enabledCmd := exec.CommandContext(ctx, "systemctl", "is-enabled", unitName)
+	enabledOut, err := enabledCmd.Output()
+	if err != nil {
+		return false
+	}
+	return isEnabledState(strings.TrimSpace(string(enabledOut)))
+}
+
+func serviceInventoryEnabled(serviceName string, checkUnitEnabled func(string) bool) bool {
+	serviceUnit := normalizeServiceUnit(serviceName)
+	socketUnit := serviceSocketUnit(serviceUnit)
+	return checkUnitEnabled(serviceUnit) || checkUnitEnabled(socketUnit)
 }
 
 func querySystemMetrics(ctx context.Context) (string, string, int, string) {

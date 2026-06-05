@@ -105,3 +105,24 @@ func TestServiceControlCommandsWithoutSocketKeepsOrdinaryServiceBehavior(t *test
 		t.Fatalf("stop commands = %#v, want %#v", got, want)
 	}
 }
+
+func TestServiceInventoryEnabledTreatsSocketEnabledAsEnabled(t *testing.T) {
+	enabledUnits := map[string]bool{
+		"ssh.service": false,
+		"ssh.socket":  true,
+	}
+
+	if !serviceInventoryEnabled("ssh", func(unitName string) bool {
+		return enabledUnits[unitName]
+	}) {
+		t.Fatal("ssh inventory enabled = false, want true when ssh.socket is enabled")
+	}
+}
+
+func TestServiceInventoryEnabledFalseWhenServiceAndSocketDisabled(t *testing.T) {
+	if serviceInventoryEnabled("ssh", func(unitName string) bool {
+		return false
+	}) {
+		t.Fatal("ssh inventory enabled = true, want false when service and socket are disabled")
+	}
+}
