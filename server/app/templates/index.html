@@ -75,6 +75,7 @@
         <button class="btn" id="nav-overview" type="button">Dashboard <span id="notifications-badge" class="nav-indicator error" style="display:none;">•</span><span id="approvals-badge" title="Pending high-risk approvals" class="nav-indicator warn" style="display:none;">⚠</span></button>
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
         <button class="btn" id="nav-user-management" type="button">User management</button>
+        <button class="btn" id="nav-service-management" type="button">Service management</button>
         <button class="btn" id="nav-sshkeys" type="button">Security <span id="sshkeys-approval-indicator" title="Pending approvals" class="nav-indicator error" style="display:none;">!</span></button>
         <button class="btn" id="nav-cronjobs" type="button">Automation</button>
         <button class="btn" id="nav-reports" type="button">Reports</button>
@@ -611,8 +612,16 @@
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <div class="tab-content-custom" id="service-management-tab">
+      <div class="admin-content">
+        <div class="section-title">Service management</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Find a system service across visible online servers and stop or disable it on selected hosts.</div>
+
         <div class="admin-card" style="margin-bottom:1rem;">
-          <div class="admin-card-title">Service management</div>
+          <div class="admin-card-title">Find service</div>
           <div class="admin-card-body" style="display:grid;gap:0.75rem;">
             <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
               <div style="min-width:260px;">
