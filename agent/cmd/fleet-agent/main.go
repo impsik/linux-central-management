@@ -2009,40 +2009,92 @@ func controlService(ctx context.Context, serviceName, action string) (string, st
 	controlCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	var cmd *exec.Cmd
-	switch action {
-	case "start":
-		// Use --no-block to prevent systemctl from waiting for service to fully start
-		// This allows the command to return immediately after queuing the start request
-		cmd = exec.CommandContext(controlCtx, "sudo", "-n", "systemctl", "start", "--no-block", serviceName)
-	case "stop":
-		cmd = exec.CommandContext(controlCtx, "sudo", "-n", "systemctl", "stop", serviceName)
-	case "restart":
-		// Use --no-block to prevent systemctl from waiting for service to fully restart
-		// This allows the command to return immediately after queuing the restart request
-		cmd = exec.CommandContext(controlCtx, "sudo", "-n", "systemctl", "restart", "--no-block", serviceName)
-	case "enable":
-		cmd = exec.CommandContext(controlCtx, "sudo", "-n", "systemctl", "enable", serviceName)
-	case "disable":
-		cmd = exec.CommandContext(controlCtx, "sudo", "-n", "systemctl", "disable", serviceName)
-	default:
+	serviceUnit := normalizeServiceUnit(serviceName)
+	socketExists := false
+	if action == "stop" || action == "disable" {
+		socketExists = systemdUnitFileExists(controlCtx, serviceSocketUnit(serviceUnit), "socket")
+	}
+	commands, err := serviceControlCommands(serviceUnit, action, socketExists)
+	if err != nil {
 		return "", "", 1, fmt.Sprintf("invalid action: %s (must be start, stop, restart, enable, or disable)", action)
 	}
 
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		// Check if it's a timeout error
-		if controlCtx.Err() == context.DeadlineExceeded {
-			return string(out), "", 1, fmt.Sprintf("systemctl %s timed out after 30 seconds", action)
+	var stdout strings.Builder
+	for _, args := range commands {
+		cmd := exec.CommandContext(controlCtx, "sudo", append([]string{"-n", "systemctl"}, args...)...)
+		out, err := cmd.CombinedOutput()
+		stdout.Write(out)
+		if err != nil {
+			// Check if it's a timeout error
+			if controlCtx.Err() == context.DeadlineExceeded {
+				return stdout.String(), "", 1, fmt.Sprintf("systemctl %s timed out after 30 seconds", action)
+			}
+			exit := 1
+			if ee, ok := err.(*exec.ExitError); ok {
+				exit = ee.ExitCode()
+			}
+			return stdout.String(), "", exit, fmt.Sprintf("systemctl %s failed: %v", action, err)
 		}
-		exit := 1
-		if ee, ok := err.(*exec.ExitError); ok {
-			exit = ee.ExitCode()
-		}
-		return string(out), "", exit, fmt.Sprintf("systemctl %s failed: %v", action, err)
 	}
 
-	return string(out), "", 0, ""
+	return stdout.String(), "", 0, ""
+}
+
+func normalizeServiceUnit(serviceName string) string {
+	serviceName = strings.TrimSpace(serviceName)
+	if strings.HasSuffix(serviceName, ".service") {
+		return serviceName
+	}
+	return serviceName + ".service"
+}
+
+func serviceSocketUnit(serviceUnit string) string {
+	return strings.TrimSuffix(serviceUnit, ".service") + ".socket"
+}
+
+func serviceControlCommands(serviceUnit, action string, socketExists bool) ([][]string, error) {
+	socketUnit := serviceSocketUnit(serviceUnit)
+	switch action {
+	case "start":
+		// Use --no-block to prevent systemctl from waiting for service to fully start.
+		return [][]string{{"start", "--no-block", serviceUnit}}, nil
+	case "stop":
+		commands := make([][]string, 0, 2)
+		if socketExists {
+			commands = append(commands, []string{"stop", socketUnit})
+		}
+		commands = append(commands, []string{"stop", serviceUnit})
+		return commands, nil
+	case "restart":
+		// Use --no-block to prevent systemctl from waiting for service to fully restart.
+		return [][]string{{"restart", "--no-block", serviceUnit}}, nil
+	case "enable":
+		return [][]string{{"enable", serviceUnit}}, nil
+	case "disable":
+		commands := make([][]string, 0, 2)
+		if socketExists {
+			commands = append(commands, []string{"disable", "--now", socketUnit})
+		}
+		commands = append(commands, []string{"disable", serviceUnit})
+		return commands, nil
+	default:
+		return nil, fmt.Errorf("invalid action: %s", action)
+	}
+}
+
+func systemdUnitFileExists(ctx context.Context, unitName, unitType string) bool {
+	cmd := exec.CommandContext(ctx, "systemctl", "list-unit-files", "--type="+unitType, "--no-legend", unitName)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == unitName {
+			return true
+		}
+	}
+	return false
 }
 
 func checkRebootRequired(ctx context.Context) (string, string, int, string) {
