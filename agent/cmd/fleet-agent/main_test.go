@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestIsEnabledState(t *testing.T) {
 	cases := map[string]bool{
@@ -61,5 +64,44 @@ func TestNormalizeSudoProfile(t *testing.T) {
 		if got != want {
 			t.Fatalf("normalizeSudoProfile(%q)=%q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestServiceControlCommandsStopsSocketBeforeService(t *testing.T) {
+	got, err := serviceControlCommands("ssh.service", "stop", true)
+	if err != nil {
+		t.Fatalf("serviceControlCommands returned error: %v", err)
+	}
+	want := [][]string{
+		{"stop", "ssh.socket"},
+		{"stop", "ssh.service"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stop commands = %#v, want %#v", got, want)
+	}
+}
+
+func TestServiceControlCommandsDisablesSocketNow(t *testing.T) {
+	got, err := serviceControlCommands("ssh.service", "disable", true)
+	if err != nil {
+		t.Fatalf("serviceControlCommands returned error: %v", err)
+	}
+	want := [][]string{
+		{"disable", "--now", "ssh.socket"},
+		{"disable", "ssh.service"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("disable commands = %#v, want %#v", got, want)
+	}
+}
+
+func TestServiceControlCommandsWithoutSocketKeepsOrdinaryServiceBehavior(t *testing.T) {
+	got, err := serviceControlCommands("nginx.service", "stop", false)
+	if err != nil {
+		t.Fatalf("serviceControlCommands returned error: %v", err)
+	}
+	want := [][]string{{"stop", "nginx.service"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stop commands = %#v, want %#v", got, want)
 	}
 }
