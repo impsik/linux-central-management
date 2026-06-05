@@ -106,7 +106,7 @@
 
       servicesList.innerHTML = data.services.map(service => {
         const statusClass = service.status === 'active' ? 'active' : service.status === 'failed' ? 'failed' : 'inactive';
-        const enabledBadge = service.enabled ? '<span class="sudo-badge yes" style="margin-left: 0.5rem;">✓ Enabled</span>' : '<span class="sudo-badge no" style="margin-left: 0.5rem;">✗ Disabled</span>';
+        const enabledBadge = service.enabled ? '<span class="sudo-badge yes" style="margin-left: 0.5rem;">✓ Autostart</span>' : '<span class="sudo-badge no" style="margin-left: 0.5rem;">✗ Manual start</span>';
         return `
             <div class="service-card" data-service-name="${w.escapeHtml(service.name)}">
               <div class="service-info">
