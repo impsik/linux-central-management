@@ -610,6 +610,44 @@
             </div>
           </div>
         </div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Service management</div>
+          <div class="admin-card-body" style="display:grid;gap:0.75rem;">
+            <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+              <div style="min-width:260px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Service</label>
+                <input id="service-management-name" class="host-search" type="text" placeholder="e.g. nginx or ssh" />
+              </div>
+              <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
+                <input id="service-management-exact" type="checkbox" checked /> Exact match
+              </label>
+              <button class="btn btn-primary" id="service-management-search" type="button">Find</button>
+              <button class="btn" id="service-management-select-all" type="button">Select all</button>
+              <button class="btn btn-warning" id="service-management-stop" type="button">Stop selected</button>
+              <button class="btn btn-danger" id="service-management-stop-disable" type="button">Stop & disable selected</button>
+              <span id="service-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+            </div>
+            <div style="overflow:auto;">
+              <table class="process-table hosts-table">
+                <thead>
+                  <tr>
+                    <th style="width:44px;"><input id="service-management-check-all" type="checkbox" aria-label="Select all service matches" /></th>
+                    <th>Host</th>
+                    <th>Service</th>
+                    <th>Status</th>
+                    <th>Enabled</th>
+                    <th>Description</th>
+                    <th>Last seen</th>
+                  </tr>
+                </thead>
+                <tbody id="service-management-table-body">
+                  <tr><td colspan="7" class="status-muted" style="text-align:center;">Search for a service to load matching online hosts…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -4635,21 +4673,45 @@
         updateActionState();
       }
 
-      async function searchUsers(showToastOnManual = false) {
+      async function waitForJobDone(jobId, timeoutMs = 70000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const r = await fetch(`/jobs/${encodeURIComponent(jobId)}`);
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `Job status failed: HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          const runs = Array.isArray(data.runs) ? data.runs : [];
+          if (data.done) {
+            const success = runs.filter((run) => run.status === 'success').map((run) => run.agent_id).filter(Boolean);
+            const failed = runs.filter((run) => run.status === 'failed').map((run) => run.agent_id).filter(Boolean);
+            return { done: true, success, failed, total: runs.length };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+        return { done: false, success: [], failed: [], total: 0 };
+      }
+
+      async function searchUsers(showToastOnManual = false, liveScan = false, scanAgentIds = []) {
         const username = String(usernameEl.value || '').trim();
         if (!username) {
           if (typeof showToast === 'function') showToast('Enter username', 'error');
           return;
         }
-        bodyEl.innerHTML = '<tr><td colspan="8" class="status-muted" style="text-align:center;">Searching…</td></tr>';
-        if (statusEl) statusEl.textContent = 'Searching…';
+        bodyEl.innerHTML = `<tr><td colspan="8" class="status-muted" style="text-align:center;">${liveScan ? 'Refreshing live…' : 'Searching…'}</td></tr>`;
+        if (statusEl) statusEl.textContent = liveScan ? 'Refreshing live…' : 'Searching…';
         try {
           const qs = new URLSearchParams({
             username,
             exact: String(!!exactEl?.checked),
+            live_scan: String(!!liveScan),
             limit: '500',
             offset: '0',
-          }).toString();
+          });
+          (Array.isArray(scanAgentIds) ? scanAgentIds : []).forEach((aid) => {
+            if (aid) qs.append('agent_ids', aid);
+          });
           const r = await fetch(`/reports/user-presence?${qs}`);
           if (!r.ok) {
             const err = await r.json().catch(() => ({}));
@@ -4657,7 +4719,8 @@
           }
           const data = await r.json();
           renderItems(data.items || []);
-          if (statusEl) statusEl.textContent = `${data.total || 0} matching account${Number(data.total || 0) === 1 ? '' : 's'}`;
+          const liveNote = data.live?.scanned_hosts ? `; refreshed ${data.live.scanned_hosts} host(s)` : '';
+          if (statusEl) statusEl.textContent = `${data.total || 0} matching account${Number(data.total || 0) === 1 ? '' : 's'}${liveNote}`;
           if (showToastOnManual && typeof showToast === 'function') showToast('User search complete', 'success');
         } catch (e) {
           console.error('[user management search failed]', e);
@@ -4701,7 +4764,13 @@
           const skipped = Array.isArray(data.skipped_offline) && data.skipped_offline.length ? `; skipped offline: ${data.skipped_offline.join(', ')}` : '';
           if (statusEl) statusEl.textContent = `${label} job ${data.job_id} queued for ${data.targets?.length || 0} host(s)${skipped}`;
           if (typeof showToast === 'function') showToast(`${label} job queued`, 'success');
-          setTimeout(() => { void searchUsers(false); }, 1500);
+          const summary = await waitForJobDone(data.job_id);
+          if (summary.done) {
+            if (statusEl) statusEl.textContent = `${label} finished: ${summary.success.length} succeeded, ${summary.failed.length} failed. Refreshing status…`;
+          } else if (statusEl) {
+            statusEl.textContent = `${label} still running. Refreshing visible status…`;
+          }
+          await searchUsers(false, true, Array.isArray(data.targets) ? data.targets : agentIds);
         } catch (e) {
           console.error('[user management action failed]', e);
           if (statusEl) statusEl.textContent = `${label} failed`;
@@ -4747,6 +4816,227 @@
       updateActionState();
     }
 
+    function initServiceManagementControls() {
+      const serviceEl = document.getElementById('service-management-name');
+      const exactEl = document.getElementById('service-management-exact');
+      const searchBtn = document.getElementById('service-management-search');
+      const selectAllBtn = document.getElementById('service-management-select-all');
+      const checkAllEl = document.getElementById('service-management-check-all');
+      const stopBtn = document.getElementById('service-management-stop');
+      const stopDisableBtn = document.getElementById('service-management-stop-disable');
+      const statusEl = document.getElementById('service-management-status');
+      const bodyEl = document.getElementById('service-management-table-body');
+      if (!serviceEl || !bodyEl) return;
+
+      const esc = (value) => String(value == null ? '' : value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+      function selectedServiceAgentIds() {
+        return Array.from(bodyEl.querySelectorAll('input[data-service-agent-id]:checked'))
+          .map((el) => el.getAttribute('data-service-agent-id') || '')
+          .filter(Boolean);
+      }
+
+      function updateServiceActionState() {
+        const canManageServices = !!currentPermissions?.can_manage_services;
+        const selected = selectedServiceAgentIds();
+        const disabled = !canManageServices || selected.length === 0;
+        [stopBtn, stopDisableBtn].forEach((btn) => {
+          if (!btn) return;
+          btn.disabled = disabled;
+          btn.title = canManageServices ? '' : 'Service management permission required';
+        });
+        if (statusEl && !canManageServices) statusEl.textContent = 'Service management permission required';
+      }
+
+      function renderServiceItems(items) {
+        const rows = Array.isArray(items) ? items : [];
+        if (checkAllEl) checkAllEl.checked = false;
+        if (!rows.length) {
+          bodyEl.innerHTML = '<tr><td colspan="7" class="status-muted" style="text-align:center;">No matching services found on visible online hosts.</td></tr>';
+          updateServiceActionState();
+          return;
+        }
+        const canManageServices = !!currentPermissions?.can_manage_services;
+        bodyEl.innerHTML = rows.map((it) => {
+          const agentId = String(it.agent_id || '');
+          const osName = `${it.os_id || ''} ${it.os_version || ''}`.trim();
+          const status = String(it.status || '');
+          const statusCls = status === 'active' ? 'status-ok' : status === 'failed' ? 'status-error' : 'status-muted';
+          const disabled = canManageServices ? '' : 'disabled';
+          return `<tr>
+            <td><input type="checkbox" data-service-agent-id="${esc(agentId)}" ${disabled} /></td>
+            <td><b>${esc(it.hostname || agentId)}</b><div class="status-muted">${esc(agentId)}${it.ip_address ? ` • ${esc(it.ip_address)}` : ''}${osName ? ` • ${esc(osName)}` : ''}</div></td>
+            <td><code>${esc(it.service_name || '')}</code></td>
+            <td><span class="${statusCls}">${esc(status || '-')}</span></td>
+            <td><span class="${it.enabled ? 'status-warn' : 'status-muted'}">${it.enabled ? 'enabled' : 'disabled'}</span></td>
+            <td>${esc(it.description || '-')}</td>
+            <td class="status-muted">${esc(it.last_seen || '')}</td>
+          </tr>`;
+        }).join('');
+        bodyEl.querySelectorAll('input[data-service-agent-id]').forEach((cb) => {
+          cb.addEventListener('change', updateServiceActionState);
+        });
+        updateServiceActionState();
+      }
+
+      async function searchServices(showToastOnManual = false) {
+        const serviceName = String(serviceEl.value || '').trim();
+        if (!serviceName) {
+          if (typeof showToast === 'function') showToast('Enter service name', 'error');
+          return;
+        }
+        bodyEl.innerHTML = '<tr><td colspan="7" class="status-muted" style="text-align:center;">Scanning online hosts…</td></tr>';
+        if (statusEl) statusEl.textContent = 'Scanning online hosts…';
+        try {
+          const qs = new URLSearchParams({
+            service_name: serviceName,
+            exact: String(!!exactEl?.checked),
+            max_hosts: '300',
+          }).toString();
+          const r = await fetch(`/reports/service-presence?${qs}`);
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          renderServiceItems(data.items || []);
+          const failed = Array.isArray(data.failed_hosts) && data.failed_hosts.length ? `; failed scan: ${data.failed_hosts.length}` : '';
+          const skipped = Array.isArray(data.skipped_offline) && data.skipped_offline.length ? `; offline skipped: ${data.skipped_offline.length}` : '';
+          if (statusEl) statusEl.textContent = `${data.total || 0} matching service${Number(data.total || 0) === 1 ? '' : 's'} on ${data.scanned_hosts || 0} online host(s)${failed}${skipped}`;
+          if (showToastOnManual && typeof showToast === 'function') showToast('Service scan complete', 'success');
+        } catch (e) {
+          console.error('[service management search failed]', e);
+          bodyEl.innerHTML = '<tr><td colspan="7" class="status-error" style="text-align:center;">Service scan failed.</td></tr>';
+          if (statusEl) statusEl.textContent = 'Service scan failed';
+          if (typeof showToast === 'function') showToast(e.message || 'Service scan failed', 'error');
+        }
+      }
+
+      async function waitForJobDone(jobId, timeoutMs = 70000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const r = await fetch(`/jobs/${encodeURIComponent(jobId)}`);
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `Job status failed: HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          const runs = Array.isArray(data.runs) ? data.runs : [];
+          if (data.done) {
+            return {
+              done: true,
+              success: runs.filter((run) => run.status === 'success').map((run) => run.agent_id).filter(Boolean),
+              failed: runs.filter((run) => run.status === 'failed').map((run) => run.agent_id).filter(Boolean),
+              total: runs.length,
+            };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+        return { done: false, success: [], failed: [], total: 0 };
+      }
+
+      async function queueServiceAction(action, agentIds) {
+        const serviceName = String(serviceEl.value || '').trim();
+        const r = await fetch(`/reports/service-presence/${encodeURIComponent(action)}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ service_name: serviceName, agent_ids: agentIds }),
+        });
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.detail || `HTTP ${r.status}`);
+        }
+        return r.json();
+      }
+
+      async function runServiceOperation(kind) {
+        const serviceName = String(serviceEl.value || '').trim();
+        const agentIds = selectedServiceAgentIds();
+        if (!serviceName) {
+          if (typeof showToast === 'function') showToast('Enter service name', 'error');
+          return;
+        }
+        if (!agentIds.length) {
+          if (typeof showToast === 'function') showToast('Select at least one matching host', 'error');
+          return;
+        }
+        const label = kind === 'stop-disable' ? 'Stop and disable' : 'Stop';
+        if (!confirm(`${label} ${serviceName} on ${agentIds.length} selected host(s)?`)) return;
+
+        [stopBtn, stopDisableBtn, searchBtn].forEach((btn) => { if (btn) btn.disabled = true; });
+        try {
+          if (statusEl) statusEl.textContent = 'Queueing stop job…';
+          const stopData = await queueServiceAction('stop', agentIds);
+          if (statusEl) statusEl.textContent = `Stop job ${stopData.job_id} queued for ${stopData.targets?.length || 0} host(s)…`;
+          const stopSummary = await waitForJobDone(stopData.job_id);
+          const stoppedTargets = stopSummary.done ? stopSummary.success : (Array.isArray(stopData.targets) ? stopData.targets : agentIds);
+          if (kind === 'stop') {
+            if (statusEl) statusEl.textContent = stopSummary.done
+              ? `Stopped: ${stopSummary.success.length} succeeded, ${stopSummary.failed.length} failed. Refreshing…`
+              : 'Stop still running. Refreshing visible status…';
+            if (typeof showToast === 'function') showToast('Stop job finished', 'success');
+          } else {
+            if (!stopSummary.done) throw new Error('Stop did not finish before timeout; disable skipped');
+            if (!stoppedTargets.length) throw new Error('No hosts stopped successfully; disable skipped');
+            if (statusEl) statusEl.textContent = `Stopped ${stopSummary.success.length}/${stopSummary.total || agentIds.length}; queueing disable…`;
+            const disableData = await queueServiceAction('disable', stoppedTargets);
+            const disableSummary = await waitForJobDone(disableData.job_id);
+            if (statusEl) statusEl.textContent = disableSummary.done
+              ? `Stopped ${stopSummary.success.length}/${stopSummary.total || agentIds.length}; disabled ${disableSummary.success.length}/${disableSummary.total || stoppedTargets.length}. Refreshing…`
+              : `Stopped ${stopSummary.success.length}/${stopSummary.total || agentIds.length}; disable still running. Refreshing…`;
+            if (typeof showToast === 'function') showToast('Stop and disable jobs finished', 'success');
+          }
+          await searchServices(false);
+        } catch (e) {
+          console.error('[service management action failed]', e);
+          if (statusEl) statusEl.textContent = `${label} failed`;
+          if (typeof showToast === 'function') showToast(e.message || `${label} failed`, 'error');
+        } finally {
+          if (searchBtn) searchBtn.disabled = false;
+          updateServiceActionState();
+        }
+      }
+
+      searchBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void searchServices(true);
+      });
+      serviceEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void searchServices(true);
+        }
+      });
+      selectAllBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        bodyEl.querySelectorAll('input[data-service-agent-id]').forEach((cb) => {
+          if (!cb.disabled) cb.checked = true;
+        });
+        updateServiceActionState();
+      });
+      checkAllEl?.addEventListener('change', () => {
+        const checked = !!checkAllEl.checked;
+        bodyEl.querySelectorAll('input[data-service-agent-id]').forEach((cb) => {
+          if (!cb.disabled) cb.checked = checked;
+        });
+        updateServiceActionState();
+      });
+      stopBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void runServiceOperation('stop');
+      });
+      stopDisableBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void runServiceOperation('stop-disable');
+      });
+      updateServiceActionState();
+    }
+
 // Load hosts on page load
     function safeInit(name, fn) {
       try { if (typeof fn === 'function') fn(); }
@@ -4764,6 +5054,7 @@
       safeInit('initHostFilters', initHostFilters);
       safeInit('initReportsControls', initReportsControls);
       safeInit('initUserManagementControls', initUserManagementControls);
+      safeInit('initServiceManagementControls', initServiceManagementControls);
       safeInit('initFleetOverviewControls', initFleetOverviewControls);
       safeInit('initHostsTableControls', initHostsTableControls);
       safeInit('initCronjobsControls', initCronjobsControls);
