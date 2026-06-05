@@ -397,11 +397,15 @@ def run_hourly_report_once(db: Session, *, min_severity: float = 7.0, recipient:
         return {"sent": False, "finding_count": 0, "cronjob_id": cron_id}
 
     body = format_report(findings)
-    send_report_via_smtp(
-        recipient=recipient,
-        subject=f"High severity CVE report ({len(findings)} findings)",
-        body=body,
-    )
+    try:
+        send_report_via_smtp(
+            recipient=recipient,
+            subject=f"High severity CVE report ({len(findings)} findings)",
+            body=body,
+        )
+    except (OSError, smtplib.SMTPException) as exc:
+        logger.warning("High severity CVE report email skipped: SMTP unavailable: %s", exc)
+        return {"sent": False, "finding_count": len(findings), "cronjob_id": cron_id, "email_error": str(exc)}
     return {"sent": True, "finding_count": len(findings), "cronjob_id": cron_id}
 
 
