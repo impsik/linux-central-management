@@ -104,3 +104,59 @@ def test_user_presence_search_and_fleet_lock_targets_online_matches(monkeypatch)
             assert job.job_type == "user-lock"
             runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
             assert [run.agent_id for run in runs] == ["srv-online"]
+
+
+def test_service_presence_action_targets_online_selected_hosts(monkeypatch):
+    app = _boot_app(monkeypatch)
+
+    from app.db import SessionLocal
+    from app.models import Host, Job, JobRun
+    from app.routers import reports
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(reports, "is_host_online", lambda host, now=None: host.agent_id != "srv-offline")
+
+        for aid in ("srv-online", "srv-offline"):
+            r = client.post(
+                "/agent/register",
+                json={
+                    "agent_id": aid,
+                    "hostname": aid,
+                    "fqdn": None,
+                    "os_id": "ubuntu",
+                    "os_version": "24.04",
+                    "kernel": "test",
+                    "labels": {"env": "test"},
+                },
+            )
+            assert r.status_code == 200, r.text
+
+        with SessionLocal() as db:
+            hosts = {h.agent_id: h for h in db.execute(select(Host)).scalars().all()}
+            hosts["srv-online"].last_seen = datetime.now(timezone.utc)
+            hosts["srv-offline"].last_seen = datetime.now(timezone.utc) - timedelta(hours=2)
+            db.commit()
+
+        r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
+        assert r.status_code == 200, r.text
+        csrf = client.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
+
+        stop = client.post(
+            "/reports/service-presence/stop",
+            json={"service_name": "nginx", "agent_ids": ["srv-online", "srv-offline"]},
+            headers=headers,
+        )
+        assert stop.status_code == 200, stop.text
+        out = stop.json()
+        assert out["targets"] == ["srv-online"]
+        assert out["skipped_offline"] == ["srv-offline"]
+
+        with SessionLocal() as db:
+            job = db.execute(select(Job).where(Job.job_key == out["job_id"])).scalar_one()
+            assert job.job_type == "service-control"
+            assert job.payload["service_name"] == "nginx"
+            assert job.payload["action"] == "stop"
+            runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
+            assert [run.agent_id for run in runs] == ["srv-online"]

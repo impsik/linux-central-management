@@ -1,22 +1,25 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..deps import require_ui_user
-from ..models import Host, HostPackageUpdate, HostUser
+from ..models import Host, HostPackageUpdate, HostUser, JobRun
 from ..services.cve_reporting import collect_high_severity_findings, merge_findings_by_package
 from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.hosts import is_host_online
 from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.json_utils import loads_or
 from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
 
@@ -43,6 +46,135 @@ ALLOWED_CVE_SORT = {
 class UserPresenceActionRequest(BaseModel):
     username: str
     agent_ids: list[str] | None = None
+
+
+class ServicePresenceActionRequest(BaseModel):
+    service_name: str
+    agent_ids: list[str] | None = None
+
+
+async def _wait_for_job_runs(
+    *,
+    job_id,
+    agent_ids: list[str],
+    timeout_s: float,
+    poll_interval_s: float = 0.5,
+) -> list[JobRun]:
+    wanted = sorted({str(a) for a in agent_ids if str(a).strip()})
+    start = time.time()
+    while time.time() - start < timeout_s:
+        db = SessionLocal()
+        try:
+            rows = db.execute(
+                select(JobRun).where(JobRun.job_id == job_id, JobRun.agent_id.in_(wanted))
+            ).scalars().all()
+            done = [r for r in rows if r.status in ("success", "failed")]
+            if len(done) >= len(wanted):
+                for r in done:
+                    db.expunge(r)
+                return done
+        finally:
+            db.close()
+        await asyncio.sleep(poll_interval_s)
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            select(JobRun).where(JobRun.job_id == job_id, JobRun.agent_id.in_(wanted))
+        ).scalars().all()
+        for r in rows:
+            db.expunge(r)
+        return rows
+    finally:
+        db.close()
+
+
+def _visible_online_hosts(
+    *,
+    db: Session,
+    user,
+    agent_ids: list[str] | None = None,
+    max_hosts: int = 200,
+) -> tuple[list[Host], list[str]]:
+    now = datetime.now(timezone.utc)
+    requested = {str(a).strip() for a in (agent_ids or []) if str(a).strip()}
+    stmt = select(Host).order_by(Host.hostname.asc(), Host.agent_id.asc())
+    if requested:
+        stmt = stmt.where(Host.agent_id.in_(requested))
+    hosts = db.execute(stmt.limit(max_hosts)).scalars().all()
+
+    visible_online: list[Host] = []
+    skipped_offline: list[str] = []
+    for h in hosts:
+        if not is_host_visible_to_user(db, user, h):
+            continue
+        if is_host_online(h, now):
+            visible_online.append(h)
+        else:
+            skipped_offline.append(h.agent_id)
+    return visible_online, skipped_offline
+
+
+async def _refresh_user_presence_live(
+    *,
+    db: Session,
+    user,
+    username: str,
+    exact: bool,
+    agent_ids: list[str] | None = None,
+    max_hosts: int = 120,
+) -> dict:
+    hosts, skipped_offline = _visible_online_hosts(db=db, user=user, agent_ids=agent_ids, max_hosts=max_hosts)
+    if not hosts:
+        return {"scanned_hosts": 0, "failed_hosts": 0, "skipped_offline": skipped_offline}
+
+    targets = [h.agent_id for h in hosts]
+    host_by_agent = {h.agent_id: h for h in hosts}
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="query-users",
+            payload={"source": "user-presence-live-refresh", "username": username, "exact": exact},
+            agent_ids=targets,
+            commit=False,
+        )
+
+    await push_job_to_agents(
+        agent_ids=targets,
+        job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "query-users"},
+    )
+
+    runs = await _wait_for_job_runs(job_id=created.job.id, agent_ids=targets, timeout_s=20, poll_interval_s=0.5)
+    failed_hosts = 0
+    for run in runs:
+        if run.status != "success" or not run.stdout:
+            failed_hosts += 1
+            continue
+        h = host_by_agent.get(run.agent_id)
+        if not h:
+            continue
+        data = loads_or(run.stdout, {})
+        users = data.get("users") or []
+        with transaction(db):
+            db.execute(delete(HostUser).where(HostUser.host_id == h.id))
+            for item in users:
+                uname = str(item.get("username") or "").strip()
+                if not uname:
+                    continue
+                db.add(
+                    HostUser(
+                        host_id=h.id,
+                        username=uname,
+                        uid=(int(item.get("uid")) if str(item.get("uid") or "").isdigit() else None),
+                        gid=(int(item.get("gid")) if str(item.get("gid") or "").isdigit() else None),
+                        home=(item.get("home") or "")[:512],
+                        shell=(item.get("shell") or "")[:128],
+                        has_sudo=bool(item.get("has_sudo", False)),
+                        is_locked=bool(item.get("is_locked", False)),
+                    )
+                )
+
+    return {"scanned_hosts": len(hosts), "failed_hosts": failed_hosts, "skipped_offline": skipped_offline}
 
 
 def _user_presence_rows(
@@ -324,15 +456,27 @@ def cve_high_severity_report(
 
 
 @router.get("/user-presence")
-def user_presence_report(
+async def user_presence_report(
     username: str,
     exact: bool = True,
     online_only: bool = False,
+    live_scan: bool = False,
+    agent_ids: list[str] | None = Query(None),
     limit: int = 500,
     offset: int = 0,
     db: Session = Depends(get_db),
     user=Depends(require_ui_user),
 ):
+    live = None
+    if live_scan:
+        live = await _refresh_user_presence_live(
+            db=db,
+            user=user,
+            username=username,
+            exact=exact,
+            agent_ids=agent_ids,
+        )
+
     total, rows = _user_presence_rows(
         db=db,
         user=user,
@@ -347,10 +491,180 @@ def user_presence_report(
         "username": (username or "").strip(),
         "exact": bool(exact),
         "online_only": bool(online_only),
+        "live_scan": bool(live_scan),
+        "live": live,
         "total": total,
         "limit": limit,
         "offset": offset,
         "items": rows,
+    }
+
+
+@router.get("/service-presence")
+async def service_presence_report(
+    service_name: str,
+    exact: bool = True,
+    max_hosts: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    service_query = (service_name or "").strip()
+    if not service_query:
+        raise HTTPException(400, "service_name is required")
+    service_query_norm = service_query.removesuffix(".service").lower()
+
+    hosts, skipped_offline = _visible_online_hosts(db=db, user=user, max_hosts=max_hosts)
+    targets = [h.agent_id for h in hosts]
+    if not targets:
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "service_name": service_query,
+            "exact": bool(exact),
+            "total": 0,
+            "items": [],
+            "scanned_hosts": 0,
+            "skipped_offline": skipped_offline,
+            "failed_hosts": [],
+        }
+
+    host_by_agent = {h.agent_id: h for h in hosts}
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="query-services",
+            payload={"source": "service-presence", "service_name": service_query, "exact": exact},
+            agent_ids=targets,
+            commit=False,
+        )
+
+    await push_job_to_agents(
+        agent_ids=targets,
+        job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "query-services"},
+    )
+
+    runs = await _wait_for_job_runs(job_id=created.job.id, agent_ids=targets, timeout_s=25, poll_interval_s=0.5)
+    failed_hosts: list[str] = []
+    items: list[dict] = []
+    for run in runs:
+        if run.status != "success" or not run.stdout:
+            failed_hosts.append(run.agent_id)
+            continue
+        h = host_by_agent.get(run.agent_id)
+        if not h:
+            continue
+        data = loads_or(run.stdout, {})
+        for svc in data.get("services") or []:
+            name = str(svc.get("name") or "").strip()
+            if not name:
+                continue
+            name_norm = name.removesuffix(".service").lower()
+            if exact and name_norm != service_query_norm:
+                continue
+            if (not exact) and service_query_norm not in name_norm:
+                continue
+            items.append(
+                {
+                    "agent_id": h.agent_id,
+                    "hostname": h.hostname,
+                    "fqdn": h.fqdn,
+                    "ip_address": h.ip_address,
+                    "os_id": h.os_id,
+                    "os_version": h.os_version,
+                    "labels": h.labels or {},
+                    "last_seen": h.last_seen,
+                    "is_online": True,
+                    "service_name": name,
+                    "status": str(svc.get("status") or ""),
+                    "enabled": bool(svc.get("enabled", False)),
+                    "description": str(svc.get("description") or ""),
+                }
+            )
+
+    items.sort(key=lambda it: (str(it.get("hostname") or it.get("agent_id") or ""), str(it.get("service_name") or "")))
+    return {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "service_name": service_query,
+        "exact": bool(exact),
+        "total": len(items),
+        "items": items,
+        "scanned_hosts": len(targets),
+        "skipped_offline": skipped_offline,
+        "failed_hosts": sorted(failed_hosts),
+    }
+
+
+@router.post("/service-presence/{action}")
+async def service_presence_action(
+    action: str,
+    payload: ServicePresenceActionRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_services"):
+        raise HTTPException(403, "Insufficient permissions to manage services")
+
+    action_norm = (action or "").strip().lower()
+    if action_norm not in ("stop", "disable"):
+        raise HTTPException(400, "Invalid action. Must be stop or disable.")
+
+    service_name = (payload.service_name or "").strip()
+    if not service_name:
+        raise HTTPException(400, "service_name is required")
+
+    requested = sorted({str(a).strip() for a in (payload.agent_ids or []) if str(a).strip()})
+    if not requested:
+        raise HTTPException(400, "agent_ids is required")
+
+    hosts, skipped_offline = _visible_online_hosts(db=db, user=user, agent_ids=requested, max_hosts=500)
+    targets = sorted({h.agent_id for h in hosts})
+    unknown_or_unavailable = sorted(set(requested) - set(targets) - set(skipped_offline))
+    if not targets:
+        raise HTTPException(400, "No online matching hosts selected for this service action")
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="service-control",
+            payload={"service_name": service_name, "action": action_norm, "source": "service-presence"},
+            agent_ids=targets,
+            commit=False,
+        )
+
+    await push_job_to_agents(
+        agent_ids=targets,
+        job_payload_builder=lambda aid: {
+            "job_id": created.job_key,
+            "type": "service-control",
+            "service_name": service_name,
+            "action": action_norm,
+        },
+    )
+
+    with transaction(db):
+        log_event(
+            db,
+            action=f"reports.service_presence.{action_norm}",
+            actor=user,
+            request=request,
+            target_type="service",
+            target_name=service_name,
+            meta={
+                "job_id": created.job_key,
+                "target_count": len(targets),
+                "offline_agent_ids": skipped_offline,
+                "unknown_or_unavailable_agent_ids": unknown_or_unavailable,
+            },
+        )
+
+    return {
+        "job_id": created.job_key,
+        "action": action_norm,
+        "service_name": service_name,
+        "targets": targets,
+        "skipped_offline": sorted(skipped_offline),
+        "unknown_or_unavailable": unknown_or_unavailable,
     }
 
 
