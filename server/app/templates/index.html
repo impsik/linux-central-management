@@ -74,6 +74,7 @@
         <div style="padding:.15rem .45rem .35rem;color:var(--muted-2);font-size:10px;letter-spacing:.18em;text-transform:uppercase;">Operations</div>
         <button class="btn" id="nav-overview" type="button">Dashboard <span id="notifications-badge" class="nav-indicator error" style="display:none;">•</span><span id="approvals-badge" title="Pending high-risk approvals" class="nav-indicator warn" style="display:none;">⚠</span></button>
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
+        <button class="btn" id="nav-user-management" type="button">User management</button>
         <button class="btn" id="nav-sshkeys" type="button">Security <span id="sshkeys-approval-indicator" title="Pending approvals" class="nav-indicator error" style="display:none;">!</span></button>
         <button class="btn" id="nav-cronjobs" type="button">Automation</button>
         <button class="btn" id="nav-reports" type="button">Reports</button>
@@ -561,6 +562,53 @@
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+
+    <div class="tab-content-custom" id="user-management-tab">
+      <div class="admin-content">
+        <div class="section-title">User management</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Find a system account across visible servers and lock or unlock it on selected online hosts.</div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Find user</div>
+          <div class="admin-card-body" style="display:grid;gap:0.75rem;">
+            <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+              <div style="min-width:260px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Username</label>
+                <input id="user-management-username" class="host-search" type="text" placeholder="e.g. mihkel" />
+              </div>
+              <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
+                <input id="user-management-exact" type="checkbox" checked /> Exact match
+              </label>
+              <button class="btn btn-primary" id="user-management-search" type="button">Find</button>
+              <button class="btn" id="user-management-select-online" type="button">Select online</button>
+              <button class="btn btn-warning" id="user-management-lock" type="button">Lock selected</button>
+              <button class="btn btn-success" id="user-management-unlock" type="button">Unlock selected</button>
+              <span id="user-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+            </div>
+            <div style="overflow:auto;">
+              <table class="process-table hosts-table">
+                <thead>
+                  <tr>
+                    <th style="width:44px;"><input id="user-management-select-all" type="checkbox" aria-label="Select all user matches" /></th>
+                    <th>Host</th>
+                    <th>User</th>
+                    <th>Shell / Home</th>
+                    <th>Sudo</th>
+                    <th>Locked</th>
+                    <th>Online</th>
+                    <th>Last seen</th>
+                  </tr>
+                </thead>
+                <tbody id="user-management-table-body">
+                  <tr><td colspan="8" class="status-muted" style="text-align:center;">Search for a username to load matching accounts…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -4512,6 +4560,193 @@
       });
     }
 
+    function initUserManagementControls() {
+      const usernameEl = document.getElementById('user-management-username');
+      const exactEl = document.getElementById('user-management-exact');
+      const searchBtn = document.getElementById('user-management-search');
+      const selectOnlineBtn = document.getElementById('user-management-select-online');
+      const selectAllEl = document.getElementById('user-management-select-all');
+      const lockBtn = document.getElementById('user-management-lock');
+      const unlockBtn = document.getElementById('user-management-unlock');
+      const statusEl = document.getElementById('user-management-status');
+      const bodyEl = document.getElementById('user-management-table-body');
+      if (!usernameEl || !bodyEl) return;
+
+      const esc = (value) => String(value == null ? '' : value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+      let currentItems = [];
+
+      function selectedAgentIds() {
+        return Array.from(bodyEl.querySelectorAll('input[data-user-agent-id]:checked'))
+          .map((el) => el.getAttribute('data-user-agent-id') || '')
+          .filter(Boolean);
+      }
+
+      function updateActionState() {
+        const canLockUsers = !!currentPermissions?.can_lock_users;
+        const selected = selectedAgentIds();
+        const disabled = !canLockUsers || selected.length === 0;
+        if (lockBtn) {
+          lockBtn.disabled = disabled;
+          lockBtn.title = canLockUsers ? '' : 'Admin access required';
+        }
+        if (unlockBtn) {
+          unlockBtn.disabled = disabled;
+          unlockBtn.title = canLockUsers ? '' : 'Admin access required';
+        }
+        if (statusEl && !canLockUsers) statusEl.textContent = 'Admin access required to lock or unlock users';
+      }
+
+      function renderItems(items) {
+        currentItems = Array.isArray(items) ? items : [];
+        if (selectAllEl) selectAllEl.checked = false;
+        if (!currentItems.length) {
+          bodyEl.innerHTML = '<tr><td colspan="8" class="status-muted" style="text-align:center;">No matching cached accounts found. Run the User presence report with live refresh if inventory is stale.</td></tr>';
+          updateActionState();
+          return;
+        }
+        const canLockUsers = !!currentPermissions?.can_lock_users;
+        bodyEl.innerHTML = currentItems.map((it) => {
+          const agentId = String(it.agent_id || '');
+          const isRoot = String(it.username || '') === 'root';
+          const online = !!it.is_online;
+          const disabled = (!canLockUsers || isRoot || !online) ? 'disabled' : '';
+          const title = !canLockUsers ? 'Admin access required' : isRoot ? 'Cannot lock root account' : !online ? 'Host offline' : '';
+          const osName = `${it.os_id || ''} ${it.os_version || ''}`.trim();
+          return `<tr>
+            <td><input type="checkbox" data-user-agent-id="${esc(agentId)}" ${disabled} title="${esc(title)}" /></td>
+            <td><b>${esc(it.hostname || agentId)}</b><div class="status-muted">${esc(agentId)}${it.ip_address ? ` • ${esc(it.ip_address)}` : ''}${osName ? ` • ${esc(osName)}` : ''}</div></td>
+            <td><code>${esc(it.username || '')}</code></td>
+            <td><code>${esc(it.shell || '-')}</code><div class="status-muted">${esc(it.home || '-')}</div></td>
+            <td><span class="${it.has_sudo ? 'status-warn' : 'status-muted'}">${it.has_sudo ? 'yes' : 'no'}</span></td>
+            <td><span class="${it.is_locked ? 'status-error' : 'status-ok'}">${it.is_locked ? 'locked' : 'unlocked'}</span></td>
+            <td><span class="${online ? 'status-ok' : 'status-error'}">${online ? 'online' : 'offline'}</span></td>
+            <td class="status-muted">${esc(it.last_seen || '')}</td>
+          </tr>`;
+        }).join('');
+        bodyEl.querySelectorAll('input[data-user-agent-id]').forEach((cb) => {
+          cb.addEventListener('change', updateActionState);
+        });
+        updateActionState();
+      }
+
+      async function searchUsers(showToastOnManual = false) {
+        const username = String(usernameEl.value || '').trim();
+        if (!username) {
+          if (typeof showToast === 'function') showToast('Enter username', 'error');
+          return;
+        }
+        bodyEl.innerHTML = '<tr><td colspan="8" class="status-muted" style="text-align:center;">Searching…</td></tr>';
+        if (statusEl) statusEl.textContent = 'Searching…';
+        try {
+          const qs = new URLSearchParams({
+            username,
+            exact: String(!!exactEl?.checked),
+            limit: '500',
+            offset: '0',
+          }).toString();
+          const r = await fetch(`/reports/user-presence?${qs}`);
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          renderItems(data.items || []);
+          if (statusEl) statusEl.textContent = `${data.total || 0} matching account${Number(data.total || 0) === 1 ? '' : 's'}`;
+          if (showToastOnManual && typeof showToast === 'function') showToast('User search complete', 'success');
+        } catch (e) {
+          console.error('[user management search failed]', e);
+          bodyEl.innerHTML = '<tr><td colspan="8" class="status-error" style="text-align:center;">Search failed.</td></tr>';
+          if (statusEl) statusEl.textContent = 'Search failed';
+          if (typeof showToast === 'function') showToast(e.message || 'Search failed', 'error');
+        }
+      }
+
+      async function runUserAction(action) {
+        const username = String(usernameEl.value || '').trim();
+        const agentIds = selectedAgentIds();
+        if (!username) {
+          if (typeof showToast === 'function') showToast('Enter username', 'error');
+          return;
+        }
+        if (!agentIds.length) {
+          if (typeof showToast === 'function') showToast('Select at least one online matching host', 'error');
+          return;
+        }
+        if (username === 'root') {
+          if (typeof showToast === 'function') showToast('Cannot lock root account', 'error');
+          return;
+        }
+        const label = action === 'lock' ? 'Lock' : 'Unlock';
+        if (!confirm(`${label} ${username} on ${agentIds.length} selected host(s)?`)) return;
+
+        [lockBtn, unlockBtn, searchBtn].forEach((btn) => { if (btn) btn.disabled = true; });
+        if (statusEl) statusEl.textContent = `${label} job queueing…`;
+        try {
+          const r = await fetch(`/reports/user-presence/${encodeURIComponent(action)}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ username, agent_ids: agentIds }),
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          const skipped = Array.isArray(data.skipped_offline) && data.skipped_offline.length ? `; skipped offline: ${data.skipped_offline.join(', ')}` : '';
+          if (statusEl) statusEl.textContent = `${label} job ${data.job_id} queued for ${data.targets?.length || 0} host(s)${skipped}`;
+          if (typeof showToast === 'function') showToast(`${label} job queued`, 'success');
+          setTimeout(() => { void searchUsers(false); }, 1500);
+        } catch (e) {
+          console.error('[user management action failed]', e);
+          if (statusEl) statusEl.textContent = `${label} failed`;
+          if (typeof showToast === 'function') showToast(e.message || `${label} failed`, 'error');
+        } finally {
+          [searchBtn].forEach((btn) => { if (btn) btn.disabled = false; });
+          updateActionState();
+        }
+      }
+
+      searchBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void searchUsers(true);
+      });
+      usernameEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void searchUsers(true);
+        }
+      });
+      selectOnlineBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        bodyEl.querySelectorAll('input[data-user-agent-id]').forEach((cb) => {
+          if (!cb.disabled) cb.checked = true;
+        });
+        updateActionState();
+      });
+      selectAllEl?.addEventListener('change', () => {
+        const checked = !!selectAllEl.checked;
+        bodyEl.querySelectorAll('input[data-user-agent-id]').forEach((cb) => {
+          if (!cb.disabled) cb.checked = checked;
+        });
+        updateActionState();
+      });
+      lockBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void runUserAction('lock');
+      });
+      unlockBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void runUserAction('unlock');
+      });
+      updateActionState();
+    }
+
 // Load hosts on page load
     function safeInit(name, fn) {
       try { if (typeof fn === 'function') fn(); }
@@ -4528,6 +4763,7 @@
 
       safeInit('initHostFilters', initHostFilters);
       safeInit('initReportsControls', initReportsControls);
+      safeInit('initUserManagementControls', initUserManagementControls);
       safeInit('initFleetOverviewControls', initFleetOverviewControls);
       safeInit('initHostsTableControls', initHostsTableControls);
       safeInit('initCronjobsControls', initCronjobsControls);
