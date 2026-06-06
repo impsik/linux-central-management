@@ -4475,6 +4475,10 @@
 
             rebuildLabelFilterOptions(allHosts);
             applyHostFilters();
+            void Promise.allSettled([
+              loadHostsTable(),
+              loadHosts(),
+            ]);
           }
         });
       }
