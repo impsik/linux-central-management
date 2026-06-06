@@ -2065,8 +2065,7 @@ func serviceControlCommands(serviceUnit, action string, socketExists bool) ([][]
 	socketUnit := serviceSocketUnit(serviceUnit)
 	switch action {
 	case "start":
-		// Use --no-block to prevent systemctl from waiting for service to fully start.
-		return [][]string{{"start", "--no-block", serviceUnit}}, nil
+		return [][]string{{"start", serviceUnit}}, nil
 	case "stop":
 		commands := make([][]string, 0, 2)
 		if socketExists {
@@ -2075,8 +2074,7 @@ func serviceControlCommands(serviceUnit, action string, socketExists bool) ([][]
 		commands = append(commands, []string{"stop", serviceUnit})
 		return commands, nil
 	case "restart":
-		// Use --no-block to prevent systemctl from waiting for service to fully restart.
-		return [][]string{{"restart", "--no-block", serviceUnit}}, nil
+		return [][]string{{"restart", serviceUnit}}, nil
 	case "enable":
 		return [][]string{{"enable", serviceUnit}}, nil
 	case "disable":

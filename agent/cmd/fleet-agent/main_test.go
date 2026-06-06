@@ -106,6 +106,28 @@ func TestServiceControlCommandsWithoutSocketKeepsOrdinaryServiceBehavior(t *test
 	}
 }
 
+func TestServiceControlCommandsStartWaitsForSystemdResult(t *testing.T) {
+	got, err := serviceControlCommands("unattended-upgrades.service", "start", false)
+	if err != nil {
+		t.Fatalf("serviceControlCommands returned error: %v", err)
+	}
+	want := [][]string{{"start", "unattended-upgrades.service"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("start commands = %#v, want %#v", got, want)
+	}
+}
+
+func TestServiceControlCommandsRestartWaitsForSystemdResult(t *testing.T) {
+	got, err := serviceControlCommands("nginx.service", "restart", false)
+	if err != nil {
+		t.Fatalf("serviceControlCommands returned error: %v", err)
+	}
+	want := [][]string{{"restart", "nginx.service"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("restart commands = %#v, want %#v", got, want)
+	}
+}
+
 func TestServiceInventoryEnabledTreatsSocketEnabledAsEnabled(t *testing.T) {
 	enabledUnits := map[string]bool{
 		"ssh.service": false,
