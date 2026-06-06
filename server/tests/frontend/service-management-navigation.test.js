@@ -40,6 +40,10 @@ describe('service management navigation', () => {
   });
 
   it('supports bulk enabling selected service matches', () => {
+    expect(indexSrc).toContain('id="service-management-start"');
+    expect(indexSrc).toContain('Start selected');
+    expect(indexSrc).toContain("void runServiceOperation('start')");
+    expect(indexSrc).toContain("await queueServiceAction('start', agentIds)");
     expect(indexSrc).toContain('id="service-management-enable"');
     expect(indexSrc).toContain('Enable selected');
     expect(indexSrc).toContain("void runServiceOperation('enable')");

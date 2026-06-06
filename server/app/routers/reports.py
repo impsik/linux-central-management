@@ -606,8 +606,8 @@ async def service_presence_action(
         raise HTTPException(403, "Insufficient permissions to manage services")
 
     action_norm = (action or "").strip().lower()
-    if action_norm not in ("stop", "disable", "enable"):
-        raise HTTPException(400, "Invalid action. Must be stop, disable, or enable.")
+    if action_norm not in ("start", "stop", "disable", "enable"):
+        raise HTTPException(400, "Invalid action. Must be start, stop, disable, or enable.")
 
     service_name = (payload.service_name or "").strip()
     if not service_name:
