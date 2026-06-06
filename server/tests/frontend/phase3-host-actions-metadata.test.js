@@ -63,4 +63,11 @@ describe('phase3 host metadata payload normalization', () => {
     expect(html).toContain('id="host-meta-owner"');
     expect(html).toContain('Owner username (blank to clear)');
   });
+
+  it('refreshes dashboard host data after metadata save', () => {
+    const html = fs.readFileSync(indexPath, 'utf8');
+    expect(html).toContain('onMetadataSaved: (updatedHost) => {');
+    expect(html).toContain('loadHostsTable()');
+    expect(html).toContain('loadHosts()');
+  });
 });
