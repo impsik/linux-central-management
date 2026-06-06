@@ -409,6 +409,36 @@
       }
     }
 
+    async function refreshHostInventoryCache(targets, statusNode) {
+      const ids = Array.isArray(targets) ? targets.filter(Boolean) : [];
+      if (!ids.length) return;
+      const doWait = ids.length <= 20;
+
+      if (statusNode) {
+        statusNode.textContent = doWait
+          ? 'Refreshing package inventory after upgrade…'
+          : 'Queueing package inventory refresh after upgrade…';
+      }
+
+      const resp = await fetch('/jobs/inventory-now', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_ids: ids })
+      });
+      if (!resp.ok) {
+        let msg = resp.statusText;
+        try { const err = await resp.json(); msg = err.detail || err.message || msg; } catch (_) { }
+        throw new Error(msg);
+      }
+      const out = await resp.json();
+      const jobId = out.job_id;
+      if (!doWait) {
+        if (statusNode) statusNode.textContent = 'Package inventory refresh queued in background.';
+        return;
+      }
+      await pollJob(jobId, statusNode, 180000);
+    }
+
     async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {
       const resp = await fetch('/jobs/preflight', {
         method: 'POST',
@@ -513,21 +543,12 @@
           const prevCve = state.lastCveCheck?.cve || cve;
           setPatch({ lastCveUnionPackages: [], selectedCvePackages: new Set() });
           updateUpgradeControls();
+          await refreshHostInventoryCache(targets, upgradeStatusEl);
+          if (cveEl && prevCve) cveEl.value = prevCve;
+          if (upgradeStatusEl) upgradeStatusEl.textContent = 'Upgrade finished. Re-checking ' + prevCve + '…';
+          await applyVulnFilter();
           if (upgradeStatusEl) {
-            const rerunId = 'rerun-cve-' + jobId;
-            upgradeStatusEl.innerHTML = 'Upgrade finished. <a href="/jobs/' + encodeURIComponent(jobId) + '/logs.zip" target="_blank" rel="noopener noreferrer">Download logs.zip</a>. <button id="' + rerunId + '" class="btn btn-sm" type="button" style="margin-left:6px">Re-run CVE check</button>';
-            setTimeout(function () {
-              const btn = document.getElementById(rerunId);
-              if (!btn) return;
-              btn.onclick = async function () {
-                try {
-                  if (cveEl && prevCve) cveEl.value = prevCve;
-                  await applyVulnFilter();
-                } catch (e2) {
-                  upgradeStatusEl.textContent = 'Re-run failed: ' + (e2.message || e2);
-                }
-              };
-            }, 0);
+            upgradeStatusEl.innerHTML = 'Upgrade finished and CVE result refreshed. <a href="/jobs/' + encodeURIComponent(jobId) + '/logs.zip" target="_blank" rel="noopener noreferrer">Download logs.zip</a>.';
           }
         }
       } catch (e) {

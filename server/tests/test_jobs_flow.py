@@ -1,5 +1,6 @@
 import os
 import importlib
+from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy import select
 
@@ -229,6 +230,100 @@ def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
 
         hidden_stdout = viewer_client.get(f"/jobs/{job_id}/runs/srv-dev/stdout.txt")
         assert hidden_stdout.status_code == 404, hidden_stdout.text
+
+
+def test_pkg_upgrade_success_invalidates_cve_cache_and_queues_inventory(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import Host, HostCVEStatus, Job, JobRun
+    from app.services.jobs import create_job_with_runs
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-cve",
+                "hostname": "srv-cve",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        with SessionLocal() as db:
+            host = db.execute(select(Host).where(Host.agent_id == "srv-cve")).scalar_one()
+            db.add(
+                HostCVEStatus(
+                    host_id=host.id,
+                    cve="CVE-2026-24061",
+                    affected=True,
+                    checked_at=datetime.now(timezone.utc),
+                    raw="stale vulnerable result",
+                )
+            )
+            created = create_job_with_runs(
+                db=db,
+                job_type="pkg-upgrade",
+                payload={"packages": ["openssl"], "packages_by_agent": {}, "dry_run": False},
+                agent_ids=["srv-cve"],
+                commit=False,
+            )
+            db.commit()
+
+        job_id = created.job_key
+
+        done = client.post(
+            "/agent/job-event",
+            json={
+                "agent_id": "srv-cve",
+                "job_id": job_id,
+                "status": "success",
+                "exit_code": 0,
+                "stdout": "upgrade completed",
+            },
+        )
+        assert done.status_code == 200, done.text
+
+        with SessionLocal() as db:
+            host = db.execute(select(Host).where(Host.agent_id == "srv-cve")).scalar_one()
+            stale = db.execute(
+                select(HostCVEStatus).where(
+                    HostCVEStatus.host_id == host.id,
+                    HostCVEStatus.cve == "CVE-2026-24061",
+                )
+            ).scalar_one_or_none()
+            assert stale is None
+
+            refresh = (
+                db.execute(
+                    select(JobRun, Job)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(
+                        Job.job_type == "inventory-now",
+                        JobRun.agent_id == "srv-cve",
+                        JobRun.status == "queued",
+                    )
+                )
+                .first()
+            )
+            assert refresh is not None
+            assert refresh[1].payload["reason"] == "post-pkg-upgrade"
 
 
 def test_cleanup_offline_hosts_admin_only(monkeypatch):
