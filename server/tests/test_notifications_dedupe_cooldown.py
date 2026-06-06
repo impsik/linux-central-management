@@ -132,3 +132,66 @@ def test_notifications_dedupe_state_endpoint_admin_only(monkeypatch):
 
         denied = viewer_client.get("/dashboard/notifications/dedupe-state?minutes=1440")
         assert denied.status_code == 403, denied.text
+
+
+def test_notifications_dedupe_duplicate_failed_runs_do_not_insert_duplicate_state(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("NOTIFICATIONS_DEDUPE_ENABLED", "true")
+    monkeypatch.setenv("NOTIFICATIONS_DEDUPE_COOLDOWN_SECONDS", "3600")
+
+    _reload_app_modules()
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import Host, Job, JobRun, NotificationDedupeState
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        rr = client.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-failed-01",
+                "hostname": "srv-failed-01",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert rr.status_code == 200, rr.text
+
+        with SessionLocal() as db:
+            h = db.execute(select(Host).where(Host.agent_id == "srv-failed-01")).scalar_one()
+            h.last_seen = datetime.now(timezone.utc)
+            for idx in range(2):
+                job = Job(job_key=f"failed-job-{idx}", created_by="test", job_type="pkg-upgrade", payload={}, selector={})
+                db.add(job)
+                db.flush()
+                db.add(JobRun(
+                    job_id=job.id,
+                    agent_id="srv-failed-01",
+                    status="failed",
+                    finished_at=datetime.now(timezone.utc) - timedelta(minutes=idx + 1),
+                    exit_code=1,
+                ))
+            db.commit()
+
+        lr = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
+        assert lr.status_code == 200, lr.text
+
+        r = client.get("/dashboard/notifications?limit=8")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        failed_items = [it for it in data.get("items", []) if it.get("kind") == "failed_run"]
+        assert len(failed_items) == 1, data
+        assert int(data.get("suppressed") or 0) >= 1
+
+        with SessionLocal() as db:
+            rows = db.execute(select(NotificationDedupeState).where(NotificationDedupeState.dedupe_key == "failed_run:srv-failed-01:pkg-upgrade")).scalars().all()
+            assert len(rows) == 1

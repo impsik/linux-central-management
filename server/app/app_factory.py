@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import Base, SessionLocal, engine
 from .deps import get_current_user_from_request
-from .routers import agent, ansible, approvals, audit, auth, backup_verification, cronjobs, dashboard, hosts, jobs, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
+from .routers import agent, ansible, approvals, audit, auth, backup_verification, cronjobs, dashboard, hosts, jobs, maintenance_windows, migrations, mfa, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
 
 logger = logging.getLogger(__name__)
 
@@ -522,6 +522,7 @@ def create_app() -> FastAPI:
     app.include_router(reports_html.router)
     app.include_router(jobs.router)
     app.include_router(ansible.router)
+    app.include_router(maintenance_windows.router)
     from .config import settings
     if bool(getattr(settings, "admin_enable_migrations_endpoint", False)):
         app.include_router(migrations.router)

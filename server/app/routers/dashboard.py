@@ -814,10 +814,14 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
 
         allowed: list[dict] = []
         cooldown_cutoff = now - timedelta(seconds=cooldown_s)
+        emitted_keys: set[str] = set()
         for it in candidates:
             key = str(it.get("dedupe_key") or "")
             if not key:
                 allowed.append(it)
+                continue
+            if key in emitted_keys:
+                suppressed += 1
                 continue
             st = state_map.get(key)
             if st and st.last_emitted_at:
@@ -828,6 +832,7 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
                     suppressed += 1
                     continue
             allowed.append(it)
+            emitted_keys.add(key)
 
         items = allowed[:limit]
 
@@ -844,15 +849,15 @@ def dashboard_notifications(db: Session = Depends(get_db), user=Depends(require_
                         st.kind = str(it.get("kind") or "")
                         st.severity = str(it.get("severity") or "")
                     else:
-                        db.add(
-                            NotificationDedupeState(
-                                dedupe_key=key,
-                                kind=str(it.get("kind") or ""),
-                                severity=str(it.get("severity") or ""),
-                                last_emitted_at=now,
-                                last_title=str(it.get("title") or ""),
-                            )
+                        st = NotificationDedupeState(
+                            dedupe_key=key,
+                            kind=str(it.get("kind") or ""),
+                            severity=str(it.get("severity") or ""),
+                            last_emitted_at=now,
+                            last_title=str(it.get("title") or ""),
                         )
+                        db.add(st)
+                        state_map[key] = st
 
         for it in items:
             it.pop("dedupe_key", None)
