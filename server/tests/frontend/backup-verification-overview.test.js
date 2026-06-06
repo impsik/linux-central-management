@@ -18,4 +18,10 @@ describe('overview cards cleanup', () => {
     expect(overviewSrc).not.toContain('/backup-verification/latest');
     expect(overviewSrc).not.toContain('/backup-verification/policy');
   });
+
+  it('handles network failures in active alerts without raw fetch errors', () => {
+    expect(overviewSrc).toContain("throw new Error('alerts feed unavailable')");
+    expect(overviewSrc).toContain('Alerts feed unavailable.');
+    expect(overviewSrc).toContain('notifications-inline-retry');
+  });
 });

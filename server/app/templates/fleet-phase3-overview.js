@@ -851,7 +851,18 @@
     try {
       const compactMode = wrap.id === 'overview-active-alerts';
       wrap.innerHTML = '<div class="loading">Loading alerts…</div>';
-      const r = await fetch(`/dashboard/notifications?limit=${compactMode ? 8 : 30}`, { credentials: 'include' });
+      const url = `/dashboard/notifications?limit=${compactMode ? 8 : 30}`;
+      let r = null;
+      try {
+        r = await fetch(url, { credentials: 'include' });
+      } catch (err) {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        try {
+          r = await fetch(url, { credentials: 'include' });
+        } catch (_) {
+          throw new Error('alerts feed unavailable');
+        }
+      }
       if (!r.ok) {
         if (r.status === 403) return; // MFA transient
         throw await buildHttpError(r, 'notifications failed');
@@ -999,7 +1010,17 @@
       if (showToastOnManual) w.showToast('Notifications refreshed', 'success');
     } catch (e) {
       if (card) card.style.display = '';
-      wrap.innerHTML = `<div class="error">Notifications error: ${w.escapeHtml(e.message || String(e))}</div>`;
+      const msg = e.message || String(e);
+      if (msg === 'alerts feed unavailable') {
+        if (badge) badge.style.display = 'none';
+        wrap.innerHTML = '<div class="status-warn">Alerts feed unavailable. <button class="btn" id="notifications-inline-retry" type="button" style="padding:0.15rem 0.45rem;margin-left:0.35rem;">Reload</button></div>';
+        document.getElementById('notifications-inline-retry')?.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          loadNotifications(ctx, true);
+        });
+      } else {
+        wrap.innerHTML = `<div class="error">Notifications error: ${w.escapeHtml(msg)}</div>`;
+      }
       if (showToastOnManual) w.showToast(`Notifications failed: ${e.message || String(e)}`, 'error');
     }
   }
