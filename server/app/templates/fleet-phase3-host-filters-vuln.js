@@ -188,15 +188,16 @@
           });
 
           const unionPkgs = Array.from(union).sort();
-          syncSelectionState('vulnFilteredAgentIds', affectedIds.length ? new Set(affectedIds) : null);
+          const affectedSet = new Set(affectedIds);
+          syncSelectionState('vulnFilteredAgentIds', affectedSet);
           setPatch({
-            vulnFilteredAgentIds: affectedIds.length ? new Set(affectedIds) : null,
+            vulnFilteredAgentIds: affectedSet,
             lastCveCheck: { cve: cve, resultsByAgentId: resultsByAgentId },
             lastCveAffectedAgentIds: affectedIds,
             lastCveUnionPackages: unionPkgs,
             selectedCvePackages: new Set(unionPkgs),
           });
-          if (statusEl) statusEl.textContent = 'CVE ' + cve + ': ' + affectedIds.length + '/' + targets.length + ' host(s) affected (online). Affected packages: ' + unionPkgs.length + '. ' + (affectedIds.length ? ('Showing ' + affectedIds.length + ' affected host(s) in the list.') : 'Showing all hosts (none affected).');
+          if (statusEl) statusEl.textContent = 'CVE ' + cve + ': ' + affectedIds.length + '/' + targets.length + ' host(s) affected (online). Affected packages: ' + unionPkgs.length + '. ' + (affectedIds.length ? ('Showing ' + affectedIds.length + ' affected host(s) in the list.') : 'Showing no hosts (none affected).');
         } else {
           const params = new URLSearchParams({ name: name });
           if (version) params.set('version', version);
