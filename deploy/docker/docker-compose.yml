@@ -48,6 +48,9 @@ services:
 
       # Agent auth tokens (set in .env; do NOT commit real values)
       AGENT_SHARED_TOKEN: ${AGENT_SHARED_TOKEN:-}
+      # Local compose defaults use placeholder/dev settings. Set false in production
+      # after replacing placeholders and enabling HTTPS/migration guardrails.
+      ALLOW_INSECURE_NO_AGENT_TOKEN: ${ALLOW_INSECURE_NO_AGENT_TOKEN:-true}
       # High-risk feature: only enable if agent has FLEET_TERMINAL_TOKEN set too
       AGENT_TERMINAL_TOKEN: ${AGENT_TERMINAL_TOKEN:-}
       # For production behind HTTPS, set AGENT_TERMINAL_SCHEME=wss
