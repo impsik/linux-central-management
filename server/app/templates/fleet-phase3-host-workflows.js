@@ -244,7 +244,7 @@
       const actionLabel = action === 'start' ? 'Started' : action === 'stop' ? 'Stopped' : action === 'restart' ? 'Restarted' : action === 'enable' ? 'Enabled' : action === 'disable' ? 'Disabled' : action;
       w.showToast(`${actionLabel} ${serviceName}`, 'success');
       await new Promise(resolve => setTimeout(resolve, 1000));
-      await waitForServicesToStabilize(ctx, agentId, serviceName);
+      await loadServices(ctx, agentId);
     } catch (error) {
       console.error('Error controlling service:', error);
       if (targetCard) {
