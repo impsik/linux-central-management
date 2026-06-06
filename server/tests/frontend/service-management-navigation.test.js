@@ -45,4 +45,8 @@ describe('service management navigation', () => {
     expect(indexSrc).toContain("void runServiceOperation('enable')");
     expect(indexSrc).toContain("await queueServiceAction('enable', agentIds)");
   });
+
+  it('refreshes service state after a completed per-host service action', () => {
+    expect(hostWorkflowsSrc).toMatch(/w\.showToast\(`\$\{actionLabel\} \$\{serviceName\}`, 'success'\);[\s\S]*await loadServices\(ctx, agentId\);/);
+  });
 });
