@@ -93,6 +93,7 @@ def agent_inventory_packages(payload: PackagesInventory, request: Request, db: S
     collected_at = datetime.fromtimestamp(payload.collected_at_unix, tz=timezone.utc)
 
     db.execute(delete(HostPackage).where(HostPackage.host_id == host.id))
+    db.execute(delete(HostCVEStatus).where(HostCVEStatus.host_id == host.id))
     for p in payload.packages:
         name = p.get("name")
         ver = p.get("version")

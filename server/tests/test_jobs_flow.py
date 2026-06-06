@@ -326,6 +326,84 @@ def test_pkg_upgrade_success_invalidates_cve_cache_and_queues_inventory(monkeypa
             assert refresh[1].payload["reason"] == "post-pkg-upgrade"
 
 
+def test_package_inventory_invalidates_host_cve_cache(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import Host, HostCVEStatus, HostPackage
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-inventory-cve",
+                "hostname": "srv-inventory-cve",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        with SessionLocal() as db:
+            host = db.execute(select(Host).where(Host.agent_id == "srv-inventory-cve")).scalar_one()
+            db.add(
+                HostCVEStatus(
+                    host_id=host.id,
+                    cve="CVE-2025-32462",
+                    affected=True,
+                    checked_at=datetime.now(timezone.utc),
+                    raw="stale vulnerable result",
+                )
+            )
+            db.commit()
+
+        inv = client.post(
+            "/agent/inventory/packages",
+            json={
+                "agent_id": "srv-inventory-cve",
+                "collected_at_unix": 1_700_000_000,
+                "packages": [
+                    {"name": "libpam-modules", "version": "1.5.3-5ubuntu5.4", "arch": "amd64"},
+                ],
+            },
+        )
+        assert inv.status_code == 200, inv.text
+
+        with SessionLocal() as db:
+            host = db.execute(select(Host).where(Host.agent_id == "srv-inventory-cve")).scalar_one()
+            stale = db.execute(
+                select(HostCVEStatus).where(
+                    HostCVEStatus.host_id == host.id,
+                    HostCVEStatus.cve == "CVE-2025-32462",
+                )
+            ).scalar_one_or_none()
+            assert stale is None
+
+            package = db.execute(
+                select(HostPackage).where(
+                    HostPackage.host_id == host.id,
+                    HostPackage.name == "libpam-modules",
+                )
+            ).scalar_one_or_none()
+            assert package is not None
+            assert package.version == "1.5.3-5ubuntu5.4"
+
+
 def test_cleanup_offline_hosts_admin_only(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
     monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
