@@ -96,6 +96,53 @@ describe('phase3 host-filter behavior flows', () => {
     expect(doc.getElementById('upgrade-status').textContent).toContain('CVE: CVE-2025-1234');
   });
 
+  it('keeps CVE filter empty when no hosts are affected', async () => {
+    const doc = createDocument([
+      'vuln-cve', 'vuln-package', 'vuln-version', 'vuln-apply', 'vuln-clear', 'vuln-status',
+      'select-visible-hosts', 'upgrade-selected', 'upgrade-status', 'cve-packages-panel', 'cve-packages-list', 'cve-plan-summary',
+    ]);
+    const win = {
+      window: null,
+      document: doc,
+      console,
+      fetch: async () => ({ ok: true, json: async () => ({ job_id: 'job-cve-empty' }) }),
+    };
+    win.window = win;
+    run(vulnPath, win);
+
+    const state = {
+      allHosts: [{ agent_id: 'a1' }, { agent_id: 'a2' }, { agent_id: 'a3' }],
+      selectedAgentIds: new Set(['a1']),
+      lastRenderedAgentIds: ['a1', 'a2', 'a3'],
+    };
+    let applyCount = 0;
+    const api = win.phase3HostFiltersVuln.initHostFiltersVuln({
+      getState: () => state,
+      setState: (patch) => Object.assign(state, patch),
+      syncSelectionState: (key, value) => {
+        state[key] = value;
+        return value;
+      },
+      applyHostFilters: () => { applyCount += 1; },
+      pollJob: async () => ({
+        runs: [
+          { agent_id: 'a1', status: 'success', stdout: '{"cve":"CVE-2026-3888","affected":false,"packages":[]}' },
+          { agent_id: 'a2', status: 'success', stdout: '{"cve":"CVE-2026-3888","affected":false,"packages":[]}' },
+          { agent_id: 'a3', status: 'success', stdout: '{"cve":"CVE-2026-3888","affected":false,"packages":[]}' },
+        ],
+      }),
+    });
+
+    doc.getElementById('vuln-cve').value = 'CVE-2026-3888';
+    await api.applyVulnFilter();
+
+    expect(state.vulnFilteredAgentIds.size).toBe(0);
+    expect(state.selectedAgentIds.size).toBe(0);
+    expect(doc.getElementById('vuln-status').textContent).toContain('0/3 host(s) affected');
+    expect(doc.getElementById('vuln-status').textContent).toContain('Showing no hosts');
+    expect(applyCount).toBe(1);
+  });
+
   it('select all visible hosts propagates selection + refresh callbacks', () => {
     const doc = createDocument([
       'host-search', 'label-env', 'label-role', 'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
