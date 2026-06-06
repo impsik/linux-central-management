@@ -4,11 +4,11 @@
 
 :root {
   --app-surface: #f4f7fb;
-  --app-sidebar: #0b1424;
-  --app-sidebar-border: #1e2c43;
-  --app-sidebar-text: #dbe6f7;
-  --app-sidebar-muted: #9db0cc;
-  --app-sidebar-active: #1e3a8a;
+  --app-sidebar: #111827;
+  --app-sidebar-border: #1f2937;
+  --app-sidebar-text: #e5e7eb;
+  --app-sidebar-muted: #a1a1aa;
+  --app-sidebar-active: #2a2a2d;
   --app-shell-border: #d9e3f0;
   --app-shell-shadow: 0 14px 32px rgba(8, 15, 31, 0.08);
   --quality-bar-start: #2563eb;
@@ -33,11 +33,11 @@
 
 :root[data-theme="dark"] {
   --app-surface: #050a13;
-  --app-sidebar: #040914;
-  --app-sidebar-border: #123046;
-  --app-sidebar-text: #d7e4f9;
-  --app-sidebar-muted: #8aa0bf;
-  --app-sidebar-active: #0f766e;
+  --app-sidebar: #111111;
+  --app-sidebar-border: #2c2c2c;
+  --app-sidebar-text: #f3f4f6;
+  --app-sidebar-muted: #a3a3a3;
+  --app-sidebar-active: #2a2a2a;
   --app-shell-border: #173044;
   --app-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
   --quality-bar-start: #14b8a6;
@@ -62,10 +62,7 @@
 
 body {
   font-family: "Inter", "IBM Plex Sans", "Noto Sans", sans-serif;
-  background:
-    radial-gradient(circle at 8% -10%, rgba(20, 184, 166, 0.13), transparent 40%),
-    radial-gradient(circle at 96% -15%, rgba(14, 165, 233, 0.11), transparent 38%),
-    var(--app-surface);
+  background: var(--app-surface);
 }
 
 .header {
@@ -96,65 +93,74 @@ body {
 
 .container {
   display: block;
-  padding: .85rem;
-  max-width: 1840px;
-  margin: 0 auto;
+  padding: 0;
+  max-width: none;
+  margin: 0;
 }
 
 .main-content {
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  gap: .85rem;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: 0;
   align-items: start !important;
+  min-height: calc(100vh - 58px);
 }
 
 .fleet-sidebar-shell {
   position: sticky;
-  top: calc(1rem + 70px);
+  top: 58px;
   align-self: start;
+  min-height: calc(100vh - 58px);
+  background: var(--app-sidebar);
+  border-right: 1px solid var(--app-sidebar-border);
 }
 
 #fleet-actions {
   margin: 0 !important;
-  padding: 0.78rem !important;
-  border-radius: 12px;
-  border: 1px solid var(--app-sidebar-border);
-  background: linear-gradient(175deg, color-mix(in srgb, var(--app-sidebar) 92%, #0b2031), var(--app-sidebar));
-  box-shadow: var(--app-shell-shadow);
+  padding: 1.25rem 1.5rem !important;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
   flex-direction: column;
-  gap: 0.3rem !important;
+  gap: 0.18rem !important;
+}
+
+#fleet-actions .fleet-nav-section {
+  padding: 1rem 1rem 0.42rem;
+  color: var(--app-sidebar-text);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+#fleet-actions .fleet-nav-section:first-child {
+  padding-top: 0;
 }
 
 #fleet-actions .btn {
   width: 100%;
   justify-content: flex-start;
-  padding: 0.58rem 0.74rem;
-  border-radius: 9px;
+  min-height: 2.7rem;
+  padding: 0.56rem 1rem;
+  border-radius: 6px;
   border-color: transparent;
   background: transparent;
   color: var(--app-sidebar-text);
   text-align: left;
-  font-weight: 700;
-  font-family: "JetBrains Mono", monospace;
+  font-weight: 500;
+  font-family: inherit;
   position: relative;
-  padding-left: 1.95rem;
+  box-shadow: none;
 }
 
 #fleet-actions .btn::before {
-  position: absolute;
-  left: .7rem;
-  opacity: .75;
+  content: none;
 }
 
-#nav-overview::before { content: "⌂"; }
-#nav-hosts::before { content: "⛁"; }
-#nav-sshkeys::before { content: "◈"; }
-#nav-cronjobs::before { content: "⚙"; }
-#nav-reports::before { content: "▤"; }
-
 #fleet-actions .btn:hover {
-  background: color-mix(in srgb, var(--app-sidebar-active) 24%, transparent);
-  border-color: color-mix(in srgb, var(--app-sidebar-active) 55%, transparent);
+  background: color-mix(in srgb, var(--app-sidebar-active) 78%, transparent);
+  border-color: transparent;
 }
 
 #fleet-actions .btn:disabled {
@@ -164,21 +170,24 @@ body {
 
 .container:has(#server-info-tab.active) #nav-overview,
 .container:has(#hosts-table-tab.active) #nav-hosts,
+.container:has(#user-management-tab.active) #nav-user-management,
+.container:has(#service-management-tab.active) #nav-service-management,
 .container:has(#cronjobs-tab.active) #nav-cronjobs,
 .container:has(#sshkeys-tab.active) #nav-sshkeys,
 .container:has(#reports-tab.active) #nav-reports {
-  background: color-mix(in srgb, #14b8a6 24%, transparent);
-  border-color: color-mix(in srgb, #14b8a6 65%, transparent);
-  color: #dffdfa;
+  background: var(--app-sidebar-active);
+  border-color: transparent;
+  color: var(--app-sidebar-text);
 }
 
 .fleet-main-shell {
   min-width: 0;
   background: color-mix(in srgb, var(--panel) 95%, #020617);
   border: 1px solid var(--app-shell-border);
-  border-radius: 12px;
+  border-radius: 0;
   box-shadow: var(--app-shell-shadow);
   overflow: clip;
+  margin: .85rem;
 }
 
 #host-actions {
@@ -358,10 +367,7 @@ body {
 
 /* Light-theme fixes for v2: neutralize hardcoded dark blends */
 :root[data-theme="light"] body {
-  background:
-    radial-gradient(circle at 8% -10%, rgba(20, 184, 166, 0.06), transparent 42%),
-    radial-gradient(circle at 96% -15%, rgba(14, 165, 233, 0.05), transparent 40%),
-    var(--app-surface);
+  background: var(--app-surface);
 }
 
 :root[data-theme="light"] .header {
@@ -370,18 +376,18 @@ body {
 }
 
 :root[data-theme="light"] #fleet-actions {
-  background: linear-gradient(176deg, #f8fbff, #eef4fb);
-  border-color: #d7e2ef;
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 :root[data-theme="light"] #fleet-actions .btn {
-  color: #1f3a5b;
+  color: var(--app-sidebar-text);
 }
 
 :root[data-theme="light"] #fleet-actions .btn:hover {
-  background: color-mix(in srgb, #3b82f6 12%, transparent);
-  border-color: color-mix(in srgb, #3b82f6 28%, transparent);
+  background: color-mix(in srgb, var(--app-sidebar-active) 78%, transparent);
+  border-color: transparent;
 }
 
 :root[data-theme="light"] .guardian-top-search .host-search {
@@ -425,15 +431,27 @@ body {
 
   .fleet-sidebar-shell {
     position: static;
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--app-sidebar-border);
   }
 
   #fleet-actions {
     flex-direction: row;
     flex-wrap: wrap;
+    align-items: center;
+    padding: .75rem !important;
   }
 
   #fleet-actions .btn {
     width: auto;
+    min-height: 2.35rem;
+    padding: .45rem .72rem;
+  }
+
+  #fleet-actions .fleet-nav-section {
+    width: 100%;
+    padding: .35rem .72rem .15rem;
   }
 
   #server-info-placeholder .metrics-grid,
