@@ -1,10 +1,10 @@
 (function () {
   try {
     const saved = localStorage.getItem('fleet_theme');
-    // Default to dark for the v2 prototype look; keep user override if saved.
-    document.documentElement.dataset.theme = saved || 'dark';
+    // Cockpit defaults to a light, neutral work surface; keep user override if saved.
+    document.documentElement.dataset.theme = saved || 'light';
   } catch (e) {
-    document.documentElement.dataset.theme = 'dark';
+    document.documentElement.dataset.theme = 'light';
   }
 
   try {
