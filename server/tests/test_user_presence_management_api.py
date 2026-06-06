@@ -160,3 +160,21 @@ def test_service_presence_action_targets_online_selected_hosts(monkeypatch):
             assert job.payload["action"] == "stop"
             runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
             assert [run.agent_id for run in runs] == ["srv-online"]
+
+        enable = client.post(
+            "/reports/service-presence/enable",
+            json={"service_name": "nginx", "agent_ids": ["srv-online", "srv-offline"]},
+            headers=headers,
+        )
+        assert enable.status_code == 200, enable.text
+        out = enable.json()
+        assert out["targets"] == ["srv-online"]
+        assert out["skipped_offline"] == ["srv-offline"]
+
+        with SessionLocal() as db:
+            job = db.execute(select(Job).where(Job.job_key == out["job_id"])).scalar_one()
+            assert job.job_type == "service-control"
+            assert job.payload["service_name"] == "nginx"
+            assert job.payload["action"] == "enable"
+            runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
+            assert [run.agent_id for run in runs] == ["srv-online"]

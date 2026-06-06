@@ -618,7 +618,7 @@
     <div class="tab-content-custom" id="service-management-tab">
       <div class="admin-content">
         <div class="section-title">Service management</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">Find a system service across visible online servers and stop or disable it on selected hosts.</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Find a system service across visible online servers and start, stop, enable, or disable it on selected hosts.</div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">Find service</div>
@@ -633,6 +633,7 @@
               </label>
               <button class="btn btn-primary" id="service-management-search" type="button">Find</button>
               <button class="btn" id="service-management-select-all" type="button">Select all</button>
+              <button class="btn btn-success" id="service-management-enable" type="button">Enable selected</button>
               <button class="btn btn-warning" id="service-management-stop" type="button">Stop selected</button>
               <button class="btn btn-danger" id="service-management-stop-disable" type="button">Stop & disable selected</button>
               <span id="service-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
@@ -4831,6 +4832,7 @@
       const searchBtn = document.getElementById('service-management-search');
       const selectAllBtn = document.getElementById('service-management-select-all');
       const checkAllEl = document.getElementById('service-management-check-all');
+      const enableBtn = document.getElementById('service-management-enable');
       const stopBtn = document.getElementById('service-management-stop');
       const stopDisableBtn = document.getElementById('service-management-stop-disable');
       const statusEl = document.getElementById('service-management-status');
@@ -4854,7 +4856,7 @@
         const canManageServices = !!currentPermissions?.can_manage_services;
         const selected = selectedServiceAgentIds();
         const disabled = !canManageServices || selected.length === 0;
-        [stopBtn, stopDisableBtn].forEach((btn) => {
+        [enableBtn, stopBtn, stopDisableBtn].forEach((btn) => {
           if (!btn) return;
           btn.disabled = disabled;
           btn.title = canManageServices ? '' : 'Service management permission required';
@@ -4974,11 +4976,24 @@
           if (typeof showToast === 'function') showToast('Select at least one matching host', 'error');
           return;
         }
-        const label = kind === 'stop-disable' ? 'Stop and disable' : 'Stop';
+        const label = kind === 'stop-disable' ? 'Stop and disable' : kind === 'enable' ? 'Enable' : 'Stop';
         if (!confirm(`${label} ${serviceName} on ${agentIds.length} selected host(s)?`)) return;
 
-        [stopBtn, stopDisableBtn, searchBtn].forEach((btn) => { if (btn) btn.disabled = true; });
+        [enableBtn, stopBtn, stopDisableBtn, searchBtn].forEach((btn) => { if (btn) btn.disabled = true; });
         try {
+          if (kind === 'enable') {
+            if (statusEl) statusEl.textContent = 'Queueing enable job…';
+            const enableData = await queueServiceAction('enable', agentIds);
+            if (statusEl) statusEl.textContent = `Enable job ${enableData.job_id} queued for ${enableData.targets?.length || 0} host(s)…`;
+            const enableSummary = await waitForJobDone(enableData.job_id);
+            if (statusEl) statusEl.textContent = enableSummary.done
+              ? `Enabled: ${enableSummary.success.length} succeeded, ${enableSummary.failed.length} failed. Refreshing…`
+              : 'Enable still running. Refreshing visible status…';
+            if (typeof showToast === 'function') showToast('Enable job finished', 'success');
+            await searchServices(false);
+            return;
+          }
+
           if (statusEl) statusEl.textContent = 'Queueing stop job…';
           const stopData = await queueServiceAction('stop', agentIds);
           if (statusEl) statusEl.textContent = `Stop job ${stopData.job_id} queued for ${stopData.targets?.length || 0} host(s)…`;
@@ -5034,6 +5049,10 @@
           if (!cb.disabled) cb.checked = checked;
         });
         updateServiceActionState();
+      });
+      enableBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void runServiceOperation('enable');
       });
       stopBtn?.addEventListener('click', (e) => {
         e.preventDefault();

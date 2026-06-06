@@ -38,4 +38,11 @@ describe('service management navigation', () => {
     expect(hostWorkflowsSrc).toContain('✓ Autostart');
     expect(hostWorkflowsSrc).toContain('✗ Manual start');
   });
+
+  it('supports bulk enabling selected service matches', () => {
+    expect(indexSrc).toContain('id="service-management-enable"');
+    expect(indexSrc).toContain('Enable selected');
+    expect(indexSrc).toContain("void runServiceOperation('enable')");
+    expect(indexSrc).toContain("await queueServiceAction('enable', agentIds)");
+  });
 });
