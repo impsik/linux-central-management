@@ -14,6 +14,7 @@ from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, Packages
 from ..services.agents import get_client_ip
 from ..services.agent_auth import require_agent_token, require_agent_token_dep
 from ..services.db_utils import transaction
+from ..services.jobs import create_job_with_runs
 
 router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_token_dep)])
 
@@ -288,6 +289,42 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
                 db.rollback()
             except Exception:
                 pass
+
+    # Package upgrades change installed versions and may resolve CVEs. Invalidate stale
+    # host CVE results immediately and queue inventory so package snapshots catch up.
+    if payload.status == "success" and job.job_type in ("pkg-upgrade", "pkg-install", "pkg-reinstall", "dist-upgrade"):
+        try:
+            with db.begin_nested():
+                host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
+                if host:
+                    db.execute(delete(HostCVEStatus).where(HostCVEStatus.host_id == host.id))
+
+                    # Avoid enqueueing duplicate refreshes if one is already pending/running for this host.
+                    existing_refresh = (
+                        db.execute(
+                            select(JobRun)
+                            .join(Job, Job.id == JobRun.job_id)
+                            .where(
+                                Job.job_type == "inventory-now",
+                                JobRun.agent_id == payload.agent_id,
+                                JobRun.status.in_(("queued", "running")),
+                            )
+                            .limit(1)
+                        )
+                        .scalar_one_or_none()
+                    )
+                    if not existing_refresh:
+                        create_job_with_runs(
+                            db=db,
+                            job_type="inventory-now",
+                            payload={"reason": f"post-{job.job_type}", "source_job_id": job.job_key},
+                            agent_ids=[payload.agent_id],
+                            commit=False,
+                            created_by=job.created_by,
+                        )
+        except Exception:
+            # best-effort cache invalidation/refresh scheduling
+            pass
 
     # Persist package update availability cache when an update-check job completes
     if payload.status == "success" and job.job_type == "query-pkg-updates" and payload.stdout:

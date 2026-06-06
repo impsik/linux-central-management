@@ -224,7 +224,7 @@ async def create_pkg_upgrade(payload: JobCreatePkgUpgrade, request: Request, db:
             commit=False,
         )
 
-    async def build(aid: str):
+    def build(aid: str):
         # Prefer per-agent packages if provided; fall back to global packages.
         pkgs = (packages_by_agent.get(aid) or packages) or []
         return {"job_id": created.job_key, "type": "pkg-upgrade", "packages": pkgs}
