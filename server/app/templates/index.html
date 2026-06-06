@@ -633,6 +633,7 @@
               </label>
               <button class="btn btn-primary" id="service-management-search" type="button">Find</button>
               <button class="btn" id="service-management-select-all" type="button">Select all</button>
+              <button class="btn btn-success" id="service-management-start" type="button">Start selected</button>
               <button class="btn btn-success" id="service-management-enable" type="button">Enable selected</button>
               <button class="btn btn-warning" id="service-management-stop" type="button">Stop selected</button>
               <button class="btn btn-danger" id="service-management-stop-disable" type="button">Stop & disable selected</button>
@@ -4832,6 +4833,7 @@
       const searchBtn = document.getElementById('service-management-search');
       const selectAllBtn = document.getElementById('service-management-select-all');
       const checkAllEl = document.getElementById('service-management-check-all');
+      const startBtn = document.getElementById('service-management-start');
       const enableBtn = document.getElementById('service-management-enable');
       const stopBtn = document.getElementById('service-management-stop');
       const stopDisableBtn = document.getElementById('service-management-stop-disable');
@@ -4856,7 +4858,7 @@
         const canManageServices = !!currentPermissions?.can_manage_services;
         const selected = selectedServiceAgentIds();
         const disabled = !canManageServices || selected.length === 0;
-        [enableBtn, stopBtn, stopDisableBtn].forEach((btn) => {
+        [startBtn, enableBtn, stopBtn, stopDisableBtn].forEach((btn) => {
           if (!btn) return;
           btn.disabled = disabled;
           btn.title = canManageServices ? '' : 'Service management permission required';
@@ -4976,11 +4978,24 @@
           if (typeof showToast === 'function') showToast('Select at least one matching host', 'error');
           return;
         }
-        const label = kind === 'stop-disable' ? 'Stop and disable' : kind === 'enable' ? 'Enable' : 'Stop';
+        const label = kind === 'stop-disable' ? 'Stop and disable' : kind === 'enable' ? 'Enable' : kind === 'start' ? 'Start' : 'Stop';
         if (!confirm(`${label} ${serviceName} on ${agentIds.length} selected host(s)?`)) return;
 
-        [enableBtn, stopBtn, stopDisableBtn, searchBtn].forEach((btn) => { if (btn) btn.disabled = true; });
+        [startBtn, enableBtn, stopBtn, stopDisableBtn, searchBtn].forEach((btn) => { if (btn) btn.disabled = true; });
         try {
+          if (kind === 'start') {
+            if (statusEl) statusEl.textContent = 'Queueing start job…';
+            const startData = await queueServiceAction('start', agentIds);
+            if (statusEl) statusEl.textContent = `Start job ${startData.job_id} queued for ${startData.targets?.length || 0} host(s)…`;
+            const startSummary = await waitForJobDone(startData.job_id);
+            if (statusEl) statusEl.textContent = startSummary.done
+              ? `Started: ${startSummary.success.length} succeeded, ${startSummary.failed.length} failed. Refreshing…`
+              : 'Start still running. Refreshing visible status…';
+            if (typeof showToast === 'function') showToast('Start job finished', 'success');
+            await searchServices(false);
+            return;
+          }
+
           if (kind === 'enable') {
             if (statusEl) statusEl.textContent = 'Queueing enable job…';
             const enableData = await queueServiceAction('enable', agentIds);
@@ -5049,6 +5064,10 @@
           if (!cb.disabled) cb.checked = checked;
         });
         updateServiceActionState();
+      });
+      startBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void runServiceOperation('start');
       });
       enableBtn?.addEventListener('click', (e) => {
         e.preventDefault();
