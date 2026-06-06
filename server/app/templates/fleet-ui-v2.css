@@ -468,3 +468,551 @@ body {
     max-width: none;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Cockpit-like workbench polish
+   Keep this as the final v2 layer so it can flatten legacy dashboard styling
+   without changing view wiring.
+--------------------------------------------------------------------------- */
+
+:root {
+  --app-surface: #f0f0f0;
+  --app-sidebar: #151515;
+  --app-sidebar-border: #3d3d3d;
+  --app-sidebar-text: #f0f0f0;
+  --app-sidebar-muted: #b8bbbe;
+  --app-sidebar-active: #2b2b2b;
+  --app-shell-border: #d2d2d2;
+  --app-shell-shadow: none;
+  --bg: #f0f0f0;
+  --panel: #ffffff;
+  --panel-2: #f5f5f5;
+  --border: #d2d2d2;
+  --text: #151515;
+  --muted: #3d3d3d;
+  --muted-2: #6a6e73;
+  --primary: #06c;
+  --primary-2: #004080;
+  --danger: #c9190b;
+  --warning: #f0ab00;
+  --success: #3d7317;
+  --focus-ring: rgba(0, 102, 204, 0.25);
+  --header-bg: #151515;
+  --header-text: #f0f0f0;
+  --header-subtle: #b8bbbe;
+  --report-th-bg: #f5f5f5;
+  --report-code-bg: #f5f5f5;
+  --report-pill-online-bg: #f3faf2;
+  --report-pill-online-text: #3d7317;
+  --report-pill-offline-bg: #faeae8;
+  --report-pill-offline-text: #a30000;
+}
+
+:root[data-theme="dark"] {
+  --app-surface: #1b1b1b;
+  --app-sidebar: #151515;
+  --app-sidebar-border: #3d3d3d;
+  --app-sidebar-text: #f0f0f0;
+  --app-sidebar-muted: #b8bbbe;
+  --app-sidebar-active: #2b2b2b;
+  --app-shell-border: #4f5255;
+  --app-shell-shadow: none;
+  --bg: #1b1b1b;
+  --panel: #26292d;
+  --panel-2: #303437;
+  --border: #4f5255;
+  --text: #f0f0f0;
+  --muted: #d2d2d2;
+  --muted-2: #b8bbbe;
+  --primary: #73bcf7;
+  --primary-2: #2b9af3;
+  --danger: #f66151;
+  --warning: #f0ab00;
+  --success: #5ba352;
+  --focus-ring: rgba(115, 188, 247, 0.28);
+  --header-bg: #151515;
+  --header-text: #f0f0f0;
+  --header-subtle: #b8bbbe;
+  --report-th-bg: #303437;
+  --report-code-bg: #303437;
+}
+
+body {
+  font-family: "RedHatText", "Noto Sans", "Liberation Sans", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  background: var(--bg);
+}
+
+.header {
+  min-height: 52px;
+  padding: 0.65rem 1rem;
+  border-bottom: 1px solid #000;
+  box-shadow: none;
+  background: var(--header-bg);
+}
+
+#app-title {
+  font-family: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.header-subtitle {
+  color: var(--header-subtle) !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+}
+
+.main-content {
+  grid-template-columns: 15rem minmax(0, 1fr);
+  min-height: calc(100vh - 52px);
+  background: var(--bg);
+}
+
+.fleet-sidebar-shell {
+  top: 52px;
+  min-height: calc(100vh - 52px);
+  background: var(--app-sidebar);
+}
+
+#fleet-actions {
+  padding: 1rem 0.75rem !important;
+  gap: 0 !important;
+}
+
+#fleet-actions .fleet-nav-section {
+  padding: 1rem 0.75rem 0.4rem;
+  color: var(--app-sidebar-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+#fleet-actions .btn {
+  min-height: 2.25rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 0;
+  color: var(--app-sidebar-text);
+  font-size: 0.92rem;
+  font-weight: 400;
+}
+
+#fleet-actions .btn:hover {
+  background: #262626;
+}
+
+.container:has(#server-info-tab.active) #nav-overview,
+.container:has(#hosts-table-tab.active) #nav-hosts,
+.container:has(#user-management-tab.active) #nav-user-management,
+.container:has(#service-management-tab.active) #nav-service-management,
+.container:has(#cronjobs-tab.active) #nav-cronjobs,
+.container:has(#sshkeys-tab.active) #nav-sshkeys,
+.container:has(#reports-tab.active) #nav-reports {
+  background: var(--app-sidebar-active);
+  box-shadow: inset 3px 0 0 #06c;
+}
+
+.fleet-main-shell {
+  margin: 0;
+  min-height: calc(100vh - 52px);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--bg);
+  overflow: visible;
+}
+
+#host-actions {
+  padding: 0.75rem 1rem !important;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+#host-actions .host-action-btn,
+.host-action-btn {
+  height: auto;
+  min-height: 2rem;
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 0.35rem 0.75rem;
+}
+
+#host-actions .host-action-btn.active,
+.host-action-btn.active {
+  background: color-mix(in srgb, var(--primary) 10%, var(--panel));
+  border-color: var(--primary);
+  color: var(--primary);
+  box-shadow: inset 0 -2px 0 var(--primary);
+}
+
+.server-info-content,
+.users-content,
+.services-content,
+.packages-content,
+.admin-content {
+  padding: 1rem;
+}
+
+.section-title,
+#server-info-placeholder h2,
+#server-info-hostname {
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 1.55rem;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.admin-card,
+.metric-card,
+.section-card,
+.overview-card,
+.load-graph-container,
+.user-card,
+.service-card,
+.filter-section,
+.modal-panel {
+  border: 1px solid var(--border) !important;
+  border-radius: 0 !important;
+  background: var(--panel) !important;
+  box-shadow: none !important;
+}
+
+.admin-card,
+.metric-card,
+.load-graph-container,
+.user-card,
+.service-card,
+.filter-section {
+  padding: 1rem;
+}
+
+.admin-card-title {
+  margin: -1rem -1rem 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.admin-card-body {
+  gap: 0.75rem;
+}
+
+.metric-label {
+  color: var(--muted-2);
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.metric-value {
+  font-family: inherit;
+  font-size: 1.35rem;
+  font-weight: 500;
+}
+
+.metric-bar {
+  height: 0.5rem;
+  border-radius: 0;
+  background: color-mix(in srgb, var(--border) 70%, var(--panel));
+}
+
+.metric-bar-fill,
+.quality-bar-fill {
+  border-radius: 0;
+  background: var(--primary);
+}
+
+.btn,
+button.btn,
+.icon-btn,
+.settings-item,
+.modal-close,
+.clear-btn {
+  min-height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 400;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.btn {
+  padding: 0.375rem 0.75rem;
+}
+
+.btn:hover,
+.icon-btn:hover,
+.settings-item:hover,
+.modal-close:hover,
+.clear-btn:hover {
+  border-color: color-mix(in srgb, var(--border) 50%, var(--text));
+  background: color-mix(in srgb, var(--panel-2) 70%, var(--panel));
+  filter: none;
+}
+
+.btn:focus,
+.btn:focus-visible,
+.icon-btn:focus,
+.icon-btn:focus-visible,
+.settings-item:focus,
+.settings-item:focus-visible,
+.host-search:focus,
+.admin-input:focus,
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+.btn-primary,
+.btn.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+:root[data-theme="dark"] .btn-primary,
+:root[data-theme="dark"] .btn.btn-primary {
+  color: #151515;
+}
+
+.btn-primary:hover,
+.btn.btn-primary:hover {
+  background: var(--primary-2);
+  border-color: var(--primary-2);
+}
+
+.btn-success {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
+.btn-warning {
+  background: transparent;
+  border-color: var(--warning);
+  color: color-mix(in srgb, var(--warning) 70%, var(--text));
+}
+
+.btn-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn:disabled,
+.btn[disabled],
+button:disabled,
+input:disabled,
+select:disabled {
+  opacity: 0.55;
+}
+
+.host-search,
+.admin-input,
+.modal-field input,
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  min-height: 2rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: none;
+  font-family: inherit;
+  font-size: 0.875rem;
+  padding: 0.375rem 0.5rem;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--primary);
+}
+
+.settings-dropdown {
+  border-radius: 0;
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.18);
+  padding: 0.25rem;
+}
+
+.settings-item {
+  border-color: transparent;
+  justify-content: flex-start;
+}
+
+.modal-overlay {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.modal-header,
+.modal-body {
+  padding: 1rem;
+}
+
+.modal-title {
+  font-size: 1.15rem;
+  font-weight: 500;
+}
+
+.modal-output,
+.pkg-raw,
+pre {
+  border-radius: 0 !important;
+  background: var(--panel-2) !important;
+}
+
+.process-table,
+.fleet-report .report-table,
+.hosts-table,
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  background: var(--panel);
+}
+
+.process-table th,
+.process-table td,
+.fleet-report .report-table th,
+.fleet-report .report-table td,
+.hosts-table th,
+.hosts-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.process-table th,
+.fleet-report .report-table th,
+.hosts-table th {
+  background: var(--panel-2) !important;
+  color: var(--text) !important;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.process-table tr:hover td,
+.fleet-report .report-table tr:hover td,
+.hosts-table tr:hover td {
+  background: color-mix(in srgb, var(--panel-2) 75%, var(--panel));
+}
+
+.process-table td,
+.metric-value,
+.server-info-content h2,
+.server-info-content h3 {
+  font-family: inherit;
+}
+
+.service-status,
+.pkg-badge,
+.status-pill,
+.detail-pill,
+.host-context-bar,
+.new-user-badge {
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  font-weight: 500;
+}
+
+.service-status.active,
+.pkg-badge.good {
+  border-color: color-mix(in srgb, var(--success) 40%, var(--border));
+  background: color-mix(in srgb, var(--success) 10%, var(--panel));
+  color: var(--success);
+}
+
+.service-status.inactive,
+.pkg-badge.bad {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, var(--panel));
+  color: var(--danger);
+}
+
+.service-status.failed {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning) 12%, var(--panel));
+  color: color-mix(in srgb, var(--warning) 70%, var(--text));
+}
+
+.hosts-top-filters {
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.filter-section {
+  background: var(--panel) !important;
+}
+
+.filter-section-title {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.empty-state {
+  padding: 1rem;
+}
+
+#server-info-placeholder {
+  padding: 1rem !important;
+}
+
+#server-info-placeholder .admin-card-title {
+  margin: -1rem -1rem 1rem;
+  padding: 0.75rem 1rem;
+}
+
+#server-info-header .server-info-title {
+  gap: 1rem;
+}
+
+.overview-cards-grid,
+.metrics-grid,
+.admin-panels {
+  gap: 1rem;
+}
+
+.toast {
+  border-radius: 0;
+  box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.18);
+}
+
+a,
+.status-link-text {
+  color: var(--primary);
+}
+
+@media (max-width: 1100px) {
+  .main-content {
+    grid-template-columns: 1fr;
+  }
+
+  .fleet-sidebar-shell {
+    min-height: auto;
+  }
+
+  #fleet-actions {
+    padding: 0.75rem !important;
+  }
+
+  .fleet-main-shell {
+    min-height: auto;
+  }
+}
