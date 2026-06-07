@@ -148,6 +148,14 @@ get_env_value() {
   awk -F= -v key="$key" '$0 !~ /^[[:space:]]*#/ && $1 == key {print substr($0, index($0, "=") + 1); exit}' "$file" 2>/dev/null || true
 }
 
+is_placeholder_value() {
+  value="$1"
+  case "$value" in
+    ""|change-me*|changeme|fleet|password|admin|token) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 set_env_value() {
   file="$1"
   key="$2"
@@ -166,14 +174,11 @@ set_env_if_blank_or_placeholder() {
   key="$2"
   value="$3"
   current="$(get_env_value "$file" "$key")"
-  case "$current" in
-    ""|change-me*|changeme|fleet|password|admin|token)
-      set_env_value "$file" "$key" "$value"
-      ;;
-    *)
-      info "Preserved existing $key"
-      ;;
-  esac
+  if is_placeholder_value "$current"; then
+    set_env_value "$file" "$key" "$value"
+  else
+    info "Preserved existing $key"
+  fi
 }
 
 write_inventory() {
@@ -252,31 +257,76 @@ main() {
   ensure_repo
   cd "$APP_DIR"
 
-  default_url="http://$(primary_ip):8000"
+  docker_env="$APP_DIR/deploy/docker/.env"
+  root_env="$APP_DIR/.env"
+  [ -f "$docker_env" ] || cp "$APP_DIR/deploy/docker/env.example" "$docker_env"
+  [ -f "$root_env" ] || cp "$APP_DIR/env.example" "$root_env"
+
+  default_url="$(get_env_value "$root_env" "SERVER_URL")"
+  [ -n "$default_url" ] || default_url="http://$(primary_ip):8000"
   server_url="$(prompt "Server URL agents and browser should use" "$default_url")"
-  bootstrap_user="$(prompt "Bootstrap admin username" "admin")"
-  bootstrap_password="$(prompt_secret_or_generate "Bootstrap admin password" "$(random_password)")"
+
+  current_bootstrap_user="$(get_env_value "$docker_env" "BOOTSTRAP_USERNAME")"
+  [ -n "$current_bootstrap_user" ] || current_bootstrap_user="admin"
+  bootstrap_user="$(prompt "Bootstrap admin username" "$current_bootstrap_user")"
+
+  current_bootstrap_password="$(get_env_value "$docker_env" "BOOTSTRAP_PASSWORD")"
+  bootstrap_password_display=""
+  if is_placeholder_value "$current_bootstrap_password"; then
+    bootstrap_password="$(prompt_secret_or_generate "Bootstrap admin password" "$(random_password)")"
+    bootstrap_password_display="$bootstrap_password"
+  elif confirm "Bootstrap admin password already exists. Rotate it now?" "n"; then
+    bootstrap_password="$(prompt_secret_or_generate "New bootstrap admin password" "$(random_password)")"
+    bootstrap_password_display="$bootstrap_password"
+  else
+    bootstrap_password="$current_bootstrap_password"
+    bootstrap_password_display="preserved existing value in $docker_env"
+    info "Preserved existing BOOTSTRAP_PASSWORD"
+  fi
+
+  current_agent_token="$(get_env_value "$docker_env" "AGENT_SHARED_TOKEN")"
+  if is_placeholder_value "$current_agent_token"; then
+    agent_token="$(random_hex 32)"
+  elif confirm "Agent shared token already exists. Rotate it now? Existing agents must be redeployed if rotated." "n"; then
+    agent_token="$(random_hex 32)"
+  else
+    agent_token="$current_agent_token"
+    info "Preserved existing AGENT_SHARED_TOKEN"
+  fi
+
+  current_mfa_key="$(get_env_value "$docker_env" "MFA_ENCRYPTION_KEY")"
+  if is_placeholder_value "$current_mfa_key"; then
+    mfa_key="$(fernet_key)"
+  elif confirm "MFA encryption key already exists. Rotate it now? Existing MFA enrollments may need to be reset." "n"; then
+    mfa_key="$(fernet_key)"
+  else
+    mfa_key="$current_mfa_key"
+    info "Preserved existing MFA_ENCRYPTION_KEY"
+  fi
+
+  current_terminal_token="$(get_env_value "$docker_env" "AGENT_TERMINAL_TOKEN")"
+  terminal_token=""
+  if is_placeholder_value "$current_terminal_token"; then
+    if confirm "Enable browser terminal proxy token now? (higher risk)" "n"; then
+      terminal_token="$(random_hex 32)"
+    fi
+  elif confirm "Browser terminal proxy token already exists. Rotate it now? Existing agents must be redeployed if rotated." "n"; then
+    terminal_token="$(random_hex 32)"
+  else
+    terminal_token="$current_terminal_token"
+    info "Preserved existing AGENT_TERMINAL_TOKEN"
+  fi
+
   deploy_hosts="$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")"
   ansible_user=""
   if [ -n "$deploy_hosts" ]; then
     ansible_user="$(prompt "SSH username for managed hosts" "$(id -un 2>/dev/null || printf ubuntu)")"
   fi
 
-  docker_env="$APP_DIR/deploy/docker/.env"
-  root_env="$APP_DIR/.env"
-  [ -f "$docker_env" ] || cp "$APP_DIR/deploy/docker/env.example" "$docker_env"
-  [ -f "$root_env" ] || cp "$APP_DIR/env.example" "$root_env"
-
-  agent_token="$(random_hex 32)"
-  terminal_token=""
-  if confirm "Enable browser terminal proxy token now? (higher risk)" "n"; then
-    terminal_token="$(random_hex 32)"
-  fi
-
   set_env_value "$docker_env" "BOOTSTRAP_USERNAME" "$bootstrap_user"
   set_env_value "$docker_env" "BOOTSTRAP_PASSWORD" "$bootstrap_password"
-  set_env_if_blank_or_placeholder "$docker_env" "AGENT_SHARED_TOKEN" "$agent_token"
-  set_env_value "$docker_env" "MFA_ENCRYPTION_KEY" "$(fernet_key)"
+  set_env_value "$docker_env" "AGENT_SHARED_TOKEN" "$agent_token"
+  set_env_value "$docker_env" "MFA_ENCRYPTION_KEY" "$mfa_key"
   set_env_value "$docker_env" "UI_COOKIE_SECURE" "false"
   set_env_value "$docker_env" "ALLOW_INSECURE_NO_AGENT_TOKEN" "true"
   set_env_value "$docker_env" "DB_AUTO_CREATE_TABLES" "true"
@@ -312,7 +362,7 @@ main() {
   say "Install complete."
   say "Open: $server_url/"
   say "Login: $bootstrap_user"
-  say "Password: $bootstrap_password"
+  say "Password: $bootstrap_password_display"
   say ""
   say "Config files:"
   say "  $docker_env"

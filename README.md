@@ -70,6 +70,10 @@ generates secure secrets, writes `deploy/docker/.env` and `.env`, optionally
 writes host inventories, starts Docker Compose, and can deploy the agent to
 listed hosts.
 
+Rerunning the installer is safe for existing installs: existing passwords,
+agent tokens, terminal tokens, and MFA encryption keys are preserved unless you
+explicitly choose to rotate them.
+
 ### Manual setup
 
 ### 1) Prereqs
