@@ -6,6 +6,7 @@
     const syncSelectionState = typeof api.syncSelectionState === 'function' ? api.syncSelectionState : function (_, v) { return v; };
     const applyHostFilters = typeof api.applyHostFilters === 'function' ? api.applyHostFilters : function () { };
     const updateUpgradeControls = typeof api.updateUpgradeControls === 'function' ? api.updateUpgradeControls : function () { };
+    const getCurrentPermissions = typeof api.getCurrentPermissions === 'function' ? api.getCurrentPermissions : function () { return {}; };
 
     const searchEl = document.getElementById('host-search');
     const envSel = document.getElementById('label-env');
@@ -63,6 +64,31 @@
       savedViewStatusEl.textContent = msg || '';
       savedViewStatusEl.style.color = (kind === 'error') ? 'var(--danger)' : (kind === 'success' ? 'var(--success)' : 'var(--muted-2)');
     }
+
+    function canShareSavedViews() {
+      const perms = getCurrentPermissions() || {};
+      return String(perms.role || '').toLowerCase() === 'admin' || !!perms.can_manage_users;
+    }
+
+    function canEditSelectedView(view) {
+      return !view || !!view.can_edit;
+    }
+
+    function syncSavedViewPermissionControls(view) {
+      const mayEdit = canEditSelectedView(view);
+      const mayShare = canShareSavedViews();
+      if (savedViewSharedEl) {
+        savedViewSharedEl.disabled = !mayEdit || !mayShare;
+        savedViewSharedEl.checked = !!(view && view.is_shared);
+      }
+      if (savedViewDefaultEl) {
+        savedViewDefaultEl.disabled = !mayEdit;
+        savedViewDefaultEl.checked = !!(view && view.is_default_startup);
+      }
+      if (savedViewDeleteBtn) savedViewDeleteBtn.disabled = !mayEdit;
+    }
+
+    syncSavedViewPermissionControls(null);
 
     async function fetchSavedViews() {
       const r = await fetch('/auth/views?scope=hosts', { credentials: 'include', cache: 'no-store' });
@@ -210,8 +236,8 @@
             scope: 'hosts',
             name,
             payload: current,
-            is_shared: !!savedViewSharedEl?.checked,
-            is_default_startup: !!savedViewDefaultEl?.checked,
+            is_shared: !!(savedViewSharedEl && !savedViewSharedEl.disabled && savedViewSharedEl.checked),
+            is_default_startup: !!(savedViewDefaultEl && !savedViewDefaultEl.disabled && savedViewDefaultEl.checked),
           }),
         });
         if (!r.ok) throw new Error(`save failed (${r.status})`);
@@ -240,8 +266,7 @@
       }
       applySavedView(view.payload || {}, { viewName: String(view.name || '') });
       if (savedViewNameEl) savedViewNameEl.value = String(view.name || '');
-      if (savedViewSharedEl) savedViewSharedEl.checked = !!view.is_shared;
-      if (savedViewDefaultEl) savedViewDefaultEl.checked = !!view.is_default_startup;
+      syncSavedViewPermissionControls(view);
       setSavedViewStatus(`Applied view "${String(view.name || '')}".`, 'success');
     });
 
@@ -278,15 +303,7 @@
       const view = (savedViewsCache || []).find((it) => viewKey(it) === key);
       if (!view) return;
       if (savedViewNameEl) savedViewNameEl.value = String(view.name || '');
-      if (savedViewSharedEl) {
-        savedViewSharedEl.checked = !!view.is_shared;
-        savedViewSharedEl.disabled = !view.can_edit;
-      }
-      if (savedViewDefaultEl) {
-        savedViewDefaultEl.checked = !!view.is_default_startup;
-        savedViewDefaultEl.disabled = !view.can_edit;
-      }
-      if (savedViewDeleteBtn) savedViewDeleteBtn.disabled = !view.can_edit;
+      syncSavedViewPermissionControls(view);
       setSavedViewStatus('Click Apply to use selected view.', null);
     });
 
@@ -312,9 +329,7 @@
           applySavedView(target.payload || {}, { viewName: String(target.name || '') });
           if (savedViewSelectEl) savedViewSelectEl.value = viewKey(target);
           if (savedViewNameEl) savedViewNameEl.value = String(target.name || '');
-          if (savedViewSharedEl) savedViewSharedEl.checked = !!target.is_shared;
-          if (savedViewDefaultEl) savedViewDefaultEl.checked = !!target.is_default_startup;
-          if (savedViewDeleteBtn) savedViewDeleteBtn.disabled = !target.can_edit;
+          syncSavedViewPermissionControls(target);
           setSavedViewStatus(`Applied view "${String(target.name || '')}".`, 'success');
         }
       } catch (_) {

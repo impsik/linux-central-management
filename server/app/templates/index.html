@@ -3062,6 +3062,7 @@
         pollJob: window.pollJob,
         escapeHtml,
         matchesGlob,
+        getCurrentPermissions: () => currentPermissions,
       });
 
       updateUpgradeControlsFn = (out && typeof out.updateUpgradeControls === 'function')
