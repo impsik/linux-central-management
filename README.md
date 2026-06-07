@@ -74,6 +74,17 @@ Rerunning the installer is safe for existing installs: existing passwords,
 agent tokens, terminal tokens, and MFA encryption keys are preserved unless you
 explicitly choose to rotate them.
 
+To attach more managed hosts to an existing admin node later:
+
+```bash
+cd ~/linux-central-management
+./add-host.sh
+```
+
+The helper reuses the existing `SERVER_URL`, agent token, and terminal token,
+updates `hosts` and `ansible/inventory.yml`, then deploys the agent only to the
+new host(s).
+
 ### Manual setup
 
 ### 1) Prereqs
