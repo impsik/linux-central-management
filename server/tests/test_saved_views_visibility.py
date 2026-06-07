@@ -28,7 +28,7 @@ def test_shared_saved_views_are_visible_to_other_users(monkeypatch):
 
         reg = admin_client.post(
             "/auth/register",
-            json={"username": "op1", "password": "pw-12345678"},
+            json={"username": "shared-view-viewer", "password": "pw-12345678"},
             headers=admin_headers,
         )
         assert reg.status_code == 200, reg.text
@@ -60,7 +60,7 @@ def test_shared_saved_views_are_visible_to_other_users(monkeypatch):
         with TestClient(app) as user_client:
             login_user = user_client.post(
                 "/auth/login",
-                json={"username": "op1", "password": "pw-12345678"},
+                json={"username": "shared-view-viewer", "password": "pw-12345678"},
             )
             assert login_user.status_code == 200, login_user.text
 
