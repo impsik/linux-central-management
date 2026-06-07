@@ -20,6 +20,7 @@
       syncSelectionState: api.syncSelectionState,
       applyHostFilters: api.applyHostFilters,
       updateUpgradeControls: function () { updateUpgradeControls(); },
+      getCurrentPermissions: api.getCurrentPermissions,
     }) || {};
 
     const vulnOut = vulnModule.initHostFiltersVuln({

@@ -245,4 +245,65 @@ describe('phase3 host-filter behavior flows', () => {
 
     expect(doc.getElementById('saved-view-select').innerHTML).toContain('Prod DBs (shared by admin)');
   });
+
+  it('saves a regular user personal view without carrying disabled shared state', async () => {
+    const doc = createDocument([
+      'host-search', 'label-env', 'label-role', 'label-owner',
+      'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
+      'select-visible-hosts', 'vuln-filter-section', 'vuln-filter-toggle', 'vuln-toggle-btn',
+      'ansible-filter-section', 'ansible-filter-toggle', 'ansible-toggle-btn',
+      'saved-view-name', 'saved-view-select', 'saved-view-save', 'saved-view-apply',
+      'saved-view-delete', 'saved-view-shared', 'saved-view-default', 'saved-view-status',
+    ]);
+    let posted = null;
+    const sharedItem = {
+      name: 'Prod DBs',
+      owner_username: 'admin',
+      is_shared: true,
+      is_default_startup: false,
+      can_edit: false,
+      payload: { labelEnvFilter: 'prod', labelRoleFilter: 'db' },
+    };
+    const win = {
+      window: null,
+      document: doc,
+      console,
+      escapeHtml: (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;'),
+      fetch: async (url, opts = {}) => {
+        if (String(url) === '/auth/views' && opts.method === 'POST') {
+          posted = JSON.parse(String(opts.body || '{}'));
+          return { ok: true, json: async () => ({ ok: true }) };
+        }
+        return {
+          ok: true,
+          json: async () => ({ items: [sharedItem] }),
+        };
+      },
+    };
+    win.window = win;
+    run(uiPath, win);
+
+    win.phase3HostFiltersUi.initHostFiltersUi({
+      getState: () => ({}),
+      setState: () => {},
+      syncSelectionState: (_, value) => value,
+      applyHostFilters: () => {},
+      getCurrentPermissions: () => ({ role: 'readonly' }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const shared = doc.getElementById('saved-view-shared');
+    doc.getElementById('saved-view-select').value = 'Prod DBs@@admin@@1';
+    doc.getElementById('saved-view-select').dispatch('change');
+    expect(shared.checked).toBe(true);
+    expect(shared.disabled).toBe(true);
+
+    doc.getElementById('saved-view-name').value = 'My view';
+    doc.getElementById('saved-view-save').dispatch('click');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(posted.name).toBe('My view');
+    expect(posted.is_shared).toBe(false);
+  });
 });
