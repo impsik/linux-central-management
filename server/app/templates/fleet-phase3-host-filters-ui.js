@@ -163,6 +163,13 @@
       }
     }
 
+    function clearSavedViewSelection() {
+      if (savedViewSelectEl) savedViewSelectEl.value = '';
+      setViewInUrl('');
+      syncSavedViewPermissionControls(null);
+      setSavedViewStatus('', null);
+    }
+
     if (searchEl) {
       searchEl.addEventListener('input', function () {
         const val = searchEl.value || '';
@@ -216,6 +223,7 @@
       syncSelectionState('labelRoleFilter', '');
       syncSelectionState('labelOwnerFilter', '');
       setPatch({ labelEnvFilter: '', labelRoleFilter: '', labelOwnerFilter: '' });
+      clearSavedViewSelection();
       applyHostFilters();
     });
 
@@ -300,6 +308,10 @@
 
     savedViewSelectEl?.addEventListener('change', function () {
       const key = String(savedViewSelectEl?.value || '').trim();
+      if (!key) {
+        clearSavedViewSelection();
+        return;
+      }
       const view = (savedViewsCache || []).find((it) => viewKey(it) === key);
       if (!view) return;
       if (savedViewNameEl) savedViewNameEl.value = String(view.name || '');

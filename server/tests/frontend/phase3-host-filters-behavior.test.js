@@ -201,6 +201,101 @@ describe('phase3 host-filter behavior flows', () => {
     expect(applyCount).toBe(1);
   });
 
+  it('label clear also clears saved view selection and URL view parameter', async () => {
+    const doc = createDocument([
+      'host-search', 'label-env', 'label-role', 'label-owner',
+      'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
+      'select-visible-hosts', 'vuln-filter-section', 'vuln-filter-toggle', 'vuln-toggle-btn',
+      'ansible-filter-section', 'ansible-filter-toggle', 'ansible-toggle-btn',
+      'saved-view-name', 'saved-view-select', 'saved-view-save', 'saved-view-apply',
+      'saved-view-delete', 'saved-view-shared', 'saved-view-default', 'saved-view-status',
+    ]);
+    const win = {
+      window: null,
+      document: doc,
+      console,
+      URL,
+      location: { href: 'http://example.test/?view=DB+view+test' },
+      history: {
+        replaceState: (_state, _title, nextUrl) => { win.location.href = String(nextUrl); },
+      },
+      escapeHtml: (s) => String(s),
+      fetch: async () => ({
+        ok: true,
+        json: async () => ({ items: [] }),
+      }),
+    };
+    win.window = win;
+    run(uiPath, win);
+
+    const state = { labelEnvFilter: 'prod', labelRoleFilter: 'db', labelOwnerFilter: 'alice' };
+    let applyCount = 0;
+    win.phase3HostFiltersUi.initHostFiltersUi({
+      getState: () => state,
+      setState: (patch) => Object.assign(state, patch),
+      syncSelectionState: (_, value) => value,
+      applyHostFilters: () => { applyCount += 1; },
+    });
+
+    doc.getElementById('saved-view-select').value = 'DB view test@@admin@@1';
+    doc.getElementById('label-env').value = 'prod';
+    doc.getElementById('label-role').value = 'db';
+    doc.getElementById('label-owner').value = 'alice';
+    doc.getElementById('labels-clear').dispatch('click');
+
+    expect(doc.getElementById('saved-view-select').value).toBe('');
+    expect(win.location.href).toBe('http://example.test/');
+    expect(state.labelEnvFilter).toBe('');
+    expect(state.labelRoleFilter).toBe('');
+    expect(state.labelOwnerFilter).toBe('');
+    expect(applyCount).toBe(1);
+  });
+
+  it('blank saved view selection clears URL view parameter without changing filters', async () => {
+    const doc = createDocument([
+      'host-search', 'label-env', 'label-role', 'label-owner',
+      'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
+      'select-visible-hosts', 'vuln-filter-section', 'vuln-filter-toggle', 'vuln-toggle-btn',
+      'ansible-filter-section', 'ansible-filter-toggle', 'ansible-toggle-btn',
+      'saved-view-name', 'saved-view-select', 'saved-view-save', 'saved-view-apply',
+      'saved-view-delete', 'saved-view-shared', 'saved-view-default', 'saved-view-status',
+    ]);
+    const win = {
+      window: null,
+      document: doc,
+      console,
+      URL,
+      location: { href: 'http://example.test/?view=DB+view+test' },
+      history: {
+        replaceState: (_state, _title, nextUrl) => { win.location.href = String(nextUrl); },
+      },
+      escapeHtml: (s) => String(s),
+      fetch: async () => ({
+        ok: true,
+        json: async () => ({ items: [] }),
+      }),
+    };
+    win.window = win;
+    run(uiPath, win);
+
+    const state = { labelEnvFilter: 'prod', labelRoleFilter: 'db' };
+    let applyCount = 0;
+    win.phase3HostFiltersUi.initHostFiltersUi({
+      getState: () => state,
+      setState: (patch) => Object.assign(state, patch),
+      syncSelectionState: (_, value) => value,
+      applyHostFilters: () => { applyCount += 1; },
+    });
+
+    doc.getElementById('saved-view-select').value = '';
+    doc.getElementById('saved-view-select').dispatch('change');
+
+    expect(win.location.href).toBe('http://example.test/');
+    expect(state.labelEnvFilter).toBe('prod');
+    expect(state.labelRoleFilter).toBe('db');
+    expect(applyCount).toBe(0);
+  });
+
   it('renders shared saved views owned by another user', async () => {
     const doc = createDocument([
       'host-search', 'label-env', 'label-role', 'label-owner',
