@@ -58,6 +58,20 @@ This is intentionally pragmatic: REST + JSON, no gRPC/protoc requirement.
 ![Screenshot](docs/image.png)
 ## Quick start (server)
 
+### One-command installer
+For a first server, use the terminal installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
+```
+
+It installs host prerequisites on Ubuntu/Debian, clones or updates the repo,
+generates secure secrets, writes `deploy/docker/.env` and `.env`, optionally
+writes host inventories, starts Docker Compose, and can deploy the agent to
+listed hosts.
+
+### Manual setup
+
 ### 1) Prereqs
 - Docker + Docker Compose
 - If needed:
