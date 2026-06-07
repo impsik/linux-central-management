@@ -200,4 +200,49 @@ describe('phase3 host-filter behavior flows', () => {
     expect(state.labelRoleFilter).toBe('');
     expect(applyCount).toBe(1);
   });
+
+  it('renders shared saved views owned by another user', async () => {
+    const doc = createDocument([
+      'host-search', 'label-env', 'label-role', 'label-owner',
+      'labels-clear', 'labels-filter-section', 'labels-filter-toggle', 'labels-toggle-btn',
+      'select-visible-hosts', 'vuln-filter-section', 'vuln-filter-toggle', 'vuln-toggle-btn',
+      'ansible-filter-section', 'ansible-filter-toggle', 'ansible-toggle-btn',
+      'saved-view-name', 'saved-view-select', 'saved-view-save', 'saved-view-apply',
+      'saved-view-delete', 'saved-view-shared', 'saved-view-default', 'saved-view-status',
+    ]);
+    const win = {
+      window: null,
+      document: doc,
+      console,
+      escapeHtml: (s) => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;'),
+      fetch: async () => ({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              name: 'Prod DBs',
+              owner_username: 'admin',
+              is_shared: true,
+              is_default_startup: false,
+              can_edit: false,
+              payload: { labelEnvFilter: 'prod', labelRoleFilter: 'db' },
+            },
+          ],
+        }),
+      }),
+    };
+    win.window = win;
+    run(uiPath, win);
+
+    win.phase3HostFiltersUi.initHostFiltersUi({
+      getState: () => ({}),
+      setState: () => {},
+      syncSelectionState: (_, value) => value,
+      applyHostFilters: () => {},
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(doc.getElementById('saved-view-select').innerHTML).toContain('Prod DBs (shared by admin)');
+  });
 });

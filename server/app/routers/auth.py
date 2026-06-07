@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 import httpx
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel
@@ -964,7 +964,14 @@ def auth_logout(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/views")
-def auth_list_views(scope: str = "hosts", db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
+def auth_list_views(
+    response: Response,
+    scope: str = "hosts",
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_ui_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Vary"] = "Cookie"
     scope_norm = (scope or "hosts").strip().lower()
     rows = db.execute(
         select(AppSavedView, AppUser.username)

@@ -31,5 +31,6 @@ describe('hosts owner filter UI', () => {
     expect(filtersUi).toContain('const labelOwner = String(view.labelOwnerFilter || \'\');');
     expect(filtersUi).toContain("syncSelectionState('labelOwnerFilter', labelOwner);");
     expect(filtersUi).toContain("ownerSel?.addEventListener('change', onLabelsChanged);");
+    expect(filtersUi).toContain("fetch('/auth/views?scope=hosts', { credentials: 'include', cache: 'no-store' })");
   });
 });
