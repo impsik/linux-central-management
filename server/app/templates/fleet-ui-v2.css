@@ -625,6 +625,23 @@ body {
   overflow: visible;
 }
 
+.fleet-main-shell:has(#terminal-tab.active) {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 52px);
+  min-height: calc(100vh - 52px);
+  overflow: hidden;
+}
+
+.fleet-main-shell:has(#terminal-tab.active) #terminal-tab.active {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.fleet-main-shell:has(#terminal-tab.active) #terminal {
+  min-height: 0;
+}
+
 #host-actions {
   padding: 0.75rem 1rem !important;
   border-bottom: 1px solid var(--border);
@@ -1016,5 +1033,10 @@ a,
 
   .fleet-main-shell {
     min-height: auto;
+  }
+
+  .fleet-main-shell:has(#terminal-tab.active) {
+    height: auto;
+    min-height: calc(100vh - 52px);
   }
 }
