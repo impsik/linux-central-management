@@ -65,7 +65,7 @@
     }
 
     async function fetchSavedViews() {
-      const r = await fetch('/auth/views?scope=hosts', { credentials: 'include' });
+      const r = await fetch('/auth/views?scope=hosts', { credentials: 'include', cache: 'no-store' });
       if (!r.ok) throw new Error(`saved views fetch failed (${r.status})`);
       const d = await r.json();
       savedViewsCache = Array.isArray(d?.items) ? d.items : [];
