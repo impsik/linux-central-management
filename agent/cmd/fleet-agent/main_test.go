@@ -182,3 +182,24 @@ func TestParseOSReleaseValue(t *testing.T) {
 		t.Fatalf("VERSION_ID = %q, want 9.8", got)
 	}
 }
+
+func TestParseRpmInfoFieldsCapturesMultilineDescription(t *testing.T) {
+	out := "" +
+		"Name        : abattis-cantarell-fonts\n" +
+		"Version     : 0.301\n" +
+		"Release     : 4.el9\n" +
+		"Architecture: noarch\n" +
+		"Summary     : Humanist sans serif font\n" +
+		"Description :\n" +
+		"Cantarell is a humanist sans serif font family.\n" +
+		"It is used by GNOME and related desktop components.\n"
+
+	fields := parseRpmInfoFields(out)
+	if fields["summary"] != "Humanist sans serif font" {
+		t.Fatalf("summary = %q", fields["summary"])
+	}
+	wantDesc := "Cantarell is a humanist sans serif font family.\nIt is used by GNOME and related desktop components."
+	if fields["description"] != wantDesc {
+		t.Fatalf("description = %q, want %q", fields["description"], wantDesc)
+	}
+}

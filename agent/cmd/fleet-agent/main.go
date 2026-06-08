@@ -1128,33 +1128,44 @@ func queryRpmPkgInfo(ctx context.Context, pkgName string) (string, string, int, 
 	rpmOut, rpmErr := rpmCmd.CombinedOutput()
 	info.Raw["rpm_info"] = string(rpmOut)
 	if rpmErr == nil {
-		for _, line := range strings.Split(string(rpmOut), "\n") {
-			if key, val, ok := strings.Cut(line, ":"); ok {
-				key = strings.TrimSpace(strings.ToLower(key))
-				val = strings.TrimSpace(val)
-				switch key {
-				case "version":
-					info.InstalledVersion = val
-				case "release":
-					if info.InstalledVersion != "" && val != "" {
-						info.InstalledVersion = info.InstalledVersion + "-" + val
-					}
-				case "architecture":
-					info.Architecture = val
-				case "group":
-					info.Section = val
-				case "vendor", "packager":
-					if info.Maintainer == "" {
-						info.Maintainer = val
-					}
-				case "url":
-					info.Homepage = val
-				case "summary":
-					info.Summary = val
-				case "description":
-					info.Description = val
-				}
-			}
+		fields := parseRpmInfoFields(string(rpmOut))
+		info.InstalledVersion = fields["version"]
+		if rel := fields["release"]; info.InstalledVersion != "" && rel != "" {
+			info.InstalledVersion = info.InstalledVersion + "-" + rel
+		}
+		info.Architecture = fields["architecture"]
+		info.Section = fields["group"]
+		if fields["vendor"] != "" {
+			info.Maintainer = fields["vendor"]
+		} else {
+			info.Maintainer = fields["packager"]
+		}
+		info.Homepage = fields["url"]
+		info.Summary = fields["summary"]
+		info.Description = fields["description"]
+	}
+
+	applyCandidateFields := func(fields map[string]string) {
+		if info.CandidateVersion == "" && fields["version"] != "" {
+			info.CandidateVersion = fields["version"]
+		}
+		if rel := fields["release"]; info.CandidateVersion != "" && rel != "" && !strings.Contains(info.CandidateVersion, "-") {
+			info.CandidateVersion = info.CandidateVersion + "-" + rel
+		}
+		if info.Architecture == "" {
+			info.Architecture = fields["arch"]
+		}
+		if info.Architecture == "" {
+			info.Architecture = fields["architecture"]
+		}
+		if info.Summary == "" {
+			info.Summary = fields["summary"]
+		}
+		if info.Description == "" {
+			info.Description = fields["description"]
+		}
+		if info.Homepage == "" {
+			info.Homepage = fields["url"]
 		}
 	}
 
@@ -1162,36 +1173,7 @@ func queryRpmPkgInfo(ctx context.Context, pkgName string) (string, string, int, 
 		dnfCmd := exec.CommandContext(ctx, frontend, "info", pkgName)
 		dnfOut, _ := dnfCmd.CombinedOutput()
 		info.Raw[frontend+"_info"] = string(dnfOut)
-		for _, line := range strings.Split(string(dnfOut), "\n") {
-			if key, val, ok := strings.Cut(line, ":"); ok {
-				key = strings.TrimSpace(strings.ToLower(key))
-				val = strings.TrimSpace(val)
-				switch key {
-				case "available packages":
-					continue
-				case "version":
-					if info.CandidateVersion == "" {
-						info.CandidateVersion = val
-					}
-				case "release":
-					if info.CandidateVersion != "" && val != "" && !strings.Contains(info.CandidateVersion, "-") {
-						info.CandidateVersion = info.CandidateVersion + "-" + val
-					}
-				case "arch":
-					if info.Architecture == "" {
-						info.Architecture = val
-					}
-				case "summary":
-					if info.Summary == "" {
-						info.Summary = val
-					}
-				case "url":
-					if info.Homepage == "" {
-						info.Homepage = val
-					}
-				}
-			}
-		}
+		applyCandidateFields(parseRpmInfoFields(string(dnfOut)))
 	}
 
 	j, err := json.Marshal(info)
@@ -1199,6 +1181,55 @@ func queryRpmPkgInfo(ctx context.Context, pkgName string) (string, string, int, 
 		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
 	}
 	return string(j), "", 0, ""
+}
+
+func isKnownRpmInfoKey(key string) bool {
+	switch key {
+	case "name", "epoch", "version", "release", "architecture", "arch", "install date", "group", "size", "license", "signature", "source rpm", "build date", "build host", "packager", "vendor", "url", "summary", "description", "repository", "from repo":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseRpmInfoFields(out string) map[string]string {
+	fields := map[string]string{}
+	inDesc := false
+	var descLines []string
+
+	for _, raw := range strings.Split(strings.ReplaceAll(out, "\r\n", "\n"), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if keyRaw, valRaw, ok := strings.Cut(line, ":"); ok {
+			key := strings.TrimSpace(strings.ToLower(keyRaw))
+			val := strings.TrimSpace(valRaw)
+			if inDesc && key != "description" && !isKnownRpmInfoKey(key) {
+				descLines = append(descLines, strings.TrimSpace(line))
+				continue
+			}
+			if key == "description" {
+				inDesc = true
+				if val != "" {
+					descLines = append(descLines, val)
+				}
+				continue
+			}
+			if isKnownRpmInfoKey(key) {
+				inDesc = false
+				if val != "" {
+					fields[key] = val
+				}
+				continue
+			}
+		}
+		if inDesc {
+			descLines = append(descLines, strings.TrimSpace(line))
+		}
+	}
+
+	if len(descLines) > 0 {
+		fields["description"] = strings.TrimSpace(strings.Join(descLines, "\n"))
+	}
+	return fields
 }
 
 func queryPkgUpdates(ctx context.Context, refresh bool) (string, string, int, string) {
