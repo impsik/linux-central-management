@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -39,14 +40,55 @@ func commandPath(candidates ...string) string {
 	return ""
 }
 
+func osReleaseID() string {
+	b, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "ID=") {
+			return strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "ID=")), "\"")
+		}
+	}
+	return ""
+}
+
+func prefersSSHConsoleBackend() bool {
+	backend := strings.ToLower(strings.TrimSpace(getenv("FLEET_TERMINAL_BACKEND", "auto")))
+	if backend == "ssh" {
+		return true
+	}
+	if backend == "login" {
+		return false
+	}
+	switch strings.ToLower(osReleaseID()) {
+	case "rhel", "redhat", "rocky", "almalinux", "centos", "fedora":
+		return true
+	default:
+		return false
+	}
+}
+
 func loginCommand() *exec.Cmd {
 	loginPath := commandPath("/bin/login", "/usr/bin/login", "login")
 	agettyPath := commandPath("/sbin/agetty", "/usr/sbin/agetty", "agetty")
+	sshPath := commandPath("/usr/bin/ssh", "/bin/ssh", "ssh")
 	if loginPath == "" {
 		loginPath = "/bin/login"
 	}
 
 	if os.Geteuid() == 0 {
+		if agettyPath != "" && sshPath != "" && prefersSSHConsoleBackend() {
+			return exec.Command(
+				agettyPath,
+				"--noclear",
+				"--login-program", sshPath,
+				"--login-options", "-tt -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=keyboard-interactive,password -o PubkeyAuthentication=no \\u@localhost",
+				"-",
+				"xterm",
+			)
+		}
 		if agettyPath != "" {
 			return exec.Command(agettyPath, "--noclear", "--login-program", loginPath, "-", "xterm")
 		}
