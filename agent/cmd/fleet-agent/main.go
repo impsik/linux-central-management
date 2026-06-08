@@ -102,7 +102,7 @@ func main() {
 		AgentID:   cfg.AgentID,
 		Hostname:  hostname,
 		Labels:    cfg.Labels,
-		OSID:      "ubuntu",
+		OSID:      readOSID(),
 		OSVersion: readOSVersion(),
 		Kernel:    readKernel(),
 	}
@@ -1819,17 +1819,31 @@ func runInventoryNow(ctx context.Context, client *http.Client, serverURL, agentI
 	return string(b), "", 0, ""
 }
 
-func readOSVersion() string {
+func parseOSReleaseValue(content, key string) string {
+	prefix := key + "="
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			return strings.Trim(strings.TrimSpace(line[len(prefix):]), "\"")
+		}
+	}
+	return ""
+}
+
+func readOSReleaseValue(key string) string {
 	b, err := os.ReadFile("/etc/os-release")
 	if err != nil {
 		return ""
 	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, "VERSION_ID=") {
-			return strings.Trim(line[len("VERSION_ID="):], "\"")
-		}
-	}
-	return ""
+	return parseOSReleaseValue(string(b), key)
+}
+
+func readOSID() string {
+	return readOSReleaseValue("ID")
+}
+
+func readOSVersion() string {
+	return readOSReleaseValue("VERSION_ID")
 }
 
 func readKernel() string {

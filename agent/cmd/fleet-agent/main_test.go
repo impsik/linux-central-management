@@ -172,3 +172,13 @@ func TestParseRpmCheckUpdateLine(t *testing.T) {
 		t.Fatal("metadata line should be ignored")
 	}
 }
+
+func TestParseOSReleaseValue(t *testing.T) {
+	content := "NAME=\"Red Hat Enterprise Linux\"\nID=\"rhel\"\nVERSION_ID=\"9.8\"\n"
+	if got := parseOSReleaseValue(content, "ID"); got != "rhel" {
+		t.Fatalf("ID = %q, want rhel", got)
+	}
+	if got := parseOSReleaseValue(content, "VERSION_ID"); got != "9.8" {
+		t.Fatalf("VERSION_ID = %q, want 9.8", got)
+	}
+}
