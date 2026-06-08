@@ -24,6 +24,40 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+func commandPath(candidates ...string) string {
+	for _, candidate := range candidates {
+		if candidate == "" {
+			continue
+		}
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		if path, err := exec.LookPath(candidate); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+func loginCommand() *exec.Cmd {
+	loginPath := commandPath("/bin/login", "/usr/bin/login", "login")
+	agettyPath := commandPath("/sbin/agetty", "/usr/sbin/agetty", "agetty")
+	if loginPath == "" {
+		loginPath = "/bin/login"
+	}
+
+	if os.Geteuid() == 0 {
+		if agettyPath != "" {
+			return exec.Command(agettyPath, "--noclear", "--login-program", loginPath, "-", "xterm")
+		}
+		return exec.Command(loginPath)
+	}
+	if agettyPath != "" {
+		return exec.Command("sudo", "-n", agettyPath, "--noclear", "--login-program", loginPath, "-", "xterm")
+	}
+	return exec.Command("sudo", "-n", loginPath)
+}
+
 func StartTerminalServer() {
 	// Terminal feature is intentionally opt-in.
 	// Back-compat env var names:
@@ -61,18 +95,13 @@ func StartTerminalServer() {
 		}
 		defer conn.Close()
 
-		// VMware-console style: always present a real login prompt.
-		// If the agent isn't running as root, try via passwordless sudo.
-		var cmd *exec.Cmd
-		if os.Geteuid() == 0 {
-			cmd = exec.Command("/bin/login")
-		} else {
-			cmd = exec.Command("sudo", "-n", "/bin/login")
-		}
+		// VMware-console style: always present a real login prompt. agetty is
+		// preferred because direct login(1) can attach silently on some RHEL PTYs.
+		cmd := loginCommand()
 		ptmx, err := pty.Start(cmd)
 		if err != nil {
 			// Best-effort error to the client before closing.
-			conn.WriteMessage(websocket.TextMessage, []byte("[ERROR] Cannot start login. Ensure agent runs as root or allow sudo NOPASSWD for /bin/login.\r\n"))
+			conn.WriteMessage(websocket.TextMessage, []byte("[ERROR] Cannot start login. Ensure agent runs as root or allow sudo NOPASSWD for login/agetty.\r\n"))
 			return
 		}
 		defer ptmx.Close()
