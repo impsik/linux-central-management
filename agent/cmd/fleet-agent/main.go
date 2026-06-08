@@ -8,9 +8,11 @@ import (
 	"github.com/yourorg/fleet-agent/internal"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -163,15 +165,17 @@ func main() {
 				}
 				mustPostJSON(client, cfg.ServerURL+"/agent/inventory/packages", inv, cfg.AgentToken)
 				// Also send upgradable package snapshot (no apt-get update here; uses local apt cache)
-				if updates, uerr := collectUpgradablePackages(ctx); uerr == nil {
-					upInv := UpdatesInventoryPayload{
-						AgentID:       cfg.AgentID,
-						CheckedAtUnix: time.Now().Unix(),
-						Updates:       updates,
-					}
-					mustPostJSON(client, cfg.ServerURL+"/agent/inventory/package-updates", upInv, cfg.AgentToken)
-				}
 				lastInv = now
+				go func() {
+					if updates, uerr := collectUpgradablePackages(context.Background()); uerr == nil {
+						upInv := UpdatesInventoryPayload{
+							AgentID:       cfg.AgentID,
+							CheckedAtUnix: time.Now().Unix(),
+							Updates:       updates,
+						}
+						mustPostJSON(client, cfg.ServerURL+"/agent/inventory/package-updates", upInv, cfg.AgentToken)
+					}
+				}()
 			} else {
 				fmt.Fprintf(os.Stderr, "inventory error: %v\n", err)
 			}
@@ -2294,14 +2298,7 @@ func querySystemMetrics(ctx context.Context) (string, string, int, string) {
 	}
 
 	// Get CPU info (vCPUs and load)
-	// Get vCPU count from /proc/cpuinfo
-	cpuInfoCmd := exec.CommandContext(queryCtx, "grep", "-c", "^processor", "/proc/cpuinfo")
-	cpuInfoOut, err := cpuInfoCmd.Output()
-	if err == nil {
-		var vcpus int
-		fmt.Sscanf(strings.TrimSpace(string(cpuInfoOut)), "%d", &vcpus)
-		metrics.CPU.VCPUs = vcpus
-	}
+	metrics.CPU.VCPUs = runtime.NumCPU()
 
 	// Get load average from /proc/loadavg
 	loadCmd := exec.CommandContext(queryCtx, "cat", "/proc/loadavg")
@@ -2314,23 +2311,10 @@ func querySystemMetrics(ctx context.Context) (string, string, int, string) {
 		metrics.CPU.Load15Min = load15
 	}
 
-	// Get IP addresses using ip or ifconfig
-	ipCmd := exec.CommandContext(queryCtx, "ip", "-4", "addr", "show")
-	ipOut, err := ipCmd.Output()
-	if err == nil {
-		lines := strings.Split(string(ipOut), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "inet ") {
-				parts := strings.Fields(line)
-				if len(parts) >= 2 {
-					ip := strings.Split(parts[1], "/")[0]
-					if ip != "127.0.0.1" {
-						metrics.IPAddresses = append(metrics.IPAddresses, ip)
-					}
-				}
-			}
-		}
+	// Get IP addresses using Go's network interfaces first; shell tools can be
+	// absent on minimal RHEL installs.
+	if ips := localIPv4Addresses(); len(ips) > 0 {
+		metrics.IPAddresses = ips
 	} else {
 		// Fallback to ifconfig
 		ifconfigCmd := exec.CommandContext(queryCtx, "ifconfig")
@@ -2363,6 +2347,46 @@ func querySystemMetrics(ctx context.Context) (string, string, int, string) {
 	}
 
 	return string(jsonOut), "", 0, ""
+}
+
+func localIPv4Addresses() []string {
+	var out []string
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return out
+	}
+	seen := map[string]bool{}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil {
+				continue
+			}
+			ip4 := ip.To4()
+			if ip4 == nil || ip4.IsLoopback() {
+				continue
+			}
+			s := ip4.String()
+			if !seen[s] {
+				seen[s] = true
+				out = append(out, s)
+			}
+		}
+	}
+	return out
 }
 
 func queryTopProcesses(ctx context.Context) (string, string, int, string) {
