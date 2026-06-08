@@ -691,7 +691,6 @@ body {
 .section-card,
 .overview-card,
 .load-graph-container,
-.user-card,
 .service-card,
 .filter-section,
 .modal-panel {
@@ -704,10 +703,58 @@ body {
 .admin-card,
 .metric-card,
 .load-graph-container,
-.user-card,
 .service-card,
 .filter-section {
   padding: 1rem;
+}
+
+.user-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 88%, var(--panel-2));
+  box-shadow: none;
+  padding: 1rem;
+}
+
+.user-name-link {
+  color: var(--status-link-text);
+  text-decoration: none;
+}
+
+.user-name-link:hover {
+  text-decoration: underline;
+}
+
+.user-details {
+  color: var(--muted-2);
+}
+
+.user-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.user-badges .sudo-badge {
+  margin-top: 0.5rem;
+}
+
+.sudo-badge {
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.sudo-badge.yes {
+  background: var(--status-ok-bg);
+  color: var(--status-ok-text);
+  border-color: var(--status-ok-border);
+}
+
+.sudo-badge.no {
+  background: var(--pkg-badge-bad-bg);
+  color: var(--pkg-badge-bad-text);
+  border-color: var(--pkg-badge-bad-border);
 }
 
 .admin-card-title {
