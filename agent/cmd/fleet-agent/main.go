@@ -1910,6 +1910,62 @@ func parsePasswdStatusAll(output string) map[string]string {
 	return m
 }
 
+func parseGroupMembers(output string) map[string]bool {
+	members := make(map[string]bool)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		parts := strings.Split(strings.TrimSpace(line), ":")
+		if len(parts) < 4 {
+			continue
+		}
+		for _, member := range strings.Split(parts[3], ",") {
+			member = strings.TrimSpace(member)
+			if member != "" {
+				members[member] = true
+			}
+		}
+	}
+	return members
+}
+
+func parseUserGroups(output string) map[string]bool {
+	groups := make(map[string]bool)
+	for _, group := range strings.Fields(output) {
+		groups[group] = true
+	}
+	return groups
+}
+
+func hasAnyNamedGroup(groups map[string]bool, names ...string) bool {
+	for _, name := range names {
+		if groups[name] {
+			return true
+		}
+	}
+	return false
+}
+
+func userHasSudoAccess(ctx context.Context, username string, sudoGroupUsers map[string]bool) bool {
+	if sudoGroupUsers[username] {
+		return true
+	}
+	if _, statErr := os.Stat(fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)); statErr == nil {
+		return true
+	}
+
+	idCmd := exec.CommandContext(ctx, "id", "-nG", username)
+	if out, err := idCmd.Output(); err == nil {
+		if hasAnyNamedGroup(parseUserGroups(string(out)), "sudo", "wheel", "admin") {
+			return true
+		}
+	}
+
+	sudoCmd := exec.CommandContext(ctx, "sudo", "-n", "-l", "-U", username)
+	if _, err := sudoCmd.CombinedOutput(); err == nil {
+		return true
+	}
+	return false
+}
+
 func queryUsers(ctx context.Context) (string, string, int, string) {
 	// Create a context with timeout to prevent hanging
 	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -1936,15 +1992,8 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 	sudoGroupUsers := make(map[string]bool)
 	sudoGroupCmd := exec.CommandContext(queryCtx, "getent", "group", "sudo")
 	if sudoGroupOut, err := sudoGroupCmd.Output(); err == nil {
-		// Parse: sudo:x:27:user1,user2,user3
-		parts := strings.Split(strings.TrimSpace(string(sudoGroupOut)), ":")
-		if len(parts) >= 4 {
-			members := strings.Split(parts[3], ",")
-			for _, member := range members {
-				if member != "" {
-					sudoGroupUsers[member] = true
-				}
-			}
+		for member := range parseGroupMembers(string(sudoGroupOut)) {
+			sudoGroupUsers[member] = true
 		}
 	}
 
@@ -1964,14 +2013,8 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 	for _, groupName := range []string{"wheel", "admin"} {
 		groupCmd := exec.CommandContext(queryCtx, "getent", "group", groupName)
 		if groupOut, err := groupCmd.Output(); err == nil {
-			parts := strings.Split(strings.TrimSpace(string(groupOut)), ":")
-			if len(parts) >= 4 {
-				members := strings.Split(parts[3], ",")
-				for _, member := range members {
-					if member != "" {
-						sudoGroupUsers[member] = true
-					}
-				}
+			for member := range parseGroupMembers(string(groupOut)) {
+				sudoGroupUsers[member] = true
 			}
 		}
 	}
@@ -1989,16 +2032,7 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		home := parts[5]
 		shell := parts[6]
 
-		// Check if user has sudo access.
-		// Prefer fast group-based detection, but also account for Fleet-managed per-user sudoers
-		// entries (/etc/sudoers.d/fleet-<username>) because those can grant sudo even when the
-		// user is not in sudo/wheel/admin groups.
-		hasSudo := sudoGroupUsers[username]
-		if !hasSudo {
-			if _, statErr := os.Stat(fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)); statErr == nil {
-				hasSudo = true
-			}
-		}
+		hasSudo := userHasSudoAccess(queryCtx, username, sudoGroupUsers)
 
 		// "Locked" should reflect practical login-blocking state for SSH/user presence.
 		// Password lock alone (status=L) is not sufficient because SSH key auth can still work.

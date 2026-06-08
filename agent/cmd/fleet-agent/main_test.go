@@ -43,6 +43,26 @@ func TestParsePasswdStatusAll(t *testing.T) {
 	}
 }
 
+func TestParseGroupMembers(t *testing.T) {
+	members := parseGroupMembers("wheel:x:10:imre,deploy\n")
+	if !members["imre"] || !members["deploy"] {
+		t.Fatalf("group members = %#v, want imre and deploy", members)
+	}
+	if members[""] {
+		t.Fatalf("empty member should not be recorded: %#v", members)
+	}
+}
+
+func TestParseUserGroupsAndNamedGroupMatch(t *testing.T) {
+	groups := parseUserGroups("imre wheel docker")
+	if !hasAnyNamedGroup(groups, "sudo", "wheel", "admin") {
+		t.Fatalf("groups = %#v, want wheel sudo match", groups)
+	}
+	if hasAnyNamedGroup(groups, "sudo", "admin") {
+		t.Fatalf("groups = %#v, should not match sudo/admin", groups)
+	}
+}
+
 func TestNormalizeSudoProfile(t *testing.T) {
 	cases := map[string]string{
 		"":         "B",
