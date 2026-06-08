@@ -85,9 +85,3 @@ Keep `.env` files private.
 - MFA is enabled for privileged users by default.
 - The browser terminal feature is powerful; enable it only where needed.
 
-## License
-
-This project is released under the MIT License.
-
-It is free to use for individuals and companies, including commercial internal
-use. See [LICENSE](LICENSE) for details.
