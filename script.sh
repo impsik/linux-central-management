@@ -251,6 +251,10 @@ REMOTE_TERMINAL_TOKEN="${TERM_TOKEN:-}"
 if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
   log_info "Installing/updating fleet-agent systemd service on targets"
 
+  # Stop stray manually launched agents before systemd starts the managed one.
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "pkill -x fleet-agent || true" \
+    || log_warn "Agent deploy: could not reach some hosts (pre-systemd pkill step)"
+
   # Write env file on the REMOTE host (so hostname is correct)
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"\$(hostname -s)\"; SERVER_URL=\"$SERVER_URL\"; TOKEN=\"$REMOTE_AGENT_TOKEN\"; TERM_TOKEN=\"$REMOTE_TERMINAL_TOKEN\"; cat > /etc/fleet-agent.env <<EOF
 FLEET_SERVER_URL=\$SERVER_URL
@@ -289,16 +293,16 @@ EOF
 chmod 0644 /etc/systemd/system/fleet-agent.service" \
     || log_warn "Agent deploy: could not reach some hosts (systemd unit step)"
 
+  if [ -n "$REMOTE_TERMINAL_TOKEN" ]; then
+    ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then firewall-cmd --add-port=18080/tcp --permanent && firewall-cmd --reload; fi" \
+      || log_warn "Agent deploy: could not update firewalld for terminal port 18080"
+  fi
+
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl is-active fleet-agent" \
     || log_warn "Agent deploy: could not reach some hosts (systemd enable/restart step)"
 else
   log_warn "SERVER_URL and/or AGENT_TOKEN not set; skipping systemd service setup. Binary copied only."
 fi
-
-# Kill any stray user-run agent instances (to avoid duplicate heartbeats / confusion)
-# (Don't use pkill -f with a pattern that appears in our own command line.)
-ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "pkill -x fleet-agent || true" \
-  || log_warn "Agent deploy: could not reach some hosts (pkill step)"
 
 AGENT_TOKEN="${AGENT_TOKEN:-}"
 TERM_TOKEN="${TERM_TOKEN:-}"

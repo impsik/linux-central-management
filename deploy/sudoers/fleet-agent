@@ -6,9 +6,15 @@ Cmnd_Alias FLEET_APT_REINSTALL = /usr/bin/apt-get -y install --reinstall *
 Cmnd_Alias FLEET_APT_REINSTALL_I = /usr/bin/apt-get install --reinstall *
 Cmnd_Alias FLEET_APT_REMOVE = /usr/bin/apt-get -y remove *
 Cmnd_Alias FLEET_APT_REMOVE_I = /usr/bin/apt-get remove *
+Cmnd_Alias FLEET_DNF_MAKECACHE = /usr/bin/dnf -y makecache, /usr/bin/yum -y makecache
+Cmnd_Alias FLEET_DNF_UPGRADE = /usr/bin/dnf -y upgrade *, /usr/bin/yum -y upgrade *
+Cmnd_Alias FLEET_DNF_INSTALL = /usr/bin/dnf -y install *, /usr/bin/yum -y install *
+Cmnd_Alias FLEET_DNF_REINSTALL = /usr/bin/dnf -y reinstall *, /usr/bin/yum -y reinstall *
+Cmnd_Alias FLEET_DNF_REMOVE = /usr/bin/dnf -y remove *, /usr/bin/yum -y remove *
+Cmnd_Alias FLEET_DNF_AUTOREMOVE = /usr/bin/dnf -y autoremove, /usr/bin/yum -y autoremove
 Cmnd_Alias FLEET_PASSWD = /usr/bin/passwd -S *, /usr/bin/passwd -l *, /usr/bin/passwd -u *
 Cmnd_Alias FLEET_GETENT = /usr/bin/getent shadow *
 Cmnd_Alias FLEET_SYSTEMCTL = /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl enable *, /usr/bin/systemctl disable *
 Cmnd_Alias FLEET_USERMOD = /usr/sbin/usermod --expiredate *, /usr/sbin/usermod -s *
 
-%fleet-agent ALL=(root) NOPASSWD: FLEET_APT_UPDATE, FLEET_APT_UPGRADE, FLEET_APT_UPGRADE_I, FLEET_APT_REINSTALL, FLEET_APT_REINSTALL_I, FLEET_APT_REMOVE, FLEET_APT_REMOVE_I, FLEET_PASSWD, FLEET_GETENT, FLEET_SYSTEMCTL, FLEET_USERMOD
+%fleet-agent ALL=(root) NOPASSWD: FLEET_APT_UPDATE, FLEET_APT_UPGRADE, FLEET_APT_UPGRADE_I, FLEET_APT_REINSTALL, FLEET_APT_REINSTALL_I, FLEET_APT_REMOVE, FLEET_APT_REMOVE_I, FLEET_DNF_MAKECACHE, FLEET_DNF_UPGRADE, FLEET_DNF_INSTALL, FLEET_DNF_REINSTALL, FLEET_DNF_REMOVE, FLEET_DNF_AUTOREMOVE, FLEET_PASSWD, FLEET_GETENT, FLEET_SYSTEMCTL, FLEET_USERMOD

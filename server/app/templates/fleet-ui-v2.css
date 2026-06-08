@@ -710,6 +710,48 @@ body {
   padding: 1rem;
 }
 
+.user-name-link {
+  color: var(--status-link-text);
+  text-decoration: none;
+}
+
+.user-name-link:hover {
+  text-decoration: underline;
+}
+
+.user-details {
+  color: var(--muted-2);
+}
+
+.user-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.user-badges .sudo-badge {
+  margin-top: 0.5rem;
+}
+
+.sudo-badge {
+  padding: 0.2rem 0.55rem;
+  border: 1px solid transparent;
+  border-radius: 3px;
+}
+
+.sudo-badge.yes {
+  background: var(--status-ok-bg);
+  color: var(--status-ok-text);
+  border-color: var(--status-ok-border);
+}
+
+.sudo-badge.no {
+  background: var(--pkg-badge-bad-bg);
+  color: var(--pkg-badge-bad-text);
+  border-color: var(--pkg-badge-bad-border);
+}
+
 .admin-card-title {
   margin: -1rem -1rem 1rem;
   padding: 0.75rem 1rem;

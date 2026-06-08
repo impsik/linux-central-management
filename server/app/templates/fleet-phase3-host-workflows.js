@@ -34,15 +34,15 @@
         return `
           <div class="user-card ${isNew ? 'new-user' : ''}" data-username="${w.escapeHtml(user.username)}">
             <div class="user-info">
-              <div class="user-name"><a href="#" class="user-name-link" data-username="${w.escapeHtml(user.username)}" style="text-decoration:underline;">${w.escapeHtml(user.username)}</a>${isNew ? '<span class="new-user-badge">NEW</span>' : ''}</div>
+              <div class="user-name"><a href="#" class="user-name-link" data-username="${w.escapeHtml(user.username)}">${w.escapeHtml(user.username)}</a>${isNew ? '<span class="new-user-badge">NEW</span>' : ''}</div>
               <div class="user-details">
                 UID: ${w.escapeHtml(user.uid)} | GID: ${w.escapeHtml(user.gid)} | Shell: ${w.escapeHtml(user.shell || 'N/A')}${user.home ? ` | Home: ${w.escapeHtml(user.home)}` : ''}
               </div>
-              <div style="margin-top: 0.5rem;">
+              <div class="user-badges">
                 <span class="sudo-badge ${user.has_sudo ? 'yes' : 'no'}">
                   ${user.has_sudo ? '✓ Has Sudo' : '✗ No Sudo'}
                 </span>
-                ${user.is_locked ? '<span class="sudo-badge no" style="margin-left: 0.5rem;">🔒 Locked</span>' : ''}
+                ${user.is_locked ? '<span class="sudo-badge no">Locked</span>' : ''}
               </div>
             </div>
             <div class="service-actions">

@@ -1167,14 +1167,15 @@ body {
 
 .user-card,
 .service-card {
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 88%, var(--panel-2));
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1rem;
   margin-bottom: 1rem;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 1rem;
 }
 
 .user-card.new-user {
@@ -1207,6 +1208,15 @@ body {
   margin-bottom: 0.25rem;
 }
 
+.user-name-link {
+  color: var(--status-link-text);
+  text-decoration: none;
+}
+
+.user-name-link:hover {
+  text-decoration: underline;
+}
+
 .user-details,
 .service-details {
   font-size: 0.875rem;
@@ -1214,22 +1224,38 @@ body {
 }
 
 .sudo-badge {
-  display: inline-block;
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   margin-top: 0.5rem;
+  border: 1px solid transparent;
 }
 
 .sudo-badge.yes {
-  background: color-mix(in srgb, var(--success) 18%, transparent);
-  color: color-mix(in srgb, var(--success) 80%, var(--text));
+  background: var(--status-ok-bg);
+  color: var(--status-ok-text);
+  border-color: var(--status-ok-border);
 }
 
 .sudo-badge.no {
-  background: color-mix(in srgb, var(--danger) 18%, transparent);
-  color: color-mix(in srgb, var(--danger) 80%, var(--text));
+  background: var(--pkg-badge-bad-bg);
+  color: var(--pkg-badge-bad-text);
+  border-color: var(--pkg-badge-bad-border);
+}
+
+.user-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.user-badges .sudo-badge {
+  margin-top: 0.5rem;
 }
 
 .label-badges {

@@ -13,6 +13,7 @@ class AgentRegister(BaseModel):
 class PackagesInventory(BaseModel):
     agent_id: str
     collected_at_unix: int
+    manager: Optional[str] = None
     packages: List[dict]
 
 class PackageUpdateItem(BaseModel):

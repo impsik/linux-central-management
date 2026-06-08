@@ -43,6 +43,26 @@ func TestParsePasswdStatusAll(t *testing.T) {
 	}
 }
 
+func TestParseGroupMembers(t *testing.T) {
+	members := parseGroupMembers("wheel:x:10:imre,deploy\n")
+	if !members["imre"] || !members["deploy"] {
+		t.Fatalf("group members = %#v, want imre and deploy", members)
+	}
+	if members[""] {
+		t.Fatalf("empty member should not be recorded: %#v", members)
+	}
+}
+
+func TestParseUserGroupsAndNamedGroupMatch(t *testing.T) {
+	groups := parseUserGroups("imre wheel docker")
+	if !hasAnyNamedGroup(groups, "sudo", "wheel", "admin") {
+		t.Fatalf("groups = %#v, want wheel sudo match", groups)
+	}
+	if hasAnyNamedGroup(groups, "sudo", "admin") {
+		t.Fatalf("groups = %#v, should not match sudo/admin", groups)
+	}
+}
+
 func TestNormalizeSudoProfile(t *testing.T) {
 	cases := map[string]string{
 		"":         "B",
@@ -146,5 +166,60 @@ func TestServiceInventoryEnabledFalseWhenServiceAndSocketDisabled(t *testing.T) 
 		return false
 	}) {
 		t.Fatal("ssh inventory enabled = true, want false when service and socket are disabled")
+	}
+}
+
+func TestSplitRpmNameArch(t *testing.T) {
+	name, arch := splitRpmNameArch("openssl-libs.x86_64")
+	if name != "openssl-libs" || arch != "x86_64" {
+		t.Fatalf("splitRpmNameArch returned %q/%q", name, arch)
+	}
+	name, arch = splitRpmNameArch("python3.11.noarch")
+	if name != "python3.11" || arch != "noarch" {
+		t.Fatalf("splitRpmNameArch with dotted name returned %q/%q", name, arch)
+	}
+}
+
+func TestParseRpmCheckUpdateLine(t *testing.T) {
+	got, ok := parseRpmCheckUpdateLine("openssl-libs.x86_64 1:3.2.2-6.el9_5 baseos")
+	if !ok {
+		t.Fatal("parseRpmCheckUpdateLine returned ok=false")
+	}
+	if got.Name != "openssl-libs" || got.Arch != "x86_64" || got.CandidateVersion != "1:3.2.2-6.el9_5" {
+		t.Fatalf("parsed RPM update = %#v", got)
+	}
+	if _, ok := parseRpmCheckUpdateLine("Last metadata expiration check: 0:03:12 ago"); ok {
+		t.Fatal("metadata line should be ignored")
+	}
+}
+
+func TestParseOSReleaseValue(t *testing.T) {
+	content := "NAME=\"Red Hat Enterprise Linux\"\nID=\"rhel\"\nVERSION_ID=\"9.8\"\n"
+	if got := parseOSReleaseValue(content, "ID"); got != "rhel" {
+		t.Fatalf("ID = %q, want rhel", got)
+	}
+	if got := parseOSReleaseValue(content, "VERSION_ID"); got != "9.8" {
+		t.Fatalf("VERSION_ID = %q, want 9.8", got)
+	}
+}
+
+func TestParseRpmInfoFieldsCapturesMultilineDescription(t *testing.T) {
+	out := "" +
+		"Name        : abattis-cantarell-fonts\n" +
+		"Version     : 0.301\n" +
+		"Release     : 4.el9\n" +
+		"Architecture: noarch\n" +
+		"Summary     : Humanist sans serif font\n" +
+		"Description :\n" +
+		"Cantarell is a humanist sans serif font family.\n" +
+		"It is used by GNOME and related desktop components.\n"
+
+	fields := parseRpmInfoFields(out)
+	if fields["summary"] != "Humanist sans serif font" {
+		t.Fatalf("summary = %q", fields["summary"])
+	}
+	wantDesc := "Cantarell is a humanist sans serif font family.\nIt is used by GNOME and related desktop components."
+	if fields["description"] != wantDesc {
+		t.Fatalf("description = %q, want %q", fields["description"], wantDesc)
 	}
 }
