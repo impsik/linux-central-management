@@ -2,6 +2,7 @@ package internal
 
 import (
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -73,21 +74,22 @@ func prefersSSHConsoleBackend() bool {
 func loginCommand() *exec.Cmd {
 	loginPath := commandPath("/bin/login", "/usr/bin/login", "login")
 	agettyPath := commandPath("/sbin/agetty", "/usr/sbin/agetty", "agetty")
-	sshPath := commandPath("/usr/bin/ssh", "/bin/ssh", "ssh")
 	if loginPath == "" {
 		loginPath = "/bin/login"
 	}
 
 	if os.Geteuid() == 0 {
-		if agettyPath != "" && sshPath != "" && prefersSSHConsoleBackend() {
-			return exec.Command(
-				agettyPath,
-				"--noclear",
-				"--login-program", sshPath,
-				"--login-options", "-tt -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PreferredAuthentications=keyboard-interactive,password -o PubkeyAuthentication=no \\u@localhost",
-				"-",
-				"xterm",
-			)
+		if agettyPath != "" && prefersSSHConsoleBackend() {
+			if self, err := os.Executable(); err == nil && self != "" {
+				return exec.Command(
+					agettyPath,
+					"--noclear",
+					"--login-program", self,
+					"--login-options", "terminal-ssh-login \\u",
+					"-",
+					"xterm",
+				)
+			}
 		}
 		if agettyPath != "" {
 			return exec.Command(agettyPath, "--noclear", "--login-program", loginPath, "-", "xterm")
@@ -98,6 +100,84 @@ func loginCommand() *exec.Cmd {
 		return exec.Command("sudo", "-n", agettyPath, "--noclear", "--login-program", loginPath, "-", "xterm")
 	}
 	return exec.Command("sudo", "-n", loginPath)
+}
+
+func terminalSSHTarget() string {
+	if target := strings.TrimSpace(os.Getenv("FLEET_TERMINAL_SSH_HOST")); target != "" {
+		return target
+	}
+	ifaces, err := net.Interfaces()
+	if err == nil {
+		for _, iface := range ifaces {
+			if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, err := iface.Addrs()
+			if err != nil {
+				continue
+			}
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+				if ip == nil || ip.IsLoopback() {
+					continue
+				}
+				if v4 := ip.To4(); v4 != nil {
+					return v4.String()
+				}
+			}
+		}
+	}
+	return "127.0.0.1"
+}
+
+func terminalSSHCommand(username string) *exec.Cmd {
+	sshPath := commandPath("/usr/bin/ssh", "/bin/ssh", "ssh")
+	if sshPath == "" {
+		sshPath = "ssh"
+	}
+	return exec.Command(
+		sshPath,
+		"-tt",
+		"-o", "LogLevel=ERROR",
+		"-o", "StrictHostKeyChecking=no",
+		"-o", "UserKnownHostsFile=/dev/null",
+		"-o", "PreferredAuthentications=password,keyboard-interactive",
+		"-o", "PubkeyAuthentication=no",
+		"-o", "NumberOfPasswordPrompts=3",
+		username+"@"+terminalSSHTarget(),
+	)
+}
+
+func RunTerminalSSHLoginFromArgs(args []string) bool {
+	if len(args) < 2 || args[1] != "terminal-ssh-login" {
+		return false
+	}
+	if len(args) < 3 {
+		os.Exit(2)
+	}
+	username := strings.TrimSpace(args[2])
+	if username == "" || strings.HasPrefix(username, "-") || strings.ContainsAny(username, "\x00\r\n") {
+		os.Exit(2)
+	}
+
+	cmd := terminalSSHCommand(username)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		os.Exit(1)
+	}
+	os.Exit(0)
+	return true
 }
 
 func StartTerminalServer() {

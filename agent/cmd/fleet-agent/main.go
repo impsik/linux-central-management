@@ -91,6 +91,10 @@ type JobEvent struct {
 }
 
 func main() {
+	if internal.RunTerminalSSHLoginFromArgs(os.Args) {
+		return
+	}
+
 	log.Println("Fleet agent starting...")
 	go internal.StartTerminalServer()
 
