@@ -691,6 +691,7 @@ body {
 .section-card,
 .overview-card,
 .load-graph-container,
+.user-card,
 .service-card,
 .filter-section,
 .modal-panel {
@@ -703,16 +704,9 @@ body {
 .admin-card,
 .metric-card,
 .load-graph-container,
+.user-card,
 .service-card,
 .filter-section {
-  padding: 1rem;
-}
-
-.user-card {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 88%, var(--panel-2));
-  box-shadow: none;
   padding: 1rem;
 }
 
@@ -741,8 +735,9 @@ body {
 }
 
 .sudo-badge {
+  padding: 0.2rem 0.55rem;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: 3px;
 }
 
 .sudo-badge.yes {
