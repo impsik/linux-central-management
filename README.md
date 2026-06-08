@@ -6,7 +6,7 @@ It runs one admin web node and a small agent on each managed host. From the web
 UI you can see host health, packages, services, users, SSH keys, jobs, saved
 views, audit logs, and other day-to-day operations.
 
-![Screenshot](docs/image.png)
+![Screenshot](docs/screenshots/2.png)
 
 ## Requirements
 
