@@ -9,15 +9,33 @@ from ..deps import require_ui_user
 from ..models import Host, HostCVEStatus, HostPackage, CVEPackage
 from ..services.user_scopes import filter_agent_ids_for_user
 from ..services.deb_version import is_vulnerable
+from ..services.rpm_version import is_vulnerable as is_rpm_vulnerable
 from ..services.rbac import is_admin
 
 router = APIRouter(prefix="/search", tags=["search"])
 
 
+def release_key_for_host(os_id: str | None, os_version: str | None) -> str | None:
+    os_id_norm = (os_id or "").strip().lower()
+    os_ver = (os_version or "").strip().lower()
+    if "20.04" in os_ver or "focal" in os_ver:
+        return "focal"
+    if "22.04" in os_ver or "jammy" in os_ver:
+        return "jammy"
+    if "24.04" in os_ver or "noble" in os_ver:
+        return "noble"
+    if os_id_norm in {"rhel", "redhat", "rocky", "almalinux", "centos", "fedora", "ol", "oracle"}:
+        version = os_ver.split(".", 1)[0].strip()
+        if version:
+            return f"{os_id_norm}-{version}"
+        return os_id_norm
+    return None
+
+
 @router.get("/packages")
 def search_packages(name: str, version: str | None = None, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     stmt = (
-        select(Host.hostname, Host.agent_id, HostPackage.version, HostPackage.arch, Host.os_version)
+        select(Host.hostname, Host.agent_id, HostPackage.version, HostPackage.arch, Host.os_id, Host.os_version, HostPackage.manager)
         .join(HostPackage, Host.id == HostPackage.host_id)
         .where(HostPackage.name == name)
     )
@@ -54,20 +72,16 @@ def search_packages(name: str, version: str | None = None, db: Session = Depends
 
     results = []
     for r in rows:
-        # r = (hostname, agent_id, version, arch, os_version)
         if allowed is not None and r[1] not in allowed:
             continue
             
         cves = []
-        os_ver = (r[4] or "").lower()
-        codename = None
-        if "20.04" in os_ver or "focal" in os_ver: codename = "focal"
-        elif "22.04" in os_ver or "jammy" in os_ver: codename = "jammy"
-        elif "24.04" in os_ver or "noble" in os_ver: codename = "noble"
-        
-        if codename and codename in cve_map:
-            for cve_id, fixed_ver in cve_map[codename]:
-                if is_vulnerable(r[2], fixed_ver):
+        release_key = release_key_for_host(r[4], r[5])
+
+        if release_key and release_key in cve_map:
+            for cve_id, fixed_ver in cve_map[release_key]:
+                vulnerable = is_rpm_vulnerable(r[2], fixed_ver) if (r[6] or "").lower() == "rpm" else is_vulnerable(r[2], fixed_ver)
+                if vulnerable:
                     cves.append(cve_id)
         
         results.append({

@@ -91,6 +91,9 @@ def agent_inventory_packages(payload: PackagesInventory, request: Request, db: S
         raise HTTPException(404, "unknown agent")
 
     collected_at = datetime.fromtimestamp(payload.collected_at_unix, tz=timezone.utc)
+    manager = (payload.manager or "dpkg").strip().lower()
+    if manager not in {"dpkg", "rpm"}:
+        manager = "dpkg"
 
     db.execute(delete(HostPackage).where(HostPackage.host_id == host.id))
     db.execute(delete(HostCVEStatus).where(HostCVEStatus.host_id == host.id))
@@ -105,7 +108,7 @@ def agent_inventory_packages(payload: PackagesInventory, request: Request, db: S
                 name=name,
                 version=ver,
                 arch=p.get("arch", "amd64"),
-                manager="dpkg",
+                manager=manager,
                 collected_at=collected_at,
             )
         )

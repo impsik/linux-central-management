@@ -377,8 +377,9 @@ def test_package_inventory_invalidates_host_cve_cache(monkeypatch):
             json={
                 "agent_id": "srv-inventory-cve",
                 "collected_at_unix": 1_700_000_000,
+                "manager": "rpm",
                 "packages": [
-                    {"name": "libpam-modules", "version": "1.5.3-5ubuntu5.4", "arch": "amd64"},
+                    {"name": "libpam-modules", "version": "1.5.3-5ubuntu5.4", "arch": "x86_64"},
                 ],
             },
         )
@@ -402,6 +403,8 @@ def test_package_inventory_invalidates_host_cve_cache(monkeypatch):
             ).scalar_one_or_none()
             assert package is not None
             assert package.version == "1.5.3-5ubuntu5.4"
+            assert package.arch == "x86_64"
+            assert package.manager == "rpm"
 
 
 def test_cleanup_offline_hosts_admin_only(monkeypatch):

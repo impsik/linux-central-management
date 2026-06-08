@@ -148,3 +148,27 @@ func TestServiceInventoryEnabledFalseWhenServiceAndSocketDisabled(t *testing.T) 
 		t.Fatal("ssh inventory enabled = true, want false when service and socket are disabled")
 	}
 }
+
+func TestSplitRpmNameArch(t *testing.T) {
+	name, arch := splitRpmNameArch("openssl-libs.x86_64")
+	if name != "openssl-libs" || arch != "x86_64" {
+		t.Fatalf("splitRpmNameArch returned %q/%q", name, arch)
+	}
+	name, arch = splitRpmNameArch("python3.11.noarch")
+	if name != "python3.11" || arch != "noarch" {
+		t.Fatalf("splitRpmNameArch with dotted name returned %q/%q", name, arch)
+	}
+}
+
+func TestParseRpmCheckUpdateLine(t *testing.T) {
+	got, ok := parseRpmCheckUpdateLine("openssl-libs.x86_64 1:3.2.2-6.el9_5 baseos")
+	if !ok {
+		t.Fatal("parseRpmCheckUpdateLine returned ok=false")
+	}
+	if got.Name != "openssl-libs" || got.Arch != "x86_64" || got.CandidateVersion != "1:3.2.2-6.el9_5" {
+		t.Fatalf("parsed RPM update = %#v", got)
+	}
+	if _, ok := parseRpmCheckUpdateLine("Last metadata expiration check: 0:03:12 ago"); ok {
+		t.Fatal("metadata line should be ignored")
+	}
+}

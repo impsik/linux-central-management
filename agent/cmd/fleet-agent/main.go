@@ -40,6 +40,7 @@ type RegisterPayload struct {
 type InventoryPayload struct {
 	AgentID         string        `json:"agent_id"`
 	CollectedAtUnix int64         `json:"collected_at_unix"`
+	Manager         string        `json:"manager,omitempty"`
 	Packages        []PackageItem `json:"packages"`
 }
 
@@ -152,11 +153,12 @@ func main() {
 		now := time.Now()
 
 		if lastInv.IsZero() || now.Sub(lastInv) >= cfg.InvEvery {
-			pkgs, err := collectDpkgPackages(ctx)
+			pkgs, manager, err := collectPackages(ctx)
 			if err == nil {
 				inv := InventoryPayload{
 					AgentID:         cfg.AgentID,
 					CollectedAtUnix: time.Now().Unix(),
+					Manager:         manager,
 					Packages:        pkgs,
 				}
 				mustPostJSON(client, cfg.ServerURL+"/agent/inventory/packages", inv, cfg.AgentToken)
@@ -242,8 +244,63 @@ func mustPostJSON(client *http.Client, url string, payload any, token string) {
 	}
 }
 
+func detectPackageManager() string {
+	if _, err := exec.LookPath("dpkg-query"); err == nil {
+		return "dpkg"
+	}
+	if _, err := exec.LookPath("rpm"); err == nil {
+		return "rpm"
+	}
+	return ""
+}
+
+func rpmFrontend() string {
+	if _, err := exec.LookPath("dnf"); err == nil {
+		return "dnf"
+	}
+	if _, err := exec.LookPath("yum"); err == nil {
+		return "yum"
+	}
+	return ""
+}
+
+func collectPackages(ctx context.Context) ([]PackageItem, string, error) {
+	switch detectPackageManager() {
+	case "dpkg":
+		pkgs, err := collectDpkgPackages(ctx)
+		return pkgs, "dpkg", err
+	case "rpm":
+		pkgs, err := collectRpmPackages(ctx)
+		return pkgs, "rpm", err
+	default:
+		return nil, "", fmt.Errorf("no supported package manager found")
+	}
+}
+
 func collectDpkgPackages(ctx context.Context) ([]PackageItem, error) {
 	cmd := exec.CommandContext(ctx, "dpkg-query", "-W", "-f", "${Package}|${Version}|${Architecture}\n")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n")
+	pkgs := make([]PackageItem, 0, len(lines))
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if l == "" {
+			continue
+		}
+		parts := strings.Split(l, "|")
+		if len(parts) != 3 {
+			continue
+		}
+		pkgs = append(pkgs, PackageItem{Name: parts[0], Version: parts[1], Arch: parts[2]})
+	}
+	return pkgs, nil
+}
+
+func collectRpmPackages(ctx context.Context) ([]PackageItem, error) {
+	cmd := exec.CommandContext(ctx, "rpm", "-qa", "--qf", "%{NAME}|%{VERSION}-%{RELEASE}|%{ARCH}\n")
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -874,12 +931,18 @@ func queryPkgVersions(ctx context.Context, packages []string) (string, string, i
 	}
 
 	out := make([]PkgVersion, 0, len(packages))
+	manager := detectPackageManager()
 	for _, name := range packages {
 		name = strings.TrimSpace(name)
 		if name == "" {
 			continue
 		}
-		cmd := exec.CommandContext(queryCtx, "dpkg-query", "-W", "-f", "${Version}", name)
+		var cmd *exec.Cmd
+		if manager == "rpm" {
+			cmd = exec.CommandContext(queryCtx, "rpm", "-q", "--qf", "%{VERSION}-%{RELEASE}", name)
+		} else {
+			cmd = exec.CommandContext(queryCtx, "dpkg-query", "-W", "-f", "${Version}", name)
+		}
 		b, err := cmd.Output()
 		if err != nil {
 			out = append(out, PkgVersion{Name: name, Found: false})
@@ -903,6 +966,9 @@ func queryPkgInfo(ctx context.Context, pkgName string) (string, string, int, str
 	pkgName = strings.TrimSpace(pkgName)
 	if pkgName == "" {
 		return "", "", 1, "package_name is required"
+	}
+	if detectPackageManager() == "rpm" {
+		return queryRpmPkgInfo(queryCtx, pkgName)
 	}
 
 	type PkgInfo struct {
@@ -1037,7 +1103,108 @@ func queryPkgInfo(ctx context.Context, pkgName string) (string, string, int, str
 	return string(j), "", 0, ""
 }
 
+func queryRpmPkgInfo(ctx context.Context, pkgName string) (string, string, int, string) {
+	type PkgInfo struct {
+		Name             string                 `json:"name"`
+		InstalledVersion string                 `json:"installed_version,omitempty"`
+		CandidateVersion string                 `json:"candidate_version,omitempty"`
+		Architecture     string                 `json:"architecture,omitempty"`
+		Section          string                 `json:"section,omitempty"`
+		Priority         string                 `json:"priority,omitempty"`
+		Maintainer       string                 `json:"maintainer,omitempty"`
+		Homepage         string                 `json:"homepage,omitempty"`
+		Summary          string                 `json:"summary,omitempty"`
+		Description      string                 `json:"description,omitempty"`
+		Raw              map[string]interface{} `json:"raw,omitempty"`
+	}
+
+	info := PkgInfo{Name: pkgName, Raw: map[string]interface{}{}}
+
+	rpmCmd := exec.CommandContext(ctx, "rpm", "-qi", pkgName)
+	rpmOut, rpmErr := rpmCmd.CombinedOutput()
+	info.Raw["rpm_info"] = string(rpmOut)
+	if rpmErr == nil {
+		for _, line := range strings.Split(string(rpmOut), "\n") {
+			if key, val, ok := strings.Cut(line, ":"); ok {
+				key = strings.TrimSpace(strings.ToLower(key))
+				val = strings.TrimSpace(val)
+				switch key {
+				case "version":
+					info.InstalledVersion = val
+				case "release":
+					if info.InstalledVersion != "" && val != "" {
+						info.InstalledVersion = info.InstalledVersion + "-" + val
+					}
+				case "architecture":
+					info.Architecture = val
+				case "group":
+					info.Section = val
+				case "vendor", "packager":
+					if info.Maintainer == "" {
+						info.Maintainer = val
+					}
+				case "url":
+					info.Homepage = val
+				case "summary":
+					info.Summary = val
+				case "description":
+					info.Description = val
+				}
+			}
+		}
+	}
+
+	if frontend := rpmFrontend(); frontend != "" {
+		dnfCmd := exec.CommandContext(ctx, frontend, "info", pkgName)
+		dnfOut, _ := dnfCmd.CombinedOutput()
+		info.Raw[frontend+"_info"] = string(dnfOut)
+		for _, line := range strings.Split(string(dnfOut), "\n") {
+			if key, val, ok := strings.Cut(line, ":"); ok {
+				key = strings.TrimSpace(strings.ToLower(key))
+				val = strings.TrimSpace(val)
+				switch key {
+				case "available packages":
+					continue
+				case "version":
+					if info.CandidateVersion == "" {
+						info.CandidateVersion = val
+					}
+				case "release":
+					if info.CandidateVersion != "" && val != "" && !strings.Contains(info.CandidateVersion, "-") {
+						info.CandidateVersion = info.CandidateVersion + "-" + val
+					}
+				case "arch":
+					if info.Architecture == "" {
+						info.Architecture = val
+					}
+				case "summary":
+					if info.Summary == "" {
+						info.Summary = val
+					}
+				case "url":
+					if info.Homepage == "" {
+						info.Homepage = val
+					}
+				}
+			}
+		}
+	}
+
+	j, err := json.Marshal(info)
+	if err != nil {
+		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
+	}
+	return string(j), "", 0, ""
+}
+
 func queryPkgUpdates(ctx context.Context, refresh bool) (string, string, int, string) {
+	if detectPackageManager() == "rpm" {
+		return queryRpmPkgUpdates(ctx, refresh)
+	}
+	return queryAptPkgUpdates(ctx, refresh)
+}
+
+func queryAptPkgUpdates(ctx context.Context, refresh bool) (string, string, int, string) {
 	// Compute list of upgradable packages using apt. Optionally refresh package lists.
 	// Also tries to classify which upgrades are security updates via `pro security-status --format json`.
 	queryCtx, cancel := context.WithTimeout(ctx, 180*time.Second)
@@ -1168,6 +1335,137 @@ func queryPkgUpdates(ctx context.Context, refresh bool) (string, string, int, st
 	return string(j), "", 0, ""
 }
 
+type rpmUpdateLine struct {
+	Name             string
+	Arch             string
+	CandidateVersion string
+}
+
+func splitRpmNameArch(nameArch string) (string, string) {
+	nameArch = strings.TrimSpace(nameArch)
+	if nameArch == "" {
+		return "", ""
+	}
+	if idx := strings.LastIndex(nameArch, "."); idx > 0 && idx < len(nameArch)-1 {
+		return nameArch[:idx], nameArch[idx+1:]
+	}
+	return nameArch, ""
+}
+
+func parseRpmCheckUpdateLine(line string) (rpmUpdateLine, bool) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "Last metadata expiration check:") {
+		return rpmUpdateLine{}, false
+	}
+	if strings.HasPrefix(line, "Security:") || strings.HasPrefix(line, "Obsoleting Packages") {
+		return rpmUpdateLine{}, false
+	}
+	parts := strings.Fields(line)
+	if len(parts) < 2 {
+		return rpmUpdateLine{}, false
+	}
+	name, arch := splitRpmNameArch(parts[0])
+	if name == "" || strings.ContainsAny(name, " \t:") {
+		return rpmUpdateLine{}, false
+	}
+	return rpmUpdateLine{Name: name, Arch: arch, CandidateVersion: parts[1]}, true
+}
+
+func installedRpmVersion(ctx context.Context, name string) string {
+	cmd := exec.CommandContext(ctx, "rpm", "-q", "--qf", "%{VERSION}-%{RELEASE}", name)
+	b, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func rpmSecurityUpdateNames(ctx context.Context, frontend string) map[string]bool {
+	names := map[string]bool{}
+	cmd := exec.CommandContext(ctx, frontend, "updateinfo", "list", "updates", "security")
+	b, err := cmd.CombinedOutput()
+	if err != nil && len(b) == 0 {
+		return names
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
+		parts := strings.Fields(strings.TrimSpace(line))
+		if len(parts) < 3 {
+			continue
+		}
+		name, _ := splitRpmNameArch(parts[len(parts)-1])
+		if name != "" {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+func queryRpmPkgUpdates(ctx context.Context, refresh bool) (string, string, int, string) {
+	queryCtx, cancel := context.WithTimeout(ctx, 180*time.Second)
+	defer cancel()
+
+	frontend := rpmFrontend()
+	if frontend == "" {
+		return "", "", 1, "dnf or yum is required for RPM update checks"
+	}
+
+	type Up struct {
+		Name             string `json:"name"`
+		InstalledVersion string `json:"installed_version,omitempty"`
+		CandidateVersion string `json:"candidate_version,omitempty"`
+		IsSecurity       bool   `json:"is_security,omitempty"`
+	}
+
+	out := struct {
+		CheckedAt      string `json:"checked_at"`
+		RebootRequired bool   `json:"reboot_required"`
+		Updates        []Up   `json:"updates"`
+	}{
+		CheckedAt:      time.Now().UTC().Format(time.RFC3339),
+		RebootRequired: false,
+		Updates:        []Up{},
+	}
+
+	args := []string{"check-update", "-q"}
+	if refresh {
+		args = append([]string{"--refresh"}, args...)
+	}
+	cmd := exec.CommandContext(queryCtx, frontend, args...)
+	b, err := cmd.CombinedOutput()
+	if err != nil {
+		exit := 1
+		if ee, ok := err.(*exec.ExitError); ok {
+			exit = ee.ExitCode()
+		}
+		// dnf/yum use 100 to mean updates are available.
+		if exit != 100 {
+			return "", string(b), exit, fmt.Sprintf("%s check-update failed: %v", frontend, err)
+		}
+	}
+
+	securityNames := rpmSecurityUpdateNames(queryCtx, frontend)
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
+		parsed, ok := parseRpmCheckUpdateLine(line)
+		if !ok || seen[parsed.Name] {
+			continue
+		}
+		seen[parsed.Name] = true
+		out.Updates = append(out.Updates, Up{
+			Name:             parsed.Name,
+			InstalledVersion: installedRpmVersion(queryCtx, parsed.Name),
+			CandidateVersion: parsed.CandidateVersion,
+			IsSecurity:       securityNames[parsed.Name],
+		})
+	}
+
+	j, jerr := json.Marshal(out)
+	if jerr != nil {
+		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", jerr)
+	}
+	return string(j), "", 0, ""
+}
+
 func securityUpdatesFromPro(ctx context.Context) (map[string]string, bool) {
 	// Returns map[package]securityVersion for packages that Pro considers security updates,
 	// plus a reboot-required flag (best-effort).
@@ -1247,6 +1545,9 @@ func isKernelMetaPackage(name string) bool {
 }
 
 func runPkgUpgrade(ctx context.Context, packages []string) (string, string, int, string) {
+	if detectPackageManager() == "rpm" {
+		return runRpmPackageAction(ctx, "upgrade", packages, true)
+	}
 	if len(packages) == 0 {
 		return "", "", 0, ""
 	}
@@ -1272,6 +1573,9 @@ func runPkgUpgrade(ctx context.Context, packages []string) (string, string, int,
 }
 
 func runPkgInstall(ctx context.Context, packages []string) (string, string, int, string) {
+	if detectPackageManager() == "rpm" {
+		return runRpmPackageAction(ctx, "install", packages, true)
+	}
 	// Install specific packages, optionally with explicit versions (e.g. name=1.2.3).
 	if len(packages) == 0 {
 		return "", "", 0, ""
@@ -1302,6 +1606,9 @@ func checkCVE(ctx context.Context, cve string) (string, string, int, string) {
 }
 
 func runDistUpgrade(ctx context.Context) (string, string, int, string) {
+	if detectPackageManager() == "rpm" {
+		return runRpmDistUpgrade(ctx)
+	}
 	// Full upgrade (apt-get dist-upgrade). Higher blast radius, but most reliable for transitions.
 	upgradeCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
@@ -1342,6 +1649,9 @@ func runDistUpgrade(ctx context.Context) (string, string, int, string) {
 }
 
 func runPkgReinstall(ctx context.Context, packages []string) (string, string, int, string) {
+	if detectPackageManager() == "rpm" {
+		return runRpmPackageAction(ctx, "reinstall", packages, true)
+	}
 	if len(packages) == 0 {
 		return "", "", 0, ""
 	}
@@ -1365,6 +1675,9 @@ func runPkgReinstall(ctx context.Context, packages []string) (string, string, in
 }
 
 func runPkgRemove(ctx context.Context, packages []string) (string, string, int, string) {
+	if detectPackageManager() == "rpm" {
+		return runRpmPackageAction(ctx, "remove", packages, false)
+	}
 	if len(packages) == 0 {
 		return "", "", 0, ""
 	}
@@ -1383,18 +1696,97 @@ func runPkgRemove(ctx context.Context, packages []string) (string, string, int, 
 	return string(out), "", 0, ""
 }
 
+func runRpmMakecache(ctx context.Context, frontend string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "sudo", "-n", frontend, "-y", "makecache")
+	return cmd.CombinedOutput()
+}
+
+func runRpmPackageAction(ctx context.Context, action string, packages []string, refresh bool) (string, string, int, string) {
+	if len(packages) == 0 {
+		return "", "", 0, ""
+	}
+	frontend := rpmFrontend()
+	if frontend == "" {
+		return "", "", 1, "dnf or yum is required for RPM package actions"
+	}
+
+	var prefix []byte
+	if refresh {
+		cacheOut, cacheErr := runRpmMakecache(ctx, frontend)
+		prefix = cacheOut
+		if cacheErr != nil {
+			return string(cacheOut), "", 1, fmt.Sprintf("%s makecache failed: %v", frontend, cacheErr)
+		}
+	}
+
+	args := []string{"-n", frontend, "-y", action}
+	args = append(args, packages...)
+	cmd := exec.CommandContext(ctx, "sudo", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		exit := 1
+		if ee, ok := err.(*exec.ExitError); ok {
+			exit = ee.ExitCode()
+		}
+		return string(append(prefix, out...)), "", exit, fmt.Sprintf("%s %s failed: %v", frontend, action, err)
+	}
+	return string(append(prefix, out...)), "", 0, ""
+}
+
+func runRpmDistUpgrade(ctx context.Context) (string, string, int, string) {
+	upgradeCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer cancel()
+
+	frontend := rpmFrontend()
+	if frontend == "" {
+		return "", "", 1, "dnf or yum is required for RPM package actions"
+	}
+
+	cacheOut, cacheErr := runRpmMakecache(upgradeCtx, frontend)
+	if cacheErr != nil {
+		return string(cacheOut), "", 1, fmt.Sprintf("%s makecache failed: %v", frontend, cacheErr)
+	}
+
+	cmd := exec.CommandContext(upgradeCtx, "sudo", "-n", frontend, "-y", "upgrade")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		exit := 1
+		if ee, ok := err.(*exec.ExitError); ok {
+			exit = ee.ExitCode()
+		}
+		return string(append(cacheOut, out...)), "", exit, fmt.Sprintf("%s upgrade failed: %v", frontend, err)
+	}
+
+	auto := exec.CommandContext(upgradeCtx, "sudo", "-n", frontend, "-y", "autoremove")
+	autoOut, autoErr := auto.CombinedOutput()
+	if autoErr != nil {
+		combined := append(cacheOut, out...)
+		combined = append(combined, []byte("\n\n[WARN] RPM autoremove failed: ")...)
+		combined = append(combined, []byte(autoErr.Error())...)
+		combined = append(combined, []byte("\n")...)
+		combined = append(combined, autoOut...)
+		return string(combined), "", 0, ""
+	}
+
+	combined := append(cacheOut, out...)
+	combined = append(combined, []byte("\n\n[INFO] RPM autoremove output:\n")...)
+	combined = append(combined, autoOut...)
+	return string(combined), "", 0, ""
+}
+
 func runInventoryNow(ctx context.Context, client *http.Client, serverURL, agentID string, token string) (string, string, int, string) {
 	// Collect and POST inventory immediately, so UI can reflect latest packages/updates on demand.
 	queryCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	pkgs, err := collectDpkgPackages(queryCtx)
+	pkgs, manager, err := collectPackages(queryCtx)
 	if err != nil {
 		return "", "", 1, fmt.Sprintf("collect packages failed: %v", err)
 	}
 	inv := InventoryPayload{
 		AgentID:         agentID,
 		CollectedAtUnix: time.Now().Unix(),
+		Manager:         manager,
 		Packages:        pkgs,
 	}
 	mustPostJSON(client, serverURL+"/agent/inventory/packages", inv, token)
