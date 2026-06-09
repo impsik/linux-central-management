@@ -197,6 +197,7 @@
         const text = formatFirewallRule(rule);
         const port = rule.port || '';
         const protocol = rule.protocol || 'tcp';
+        const service = rule.service || '';
         return `
           <div class="service-card">
             <div class="service-info">
@@ -204,7 +205,7 @@
               <div class="service-details">${w.escapeHtml(rule.raw || '')}</div>
             </div>
             <div class="service-actions">
-              <button class="btn btn-danger" data-firewall-delete="1" data-port="${w.escapeHtml(port)}" data-protocol="${w.escapeHtml(protocol)}" ${(!port || !canManage) ? 'disabled' : ''}>Remove allow</button>
+              <button class="btn btn-danger" data-firewall-delete="1" data-port="${w.escapeHtml(port)}" data-protocol="${w.escapeHtml(protocol)}" data-service="${w.escapeHtml(service)}" ${((!port && !service) || !canManage) ? 'disabled' : ''}>Remove allow</button>
             </div>
           </div>
         `;
@@ -215,8 +216,9 @@
           e.preventDefault();
           const port = Number(btn.getAttribute('data-port') || '0');
           const protocol = btn.getAttribute('data-protocol') || 'tcp';
-          if (!port) return;
-          controlFirewall(ctx, agentId, { action: 'delete', port, protocol });
+          const service = btn.getAttribute('data-service') || '';
+          if (!port && !service) return;
+          controlFirewall(ctx, agentId, { action: 'delete', port, protocol, service });
         });
       });
     } catch (error) {
@@ -229,7 +231,8 @@
     const port = Number(document.getElementById('host-firewall-port')?.value || '0');
     const protocol = document.getElementById('host-firewall-protocol')?.value || 'tcp';
     const source = (document.getElementById('host-firewall-source')?.value || '').trim();
-    return { action, port, protocol, source };
+    const service = (document.getElementById('host-firewall-service')?.value || '').trim();
+    return { action, port, protocol, source, service };
   }
 
   async function controlFirewall(ctx, agentId, payload) {
@@ -238,8 +241,8 @@
       return;
     }
     const statusEl = document.getElementById('host-firewall-status');
-    if (!payload.port || payload.port < 1 || payload.port > 65535) {
-      w.showToast('Enter a valid port', 'error');
+    if (!payload.service && (!payload.port || payload.port < 1 || payload.port > 65535)) {
+      w.showToast('Enter a valid port or service', 'error');
       return;
     }
     try {
