@@ -1316,6 +1316,8 @@ async def get_firewall(agent_id: str, wait: bool = True, db: Session = Depends(g
     run = res.run
     if run.status == "failed":
         msg = run.error or run.stderr or "Unknown error"
+        if "unknown job type" in msg.lower():
+            raise HTTPException(409, "Firewall query failed: fleet-agent on this host is older and must be redeployed")
         raise HTTPException(500, f"Firewall query failed: {msg}")
 
     from ..services.json_utils import loads_or
@@ -1379,6 +1381,8 @@ async def control_firewall(
     run = res.run
     if run.status == "failed":
         msg = run.error or run.stderr or run.stdout or "Unknown error"
+        if "unknown job type" in msg.lower():
+            raise HTTPException(409, "Firewall action failed: fleet-agent on this host is older and must be redeployed")
         raise HTTPException(500, f"Firewall {rule['action']} failed: {msg}")
 
     return {"job_id": created.job_key, "status": "success"}
