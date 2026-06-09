@@ -17,6 +17,10 @@
       e.preventDefault();
       if (typeof api.showServices === 'function') api.showServices();
     });
+    document.getElementById('host-action-firewall')?.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (typeof api.showFirewall === 'function') api.showFirewall();
+    });
     document.getElementById('host-action-packages')?.addEventListener('click', function (e) {
       e.preventDefault();
       if (typeof api.showPackages === 'function') api.showPackages();

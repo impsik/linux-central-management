@@ -76,6 +76,7 @@
         <button class="btn" id="nav-hosts" type="button">Hosts</button>
         <button class="btn" id="nav-user-management" type="button">User management</button>
         <button class="btn" id="nav-service-management" type="button">Service management</button>
+        <button class="btn" id="nav-firewall-management" type="button">Firewall management</button>
         <div class="fleet-nav-section">Tools</div>
         <button class="btn" id="nav-sshkeys" type="button">Security <span id="sshkeys-approval-indicator" title="Pending approvals" class="nav-indicator error" style="display:none;">!</span></button>
         <button class="btn" id="nav-cronjobs" type="button">Automation</button>
@@ -89,6 +90,7 @@
         <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button">Console</button>
         <button class="btn btn-primary host-action-btn" id="host-action-users" type="button">Accounts</button>
         <button class="btn btn-primary host-action-btn" id="host-action-services" type="button">Services</button>
+        <button class="btn btn-primary host-action-btn" id="host-action-firewall" type="button">Firewall</button>
         <button class="btn btn-primary host-action-btn" id="host-action-packages" type="button">Packages</button>
       </div>
 
@@ -655,6 +657,59 @@
                 </thead>
                 <tbody id="service-management-table-body">
                   <tr><td colspan="7" class="status-muted" style="text-align:center;">Search for a service to load matching online hosts…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-content-custom" id="firewall-management-tab">
+      <div class="admin-content">
+        <div class="section-title">Firewall management</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Review firewall rules on visible online servers and apply simple allow, deny, or remove operations to selected hosts.</div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Fleet firewall rules</div>
+          <div class="admin-card-body" style="display:grid;gap:0.75rem;">
+            <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+              <button class="btn btn-primary" id="firewall-management-refresh" type="button">Scan hosts</button>
+              <button class="btn" id="firewall-management-select-all" type="button">Select all</button>
+              <div style="min-width:110px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
+                <input id="firewall-management-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
+              </div>
+              <div style="min-width:110px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
+                <select id="firewall-management-protocol" class="host-search">
+                  <option value="tcp">TCP</option>
+                  <option value="udp">UDP</option>
+                </select>
+              </div>
+              <div style="min-width:170px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Source</label>
+                <input id="firewall-management-source" class="host-search" type="text" placeholder="optional CIDR" />
+              </div>
+              <button class="btn btn-success" id="firewall-management-allow" type="button">Allow selected</button>
+              <button class="btn btn-warning" id="firewall-management-deny" type="button">Deny selected</button>
+              <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove allow selected</button>
+              <span id="firewall-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+            </div>
+            <div style="overflow:auto;">
+              <table class="process-table hosts-table">
+                <thead>
+                  <tr>
+                    <th style="width:44px;"><input id="firewall-management-check-all" type="checkbox" aria-label="Select all firewall hosts" /></th>
+                    <th>Host</th>
+                    <th>Backend</th>
+                    <th>Status</th>
+                    <th>Rules</th>
+                    <th>Last seen</th>
+                  </tr>
+                </thead>
+                <tbody id="firewall-management-table-body">
+                  <tr><td colspan="6" class="status-muted" style="text-align:center;">Scan hosts to load firewall rules…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1272,6 +1327,45 @@
       </div>
     </div>
 
+    <div class="tab-content-custom" id="firewall-tab">
+      <div class="services-content">
+        <div class="host-context-bar" style="margin-bottom:0.65rem;">
+          Host: <b class="host-context-name">—</b>
+          <span class="host-subsep">•</span>
+          IP: <code class="host-context-ip">—</code>
+        </div>
+        <div class="section-title">Firewall</div>
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Rule action</div>
+          <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="min-width:110px;">
+              <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
+              <input id="host-firewall-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
+            </div>
+            <div style="min-width:110px;">
+              <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
+              <select id="host-firewall-protocol" class="host-search">
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+              </select>
+            </div>
+            <div style="min-width:170px;">
+              <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Source</label>
+              <input id="host-firewall-source" class="host-search" type="text" placeholder="optional CIDR" />
+            </div>
+            <button class="btn btn-success" id="host-firewall-allow" type="button">Allow</button>
+            <button class="btn btn-warning" id="host-firewall-deny" type="button">Deny</button>
+            <button class="btn btn-danger" id="host-firewall-delete" type="button">Remove allow</button>
+            <button class="btn" id="host-firewall-refresh" type="button">Refresh</button>
+            <span id="host-firewall-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
+          </div>
+        </div>
+        <div id="firewall-list">
+          <div class="loading">Select a host to view firewall rules...</div>
+        </div>
+      </div>
+    </div>
+
     <div class="tab-content-custom" id="packages-tab">
       <div class="packages-content">
         <div class="host-context-bar" style="margin-bottom:0.65rem;">
@@ -1867,9 +1961,9 @@
       } catch (_) { }
 
       // Switch to the appropriate tab:
-      // - If user is in Terminal/Users/Services/Packages, keep that tab when switching hosts.
+      // - If user is in Terminal/Users/Services/Firewall/Packages, keep that tab when switching hosts.
       // - Otherwise default to the host overview (server-info-tab).
-      const hostActionTabs = new Set(['terminal-tab', 'users-tab', 'services-tab', 'packages-tab']);
+      const hostActionTabs = new Set(['terminal-tab', 'users-tab', 'services-tab', 'firewall-tab', 'packages-tab']);
       const keepTabId = hostActionTabs.has(prevActiveTabId) ? prevActiveTabId : 'server-info-tab';
 
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
@@ -1879,6 +1973,7 @@
       if (keepTabId === 'terminal-tab') setHostActionActive('terminal');
       else if (keepTabId === 'users-tab') setHostActionActive('users');
       else if (keepTabId === 'services-tab') setHostActionActive('services');
+      else if (keepTabId === 'firewall-tab') setHostActionActive('firewall');
       else if (keepTabId === 'packages-tab') setHostActionActive('packages');
       else setHostActionActive(null);
 
@@ -1893,6 +1988,8 @@
         loadUsers(currentAgentId);
       } else if (keepTabId === 'services-tab') {
         loadServices(currentAgentId);
+      } else if (keepTabId === 'firewall-tab') {
+        loadFirewall(currentAgentId);
       } else if (keepTabId === 'packages-tab') {
         loadPackages(currentAgentId);
         refreshPackagesNow(currentAgentId);
@@ -2334,6 +2431,16 @@
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('services-tab').classList.add('active');
       loadServices(currentAgentId);
+    }
+
+    function showFirewall() {
+      if (!currentAgentId) return;
+      setHostActionActive('firewall');
+      // Stop metrics updates when leaving server info view
+      stopMetricsPolling(metricsLifecycleState);
+      document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('firewall-tab').classList.add('active');
+      loadFirewall(currentAgentId);
     }
 
     function showPackages() {
@@ -3091,6 +3198,13 @@
       }
     }
 
+    async function loadFirewall(agentId) {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.loadFirewall === 'function') {
+        return mod.loadFirewall(getHostWorkflowsCtx(), agentId);
+      }
+    }
+
     async function waitForServicesToStabilize(agentId, targetServiceName = null) {
       const mod = window.phase3HostWorkflows;
       if (mod && typeof mod.waitForServicesToStabilize === 'function') {
@@ -3106,6 +3220,15 @@
     }
 
     window.controlService = controlService;
+
+    async function controlFirewall(agentId, payload) {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.controlFirewall === 'function') {
+        return mod.controlFirewall(getHostWorkflowsCtx(), agentId, payload);
+      }
+    }
+
+    window.controlFirewall = controlFirewall;
 
     async function controlUser(agentId, username, action) {
       const mod = window.phase3HostWorkflows;
@@ -4440,7 +4563,14 @@
     function initHostActionControls() {
       const mod = window.phase3HostActions;
       if (mod && typeof mod.initHostActionControls === 'function') {
-        return mod.initHostActionControls({ showServerInfo, showTerminal, showUsers, showServices, showPackages });
+        return mod.initHostActionControls({ showServerInfo, showTerminal, showUsers, showServices, showFirewall, showPackages });
+      }
+    }
+
+    function initHostFirewallControls() {
+      const mod = window.phase3HostWorkflows;
+      if (mod && typeof mod.initHostFirewallControls === 'function') {
+        return mod.initHostFirewallControls(getHostWorkflowsCtx());
       }
     }
 
@@ -5090,6 +5220,200 @@
       updateServiceActionState();
     }
 
+    function initFirewallManagementControls() {
+      const refreshBtn = document.getElementById('firewall-management-refresh');
+      const selectAllBtn = document.getElementById('firewall-management-select-all');
+      const checkAllEl = document.getElementById('firewall-management-check-all');
+      const allowBtn = document.getElementById('firewall-management-allow');
+      const denyBtn = document.getElementById('firewall-management-deny');
+      const deleteBtn = document.getElementById('firewall-management-delete');
+      const statusEl = document.getElementById('firewall-management-status');
+      const bodyEl = document.getElementById('firewall-management-table-body');
+      const portEl = document.getElementById('firewall-management-port');
+      const protoEl = document.getElementById('firewall-management-protocol');
+      const sourceEl = document.getElementById('firewall-management-source');
+      if (!bodyEl) return;
+
+      const esc = (value) => String(value == null ? '' : value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+
+      function selectedFirewallAgentIds() {
+        return Array.from(bodyEl.querySelectorAll('input[data-firewall-agent-id]:checked'))
+          .map((el) => el.getAttribute('data-firewall-agent-id') || '')
+          .filter(Boolean);
+      }
+
+      function updateFirewallActionState() {
+        const canManage = !!currentPermissions?.can_manage_services;
+        const selected = selectedFirewallAgentIds();
+        const disabled = !canManage || selected.length === 0;
+        [allowBtn, denyBtn, deleteBtn].forEach((btn) => {
+          if (!btn) return;
+          btn.disabled = disabled;
+          btn.title = canManage ? '' : 'Service management permission required';
+        });
+        if (statusEl && !canManage) statusEl.textContent = 'Service management permission required';
+      }
+
+      function formatRule(rule) {
+        const parts = [];
+        if (rule.service) parts.push(`service ${rule.service}`);
+        if (rule.port) parts.push(`${rule.port}${rule.protocol ? '/' + rule.protocol : ''}`);
+        if (rule.action) parts.push(String(rule.action).toUpperCase());
+        if (rule.source) parts.push(`from ${rule.source}`);
+        return esc(parts.length ? parts.join(' ') : (rule.raw || '-'));
+      }
+
+      function renderFirewallItems(items) {
+        const rows = Array.isArray(items) ? items : [];
+        if (checkAllEl) checkAllEl.checked = false;
+        if (!rows.length) {
+          bodyEl.innerHTML = '<tr><td colspan="6" class="status-muted" style="text-align:center;">No firewall data from visible online hosts.</td></tr>';
+          updateFirewallActionState();
+          return;
+        }
+        const canManage = !!currentPermissions?.can_manage_services;
+        bodyEl.innerHTML = rows.map((it) => {
+          const agentId = String(it.agent_id || '');
+          const osName = `${it.os_id || ''} ${it.os_version || ''}`.trim();
+          const rules = Array.isArray(it.rules) ? it.rules : [];
+          const ruleText = rules.length ? rules.map(formatRule).join('<br>') : '<span class="status-muted">No rules reported</span>';
+          const disabled = canManage ? '' : 'disabled';
+          return `<tr>
+            <td><input type="checkbox" data-firewall-agent-id="${esc(agentId)}" ${disabled} /></td>
+            <td><b>${esc(it.hostname || agentId)}</b><div class="status-muted">${esc(agentId)}${it.ip_address ? ` • ${esc(it.ip_address)}` : ''}${osName ? ` • ${esc(osName)}` : ''}</div></td>
+            <td>${esc(it.backend || '-')}</td>
+            <td>${esc(it.status || '-')}${it.zone ? `<div class="status-muted">zone ${esc(it.zone)}</div>` : ''}</td>
+            <td>${ruleText}</td>
+            <td class="status-muted">${esc(it.last_seen || '')}</td>
+          </tr>`;
+        }).join('');
+        bodyEl.querySelectorAll('input[data-firewall-agent-id]').forEach((cb) => {
+          cb.addEventListener('change', updateFirewallActionState);
+        });
+        updateFirewallActionState();
+      }
+
+      async function scanFirewalls(showToastOnManual = false) {
+        bodyEl.innerHTML = '<tr><td colspan="6" class="status-muted" style="text-align:center;">Scanning online hosts…</td></tr>';
+        if (statusEl) statusEl.textContent = 'Scanning online hosts…';
+        try {
+          const r = await fetch('/reports/firewall-rules?max_hosts=300');
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          renderFirewallItems(data.items || []);
+          const failed = Array.isArray(data.failed_hosts) && data.failed_hosts.length ? `; failed scan: ${data.failed_hosts.length}` : '';
+          const skipped = Array.isArray(data.skipped_offline) && data.skipped_offline.length ? `; offline skipped: ${data.skipped_offline.length}` : '';
+          if (statusEl) statusEl.textContent = `${(data.items || []).length} host(s) scanned${failed}${skipped}`;
+          if (showToastOnManual && typeof showToast === 'function') showToast('Firewall scan complete', 'success');
+        } catch (e) {
+          console.error('[firewall management scan failed]', e);
+          bodyEl.innerHTML = '<tr><td colspan="6" class="status-error" style="text-align:center;">Firewall scan failed.</td></tr>';
+          if (statusEl) statusEl.textContent = 'Firewall scan failed';
+          if (typeof showToast === 'function') showToast(e.message || 'Firewall scan failed', 'error');
+        }
+      }
+
+      async function waitForJobDone(jobId, timeoutMs = 70000) {
+        const start = Date.now();
+        while (Date.now() - start < timeoutMs) {
+          const r = await fetch(`/jobs/${encodeURIComponent(jobId)}`);
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `Job status failed: HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          const runs = Array.isArray(data.runs) ? data.runs : [];
+          if (data.done) {
+            return {
+              done: true,
+              success: runs.filter((run) => run.status === 'success').map((run) => run.agent_id).filter(Boolean),
+              failed: runs.filter((run) => run.status === 'failed').map((run) => run.agent_id).filter(Boolean),
+              total: runs.length,
+            };
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+        return { done: false, success: [], failed: [], total: 0 };
+      }
+
+      async function runFirewallOperation(action) {
+        const agentIds = selectedFirewallAgentIds();
+        const port = Number(portEl?.value || '0');
+        const protocol = protoEl?.value || 'tcp';
+        const source = String(sourceEl?.value || '').trim();
+        if (!agentIds.length) {
+          if (typeof showToast === 'function') showToast('Select at least one host', 'error');
+          return;
+        }
+        if (!port || port < 1 || port > 65535) {
+          if (typeof showToast === 'function') showToast('Enter a valid port', 'error');
+          return;
+        }
+        const label = action === 'delete' ? 'Remove allow' : action === 'allow' ? 'Allow' : 'Deny';
+        if (!confirm(`${label} ${port}/${protocol} on ${agentIds.length} selected host(s)?`)) return;
+
+        [allowBtn, denyBtn, deleteBtn, refreshBtn].forEach((btn) => { if (btn) btn.disabled = true; });
+        try {
+          if (statusEl) statusEl.textContent = `Queueing ${label.toLowerCase()} job…`;
+          const r = await fetch(`/reports/firewall-rules/${encodeURIComponent(action)}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ agent_ids: agentIds, port, protocol, source }),
+          });
+          if (!r.ok) {
+            const err = await r.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${r.status}`);
+          }
+          const data = await r.json();
+          if (statusEl) statusEl.textContent = `Job ${data.job_id} queued for ${data.targets?.length || 0} host(s)…`;
+          const summary = await waitForJobDone(data.job_id);
+          if (statusEl) statusEl.textContent = summary.done
+            ? `${label}: ${summary.success.length} succeeded, ${summary.failed.length} failed. Refreshing…`
+            : `${label} still running. Refreshing visible status…`;
+          if (typeof showToast === 'function') showToast('Firewall job finished', 'success');
+          await scanFirewalls(false);
+        } catch (e) {
+          console.error('[firewall management action failed]', e);
+          if (statusEl) statusEl.textContent = `${label} failed`;
+          if (typeof showToast === 'function') showToast(e.message || `${label} failed`, 'error');
+        } finally {
+          if (refreshBtn) refreshBtn.disabled = false;
+          updateFirewallActionState();
+        }
+      }
+
+      refreshBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        void scanFirewalls(true);
+      });
+      selectAllBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        bodyEl.querySelectorAll('input[data-firewall-agent-id]').forEach((cb) => {
+          if (!cb.disabled) cb.checked = true;
+        });
+        updateFirewallActionState();
+      });
+      checkAllEl?.addEventListener('change', () => {
+        const checked = !!checkAllEl.checked;
+        bodyEl.querySelectorAll('input[data-firewall-agent-id]').forEach((cb) => {
+          if (!cb.disabled) cb.checked = checked;
+        });
+        updateFirewallActionState();
+      });
+      allowBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('allow'); });
+      denyBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('deny'); });
+      deleteBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('delete'); });
+      updateFirewallActionState();
+    }
+
 // Load hosts on page load
     function safeInit(name, fn) {
       try { if (typeof fn === 'function') fn(); }
@@ -5108,6 +5432,7 @@
       safeInit('initReportsControls', initReportsControls);
       safeInit('initUserManagementControls', initUserManagementControls);
       safeInit('initServiceManagementControls', initServiceManagementControls);
+      safeInit('initFirewallManagementControls', initFirewallManagementControls);
       safeInit('initFleetOverviewControls', initFleetOverviewControls);
       safeInit('initHostsTableControls', initHostsTableControls);
       safeInit('initCronjobsControls', initCronjobsControls);
@@ -5119,6 +5444,7 @@
       safeInit('initThemeToggle', initThemeToggle);
       safeInit('initSettingsMenu', initSettingsMenu);
       safeInit('initHostActionControls', initHostActionControls);
+      safeInit('initHostFirewallControls', initHostFirewallControls);
       safeInit('initHostMetadataEditor', initHostMetadataEditor);
       safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
       safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);

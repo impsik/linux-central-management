@@ -20,9 +20,36 @@ from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
 from ..services.package_names import sanitize_package_list
 from ..services.deb_version import is_vulnerable
-from ..schemas import HostMetadataUpdate
+from ..schemas import FirewallRuleRequest, HostMetadataUpdate
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
+
+
+def _normalize_firewall_rule(payload: FirewallRuleRequest) -> dict:
+    action = (payload.action or "").strip().lower()
+    if action not in ("allow", "deny", "delete"):
+        raise HTTPException(400, "action must be allow, deny, or delete")
+
+    protocol = (payload.protocol or "tcp").strip().lower()
+    if protocol not in ("tcp", "udp"):
+        raise HTTPException(400, "protocol must be tcp or udp")
+
+    service = (payload.service or "").strip()
+    source = (payload.source or "").strip()
+    port = payload.port
+    if not service:
+        if port is None:
+            raise HTTPException(400, "port is required when service is not provided")
+        if int(port) < 1 or int(port) > 65535:
+            raise HTTPException(400, "port must be between 1 and 65535")
+
+    return {
+        "action": action,
+        "port": int(port or 0),
+        "protocol": protocol,
+        "source": source,
+        "service": service,
+    }
 
 
 def _clean_optional_str(value: str | None, *, field: str, max_len: int = 255) -> str | None:
@@ -1245,6 +1272,114 @@ async def control_service(
     if run.status == "failed":
         msg = run.error or run.stderr or run.stdout or "Unknown error"
         raise HTTPException(500, f"Service {action_norm} failed: {msg}")
+
+    return {"job_id": created.job_key, "status": "success"}
+
+
+@router.get("/{agent_id}/firewall")
+async def get_firewall(agent_id: str, wait: bool = True, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    if not is_host_online(host):
+        t = seconds_since_seen(host)
+        if t is not None:
+            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
+        raise HTTPException(503, "Agent appears offline")
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="query-firewall",
+            payload={},
+            agent_ids=[agent_id],
+            commit=False,
+        )
+    job_id = created.job.id
+
+    await push_job_to_agents(
+        agent_ids=[agent_id],
+        job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "query-firewall"},
+    )
+
+    if not wait:
+        return {"job_id": created.job_key, "status": "queued", "message": "Job queued, poll /jobs/{job_id} for results"}
+
+    timeout = 20
+    res = await wait_for_job_run(job_id=job_id, agent_id=agent_id, timeout_s=timeout, poll_interval_s=0.3)
+    if not res.run:
+        raise HTTPException(504, f"Timeout waiting for firewall query after {timeout}s")
+
+    run = res.run
+    if run.status == "failed":
+        msg = run.error or run.stderr or "Unknown error"
+        raise HTTPException(500, f"Firewall query failed: {msg}")
+
+    from ..services.json_utils import loads_or
+
+    return loads_or(run.stdout, {})
+
+
+@router.post("/{agent_id}/firewall/rules")
+async def control_firewall(
+    agent_id: str,
+    payload: FirewallRuleRequest,
+    wait: bool = True,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_services"):
+        raise HTTPException(403, "Insufficient permissions to manage firewall rules")
+
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host:
+        raise HTTPException(404, "Host not found")
+    if not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    if not is_host_online(host):
+        t = seconds_since_seen(host)
+        if t is not None:
+            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
+        raise HTTPException(503, "Agent appears offline")
+
+    rule = _normalize_firewall_rule(payload)
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="firewall-control",
+            payload=rule,
+            agent_ids=[agent_id],
+            commit=False,
+        )
+    job_id = created.job.id
+
+    await push_job_to_agents(
+        agent_ids=[agent_id],
+        job_payload_builder=lambda aid: {
+            "job_id": created.job_key,
+            "type": "firewall-control",
+            **rule,
+        },
+    )
+
+    if not wait:
+        return {"job_id": created.job_key, "status": "queued"}
+
+    timeout = 30
+    res = await wait_for_job_run(job_id=job_id, agent_id=agent_id, timeout_s=timeout, poll_interval_s=0.3)
+    if not res.run:
+        raise HTTPException(504, f"Timeout waiting for firewall {rule['action']} after {timeout}s")
+
+    run = res.run
+    if run.status == "failed":
+        msg = run.error or run.stderr or run.stdout or "Unknown error"
+        raise HTTPException(500, f"Firewall {rule['action']} failed: {msg}")
 
     return {"job_id": created.job_key, "status": "success"}
 

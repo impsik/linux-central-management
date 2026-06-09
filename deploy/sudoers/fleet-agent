@@ -16,5 +16,7 @@ Cmnd_Alias FLEET_PASSWD = /usr/bin/passwd -S *, /usr/bin/passwd -l *, /usr/bin/p
 Cmnd_Alias FLEET_GETENT = /usr/bin/getent shadow *
 Cmnd_Alias FLEET_SYSTEMCTL = /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl enable *, /usr/bin/systemctl disable *
 Cmnd_Alias FLEET_USERMOD = /usr/sbin/usermod --expiredate *, /usr/sbin/usermod -s *
+Cmnd_Alias FLEET_FIREWALLD = /usr/bin/firewall-cmd --permanent *, /usr/bin/firewall-cmd --reload
+Cmnd_Alias FLEET_UFW = /usr/sbin/ufw *, /usr/bin/ufw *
 
-%fleet-agent ALL=(root) NOPASSWD: FLEET_APT_UPDATE, FLEET_APT_UPGRADE, FLEET_APT_UPGRADE_I, FLEET_APT_REINSTALL, FLEET_APT_REINSTALL_I, FLEET_APT_REMOVE, FLEET_APT_REMOVE_I, FLEET_DNF_MAKECACHE, FLEET_DNF_UPGRADE, FLEET_DNF_INSTALL, FLEET_DNF_REINSTALL, FLEET_DNF_REMOVE, FLEET_DNF_AUTOREMOVE, FLEET_PASSWD, FLEET_GETENT, FLEET_SYSTEMCTL, FLEET_USERMOD
+%fleet-agent ALL=(root) NOPASSWD: FLEET_APT_UPDATE, FLEET_APT_UPGRADE, FLEET_APT_UPGRADE_I, FLEET_APT_REINSTALL, FLEET_APT_REINSTALL_I, FLEET_APT_REMOVE, FLEET_APT_REMOVE_I, FLEET_DNF_MAKECACHE, FLEET_DNF_UPGRADE, FLEET_DNF_INSTALL, FLEET_DNF_REINSTALL, FLEET_DNF_REMOVE, FLEET_DNF_AUTOREMOVE, FLEET_PASSWD, FLEET_GETENT, FLEET_SYSTEMCTL, FLEET_USERMOD, FLEET_FIREWALLD, FLEET_UFW

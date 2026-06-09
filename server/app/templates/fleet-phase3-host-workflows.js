@@ -155,6 +155,138 @@
     }
   }
 
+  function formatFirewallRule(rule) {
+    const parts = [];
+    if (rule.service) parts.push(`service ${rule.service}`);
+    if (rule.port) parts.push(`${rule.port}${rule.protocol ? '/' + rule.protocol : ''}`);
+    if (rule.action) parts.push(String(rule.action).toUpperCase());
+    if (rule.source) parts.push(`from ${rule.source}`);
+    return parts.length ? parts.join(' ') : (rule.raw || '-');
+  }
+
+  async function loadFirewall(ctx, agentId) {
+    const list = document.getElementById('firewall-list');
+    if (!list) return;
+    list.innerHTML = '<div class="loading">Loading firewall rules...</div>';
+
+    try {
+      const response = await fetch(`/hosts/${agentId}/firewall`);
+      if (!response.ok) {
+        let errorMsg = response.statusText;
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.detail || errorData.message || response.statusText;
+        } catch {
+          errorMsg = response.statusText;
+        }
+        throw new Error(`Failed to load firewall rules: ${errorMsg}`);
+      }
+      const data = await response.json();
+      const rules = Array.isArray(data.rules) ? data.rules : [];
+      const backend = data.backend || 'unknown';
+      const status = data.status || 'unknown';
+      const zone = data.zone ? ` • zone ${w.escapeHtml(data.zone)}` : '';
+      const canManage = !!ctx.getCurrentPermissions()?.can_manage_services;
+      const summary = `<div class="admin-note" style="margin-bottom:0.75rem;">Backend: <b>${w.escapeHtml(backend)}</b> • Status: <b>${w.escapeHtml(status)}</b>${zone}</div>`;
+      if (!rules.length) {
+        list.innerHTML = summary + '<div class="empty-state">No firewall rules reported</div>';
+        return;
+      }
+
+      list.innerHTML = summary + rules.map((rule) => {
+        const text = formatFirewallRule(rule);
+        const port = rule.port || '';
+        const protocol = rule.protocol || 'tcp';
+        return `
+          <div class="service-card">
+            <div class="service-info">
+              <div class="service-name">${w.escapeHtml(text)}</div>
+              <div class="service-details">${w.escapeHtml(rule.raw || '')}</div>
+            </div>
+            <div class="service-actions">
+              <button class="btn btn-danger" data-firewall-delete="1" data-port="${w.escapeHtml(port)}" data-protocol="${w.escapeHtml(protocol)}" ${(!port || !canManage) ? 'disabled' : ''}>Remove allow</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      list.querySelectorAll('button[data-firewall-delete]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const port = Number(btn.getAttribute('data-port') || '0');
+          const protocol = btn.getAttribute('data-protocol') || 'tcp';
+          if (!port) return;
+          controlFirewall(ctx, agentId, { action: 'delete', port, protocol });
+        });
+      });
+    } catch (error) {
+      console.error('Error loading firewall:', error);
+      list.innerHTML = `<div class="error">Error loading firewall rules: ${w.escapeHtml(error.message)}</div>`;
+    }
+  }
+
+  function readHostFirewallPayload(action) {
+    const port = Number(document.getElementById('host-firewall-port')?.value || '0');
+    const protocol = document.getElementById('host-firewall-protocol')?.value || 'tcp';
+    const source = (document.getElementById('host-firewall-source')?.value || '').trim();
+    return { action, port, protocol, source };
+  }
+
+  async function controlFirewall(ctx, agentId, payload) {
+    if (!ctx.getCurrentPermissions()?.can_manage_services) {
+      w.showToast('Service management permission required to manage firewall rules.', 'error');
+      return;
+    }
+    const statusEl = document.getElementById('host-firewall-status');
+    if (!payload.port || payload.port < 1 || payload.port > 65535) {
+      w.showToast('Enter a valid port', 'error');
+      return;
+    }
+    try {
+      if (statusEl) statusEl.textContent = `${payload.action} rule queued…`;
+      const response = await fetch(`/hosts/${agentId}/firewall/rules`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        let errorMsg = `Failed to ${payload.action} firewall rule`;
+        try {
+          const error = await response.json();
+          errorMsg = error.detail || error.message || errorMsg;
+        } catch {
+          errorMsg = response.statusText || errorMsg;
+        }
+        throw new Error(errorMsg);
+      }
+      await response.json();
+      if (statusEl) statusEl.textContent = 'Firewall updated. Refreshing…';
+      w.showToast('Firewall rule updated', 'success');
+      await loadFirewall(ctx, agentId);
+      if (statusEl) statusEl.textContent = '';
+    } catch (error) {
+      console.error('Error controlling firewall:', error);
+      if (statusEl) statusEl.textContent = error.message || 'Firewall action failed';
+      w.showToast(error.message || 'Firewall action failed', 'error');
+    }
+  }
+
+  function initHostFirewallControls(ctx) {
+    document.getElementById('host-firewall-refresh')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const aid = ctx.getCurrentAgentId ? ctx.getCurrentAgentId() : null;
+      if (aid) void loadFirewall(ctx, aid);
+    });
+    ['allow', 'deny', 'delete'].forEach((action) => {
+      document.getElementById(`host-firewall-${action}`)?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const aid = ctx.getCurrentAgentId ? ctx.getCurrentAgentId() : null;
+        if (!aid) return;
+        void controlFirewall(ctx, aid, readHostFirewallPayload(action));
+      });
+    });
+  }
+
   async function waitForServicesToStabilize(ctx, agentId, targetServiceName = null) {
     const maxWaitTime = 120000;
     const pollInterval = 3000;
@@ -329,8 +461,11 @@
   w.phase3HostWorkflows = {
     loadUsers,
     loadServices,
+    loadFirewall,
+    initHostFirewallControls,
     waitForServicesToStabilize,
     controlService,
+    controlFirewall,
     controlUser,
   };
 })(window);
