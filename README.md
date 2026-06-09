@@ -19,7 +19,7 @@ Compose, Git, Python, OpenSSL, Ansible, and Go.
 
 ## Install Admin Node
 
-Run this on the server that will host the web UI:
+Run this on the Ubuntu/Debian server that will host the web UI (RedHat based will be added, maybe):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
