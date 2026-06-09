@@ -1142,16 +1142,35 @@ func parseUfwStatusLine(line string) FirewallRule {
 	if len(fields) < 2 {
 		return rule
 	}
-	target := fields[0]
+	actionIdx := -1
+	for i, field := range fields {
+		switch strings.ToLower(field) {
+		case "allow", "deny", "reject", "limit":
+			actionIdx = i
+		}
+		if actionIdx >= 0 {
+			break
+		}
+	}
+	if actionIdx <= 0 {
+		return rule
+	}
+	target := strings.Join(fields[:actionIdx], " ")
 	if parts := strings.SplitN(target, "/", 2); len(parts) == 2 {
 		rule.Port = parts[0]
 		rule.Protocol = parts[1]
-	} else {
+	} else if _, err := strconv.Atoi(target); err == nil {
 		rule.Port = target
+	} else {
+		rule.Service = target
 	}
-	rule.Action = strings.ToLower(fields[1])
-	if len(fields) >= 4 {
-		rule.Source = strings.Join(fields[3:], " ")
+	rule.Action = strings.ToLower(fields[actionIdx])
+	sourceIdx := actionIdx + 1
+	if sourceIdx < len(fields) && (strings.EqualFold(fields[sourceIdx], "in") || strings.EqualFold(fields[sourceIdx], "out")) {
+		sourceIdx++
+	}
+	if sourceIdx < len(fields) {
+		rule.Source = strings.Join(fields[sourceIdx:], " ")
 	}
 	return rule
 }
@@ -1198,7 +1217,7 @@ func isSafeFirewallToken(s string) bool {
 		return false
 	}
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' || r == ' ' {
 			continue
 		}
 		return false
@@ -1271,27 +1290,34 @@ func buildFirewalldRejectRule(port int, protocol, source string) string {
 }
 
 func controlUfw(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
-	if service != "" {
-		return "", "", 1, "service rules are not supported by the UFW adapter; use port/protocol"
-	}
-	portStr := strconv.Itoa(port)
-	args := []string{"-n", "ufw"}
-	if action == "delete" {
-		args = append(args, "--force", "delete", "allow")
-	} else {
-		args = append(args, action)
-	}
-	if source != "" && action != "delete" {
-		args = append(args, "from", source, "to", "any", "port", portStr, "proto", protocol)
-	} else {
-		args = append(args, portStr+"/"+protocol)
-	}
+	args := buildUfwArgs(action, port, protocol, source, service)
 	cmd := exec.CommandContext(ctx, "sudo", args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), "", 1, fmt.Sprintf("ufw %s failed: %v", action, err)
 	}
 	return string(out), "", 0, ""
+}
+
+func buildUfwArgs(action string, port int, protocol, source, service string) []string {
+	args := []string{"-n", "ufw"}
+	if action == "delete" {
+		args = append(args, "--force", "delete", "allow")
+	} else {
+		args = append(args, action)
+	}
+	if service != "" {
+		if source != "" && action != "delete" {
+			args = append(args, "from", source, "to", "any", "app", service)
+		} else {
+			args = append(args, service)
+		}
+	} else if source != "" && action != "delete" {
+		args = append(args, "from", source, "to", "any", "port", strconv.Itoa(port), "proto", protocol)
+	} else {
+		args = append(args, strconv.Itoa(port)+"/"+protocol)
+	}
+	return args
 }
 
 func queryPkgInfo(ctx context.Context, pkgName string) (string, string, int, string) {

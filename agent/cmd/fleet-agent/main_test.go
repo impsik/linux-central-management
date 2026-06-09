@@ -231,6 +231,36 @@ func TestParseUfwStatusLine(t *testing.T) {
 	}
 }
 
+func TestParseUfwStatusLineService(t *testing.T) {
+	rule := parseUfwStatusLine("[ 2] OpenSSH                    ALLOW IN    Anywhere")
+	if rule.ID != "2" || rule.Service != "OpenSSH" || rule.Port != "" || rule.Action != "allow" || rule.Source != "Anywhere" {
+		t.Fatalf("parsed UFW service rule = %#v", rule)
+	}
+}
+
+func TestParseUfwStatusLineServiceWithSpaces(t *testing.T) {
+	rule := parseUfwStatusLine("[ 3] Apache Full                ALLOW IN    192.168.1.0/24")
+	if rule.ID != "3" || rule.Service != "Apache Full" || rule.Port != "" || rule.Action != "allow" || rule.Source != "192.168.1.0/24" {
+		t.Fatalf("parsed UFW spaced service rule = %#v", rule)
+	}
+}
+
+func TestBuildUfwArgsServiceDelete(t *testing.T) {
+	got := buildUfwArgs("delete", 0, "tcp", "", "OpenSSH")
+	want := []string{"-n", "ufw", "--force", "delete", "allow", "OpenSSH"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ufw args = %#v, want %#v", got, want)
+	}
+}
+
+func TestBuildUfwArgsServiceAllowFromSource(t *testing.T) {
+	got := buildUfwArgs("allow", 0, "tcp", "192.168.1.0/24", "OpenSSH")
+	want := []string{"-n", "ufw", "allow", "from", "192.168.1.0/24", "to", "any", "app", "OpenSSH"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ufw args = %#v, want %#v", got, want)
+	}
+}
+
 func TestBuildFirewalldRejectRule(t *testing.T) {
 	got := buildFirewalldRejectRule(443, "tcp", "10.0.0.0/8")
 	want := `rule family="ipv4" source address="10.0.0.0/8" port port="443" protocol="tcp" reject`
