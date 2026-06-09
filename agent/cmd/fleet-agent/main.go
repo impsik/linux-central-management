@@ -1500,11 +1500,19 @@ func queryRpmPkgInfo(ctx context.Context, pkgName string) (string, string, int, 
 		}
 	}
 
-	if frontend := rpmFrontend(); frontend != "" {
-		dnfCmd := exec.CommandContext(ctx, frontend, "info", pkgName)
-		dnfOut, _ := dnfCmd.CombinedOutput()
-		info.Raw[frontend+"_info"] = string(dnfOut)
-		applyCandidateFields(parseRpmInfoFields(string(dnfOut)))
+	// Keep package detail lookups responsive. `dnf info`/`yum info` may refresh
+	// metadata or wait on package manager locks; for installed packages, rpm -qi
+	// already provides the useful details. Use cache-only repo info briefly only
+	// when rpm did not find the package.
+	if rpmErr != nil {
+		if frontend := rpmFrontend(); frontend != "" {
+			cacheCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			dnfCmd := exec.CommandContext(cacheCtx, frontend, "-C", "info", pkgName)
+			dnfOut, _ := dnfCmd.CombinedOutput()
+			info.Raw[frontend+"_cache_info"] = string(dnfOut)
+			applyCandidateFields(parseRpmInfoFields(string(dnfOut)))
+		}
 	}
 
 	j, err := json.Marshal(info)
