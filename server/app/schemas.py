@@ -79,6 +79,14 @@ class JobCreateCVECheck(BaseModel):
     cve: str
 
 
+class FirewallRuleRequest(BaseModel):
+    action: str
+    port: Optional[int] = None
+    protocol: Optional[str] = "tcp"
+    source: Optional[str] = None
+    service: Optional[str] = None
+
+
 class HostMetadataUpdate(BaseModel):
     hostname: Optional[str] = None
     role: Optional[str] = None

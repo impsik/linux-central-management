@@ -439,7 +439,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), user=Depends(require_
         raise HTTPException(404, "unknown job")
 
     result_data = {}
-    if job.job_type in ("query-users", "query-services", "query-pkg-version", "cve-check") and runs:
+    if job.job_type in ("query-users", "query-services", "query-firewall", "query-pkg-version", "cve-check") and runs:
         run = runs[0]
         if run.status == "success" and run.stdout:
             import json
@@ -470,7 +470,7 @@ def job_status(job_id: str, db: Session = Depends(get_db), user=Depends(require_
                 "finished_at": r.finished_at,
                 "exit_code": r.exit_code,
                 "error": r.error,
-                "stdout": r.stdout if job.job_type in ("query-users", "query-services", "query-pkg-version", "cve-check") else None,
+                "stdout": r.stdout if job.job_type in ("query-users", "query-services", "query-firewall", "query-pkg-version", "cve-check") else None,
             }
             for r in runs
         ],

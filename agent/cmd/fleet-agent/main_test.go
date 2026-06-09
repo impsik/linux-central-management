@@ -223,3 +223,18 @@ func TestParseRpmInfoFieldsCapturesMultilineDescription(t *testing.T) {
 		t.Fatalf("description = %q, want %q", fields["description"], wantDesc)
 	}
 }
+
+func TestParseUfwStatusLine(t *testing.T) {
+	rule := parseUfwStatusLine("[ 1] 443/tcp                    ALLOW IN    10.0.0.0/8")
+	if rule.ID != "1" || rule.Port != "443" || rule.Protocol != "tcp" || rule.Action != "allow" || rule.Source != "10.0.0.0/8" {
+		t.Fatalf("parsed UFW rule = %#v", rule)
+	}
+}
+
+func TestBuildFirewalldRejectRule(t *testing.T) {
+	got := buildFirewalldRejectRule(443, "tcp", "10.0.0.0/8")
+	want := `rule family="ipv4" source address="10.0.0.0/8" port port="443" protocol="tcp" reject`
+	if got != want {
+		t.Fatalf("rich rule = %q, want %q", got, want)
+	}
+}

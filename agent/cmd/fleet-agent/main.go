@@ -78,6 +78,10 @@ type Job struct {
 	PackageName string   `json:"package_name,omitempty"`
 	Refresh     bool     `json:"refresh,omitempty"`
 	CVE         string   `json:"cve,omitempty"`
+	Port        int      `json:"port,omitempty"`
+	Protocol    string   `json:"protocol,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	Service     string   `json:"service,omitempty"`
 }
 
 type JobEvent struct {
@@ -545,6 +549,34 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
 		return
 
+	case "query-firewall":
+		stdout, stderr, code, errMsg := queryFirewall(ctx)
+		if code == 0 && errMsg == "" {
+			ev.Status = "success"
+		} else {
+			ev.Status = "failed"
+		}
+		ev.ExitCode = &code
+		ev.Stdout = stdout
+		ev.Stderr = stderr
+		ev.Error = errMsg
+		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
+		return
+
+	case "firewall-control":
+		stdout, stderr, code, errMsg := controlFirewall(ctx, job.Action, job.Port, job.Protocol, job.Source, job.Service)
+		if code == 0 && errMsg == "" {
+			ev.Status = "success"
+		} else {
+			ev.Status = "failed"
+		}
+		ev.ExitCode = &code
+		ev.Stdout = stdout
+		ev.Stderr = stderr
+		ev.Error = errMsg
+		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
+		return
+
 	case "query-metrics":
 		stdout, stderr, code, errMsg := querySystemMetrics(ctx)
 		if code == 0 && errMsg == "" {
@@ -965,6 +997,301 @@ func queryPkgVersions(ctx context.Context, packages []string) (string, string, i
 		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
 	}
 	return string(j), "", 0, ""
+}
+
+type FirewallRule struct {
+	ID       string `json:"id,omitempty"`
+	Backend  string `json:"backend"`
+	Action   string `json:"action,omitempty"`
+	Port     string `json:"port,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Service  string `json:"service,omitempty"`
+	Raw      string `json:"raw,omitempty"`
+}
+
+func detectFirewallBackend(ctx context.Context) string {
+	if _, err := exec.LookPath("firewall-cmd"); err == nil {
+		stateCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(stateCtx, "firewall-cmd", "--state")
+		if out, err := cmd.Output(); err == nil && strings.TrimSpace(string(out)) == "running" {
+			return "firewalld"
+		}
+	}
+	if _, err := exec.LookPath("ufw"); err == nil {
+		return "ufw"
+	}
+	return ""
+}
+
+func queryFirewall(ctx context.Context) (string, string, int, string) {
+	queryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	backend := detectFirewallBackend(queryCtx)
+	switch backend {
+	case "firewalld":
+		return queryFirewalld(queryCtx)
+	case "ufw":
+		return queryUfw(queryCtx)
+	default:
+		return "", "", 1, "no supported firewall manager found (expected active firewalld or ufw)"
+	}
+}
+
+func queryFirewalld(ctx context.Context) (string, string, int, string) {
+	zone := "public"
+	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--get-default-zone").Output(); err == nil {
+		if z := strings.TrimSpace(string(out)); z != "" {
+			zone = z
+		}
+	}
+
+	rules := make([]FirewallRule, 0)
+	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-ports").Output(); err == nil {
+		for _, item := range strings.Fields(string(out)) {
+			parts := strings.SplitN(item, "/", 2)
+			r := FirewallRule{Backend: "firewalld", Action: "allow", Raw: item}
+			if len(parts) == 2 {
+				r.Port = parts[0]
+				r.Protocol = parts[1]
+			} else {
+				r.Port = item
+			}
+			rules = append(rules, r)
+		}
+	}
+	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-services").Output(); err == nil {
+		for _, svc := range strings.Fields(string(out)) {
+			rules = append(rules, FirewallRule{Backend: "firewalld", Action: "allow", Service: svc, Raw: svc})
+		}
+	}
+	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-rich-rules").Output(); err == nil {
+		for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			rules = append(rules, FirewallRule{Backend: "firewalld", Action: "deny", Raw: line})
+		}
+	}
+
+	payload := map[string]any{
+		"backend": "firewalld",
+		"status":  "running",
+		"zone":    zone,
+		"rules":   rules,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
+	}
+	return string(b), "", 0, ""
+}
+
+func queryUfw(ctx context.Context) (string, string, int, string) {
+	out, err := exec.CommandContext(ctx, "ufw", "status", "numbered").CombinedOutput()
+	if err != nil {
+		return "", string(out), 1, fmt.Sprintf("ufw status failed: %v", err)
+	}
+	text := strings.ReplaceAll(string(out), "\r\n", "\n")
+	status := "unknown"
+	rules := make([]FirewallRule, 0)
+	for _, line := range strings.Split(text, "\n") {
+		l := strings.TrimSpace(line)
+		if l == "" {
+			continue
+		}
+		if strings.HasPrefix(strings.ToLower(l), "status:") {
+			status = strings.TrimSpace(strings.TrimPrefix(l, "Status:"))
+			continue
+		}
+		if !strings.HasPrefix(l, "[") {
+			continue
+		}
+		rule := parseUfwStatusLine(l)
+		if rule.Raw != "" {
+			rules = append(rules, rule)
+		}
+	}
+	payload := map[string]any{
+		"backend": "ufw",
+		"status":  strings.ToLower(status),
+		"rules":   rules,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
+	}
+	return string(b), "", 0, ""
+}
+
+func parseUfwStatusLine(line string) FirewallRule {
+	raw := strings.TrimSpace(line)
+	rule := FirewallRule{Backend: "ufw", Raw: raw}
+	if raw == "" || !strings.HasPrefix(raw, "[") {
+		return rule
+	}
+	closeIdx := strings.Index(raw, "]")
+	if closeIdx > 0 {
+		rule.ID = strings.TrimSpace(strings.TrimPrefix(raw[:closeIdx], "["))
+		raw = strings.TrimSpace(raw[closeIdx+1:])
+	}
+	fields := strings.Fields(raw)
+	if len(fields) < 2 {
+		return rule
+	}
+	target := fields[0]
+	if parts := strings.SplitN(target, "/", 2); len(parts) == 2 {
+		rule.Port = parts[0]
+		rule.Protocol = parts[1]
+	} else {
+		rule.Port = target
+	}
+	rule.Action = strings.ToLower(fields[1])
+	if len(fields) >= 4 {
+		rule.Source = strings.Join(fields[3:], " ")
+	}
+	return rule
+}
+
+func controlFirewall(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
+	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "allow" && action != "deny" && action != "delete" {
+		return "", "", 1, "action must be allow, deny, or delete"
+	}
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	if protocol != "tcp" && protocol != "udp" {
+		return "", "", 1, "protocol must be tcp or udp"
+	}
+	source = strings.TrimSpace(source)
+	service = strings.TrimSpace(service)
+	if service != "" && !isSafeFirewallToken(service) {
+		return "", "", 1, "service contains unsupported characters"
+	}
+	if source != "" && !isSafeFirewallSource(source) {
+		return "", "", 1, "source contains unsupported characters"
+	}
+	if service == "" && (port < 1 || port > 65535) {
+		return "", "", 1, "port must be between 1 and 65535"
+	}
+
+	switch detectFirewallBackend(queryCtx) {
+	case "firewalld":
+		return controlFirewalld(queryCtx, action, port, protocol, source, service)
+	case "ufw":
+		return controlUfw(queryCtx, action, port, protocol, source, service)
+	default:
+		return "", "", 1, "no supported firewall manager found (expected active firewalld or ufw)"
+	}
+}
+
+func isSafeFirewallToken(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isSafeFirewallSource(s string) bool {
+	if s == "" || len(s) > 128 {
+		return false
+	}
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == ':' || r == '/' || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func controlFirewalld(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
+	if source != "" && action != "deny" {
+		return "", "", 1, "source-scoped rules are not supported for firewalld simple rules yet"
+	}
+	arg := ""
+	if action == "deny" {
+		if service != "" {
+			return "", "", 1, "deny by service is not supported for firewalld; use port/protocol"
+		}
+		arg = "--add-rich-rule=" + buildFirewalldRejectRule(port, protocol, source)
+	} else if service != "" {
+		if action == "delete" {
+			arg = "--remove-service=" + service
+		} else {
+			arg = "--add-service=" + service
+		}
+	} else {
+		spec := fmt.Sprintf("%d/%s", port, protocol)
+		if action == "delete" {
+			arg = "--remove-port=" + spec
+		} else {
+			arg = "--add-port=" + spec
+		}
+	}
+	cmd := exec.CommandContext(ctx, "sudo", "-n", "firewall-cmd", "--permanent", arg)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), "", 1, fmt.Sprintf("firewall-cmd failed: %v", err)
+	}
+	reload := exec.CommandContext(ctx, "sudo", "-n", "firewall-cmd", "--reload")
+	reloadOut, reloadErr := reload.CombinedOutput()
+	combined := append(out, reloadOut...)
+	if reloadErr != nil {
+		return string(combined), "", 1, fmt.Sprintf("firewall-cmd reload failed: %v", reloadErr)
+	}
+	return string(combined), "", 0, ""
+}
+
+func buildFirewalldRejectRule(port int, protocol, source string) string {
+	family := "ipv4"
+	if strings.Contains(source, ":") {
+		family = "ipv6"
+	}
+	parts := []string{fmt.Sprintf(`rule family="%s"`, family)}
+	if source != "" {
+		parts = append(parts, fmt.Sprintf(`source address="%s"`, source))
+	}
+	parts = append(parts, fmt.Sprintf(`port port="%d" protocol="%s" reject`, port, protocol))
+	return strings.Join(parts, " ")
+}
+
+func controlUfw(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
+	if service != "" {
+		return "", "", 1, "service rules are not supported by the UFW adapter; use port/protocol"
+	}
+	portStr := strconv.Itoa(port)
+	args := []string{"-n", "ufw"}
+	if action == "delete" {
+		args = append(args, "--force", "delete", "allow")
+	} else {
+		args = append(args, action)
+	}
+	if source != "" && action != "delete" {
+		args = append(args, "from", source, "to", "any", "port", portStr, "proto", protocol)
+	} else {
+		args = append(args, portStr+"/"+protocol)
+	}
+	cmd := exec.CommandContext(ctx, "sudo", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out), "", 1, fmt.Sprintf("ufw %s failed: %v", action, err)
+	}
+	return string(out), "", 0, ""
 }
 
 func queryPkgInfo(ctx context.Context, pkgName string) (string, string, int, string) {

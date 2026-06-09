@@ -53,6 +53,38 @@ class ServicePresenceActionRequest(BaseModel):
     agent_ids: list[str] | None = None
 
 
+class FirewallFleetActionRequest(BaseModel):
+    agent_ids: list[str] | None = None
+    port: int | None = None
+    protocol: str | None = "tcp"
+    source: str | None = None
+    service: str | None = None
+
+
+def _normalize_firewall_action(action: str, payload: FirewallFleetActionRequest) -> dict:
+    action_norm = (action or "").strip().lower()
+    if action_norm not in ("allow", "deny", "delete"):
+        raise HTTPException(400, "Invalid action. Must be allow, deny, or delete.")
+    protocol = (payload.protocol or "tcp").strip().lower()
+    if protocol not in ("tcp", "udp"):
+        raise HTTPException(400, "protocol must be tcp or udp")
+    service = (payload.service or "").strip()
+    source = (payload.source or "").strip()
+    port = payload.port
+    if not service:
+        if port is None:
+            raise HTTPException(400, "port is required when service is not provided")
+        if int(port) < 1 or int(port) > 65535:
+            raise HTTPException(400, "port must be between 1 and 65535")
+    return {
+        "action": action_norm,
+        "port": int(port or 0),
+        "protocol": protocol,
+        "source": source,
+        "service": service,
+    }
+
+
 async def _wait_for_job_runs(
     *,
     job_id,
@@ -662,6 +694,145 @@ async def service_presence_action(
         "job_id": created.job_key,
         "action": action_norm,
         "service_name": service_name,
+        "targets": targets,
+        "skipped_offline": sorted(skipped_offline),
+        "unknown_or_unavailable": unknown_or_unavailable,
+    }
+
+
+@router.get("/firewall-rules")
+async def firewall_rules_report(
+    max_hosts: int = Query(200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    hosts, skipped_offline = _visible_online_hosts(db=db, user=user, max_hosts=max_hosts)
+    targets = [h.agent_id for h in hosts]
+    if not targets:
+        return {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "items": [],
+            "scanned_hosts": 0,
+            "skipped_offline": skipped_offline,
+            "failed_hosts": [],
+        }
+
+    host_by_agent = {h.agent_id: h for h in hosts}
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="query-firewall",
+            payload={"source": "firewall-rules"},
+            agent_ids=targets,
+            commit=False,
+        )
+
+    await push_job_to_agents(
+        agent_ids=targets,
+        job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "query-firewall"},
+    )
+
+    runs = await _wait_for_job_runs(job_id=created.job.id, agent_ids=targets, timeout_s=25, poll_interval_s=0.5)
+    failed_hosts: list[str] = []
+    items: list[dict] = []
+    for run in runs:
+        h = host_by_agent.get(run.agent_id)
+        if not h:
+            continue
+        if run.status != "success" or not run.stdout:
+            failed_hosts.append(run.agent_id)
+            continue
+        data = loads_or(run.stdout, {})
+        rules = data.get("rules") if isinstance(data, dict) else []
+        items.append(
+            {
+                "agent_id": h.agent_id,
+                "hostname": h.hostname,
+                "fqdn": h.fqdn,
+                "ip_address": h.ip_address,
+                "os_id": h.os_id,
+                "os_version": h.os_version,
+                "labels": h.labels or {},
+                "last_seen": h.last_seen,
+                "is_online": True,
+                "backend": str(data.get("backend") or ""),
+                "status": str(data.get("status") or ""),
+                "zone": str(data.get("zone") or ""),
+                "rules": rules if isinstance(rules, list) else [],
+            }
+        )
+
+    items.sort(key=lambda it: str(it.get("hostname") or it.get("agent_id") or ""))
+    return {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "items": items,
+        "scanned_hosts": len(targets),
+        "skipped_offline": skipped_offline,
+        "failed_hosts": sorted(failed_hosts),
+    }
+
+
+@router.post("/firewall-rules/{action}")
+async def firewall_rules_action(
+    action: str,
+    payload: FirewallFleetActionRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_services"):
+        raise HTTPException(403, "Insufficient permissions to manage firewall rules")
+
+    rule = _normalize_firewall_action(action, payload)
+    requested = sorted({str(a).strip() for a in (payload.agent_ids or []) if str(a).strip()})
+    if not requested:
+        raise HTTPException(400, "agent_ids is required")
+
+    hosts, skipped_offline = _visible_online_hosts(db=db, user=user, agent_ids=requested, max_hosts=500)
+    targets = sorted({h.agent_id for h in hosts})
+    unknown_or_unavailable = sorted(set(requested) - set(targets) - set(skipped_offline))
+    if not targets:
+        raise HTTPException(400, "No online matching hosts selected for this firewall action")
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="firewall-control",
+            payload={**rule, "source_context": "firewall-rules"},
+            agent_ids=targets,
+            commit=False,
+        )
+
+    await push_job_to_agents(
+        agent_ids=targets,
+        job_payload_builder=lambda aid: {
+            "job_id": created.job_key,
+            "type": "firewall-control",
+            **rule,
+        },
+    )
+
+    with transaction(db):
+        log_event(
+            db,
+            action=f"reports.firewall_rules.{rule['action']}",
+            actor=user,
+            request=request,
+            target_type="firewall_rule",
+            target_name=rule.get("service") or f"{rule.get('port')}/{rule.get('protocol')}",
+            meta={
+                "job_id": created.job_key,
+                "target_count": len(targets),
+                "offline_agent_ids": skipped_offline,
+                "unknown_or_unavailable_agent_ids": unknown_or_unavailable,
+            },
+        )
+
+    return {
+        "job_id": created.job_key,
+        "action": rule["action"],
+        "rule": rule,
         "targets": targets,
         "skipped_offline": sorted(skipped_offline),
         "unknown_or_unavailable": unknown_or_unavailable,
