@@ -680,6 +680,10 @@
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
                 <input id="firewall-management-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
               </div>
+              <div style="min-width:150px;">
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Service</label>
+                <input id="firewall-management-service" class="host-search" type="text" placeholder="cockpit" />
+              </div>
               <div style="min-width:110px;">
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
                 <select id="firewall-management-protocol" class="host-search">
@@ -1341,6 +1345,10 @@
             <div style="min-width:110px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
               <input id="host-firewall-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
+            </div>
+            <div style="min-width:150px;">
+              <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Service</label>
+              <input id="host-firewall-service" class="host-search" type="text" placeholder="cockpit" />
             </div>
             <div style="min-width:110px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
@@ -5230,6 +5238,7 @@
       const statusEl = document.getElementById('firewall-management-status');
       const bodyEl = document.getElementById('firewall-management-table-body');
       const portEl = document.getElementById('firewall-management-port');
+      const serviceEl = document.getElementById('firewall-management-service');
       const protoEl = document.getElementById('firewall-management-protocol');
       const sourceEl = document.getElementById('firewall-management-source');
       if (!bodyEl) return;
@@ -5347,18 +5356,20 @@
       async function runFirewallOperation(action) {
         const agentIds = selectedFirewallAgentIds();
         const port = Number(portEl?.value || '0');
+        const service = String(serviceEl?.value || '').trim();
         const protocol = protoEl?.value || 'tcp';
         const source = String(sourceEl?.value || '').trim();
         if (!agentIds.length) {
           if (typeof showToast === 'function') showToast('Select at least one host', 'error');
           return;
         }
-        if (!port || port < 1 || port > 65535) {
-          if (typeof showToast === 'function') showToast('Enter a valid port', 'error');
+        if (!service && (!port || port < 1 || port > 65535)) {
+          if (typeof showToast === 'function') showToast('Enter a valid port or service', 'error');
           return;
         }
         const label = action === 'delete' ? 'Remove allow' : action === 'allow' ? 'Allow' : 'Deny';
-        if (!confirm(`${label} ${port}/${protocol} on ${agentIds.length} selected host(s)?`)) return;
+        const target = service ? `service ${service}` : `${port}/${protocol}`;
+        if (!confirm(`${label} ${target} on ${agentIds.length} selected host(s)?`)) return;
 
         [allowBtn, denyBtn, deleteBtn, refreshBtn].forEach((btn) => { if (btn) btn.disabled = true; });
         try {
@@ -5366,7 +5377,7 @@
           const r = await fetch(`/reports/firewall-rules/${encodeURIComponent(action)}`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds, port, protocol, source }),
+            body: JSON.stringify({ agent_ids: agentIds, port, protocol, source, service }),
           });
           if (!r.ok) {
             const err = await r.json().catch(() => ({}));
