@@ -247,6 +247,7 @@ ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -
 SERVER_URL="${SERVER_URL:-}"
 REMOTE_AGENT_TOKEN="${AGENT_TOKEN:-}"
 REMOTE_TERMINAL_TOKEN="${TERM_TOKEN:-}"
+REMOTE_TERMINAL_BACKEND="${TERM_BACKEND:-auto}"
 
 if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
   log_info "Installing/updating fleet-agent systemd service on targets"
@@ -256,12 +257,13 @@ if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
     || log_warn "Agent deploy: could not reach some hosts (pre-systemd pkill step)"
 
   # Write env file on the REMOTE host (so hostname is correct)
-  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"\$(hostname -s)\"; SERVER_URL=\"$SERVER_URL\"; TOKEN=\"$REMOTE_AGENT_TOKEN\"; TERM_TOKEN=\"$REMOTE_TERMINAL_TOKEN\"; cat > /etc/fleet-agent.env <<EOF
+  ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "umask 077; HOSTID=\"\$(hostname -s)\"; SERVER_URL=\"$SERVER_URL\"; TOKEN=\"$REMOTE_AGENT_TOKEN\"; TERM_TOKEN=\"$REMOTE_TERMINAL_TOKEN\"; TERM_BACKEND=\"$REMOTE_TERMINAL_BACKEND\"; cat > /etc/fleet-agent.env <<EOF
 FLEET_SERVER_URL=\$SERVER_URL
 FLEET_AGENT_ID=\$HOSTID
 FLEET_LABELS=\$LABELS
 FLEET_AGENT_TOKEN=\$TOKEN
 FLEET_TERMINAL_TOKEN=\$TERM_TOKEN
+FLEET_TERMINAL_BACKEND=\$TERM_BACKEND
 EOF" || log_warn "Agent deploy: could not reach some hosts (env file step)"
 
   # Write systemd unit (use shell heredoc; ad-hoc copy module is awkward with spaces/newlines)
@@ -282,6 +284,7 @@ Environment=FLEET_SERVER_URL=$SERVER_URL
 Environment=FLEET_AGENT_ID=%H
 Environment=FLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN
 Environment=FLEET_TERMINAL_TOKEN=$REMOTE_TERMINAL_TOKEN
+Environment=FLEET_TERMINAL_BACKEND=$REMOTE_TERMINAL_BACKEND
 
 ExecStart=/opt/fleet-agent/fleet-agent
 Restart=always

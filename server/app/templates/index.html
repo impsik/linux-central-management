@@ -1665,7 +1665,7 @@
       terminalInputHandlerAttached = true;
       term.onData(data => {
         if (ws && ws.readyState === 1) {
-          ws.send(new TextEncoder().encode(data));
+          ws.send(data);
         }
       });
     }
@@ -1684,7 +1684,7 @@
         return;
       }
       try {
-        ws.send(new TextEncoder().encode(pendingInteractivePackageCmd + '\n'));
+        ws.send(pendingInteractivePackageCmd + '\r');
         pendingInteractivePackageCmd = null;
         updateTerminalPendingCmdButton();
         showToast('Sent pending package command to terminal', 'success');
@@ -3095,7 +3095,8 @@
 
       currentAgentId = agentId;
       if (ws) { try { ws.close(); } catch { } }
-      term.clear();
+      if (typeof term.reset === 'function') term.reset();
+      else term.clear();
       term.write(`Connecting to ${agentId}...\r\n`);
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${agentId}`);

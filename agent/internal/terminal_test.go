@@ -30,6 +30,18 @@ func TestTerminalSSHCommandUsesResolvedTarget(t *testing.T) {
 	}
 }
 
+func TestPrefersSSHConsoleBackendHonorsExplicitBackend(t *testing.T) {
+	t.Setenv("FLEET_TERMINAL_BACKEND", "ssh")
+	if !prefersSSHConsoleBackend() {
+		t.Fatal("prefersSSHConsoleBackend() = false, want true for explicit ssh backend")
+	}
+
+	t.Setenv("FLEET_TERMINAL_BACKEND", "login")
+	if prefersSSHConsoleBackend() {
+		t.Fatal("prefersSSHConsoleBackend() = true, want false for explicit login backend")
+	}
+}
+
 func TestRunTerminalSSHLoginFromArgsIgnoresNormalAgentStart(t *testing.T) {
 	if RunTerminalSSHLoginFromArgs([]string{os.Args[0]}) {
 		t.Fatal("RunTerminalSSHLoginFromArgs() = true for normal agent args")
