@@ -33,6 +33,7 @@ type RegisterPayload struct {
 	AgentID   string            `json:"agent_id"`
 	Hostname  string            `json:"hostname"`
 	FQDN      string            `json:"fqdn,omitempty"`
+	IPs       []string          `json:"ip_addresses,omitempty"`
 	OSID      string            `json:"os_id,omitempty"`
 	OSVersion string            `json:"os_version,omitempty"`
 	Kernel    string            `json:"kernel,omitempty"`
@@ -111,6 +112,7 @@ func main() {
 	reg := RegisterPayload{
 		AgentID:   cfg.AgentID,
 		Hostname:  hostname,
+		IPs:       localIPv4Addresses(),
 		Labels:    cfg.Labels,
 		OSID:      readOSID(),
 		OSVersion: readOSVersion(),

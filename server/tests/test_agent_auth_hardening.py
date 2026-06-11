@@ -74,6 +74,52 @@ def test_agent_routes_require_token_when_configured(monkeypatch):
         assert ok.json()['ok'] is True
 
 
+def test_agent_register_prefers_reported_guest_ip_over_request_peer(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.1', 12345)) as client:
+        payload = _register_payload('srv-ip')
+        payload['ip_addresses'] = ['127.0.0.1', '192.16.1.25']
+        ok = client.post(
+            '/agent/register',
+            json=payload,
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert ok.status_code == 200, ok.text
+
+        db_mod = importlib.import_module('app.db')
+        models = importlib.import_module('app.models')
+        with db_mod.SessionLocal() as db:
+            host = db.query(models.Host).filter_by(agent_id='srv-ip').one()
+            assert host.ip_address == '192.16.1.25'
+
+
+def test_agent_heartbeat_does_not_clobber_reported_guest_ip(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.1', 12345)) as client:
+        payload = _register_payload('srv-heartbeat-ip')
+        payload['ip_addresses'] = ['192.16.1.26']
+        ok = client.post(
+            '/agent/register',
+            json=payload,
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert ok.status_code == 200, ok.text
+
+        hb = client.post(
+            '/agent/heartbeat?agent_id=srv-heartbeat-ip',
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert hb.status_code == 200, hb.text
+
+        db_mod = importlib.import_module('app.db')
+        models = importlib.import_module('app.models')
+        with db_mod.SessionLocal() as db:
+            host = db.query(models.Host).filter_by(agent_id='srv-heartbeat-ip').one()
+            assert host.ip_address == '192.16.1.26'
+
+
 def test_all_agent_routes_have_router_level_auth_dependency(monkeypatch):
     app = _boot_app(monkeypatch, insecure_no_token=True, token='')
     agent_auth = importlib.import_module('app.services.agent_auth')
