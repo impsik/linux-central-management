@@ -10,7 +10,7 @@ views, audit logs, and other day-to-day operations.
 
 ## Requirements
 
-- Ubuntu/Debian server for the admin node
+- Ubuntu/Debian/RedHat server for the admin node
 - SSH access from the admin node to managed hosts
 - `sudo` access on managed hosts for agent installation
 
@@ -19,7 +19,13 @@ Compose, Git, Python, OpenSSL, Ansible, and Go.
 
 ## Install Admin Node
 
-Run this on the Ubuntu/Debian server that will host the web UI (RedHat based will be added, maybe):
+RedHat: install manually needed packages
+
+```bash
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+Run this on the Ubuntu/Debian/RedHat server that will host the web UI (RedHat based will be added, maybe):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
@@ -31,6 +37,7 @@ The installer prompts for:
 - bootstrap admin username and password
 - optional managed hosts to add immediately
 - SSH username for those hosts
+- Managed hosts to deploy agent to
 
 It creates secure tokens, writes `.env` files, starts Docker Compose, and can
 deploy the agent to the first hosts.
