@@ -97,10 +97,16 @@ async def raw_pipe(client_ws, agent_url: str, headers: Any | None = None, *, all
 
         async def c2a() -> None:
             try:
-                async for msg in client_ws.iter_bytes():
-                    if allow_input:
-                        await agent_ws.send(msg)
-                    # else: discard input
+                while True:
+                    msg = await client_ws.receive()
+                    if msg.get("type") == "websocket.disconnect":
+                        break
+                    if not allow_input:
+                        continue
+                    if msg.get("bytes") is not None:
+                        await agent_ws.send(msg["bytes"])
+                    elif msg.get("text") is not None:
+                        await agent_ws.send(msg["text"])
             except (websockets.exceptions.ConnectionClosed, ConnectionError):
                 logger.info("Client WebSocket closed")
             except Exception as e:

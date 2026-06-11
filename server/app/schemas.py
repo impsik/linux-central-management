@@ -5,6 +5,7 @@ class AgentRegister(BaseModel):
     agent_id: str
     hostname: str
     fqdn: Optional[str] = None
+    ip_addresses: List[str] = Field(default_factory=list)
     os_id: Optional[str] = None
     os_version: Optional[str] = None
     kernel: Optional[str] = None

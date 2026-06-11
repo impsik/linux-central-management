@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import ipaddress
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
@@ -19,6 +20,18 @@ from ..services.jobs import create_job_with_runs
 router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_token_dep)])
 
 
+def _preferred_reported_ip(ip_addresses: list[str] | None) -> str | None:
+    for raw in ip_addresses or []:
+        try:
+            ip = ipaddress.ip_address(str(raw).strip())
+        except ValueError:
+            continue
+        if ip.version != 4 or ip.is_loopback or ip.is_link_local or ip.is_unspecified:
+            continue
+        return str(ip)
+    return None
+
+
 @router.post("/register")
 def agent_register(payload: AgentRegister, request: Request, db: Session = Depends(get_db)):
     require_agent_token(request)
@@ -26,6 +39,8 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
     now = datetime.now(timezone.utc)
 
     client_ip = get_client_ip(request)
+    reported_ip = _preferred_reported_ip(payload.ip_addresses)
+    host_ip = reported_ip or client_ip
 
     if not host:
         host_data = {
@@ -38,15 +53,15 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
             "labels": payload.labels or {},
             "last_seen": now,
         }
-        if client_ip and hasattr(Host, "ip_address"):
-            host_data["ip_address"] = client_ip
+        if host_ip and hasattr(Host, "ip_address"):
+            host_data["ip_address"] = host_ip
         host = Host(**host_data)
         db.add(host)
     else:
         host.hostname = payload.hostname
         host.fqdn = payload.fqdn
-        if client_ip and hasattr(host, "ip_address"):
-            host.ip_address = client_ip
+        if host_ip and hasattr(host, "ip_address"):
+            host.ip_address = host_ip
         host.os_id = payload.os_id
         host.os_version = payload.os_version
         host.kernel = payload.kernel
@@ -75,7 +90,7 @@ def agent_heartbeat(agent_id: str, request: Request, db: Session = Depends(get_d
         raise HTTPException(404, "unknown agent")
 
     client_ip = get_client_ip(request)
-    if client_ip and hasattr(host, "ip_address"):
+    if client_ip and hasattr(host, "ip_address") and not host.ip_address:
         host.ip_address = client_ip
 
     host.last_seen = datetime.now(timezone.utc)
