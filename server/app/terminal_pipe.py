@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
+from codecs import getincrementaldecoder
 from typing import Any
 
 import websockets
@@ -94,6 +95,7 @@ async def raw_pipe(client_ws, agent_url: str, headers: Any | None = None, *, all
     logger.info("Successfully connected to agent: %s", agent_url)
 
     async with agent_ws:
+        agent_output_decoder = getincrementaldecoder("utf-8")("replace")
 
         async def c2a() -> None:
             try:
@@ -106,7 +108,7 @@ async def raw_pipe(client_ws, agent_url: str, headers: Any | None = None, *, all
                     if msg.get("bytes") is not None:
                         await agent_ws.send(msg["bytes"])
                     elif msg.get("text") is not None:
-                        await agent_ws.send(msg["text"])
+                        await agent_ws.send(msg["text"].encode("utf-8"))
             except (websockets.exceptions.ConnectionClosed, ConnectionError):
                 logger.info("Client WebSocket closed")
             except Exception as e:
@@ -116,9 +118,14 @@ async def raw_pipe(client_ws, agent_url: str, headers: Any | None = None, *, all
             try:
                 async for msg in agent_ws:
                     if isinstance(msg, bytes):
-                        await client_ws.send_bytes(msg)
+                        text = agent_output_decoder.decode(msg)
+                        if text:
+                            await client_ws.send_text(text)
                     else:
                         await client_ws.send_text(msg)
+                remaining = agent_output_decoder.decode(b"", final=True)
+                if remaining:
+                    await client_ws.send_text(remaining)
             except (websockets.exceptions.ConnectionClosed, ConnectionError):
                 logger.info("Agent WebSocket closed")
             except Exception as e:
