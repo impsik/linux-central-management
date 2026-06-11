@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -67,8 +68,24 @@ func prefersSSHConsoleBackend() bool {
 	case "rhel", "redhat", "rocky", "almalinux", "centos", "fedora":
 		return true
 	default:
+		return sshConsoleAvailable()
+	}
+}
+
+func sshConsoleAvailable() bool {
+	if commandPath("/usr/bin/ssh", "/bin/ssh", "ssh") == "" {
 		return false
 	}
+	target := terminalSSHTarget()
+	if target == "" {
+		return false
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(target, "22"), 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }
 
 func loginCommand() *exec.Cmd {
