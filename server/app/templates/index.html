@@ -3095,7 +3095,8 @@
 
       currentAgentId = agentId;
       if (ws) { try { ws.close(); } catch { } }
-      term.clear();
+      if (typeof term.reset === 'function') term.reset();
+      else term.clear();
       term.write(`Connecting to ${agentId}...\r\n`);
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       ws = new WebSocket(`${protocol}//${location.host}/ws/terminal/${agentId}`);

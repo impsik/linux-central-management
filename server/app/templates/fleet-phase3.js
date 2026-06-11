@@ -670,7 +670,8 @@
       try { existing.close(); } catch (_) { }
     }
 
-    term.clear();
+    if (typeof term.reset === 'function') term.reset();
+    else term.clear();
     term.write('Connecting to ' + agentId + '...\r\n');
 
     const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';

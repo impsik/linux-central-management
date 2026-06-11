@@ -34,4 +34,12 @@ describe('terminal input transport', () => {
     expect(main).toContain("ws.send(pendingInteractivePackageCmd + '\\r');");
     expect(popup).toContain('ws.send(cmd + "\\r");');
   });
+
+  it('resets xterm state before starting a new main console session', () => {
+    const main = fs.readFileSync(path.join(root, 'server/app/templates/index.html'), 'utf8');
+    const phase3 = fs.readFileSync(path.join(root, 'server/app/templates/fleet-phase3.js'), 'utf8');
+
+    expect(main).toContain("if (typeof term.reset === 'function') term.reset();");
+    expect(phase3).toContain("if (typeof term.reset === 'function') term.reset();");
+  });
 });
