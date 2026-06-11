@@ -44,6 +44,19 @@ class FakeAgentWebSocket:
         self.sent.append(message)
 
 
+class HangingAgentWebSocket(FakeAgentWebSocket):
+    def __init__(self):
+        super().__init__()
+        self.exited = False
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.exited = True
+        return False
+
+    async def __anext__(self):
+        await asyncio.Event().wait()
+
+
 def test_raw_pipe_encodes_browser_text_as_agent_bytes(monkeypatch):
     agent_ws = FakeAgentWebSocket()
     client_ws = FakeClientWebSocket(
@@ -76,3 +89,17 @@ def test_raw_pipe_decodes_agent_bytes_to_browser_text(monkeypatch):
 
     assert client_ws.sent_text == ["Par", "ool: "]
     assert client_ws.sent_bytes == []
+
+
+def test_raw_pipe_closes_agent_when_browser_disconnects(monkeypatch):
+    agent_ws = HangingAgentWebSocket()
+    client_ws = FakeClientWebSocket([{"type": "websocket.disconnect"}])
+
+    async def connect(*args, **kwargs):
+        return agent_ws
+
+    monkeypatch.setattr(terminal_pipe, "_connect_agent_ws", connect)
+
+    asyncio.run(terminal_pipe.raw_pipe(client_ws, "ws://agent/terminal/ws"))
+
+    assert agent_ws.exited is True

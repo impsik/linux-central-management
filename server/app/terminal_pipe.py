@@ -131,7 +131,18 @@ async def raw_pipe(client_ws, agent_url: str, headers: Any | None = None, *, all
             except Exception as e:
                 logger.error("Error forwarding agent to client: %s", e, exc_info=True)
 
-        results = await asyncio.gather(c2a(), a2c(), return_exceptions=True)
-        for r in results:
-            if isinstance(r, Exception):
-                logger.error("Pipe task raised: %s", r, exc_info=True)
+        tasks = {asyncio.create_task(c2a()), asyncio.create_task(a2c())}
+        try:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            for task in done:
+                exc = task.exception()
+                if exc:
+                    logger.error("Pipe task raised: %s", exc, exc_info=True)
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
