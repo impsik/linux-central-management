@@ -1665,7 +1665,7 @@
       terminalInputHandlerAttached = true;
       term.onData(data => {
         if (ws && ws.readyState === 1) {
-          ws.send(new TextEncoder().encode(data));
+          ws.send(data);
         }
       });
     }
@@ -1684,7 +1684,7 @@
         return;
       }
       try {
-        ws.send(new TextEncoder().encode(pendingInteractivePackageCmd + '\n'));
+        ws.send(pendingInteractivePackageCmd + '\r');
         pendingInteractivePackageCmd = null;
         updateTerminalPendingCmdButton();
         showToast('Sent pending package command to terminal', 'success');

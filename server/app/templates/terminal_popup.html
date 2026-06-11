@@ -69,14 +69,14 @@
     // Send keystrokes to the backend
     term.onData(data => {
       if (ws && ws.readyState === 1) {
-        ws.send(new TextEncoder().encode(data));
+        ws.send(data);
       }
     });
 
     function sendCommand() {
       if (!cmd) return;
       if (!ws || ws.readyState !== 1) return;
-      ws.send(new TextEncoder().encode(cmd + "\n"));
+      ws.send(cmd + "\r");
       term.write(`\r\n[INFO] Sent: ${cmd}\r\n`);
       try { term.focus(); } catch { }
     }
