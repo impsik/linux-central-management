@@ -65,7 +65,8 @@
     return raw || fallback;
   }
 
-  async function loadFleetOverview(ctx, forceLive) {
+  async function loadFleetOverview(ctx, forceLive, backgroundRefresh) {
+    const isBackgroundRefresh = !!backgroundRefresh;
     const onlineEl = document.getElementById('kpi-online');
     const onlineDetailsEl = document.getElementById('kpi-online-details');
     const secEl = document.getElementById('kpi-sec');
@@ -192,7 +193,7 @@
       }
 
       if (nextCronEl) {
-        nextCronEl.innerHTML = '<div class="loading">Loading cronjobs…</div>';
+        if (!isBackgroundRefresh) nextCronEl.innerHTML = '<div class="loading">Loading cronjobs…</div>';
         try {
           const rc = await fetch('/cronjobs', { credentials: 'include' });
           if (!rc.ok) throw await buildHttpError(rc, 'cronjobs failed');
@@ -223,7 +224,7 @@
       }
 
       if (attentionEl) {
-        attentionEl.innerHTML = '<div class="loading">Loading attention list…</div>';
+        if (!isBackgroundRefresh) attentionEl.innerHTML = '<div class="loading">Loading attention list…</div>';
         try {
           const r2 = await fetch(`/dashboard/attention?limit=200&include_live=true&force_live=${forceLive ? 'true' : 'false'}`, { credentials: 'include' });
           if (!r2.ok) throw await buildHttpError(r2, 'attention failed');
@@ -310,11 +311,11 @@
         }
       } catch (_) { }
 
-      if (attentionEl) attentionEl.textContent = `Overview error: ${e.message}`;
+      if (attentionEl && !isBackgroundRefresh) attentionEl.textContent = `Overview error: ${e.message}`;
     }
 
-    ctx.loadPendingUpdatesReport();
-    loadUrgentUpdates(ctx);
+    ctx.loadPendingUpdatesReport(false, isBackgroundRefresh);
+    loadUrgentUpdates(ctx, isBackgroundRefresh);
   }
 
   let hostsTableItemsCache = [];
@@ -796,16 +797,17 @@
     }
   }
 
-  async function loadPendingUpdatesReport(ctx, showToastOnManual) {
+  async function loadPendingUpdatesReport(ctx, showToastOnManual, backgroundRefresh) {
     const tbody = document.getElementById('overview-updates-report');
     if (!tbody) return;
+    const isBackgroundRefresh = !!backgroundRefresh;
 
     const sortSel = document.getElementById('report-sort');
     const orderSel = document.getElementById('report-order');
     const sort = sortSel?.value || 'security_updates';
     const order = orderSel?.value || 'desc';
     w.updateReportSortIndicators(sort, order);
-    w.setTableState(tbody, 7, 'loading', 'Loading…');
+    if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');
 
     try {
       const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
@@ -844,10 +846,11 @@
     }
   }
 
-  async function loadUrgentUpdates(ctx) {
+  async function loadUrgentUpdates(ctx, backgroundRefresh) {
     const tbody = document.getElementById('overview-urgent-updates');
     if (!tbody) return;
-    w.setTableState(tbody, 7, 'loading', 'Loading…');
+    const isBackgroundRefresh = !!backgroundRefresh;
+    if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');
 
     try {
       const r = await fetch('/dashboard/urgent-updates?limit=10', { credentials: 'include' });

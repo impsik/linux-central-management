@@ -102,3 +102,16 @@ def test_mfa_gate_403_is_suppressed_in_overview_js():
     assert "if (r.status === 403)" in js
     assert "Expected transient state during MFA gating" in js
     assert "if (r.status === 403) return; // MFA transient" in js
+
+
+def test_dashboard_auto_refresh_is_silent():
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    html = (root / "server" / "app" / "templates" / "index.html").read_text(encoding="utf-8")
+    js = (root / "server" / "app" / "templates" / "fleet-phase3-overview.js").read_text(encoding="utf-8")
+
+    assert "loadFleetOverview(false, true)" in html
+    assert "const isBackgroundRefresh = !!backgroundRefresh;" in js
+    assert "if (!isBackgroundRefresh) attentionEl.innerHTML" in js
+    assert "if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');" in js

@@ -3351,7 +3351,7 @@
         showPackages,
         loadPackages,
         setPackagesUpdatesOnly: (v) => { packagesUpdatesOnly = !!v; },
-        loadPendingUpdatesReport: (showToastOnManual = false) => loadPendingUpdatesReport(showToastOnManual),
+        loadPendingUpdatesReport: (showToastOnManual = false, backgroundRefresh = false) => loadPendingUpdatesReport(showToastOnManual, backgroundRefresh),
         clearCurrentHostSelection,
         stopMetricsPolling: () => stopMetricsPolling(metricsLifecycleState),
         loadHostsTable,
@@ -3360,7 +3360,7 @@
         loadSshKeyRequests,
         maybeLoadSshKeyAdminQueue,
         loadAdminSshKeys,
-        loadFleetOverview: (forceLive = false) => loadFleetOverview(forceLive),
+        loadFleetOverview: (forceLive = false, backgroundRefresh = false) => loadFleetOverview(forceLive, backgroundRefresh),
         loadFailedRuns,
         loadHosts,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
@@ -3384,10 +3384,10 @@
       };
     }
 
-    async function loadFleetOverview(forceLive = false) {
+    async function loadFleetOverview(forceLive = false, backgroundRefresh = false) {
       const mod = window.phase3Overview;
       if (mod && typeof mod.loadFleetOverview === 'function') {
-        return mod.loadFleetOverview(getOverviewCtx(), forceLive);
+        return mod.loadFleetOverview(getOverviewCtx(), forceLive, backgroundRefresh);
       }
     }
 
@@ -3771,10 +3771,10 @@
       bindSortableHeader('hosts-th-last', () => setSort('last_seen'));
     }
 
-    async function loadPendingUpdatesReport(showToastOnManual = false) {
+    async function loadPendingUpdatesReport(showToastOnManual = false, backgroundRefresh = false) {
       const mod = window.phase3Overview;
       if (mod && typeof mod.loadPendingUpdatesReport === 'function') {
-        return mod.loadPendingUpdatesReport(getOverviewCtx(), showToastOnManual);
+        return mod.loadPendingUpdatesReport(getOverviewCtx(), showToastOnManual, backgroundRefresh);
       }
     }
 
@@ -5581,7 +5581,7 @@
     void loadFleetOverview();
     void refreshApprovalsIndicator();
     startHostRefresh();
-    setInterval(() => { void loadFleetOverview(); }, 15000);
+    setInterval(() => { void loadFleetOverview(false, true); }, 15000);
     setInterval(() => { void refreshApprovalsIndicator(); }, 60000);
   </script>
 </body>
