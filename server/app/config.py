@@ -78,6 +78,12 @@ class Settings(BaseSettings):
     metrics_background_refresh_seconds: int = 60  # set 0 to disable
     metrics_background_batch_limit: int = 50
 
+    # Background CVE sync. Small installs can disable or defer initial sync to
+    # avoid doing memory-heavy OVAL processing during server startup.
+    cve_sync_enabled: bool = True
+    cve_sync_initial_delay_seconds: int = 0
+    cve_sync_interval_seconds: int = 43200
+
     # Teams notifications
     teams_webhook_url: str | None = None
     teams_alerts_enabled: bool = False
