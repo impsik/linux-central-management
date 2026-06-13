@@ -115,3 +115,6 @@ def test_dashboard_auto_refresh_is_silent():
     assert "const isBackgroundRefresh = !!backgroundRefresh;" in js
     assert "if (!isBackgroundRefresh) attentionEl.innerHTML" in js
     assert "if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');" in js
+    assert "URGENT_UPDATES_CACHE_KEY" in js
+    assert "sameLocalDay(cached.cachedAt, new Date())" in js
+    assert "loadUrgentUpdates(ctx, isBackgroundRefresh, !!forceLive)" in js
