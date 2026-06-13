@@ -12,6 +12,7 @@ from ..config import settings
 from ..db import get_db
 from ..deps import require_admin_user, require_ui_user
 from ..models import BackupVerificationPolicy, BackupVerificationRun, Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun, NotificationDedupeState, OIDCAuthEvent
+from ..services.cve_reporting import collect_high_severity_findings
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.maintenance import is_within_maintenance_window
@@ -19,6 +20,12 @@ from ..services.teams import post_teams_message
 from ..services.user_scopes import is_host_visible_to_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _is_host_online(host: Host, *, now: datetime) -> bool:
+    grace_s = int(getattr(settings, "agent_online_grace_seconds", 10) or 10)
+    online_cutoff = now.timestamp() - grace_s
+    return bool(host.last_seen is not None and host.last_seen.timestamp() >= online_cutoff)
 
 
 @router.get("/summary")
@@ -125,6 +132,139 @@ def dashboard_summary(db: Session = Depends(get_db), user=Depends(require_ui_use
         },
         "jobs": {"failed_runs_last_24h": failed_runs_24h},
         "notes": [],
+    }
+
+
+@router.get("/urgent-updates")
+def dashboard_urgent_updates(
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+    limit: int = Query(10, ge=1, le=50),
+):
+    """Top hosts that most urgently need patching attention."""
+
+    now = datetime.now(timezone.utc)
+    hosts = [
+        h for h in db.execute(select(Host).order_by(Host.hostname.asc())).scalars().all()
+        if is_host_visible_to_user(db, user, h)
+    ]
+    host_by_id = {h.id: h for h in hosts}
+
+    rows = db.execute(
+        select(
+            HostPackageUpdate.host_id,
+            func.count().label("updates_total"),
+            func.sum(cast(HostPackageUpdate.is_security, Integer)).label("security_total"),
+            func.max(HostPackageUpdate.checked_at).label("checked_at"),
+        )
+        .where(HostPackageUpdate.update_available == True)  # noqa: E712
+        .group_by(HostPackageUpdate.host_id)
+    ).all()
+    update_map = {
+        r[0]: {
+            "updates_total": int(r[1] or 0),
+            "security_total": int(r[2] or 0),
+            "checked_at": r[3],
+        }
+        for r in rows
+        if r[0] in host_by_id
+    }
+
+    cve_map: dict[object, dict] = {}
+    for finding in collect_high_severity_findings(db, min_severity=7.0):
+        if finding.host_id not in host_by_id:
+            continue
+        item = cve_map.setdefault(
+            finding.host_id,
+            {
+                "critical_cves": 0,
+                "high_cves": 0,
+                "max_cve_severity": 0.0,
+                "cve_ids": set(),
+                "packages": set(),
+                "candidate_fix_packages": set(),
+            },
+        )
+        sev = float(finding.severity or 0.0)
+        if sev >= 9.0:
+            item["critical_cves"] += 1
+        else:
+            item["high_cves"] += 1
+        item["max_cve_severity"] = max(float(item["max_cve_severity"]), sev)
+        item["cve_ids"].add(str(finding.cve_id))
+        item["packages"].add(str(finding.package_name))
+        if finding.candidate_fixes is True:
+            item["candidate_fix_packages"].add(str(finding.package_name))
+
+    items = []
+    for host in hosts:
+        upd = update_map.get(host.id) or {"updates_total": 0, "security_total": 0, "checked_at": None}
+        cve = cve_map.get(host.id) or {
+            "critical_cves": 0,
+            "high_cves": 0,
+            "max_cve_severity": 0.0,
+            "cve_ids": set(),
+            "packages": set(),
+            "candidate_fix_packages": set(),
+        }
+        critical_cves = int(cve["critical_cves"])
+        high_cves = int(cve["high_cves"])
+        security_updates = int(upd["security_total"])
+        updates_total = int(upd["updates_total"])
+        if critical_cves <= 0 and high_cves <= 0 and security_updates <= 0:
+            continue
+
+        score = (
+            critical_cves * 10000
+            + high_cves * 1000
+            + float(cve["max_cve_severity"]) * 100
+            + security_updates * 10
+            + updates_total
+        )
+        reasons = []
+        if critical_cves:
+            reasons.append(f"{critical_cves} critical CVE{'s' if critical_cves != 1 else ''}")
+        if high_cves:
+            reasons.append(f"{high_cves} high CVE{'s' if high_cves != 1 else ''}")
+        if security_updates:
+            reasons.append(f"{security_updates} security update{'s' if security_updates != 1 else ''}")
+
+        items.append(
+            {
+                "agent_id": host.agent_id,
+                "hostname": host.hostname,
+                "online": _is_host_online(host, now=now),
+                "last_seen": host.last_seen.isoformat() if host.last_seen else None,
+                "critical_cves": critical_cves,
+                "high_cves": high_cves,
+                "max_cve_severity": float(cve["max_cve_severity"]),
+                "cve_count": len(cve["cve_ids"]),
+                "vulnerable_packages": len(cve["packages"]),
+                "candidate_fix_packages": len(cve["candidate_fix_packages"]),
+                "security_updates": security_updates,
+                "updates_total": updates_total,
+                "checked_at": upd["checked_at"].isoformat() if upd["checked_at"] else None,
+                "priority_score": round(score, 2),
+                "reason": ", ".join(reasons),
+            }
+        )
+
+    items.sort(
+        key=lambda item: (
+            -int(item["critical_cves"]),
+            -float(item["max_cve_severity"]),
+            -int(item["high_cves"]),
+            -int(item["security_updates"]),
+            -int(item["updates_total"]),
+            str(item["hostname"]),
+        )
+    )
+
+    return {
+        "ts": now.isoformat(),
+        "limit": limit,
+        "total": len(items),
+        "items": items[:limit],
     }
 
 

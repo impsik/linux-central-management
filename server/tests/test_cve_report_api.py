@@ -119,3 +119,107 @@ def test_cve_high_severity_report_api(monkeypatch):
         assert "openssl" in r.text
         assert "Upgrade fixes" in r.text
         assert "https://ubuntu.com/security/CVE-2026-9998" in r.text
+
+
+def test_dashboard_urgent_updates_ranks_critical_cves_first(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import CVEDefinition, CVEPackage, Host, HostPackage, HostPackageUpdate
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        r = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
+        assert r.status_code == 200, r.text
+
+        with SessionLocal() as db:
+            critical = Host(
+                agent_id="critical-1",
+                hostname="critical-1",
+                os_id="ubuntu",
+                os_version="Ubuntu 24.04 noble",
+                last_seen=datetime.now(timezone.utc),
+                labels={"env": "prod"},
+            )
+            backlog = Host(
+                agent_id="backlog-1",
+                hostname="backlog-1",
+                os_id="ubuntu",
+                os_version="Ubuntu 24.04 noble",
+                last_seen=datetime.now(timezone.utc),
+                labels={"env": "prod"},
+            )
+            db.add_all([critical, backlog])
+            db.flush()
+
+            db.add(
+                HostPackage(
+                    host_id=critical.id,
+                    name="openssl",
+                    arch="amd64",
+                    version="1.0.0",
+                    manager="apt",
+                    collected_at=datetime.now(timezone.utc),
+                )
+            )
+            db.add(
+                HostPackageUpdate(
+                    host_id=critical.id,
+                    name="openssl",
+                    installed_version="1.0.0",
+                    candidate_version="1.0.2",
+                    is_security=True,
+                    update_available=True,
+                    checked_at=datetime.now(timezone.utc),
+                )
+            )
+            db.add(CVEDefinition(cve_id="CVE-2026-1111", definition_data={"severity": 9.8}, severity="9.8"))
+            db.add(
+                CVEPackage(
+                    cve_id="CVE-2026-1111",
+                    package_name="openssl",
+                    release="noble",
+                    fixed_version="1.0.2",
+                    status="released",
+                    severity="9.8",
+                )
+            )
+
+            for idx in range(12):
+                name = f"pkg{idx}"
+                db.add(
+                    HostPackageUpdate(
+                        host_id=backlog.id,
+                        name=name,
+                        installed_version="1.0.0",
+                        candidate_version="1.0.1",
+                        is_security=True,
+                        update_available=True,
+                        checked_at=datetime.now(timezone.utc),
+                    )
+                )
+            db.commit()
+
+        r = client.get("/dashboard/urgent-updates?limit=10")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        hostnames = [item["hostname"] for item in data["items"]]
+        critical_idx = hostnames.index("critical-1")
+        backlog_idx = hostnames.index("backlog-1")
+        assert critical_idx < backlog_idx
+        critical_item = data["items"][critical_idx]
+        backlog_item = data["items"][backlog_idx]
+        assert critical_item["critical_cves"] >= 1
+        assert critical_item["security_updates"] == 1
+        assert backlog_item["security_updates"] == 12
