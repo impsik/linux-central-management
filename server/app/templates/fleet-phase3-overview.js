@@ -314,6 +314,7 @@
     }
 
     ctx.loadPendingUpdatesReport();
+    loadUrgentUpdates(ctx);
   }
 
   let hostsTableItemsCache = [];
@@ -840,6 +841,68 @@
     } catch (e) {
       if (showToastOnManual) w.showToast(`Report refresh failed: ${e.message}`, 'error');
       w.setTableState(tbody, 7, 'error', `Report error: ${e.message}`);
+    }
+  }
+
+  async function loadUrgentUpdates(ctx) {
+    const tbody = document.getElementById('overview-urgent-updates');
+    if (!tbody) return;
+    w.setTableState(tbody, 7, 'loading', 'Loading…');
+
+    try {
+      const r = await fetch('/dashboard/urgent-updates?limit=10', { credentials: 'include' });
+      if (!r.ok) throw await buildHttpError(r, 'urgent updates failed');
+      const d = await r.json();
+      const items = Array.isArray(d?.items) ? d.items : [];
+      if (!items.length) return w.setTableState(tbody, 7, 'empty', 'No urgent update backlog found.');
+
+      tbody.innerHTML = '';
+      for (const it of items) {
+        const agentId = String(it.agent_id || '');
+        const hostName = String(it.hostname || agentId || '–');
+        const critical = Number(it.critical_cves || 0);
+        const high = Number(it.high_cves || 0);
+        const security = Number(it.security_updates || 0);
+        const severity = Number(it.max_cve_severity || 0);
+        const urgentClass = critical > 0 ? 'status-error' : (high > 0 || security > 0 ? 'status-warn' : 'status-muted');
+        const reason = String(it.reason || 'Updates pending');
+        const online = it.online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
+        const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
+        const detail = severity > 0
+          ? `${reason}; max CVE severity ${severity.toFixed(1)}`
+          : reason;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><a href="#" class="urgent-host" data-agent-id="${w.escapeHtml(agentId)}" data-hostname="${w.escapeHtml(hostName)}" style="font-weight:700;text-decoration:underline;">${w.escapeHtml(hostName)}</a><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(agentId)}</div></td>
+          <td class="${urgentClass}" style="white-space:normal;overflow-wrap:anywhere;">${w.escapeHtml(detail)}</td>
+          <td style="text-align:right;"><b>${critical}</b></td>
+          <td style="text-align:right;"><b>${high}</b></td>
+          <td style="text-align:right;"><b>${security}</b></td>
+          <td>${online}</td>
+          <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+
+      tbody.querySelectorAll('a.urgent-host').forEach((a) => {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const aid = a.getAttribute('data-agent-id') || '';
+          const hostname = a.getAttribute('data-hostname') || aid;
+          if (!aid) return;
+          ctx.selectHost(aid, hostname);
+          ctx.showPackages();
+          const updatesOnlyEl = document.getElementById('packages-updates-only');
+          if (updatesOnlyEl) {
+            updatesOnlyEl.checked = true;
+            ctx.setPackagesUpdatesOnly(true);
+            ctx.loadPackages(aid);
+          }
+        });
+      });
+    } catch (e) {
+      w.setTableState(tbody, 7, 'error', `Urgent updates error: ${e.message || String(e)}`);
     }
   }
 

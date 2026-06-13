@@ -269,6 +269,33 @@
             </div>
 
 
+            <div class="admin-card" style="margin-top:1rem;">
+              <div class="admin-card-title">10 hosts needing urgent updates</div>
+              <div class="admin-card-body">
+                <div style="overflow-x:auto;">
+                  <table class="process-table" style="min-width:820px;">
+                    <thead>
+                      <tr>
+                        <th>Host</th>
+                        <th>Urgency</th>
+                        <th style="text-align:right;">Critical CVEs</th>
+                        <th style="text-align:right;">High CVEs</th>
+                        <th style="text-align:right;">Security updates</th>
+                        <th>Online</th>
+                        <th>Last seen</th>
+                      </tr>
+                    </thead>
+                    <tbody id="overview-urgent-updates">
+                      <tr>
+                        <td colspan="7" style="text-align:center;" class="status-muted">Loading…</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+
             <div class="admin-card" id="notifications-card" style="margin-top:1rem;">
               <div class="admin-card-title" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
                 <span>Notification Center</span>
