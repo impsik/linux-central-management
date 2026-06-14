@@ -19,7 +19,7 @@ Compose, Git, Python, OpenSSL, Ansible, and Go.
 
 ## Install Admin Node
 
-RedHat: install manually needed packages
+RedHat only: install manually needed packages
 
 ```bash
 sudo dnf install -y git curl ca-certificates python3 openssl ansible-core golang docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
