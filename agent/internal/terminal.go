@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,7 +25,19 @@ func getenv(k, d string) string {
 var upgrader = websocket.Upgrader{
 	// NOTE: Origin checks are not a security boundary on their own for non-browser clients.
 	// We also require an explicit token.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: sameHostOrigin,
+}
+
+func sameHostOrigin(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return strings.EqualFold(u.Host, r.Host)
 }
 
 func commandPath(candidates ...string) string {

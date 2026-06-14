@@ -103,3 +103,11 @@ def test_raw_pipe_closes_agent_when_browser_disconnects(monkeypatch):
     asyncio.run(terminal_pipe.raw_pipe(client_ws, "ws://agent/terminal/ws"))
 
     assert agent_ws.exited is True
+
+
+def test_terminal_websocket_origin_must_match_host():
+    from app.routers.terminal_ws import _websocket_origin_allowed
+
+    assert _websocket_origin_allowed({"host": "fleet.example.test", "origin": "https://fleet.example.test"})
+    assert _websocket_origin_allowed({"host": "fleet.example.test"})
+    assert not _websocket_origin_allowed({"host": "fleet.example.test", "origin": "https://evil.example.test"})

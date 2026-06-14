@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -45,5 +46,17 @@ func TestPrefersSSHConsoleBackendHonorsExplicitBackend(t *testing.T) {
 func TestRunTerminalSSHLoginFromArgsIgnoresNormalAgentStart(t *testing.T) {
 	if RunTerminalSSHLoginFromArgs([]string{os.Args[0]}) {
 		t.Fatal("RunTerminalSSHLoginFromArgs() = true for normal agent args")
+	}
+}
+
+func TestSameHostOrigin(t *testing.T) {
+	if !sameHostOrigin(&http.Request{Host: "agent.local:18080", Header: http.Header{}}) {
+		t.Fatal("sameHostOrigin without Origin = false, want true")
+	}
+	if !sameHostOrigin(&http.Request{Host: "agent.local:18080", Header: http.Header{"Origin": []string{"http://agent.local:18080"}}}) {
+		t.Fatal("sameHostOrigin matching Origin = false, want true")
+	}
+	if sameHostOrigin(&http.Request{Host: "agent.local:18080", Header: http.Header{"Origin": []string{"http://evil.local"}}}) {
+		t.Fatal("sameHostOrigin cross-site Origin = true, want false")
 	}
 }

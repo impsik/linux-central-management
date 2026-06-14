@@ -328,7 +328,7 @@ main() {
   set_env_value "$docker_env" "AGENT_SHARED_TOKEN" "$agent_token"
   set_env_value "$docker_env" "MFA_ENCRYPTION_KEY" "$mfa_key"
   set_env_value "$docker_env" "UI_COOKIE_SECURE" "false"
-  set_env_value "$docker_env" "ALLOW_INSECURE_NO_AGENT_TOKEN" "true"
+  set_env_value "$docker_env" "ALLOW_INSECURE_NO_AGENT_TOKEN" "false"
   set_env_value "$docker_env" "DB_AUTO_CREATE_TABLES" "true"
   set_env_value "$docker_env" "DB_REQUIRE_MIGRATIONS_UP_TO_DATE" "true"
   set_env_value "$docker_env" "AGENT_TERMINAL_TOKEN" "$terminal_token"

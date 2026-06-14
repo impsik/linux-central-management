@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from contextlib import suppress
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, WebSocket
 from sqlalchemy import select
@@ -20,8 +21,38 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ws", tags=["terminal"])
 
 
+def _split_host(value: str | None) -> str:
+    return str(value or "").split(",", 1)[0].strip().lower()
+
+
+def _websocket_origin_allowed(headers) -> bool:
+    origin = _split_host(headers.get("origin"))
+    if not origin:
+        # Non-browser clients normally omit Origin. Browser clients send it.
+        return True
+
+    try:
+        parsed_origin = urlparse(origin)
+    except Exception:
+        return False
+    if parsed_origin.scheme not in {"http", "https"} or not parsed_origin.netloc:
+        return False
+
+    allowed_hosts = {
+        _split_host(headers.get("host")),
+        _split_host(headers.get("x-forwarded-host")),
+    }
+    allowed_hosts.discard("")
+
+    return parsed_origin.netloc.lower() in allowed_hosts
+
+
 @router.websocket("/terminal/{agent_id}")
 async def ws_terminal(ws: WebSocket, agent_id: str) -> None:
+    if not _websocket_origin_allowed(ws.headers):
+        await ws.close(code=1008, reason="Invalid Origin")
+        return
+
     await ws.accept()
 
     db = SessionLocal()
