@@ -22,7 +22,7 @@ Compose, Git, Python, OpenSSL, Ansible, and Go.
 RedHat: install manually needed packages
 
 ```bash
-sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo dnf install -y git curl ca-certificates python3 openssl ansible-core golang docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
 Run this on the Ubuntu/Debian/RedHat server that will host the web UI (RedHat based will be added, maybe):
