@@ -244,6 +244,8 @@ def _startup() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .config import settings
+
     _startup()
 
     # Background patch campaign dispatcher (best-effort)
