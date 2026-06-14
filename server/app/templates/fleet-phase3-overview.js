@@ -65,6 +65,38 @@
     return raw || fallback;
   }
 
+  const URGENT_UPDATES_CACHE_KEY = 'fleet.dashboard.urgentUpdates.v1';
+
+  function sameLocalDay(left, right) {
+    if (!(left instanceof Date) || !(right instanceof Date)) return false;
+    return left.getFullYear() === right.getFullYear()
+      && left.getMonth() === right.getMonth()
+      && left.getDate() === right.getDate();
+  }
+
+  function readUrgentUpdatesCache() {
+    try {
+      const raw = w.localStorage?.getItem(URGENT_UPDATES_CACHE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const cachedAt = parsed?.cached_at ? new Date(parsed.cached_at) : null;
+      const items = Array.isArray(parsed?.items) ? parsed.items : null;
+      if (!cachedAt || Number.isNaN(cachedAt.getTime()) || !items) return null;
+      return { cachedAt, items };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function writeUrgentUpdatesCache(items) {
+    try {
+      w.localStorage?.setItem(URGENT_UPDATES_CACHE_KEY, JSON.stringify({
+        cached_at: new Date().toISOString(),
+        items: Array.isArray(items) ? items : [],
+      }));
+    } catch (_) { }
+  }
+
   async function loadFleetOverview(ctx, forceLive, backgroundRefresh) {
     const isBackgroundRefresh = !!backgroundRefresh;
     const onlineEl = document.getElementById('kpi-online');
@@ -315,7 +347,7 @@
     }
 
     ctx.loadPendingUpdatesReport(false, isBackgroundRefresh);
-    loadUrgentUpdates(ctx, isBackgroundRefresh);
+    loadUrgentUpdates(ctx, isBackgroundRefresh, !!forceLive);
   }
 
   let hostsTableItemsCache = [];
@@ -846,37 +878,27 @@
     }
   }
 
-  async function loadUrgentUpdates(ctx, backgroundRefresh) {
-    const tbody = document.getElementById('overview-urgent-updates');
-    if (!tbody) return;
-    const isBackgroundRefresh = !!backgroundRefresh;
-    if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');
+  function renderUrgentUpdates(ctx, tbody, items) {
+    if (!items.length) return w.setTableState(tbody, 7, 'empty', 'No urgent update backlog found.');
 
-    try {
-      const r = await fetch('/dashboard/urgent-updates?limit=10', { credentials: 'include' });
-      if (!r.ok) throw await buildHttpError(r, 'urgent updates failed');
-      const d = await r.json();
-      const items = Array.isArray(d?.items) ? d.items : [];
-      if (!items.length) return w.setTableState(tbody, 7, 'empty', 'No urgent update backlog found.');
+    tbody.innerHTML = '';
+    for (const it of items) {
+      const agentId = String(it.agent_id || '');
+      const hostName = String(it.hostname || agentId || '–');
+      const critical = Number(it.critical_cves || 0);
+      const high = Number(it.high_cves || 0);
+      const security = Number(it.security_updates || 0);
+      const severity = Number(it.max_cve_severity || 0);
+      const urgentClass = critical > 0 ? 'status-error' : (high > 0 || security > 0 ? 'status-warn' : 'status-muted');
+      const reason = String(it.reason || 'Updates pending');
+      const online = it.online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
+      const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
+      const detail = severity > 0
+        ? `${reason}; max CVE severity ${severity.toFixed(1)}`
+        : reason;
 
-      tbody.innerHTML = '';
-      for (const it of items) {
-        const agentId = String(it.agent_id || '');
-        const hostName = String(it.hostname || agentId || '–');
-        const critical = Number(it.critical_cves || 0);
-        const high = Number(it.high_cves || 0);
-        const security = Number(it.security_updates || 0);
-        const severity = Number(it.max_cve_severity || 0);
-        const urgentClass = critical > 0 ? 'status-error' : (high > 0 || security > 0 ? 'status-warn' : 'status-muted');
-        const reason = String(it.reason || 'Updates pending');
-        const online = it.online ? '<span class="status-ok">online</span>' : '<span class="status-error">offline</span>';
-        const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
-        const detail = severity > 0
-          ? `${reason}; max CVE severity ${severity.toFixed(1)}`
-          : reason;
-
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
           <td><a href="#" class="urgent-host" data-agent-id="${w.escapeHtml(agentId)}" data-hostname="${w.escapeHtml(hostName)}" style="font-weight:700;text-decoration:underline;">${w.escapeHtml(hostName)}</a><div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(agentId)}</div></td>
           <td class="${urgentClass}" style="white-space:normal;overflow-wrap:anywhere;">${w.escapeHtml(detail)}</td>
           <td style="text-align:right;"><b>${critical}</b></td>
@@ -885,27 +907,48 @@
           <td>${online}</td>
           <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
         `;
-        tbody.appendChild(tr);
-      }
+      tbody.appendChild(tr);
+    }
 
-      tbody.querySelectorAll('a.urgent-host').forEach((a) => {
-        a.addEventListener('click', (e) => {
-          e.preventDefault();
-          const aid = a.getAttribute('data-agent-id') || '';
-          const hostname = a.getAttribute('data-hostname') || aid;
-          if (!aid) return;
-          ctx.selectHost(aid, hostname);
-          ctx.showPackages();
-          const updatesOnlyEl = document.getElementById('packages-updates-only');
-          if (updatesOnlyEl) {
-            updatesOnlyEl.checked = true;
-            ctx.setPackagesUpdatesOnly(true);
-            ctx.loadPackages(aid);
-          }
-        });
+    tbody.querySelectorAll('a.urgent-host').forEach((a) => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const aid = a.getAttribute('data-agent-id') || '';
+        const hostname = a.getAttribute('data-hostname') || aid;
+        if (!aid) return;
+        ctx.selectHost(aid, hostname);
+        ctx.showPackages();
+        const updatesOnlyEl = document.getElementById('packages-updates-only');
+        if (updatesOnlyEl) {
+          updatesOnlyEl.checked = true;
+          ctx.setPackagesUpdatesOnly(true);
+          ctx.loadPackages(aid);
+        }
       });
+    });
+  }
+
+  async function loadUrgentUpdates(ctx, backgroundRefresh, forceRefresh) {
+    const tbody = document.getElementById('overview-urgent-updates');
+    if (!tbody) return;
+    const isBackgroundRefresh = !!backgroundRefresh;
+    const cached = readUrgentUpdatesCache();
+    if (!forceRefresh && cached && sameLocalDay(cached.cachedAt, new Date())) {
+      renderUrgentUpdates(ctx, tbody, cached.items);
+      return;
+    }
+
+    if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');
+
+    try {
+      const r = await fetch('/dashboard/urgent-updates?limit=10', { credentials: 'include' });
+      if (!r.ok) throw await buildHttpError(r, 'urgent updates failed');
+      const d = await r.json();
+      const items = Array.isArray(d?.items) ? d.items : [];
+      writeUrgentUpdatesCache(items);
+      renderUrgentUpdates(ctx, tbody, items);
     } catch (e) {
-      w.setTableState(tbody, 7, 'error', `Urgent updates error: ${e.message || String(e)}`);
+      if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'error', `Urgent updates error: ${e.message || String(e)}`);
     }
   }
 
