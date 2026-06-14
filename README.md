@@ -19,10 +19,30 @@ Compose, Git, Python, OpenSSL, Ansible, and Go.
 
 ## Install Admin Node
 
-RedHat: install manually needed packages
+RedHat only: install manually needed packages
 
 ```bash
-sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+# Remove any conflicting packages
+
+sudo dnf remove -y docker \
+  docker-client \
+  docker-client-latest \
+  docker-common \
+  docker-latest \
+  docker-latest-logrotate \
+  docker-logrotate \
+  docker-engine \
+  podman \
+  runc
+
+# Install required packages
+sudo dnf install -y dnf-plugins-core
+
+# Add Docker's official repository
+sudo dnf config-manager --add-repo \
+  https://download.docker.com/linux/rhel/docker-ce.repo
+
+sudo dnf install -y git curl ca-certificates python3 openssl ansible-core golang docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
 Run this on the Ubuntu/Debian/RedHat server that will host the web UI (RedHat based will be added, maybe):

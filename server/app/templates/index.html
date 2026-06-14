@@ -614,6 +614,9 @@
               <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
                 <input id="user-management-exact" type="checkbox" checked /> Exact match
               </label>
+              <label style="display:inline-flex;align-items:center;gap:0.4rem;color:var(--muted-2);font-size:0.9rem;padding-bottom:0.35rem;">
+                <input id="user-management-live" type="checkbox" /> Refresh live
+              </label>
               <button class="btn btn-primary" id="user-management-search" type="button">Find</button>
               <button class="btn" id="user-management-select-online" type="button">Select online</button>
               <button class="btn btn-warning" id="user-management-lock" type="button">Lock selected</button>
@@ -4784,6 +4787,7 @@
     function initUserManagementControls() {
       const usernameEl = document.getElementById('user-management-username');
       const exactEl = document.getElementById('user-management-exact');
+      const liveEl = document.getElementById('user-management-live');
       const searchBtn = document.getElementById('user-management-search');
       const selectOnlineBtn = document.getElementById('user-management-select-online');
       const selectAllEl = document.getElementById('user-management-select-all');
@@ -4827,7 +4831,7 @@
         currentItems = Array.isArray(items) ? items : [];
         if (selectAllEl) selectAllEl.checked = false;
         if (!currentItems.length) {
-          bodyEl.innerHTML = '<tr><td colspan="8" class="status-muted" style="text-align:center;">No matching cached accounts found. Run the User presence report with live refresh if inventory is stale.</td></tr>';
+          bodyEl.innerHTML = '<tr><td colspan="8" class="status-muted" style="text-align:center;">No matching cached accounts found. Enable Refresh live and search again if inventory is stale.</td></tr>';
           updateActionState();
           return;
         }
@@ -4966,12 +4970,12 @@
 
       searchBtn?.addEventListener('click', (e) => {
         e.preventDefault();
-        void searchUsers(true);
+        void searchUsers(true, !!liveEl?.checked);
       });
       usernameEl.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          void searchUsers(true);
+          void searchUsers(true, !!liveEl?.checked);
         }
       });
       selectOnlineBtn?.addEventListener('click', (e) => {

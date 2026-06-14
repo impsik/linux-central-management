@@ -244,6 +244,8 @@ def _startup() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from .config import settings
+
     _startup()
 
     # Background patch campaign dispatcher (best-effort)
@@ -274,12 +276,16 @@ async def lifespan(app: FastAPI):
         task3 = None
 
     # Background CVE sync loop
-    try:
-        from .services.cve_sync import cve_sync_loop
-        task4 = asyncio.create_task(cve_sync_loop(stop_event))
-        logger.info('Started CVE sync loop')
-    except Exception:
-        logger.exception('Failed to start CVE sync loop')
+    if settings.cve_sync_enabled:
+        try:
+            from .services.cve_sync import cve_sync_loop
+            task4 = asyncio.create_task(cve_sync_loop(stop_event))
+            logger.info('Started CVE sync loop')
+        except Exception:
+            logger.exception('Failed to start CVE sync loop')
+            task4 = None
+    else:
+        logger.info('CVE sync loop disabled by configuration')
         task4 = None
 
     # Background hourly CVE report loop
