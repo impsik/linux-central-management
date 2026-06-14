@@ -22,8 +22,9 @@ def test_non_local_when_insecure_override_is_disabled(monkeypatch):
     assert app_factory._is_non_local_deployment() is True
 
 
-def test_docker_compose_defaults_opt_into_local_dev_mode():
+def test_docker_compose_defaults_require_agent_token():
     root = Path(__file__).resolve().parents[2]
     for rel_path in ("deploy/docker/docker-compose.yml", "deploy/docker/env.example"):
         content = (root / rel_path).read_text(encoding="utf-8")
         assert "ALLOW_INSECURE_NO_AGENT_TOKEN" in content
+        assert "ALLOW_INSECURE_NO_AGENT_TOKEN:-false" in content or "ALLOW_INSECURE_NO_AGENT_TOKEN=false" in content

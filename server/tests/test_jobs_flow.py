@@ -232,6 +232,114 @@ def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
         assert hidden_stdout.status_code == 404, hidden_stdout.text
 
 
+def test_ansible_requires_operator_and_owned_targets(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    def fake_run_playbook(playbook, agent_ids, extra_vars, *args, **kwargs):
+        return {"ok": True, "rc": 0, "stdout": "ok", "stderr": "", "log_name": None, "log_path": None}
+
+    ansible_mod = importlib.import_module("app.services.ansible")
+    monkeypatch.setattr(ansible_mod, "run_playbook", fake_run_playbook)
+    ansible_router = importlib.import_module("app.routers.ansible")
+    monkeypatch.setattr(ansible_router, "run_playbook", fake_run_playbook)
+
+    from app.db import SessionLocal
+    from app.models import AppUser
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as admin_client:
+        for aid, owner in (("srv-owned", "ansible-op"), ("srv-other", "alice")):
+            rr = admin_client.post(
+                "/agent/register",
+                json={
+                    "agent_id": aid,
+                    "hostname": aid,
+                    "fqdn": None,
+                    "os_id": "ubuntu",
+                    "os_version": "24.04",
+                    "kernel": "test",
+                    "labels": {"owner": owner},
+                },
+            )
+            assert rr.status_code == 200, rr.text
+
+        with SessionLocal() as db:
+            from app.routers.auth import pwd_context
+            from app.services.ansible_runs import create_run
+
+            op = AppUser(
+                username="ansible-op",
+                password_hash=pwd_context.hash("user-pass-123"),
+                role="operator",
+                is_active=True,
+            )
+            viewer = AppUser(
+                username="ansible-viewer",
+                password_hash=pwd_context.hash("user-pass-123"),
+                role="readonly",
+                is_active=True,
+            )
+            db.add(op)
+            db.add(viewer)
+            hidden_run = create_run(
+                db=db,
+                playbook="noop.yml",
+                targets=["srv-other"],
+                extra_vars_redacted={},
+                created_by="admin",
+            )
+            hidden_run.status = "success"
+            db.commit()
+            hidden_run_id = hidden_run.run_key
+
+    with TestClient(app) as op_client:
+        lr2 = op_client.post("/auth/login", json={"username": "ansible-op", "password": "user-pass-123"})
+        assert lr2.status_code == 200, lr2.text
+        op_csrf = op_client.cookies.get("fleet_csrf")
+        op_headers = {"X-CSRF-Token": op_csrf} if op_csrf else {}
+
+        allowed = op_client.post(
+            "/ansible/run",
+            json={"playbook": "noop.yml", "agent_ids": ["srv-owned"]},
+            headers=op_headers,
+        )
+        assert allowed.status_code == 200, allowed.text
+
+        denied_target = op_client.post(
+            "/ansible/run",
+            json={"playbook": "noop.yml", "agent_ids": ["srv-other"]},
+            headers=op_headers,
+        )
+        assert denied_target.status_code == 404, denied_target.text
+
+        hidden_detail = op_client.get(f"/ansible/runs/{hidden_run_id}")
+        assert hidden_detail.status_code == 404, hidden_detail.text
+
+    with TestClient(app) as viewer_client:
+        lr3 = viewer_client.post("/auth/login", json={"username": "ansible-viewer", "password": "user-pass-123"})
+        assert lr3.status_code == 200, lr3.text
+        viewer_csrf = viewer_client.cookies.get("fleet_csrf")
+        viewer_headers = {"X-CSRF-Token": viewer_csrf} if viewer_csrf else {}
+
+        denied_readonly = viewer_client.post(
+            "/ansible/run",
+            json={"playbook": "noop.yml", "agent_ids": ["srv-owned"]},
+            headers=viewer_headers,
+        )
+        assert denied_readonly.status_code == 403, denied_readonly.text
+
+
 def test_pkg_upgrade_success_invalidates_cve_cache_and_queues_inventory(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
     monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
