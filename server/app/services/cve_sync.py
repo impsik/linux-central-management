@@ -1,11 +1,13 @@
 import bz2
+import gc
 import logging
 import asyncio
 import xml.etree.ElementTree as ET
 import aiohttp
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy import delete
+from sqlalchemy import delete, select
+from app.config import settings
 from app.models import CVEDefinition, CVEPackage
 from datetime import datetime, timezone
 
@@ -34,14 +36,91 @@ SUPPORTED_RELEASES = ["focal", "jammy", "noble"]
 OVAL_URL_TEMPLATE = "https://security-metadata.canonical.com/oval/com.ubuntu.{}.cve.oval.xml.bz2"
 CVE_SYNC_HTTP_TIMEOUT_SECONDS = 30
 
+
+def _merge_definition_data(existing: dict | None, incoming: dict) -> dict:
+    merged = dict(existing) if isinstance(existing, dict) else {}
+    incoming_severity = parse_ubuntu_severity(incoming.get("severity"))
+    existing_severity = parse_ubuntu_severity(merged.get("severity"))
+    if incoming_severity is not None and (existing_severity is None or incoming_severity > existing_severity):
+        merged["severity"] = incoming_severity
+
+    for release in SUPPORTED_RELEASES:
+        if release in incoming:
+            merged[release] = incoming[release]
+    return merged
+
+
+async def _upsert_cve_definitions(db: AsyncSession, cve_map: dict):
+    chunk_size = 200
+    items = list(cve_map.items())
+
+    for i in range(0, len(items), chunk_size):
+        chunk = items[i:i + chunk_size]
+        cve_ids = [cve_id for cve_id, _ in chunk]
+        existing_rows = (
+            await db.execute(select(CVEDefinition).where(CVEDefinition.cve_id.in_(cve_ids)))
+        ).scalars().all()
+        existing = {row.cve_id: row for row in existing_rows}
+
+        values = []
+        for cve_id, data in chunk:
+            merged_data = _merge_definition_data(
+                existing.get(cve_id).definition_data if cve_id in existing else None,
+                data,
+            )
+            values.append({
+                "cve_id": cve_id,
+                "definition_data": merged_data,
+                "severity": merged_data.get("severity"),
+                "last_updated_at": datetime.now(timezone.utc),
+            })
+
+        stmt = insert(CVEDefinition).values(values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=[CVEDefinition.cve_id],
+            set_={
+                "definition_data": stmt.excluded.definition_data,
+                "severity": stmt.excluded.severity,
+                "last_updated_at": stmt.excluded.last_updated_at,
+            },
+        )
+        await db.execute(stmt)
+
+
+async def _replace_release_lookup(db: AsyncSession, codename: str, cve_map: dict):
+    await db.execute(delete(CVEPackage).where(CVEPackage.release == codename))
+
+    lookup_rows = []
+    for cve_id, data in cve_map.items():
+        rel_data = data.get(codename, {})
+        packages = rel_data.get("packages", {})
+        for pkg_name, pkg_info in packages.items():
+            lookup_rows.append({
+                "cve_id": cve_id,
+                "package_name": pkg_name,
+                "release": codename,
+                "fixed_version": pkg_info.get("fixed_version", "0"),
+                "status": pkg_info.get("status", "unknown"),
+                "severity": data.get("severity"),
+            })
+
+            if len(lookup_rows) >= 5000:
+                await db.execute(insert(CVEPackage).values(lookup_rows))
+                lookup_rows = []
+
+    if lookup_rows:
+        await db.execute(insert(CVEPackage).values(lookup_rows))
+
+
 async def sync_cve_definitions(db: AsyncSession):
-    master_cve_map = {}
+    total_cves = 0
 
     timeout = aiohttp.ClientTimeout(total=CVE_SYNC_HTTP_TIMEOUT_SECONDS)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         for codename in SUPPORTED_RELEASES:
             url = OVAL_URL_TEMPLATE.format(codename)
             logger.info(f"Downloading OVAL data for {codename} from {url}...")
+            release_cve_map = {}
             
             try:
                 async with session.get(url) as resp:
@@ -56,78 +135,32 @@ async def sync_cve_definitions(db: AsyncSession):
                         logger.error(f"Failed to decompress {codename} OVAL: {e}")
                         continue
                     
-                    parse_oval_xml(xml_content, codename, master_cve_map)
+                    parse_oval_xml(xml_content, codename, release_cve_map)
+                    del content
+                    del xml_content
                     
             except Exception as e:
                 logger.error(f"Error processing {codename}: {e}")
+                continue
 
-    if not master_cve_map:
+            if not release_cve_map:
+                logger.warning(f"No CVE data collected for {codename}.")
+                continue
+
+            logger.info(f"Upserting {len(release_cve_map)} CVE definitions for {codename}...")
+            await _upsert_cve_definitions(db, release_cve_map)
+            logger.info(f"Populating CVE lookup table for {codename}...")
+            await _replace_release_lookup(db, codename, release_cve_map)
+            await db.commit()
+            total_cves += len(release_cve_map)
+            release_cve_map.clear()
+            gc.collect()
+
+    if not total_cves:
         logger.warning("No CVE data collected.")
         return
 
-    logger.info(f"Upserting {len(master_cve_map)} CVE definitions...")
-    
-    # 1. Update master definition blob (for legacy agent usage)
-    chunk_size = 200
-    items = list(master_cve_map.items())
-    
-    for i in range(0, len(items), chunk_size):
-        chunk = items[i:i+chunk_size]
-        values = []
-        for cve_id, data in chunk:
-            values.append({
-                "cve_id": cve_id,
-                "definition_data": data,
-                "severity": data.get("severity"),
-                "last_updated_at": datetime.now(timezone.utc)
-            })
-        
-        stmt = insert(CVEDefinition).values(values)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[CVEDefinition.cve_id],
-            set_={
-                "definition_data": stmt.excluded.definition_data,
-                "severity": stmt.excluded.severity,
-                "last_updated_at": stmt.excluded.last_updated_at
-            }
-        )
-        await db.execute(stmt)
-    
-    # 2. Populate lookup table (for fast UI queries)
-    # We replace data for supported releases to ensure freshness and handle removed CVEs.
-    logger.info("Populating CVE lookup table...")
-    
-    # Clear old data for these releases first
-    await db.execute(delete(CVEPackage).where(CVEPackage.release.in_(SUPPORTED_RELEASES)))
-    
-    lookup_rows = []
-    
-    for cve_id, data in master_cve_map.items():
-        for release, rel_data in data.items():
-            if release not in SUPPORTED_RELEASES:
-                continue
-            
-            packages = rel_data.get("packages", {})
-            for pkg_name, pkg_info in packages.items():
-                lookup_rows.append({
-                    "cve_id": cve_id,
-                    "package_name": pkg_name,
-                    "release": release,
-                    "fixed_version": pkg_info.get("fixed_version", "0"),
-                    "status": pkg_info.get("status", "unknown"),
-                    "severity": data.get("severity"),
-                })
-                
-                # Bulk insert in chunks
-                if len(lookup_rows) >= 5000:
-                    await db.execute(insert(CVEPackage).values(lookup_rows))
-                    lookup_rows = []
-
-    if lookup_rows:
-        await db.execute(insert(CVEPackage).values(lookup_rows))
-
-    await db.commit()
-    logger.info("CVE sync complete.")
+    logger.info(f"CVE sync complete ({total_cves} release CVE rows processed).")
 
 def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
     try:
@@ -290,6 +323,17 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
 
 async def cve_sync_loop(stop_event: asyncio.Event):
     from app.db import AsyncSessionLocal
+
+    initial_delay = max(0, int(settings.cve_sync_initial_delay_seconds or 0))
+    if initial_delay:
+        logger.info(f"Delaying initial CVE sync by {initial_delay}s...")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=initial_delay)
+        except asyncio.TimeoutError:
+            pass
+
+        if stop_event.is_set():
+            return
     
     logger.info("Starting initial CVE sync...")
     try:
@@ -300,7 +344,8 @@ async def cve_sync_loop(stop_event: asyncio.Event):
         
     while not stop_event.is_set():
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=43200)
+            interval = max(300, int(settings.cve_sync_interval_seconds or 43200))
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
         except asyncio.TimeoutError:
             pass
 
