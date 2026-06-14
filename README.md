@@ -22,6 +22,26 @@ Compose, Git, Python, OpenSSL, Ansible, and Go.
 RedHat only: install manually needed packages
 
 ```bash
+# Remove any conflicting packages
+
+sudo dnf remove -y docker \
+  docker-client \
+  docker-client-latest \
+  docker-common \
+  docker-latest \
+  docker-latest-logrotate \
+  docker-logrotate \
+  docker-engine \
+  podman \
+  runc
+
+# Install required packages
+sudo dnf install -y dnf-plugins-core
+
+# Add Docker's official repository
+sudo dnf config-manager --add-repo \
+  https://download.docker.com/linux/rhel/docker-ce.repo
+
 sudo dnf install -y git curl ca-certificates python3 openssl ansible-core golang docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
 
