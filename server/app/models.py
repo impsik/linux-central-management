@@ -14,6 +14,7 @@ class Host(Base):
     os_id = Column(String)
     os_version = Column(String)
     kernel = Column(String)
+    agent_version = Column(String)
     labels = Column(JSON, nullable=False, default=dict)
     last_seen = Column(DateTime(timezone=True))
     reboot_required = Column(Boolean, nullable=False, default=False)

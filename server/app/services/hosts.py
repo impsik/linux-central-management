@@ -13,7 +13,10 @@ def is_host_online(host: Host, now: datetime | None = None) -> bool:
     if now is None:
         now = datetime.now(timezone.utc)
     try:
-        return (now - host.last_seen).total_seconds() <= settings.agent_online_grace_seconds
+        last_seen = host.last_seen
+        if getattr(last_seen, "tzinfo", None) is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        return (now - last_seen).total_seconds() <= settings.agent_online_grace_seconds
     except Exception:
         return False
 
@@ -24,7 +27,10 @@ def seconds_since_seen(host: Host, now: datetime | None = None) -> float | None:
     if now is None:
         now = datetime.now(timezone.utc)
     try:
-        return (now - host.last_seen).total_seconds()
+        last_seen = host.last_seen
+        if getattr(last_seen, "tzinfo", None) is None:
+            last_seen = last_seen.replace(tzinfo=timezone.utc)
+        return (now - last_seen).total_seconds()
     except Exception:
         return None
 

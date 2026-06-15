@@ -9,6 +9,7 @@ class AgentRegister(BaseModel):
     os_id: Optional[str] = None
     os_version: Optional[str] = None
     kernel: Optional[str] = None
+    agent_version: Optional[str] = None
     labels: Dict[str,str] = Field(default_factory=dict)
 
 class PackagesInventory(BaseModel):
@@ -52,6 +53,11 @@ class JobCreateDistUpgrade(BaseModel):
     agent_ids: Optional[List[str]] = None
     labels: Optional[Dict[str,str]] = None
     dry_run: bool = False
+
+
+class DiskCleanupRequest(BaseModel):
+    dry_run: bool = True
+    actions: List[str] = Field(default_factory=list)
 
 
 class JobPreflightRequest(BaseModel):
