@@ -104,12 +104,15 @@ body {
   position: sticky;
   top: 58px;
   align-self: start;
+  display: flex;
+  flex-direction: column;
   min-height: calc(100vh - 58px);
   background: var(--app-sidebar);
   border-right: 1px solid var(--app-sidebar-border);
 }
 
 #fleet-actions {
+  flex: 1 1 auto;
   margin: 0 !important;
   padding: 1.25rem 1.5rem !important;
   border-radius: 0;
@@ -160,6 +163,16 @@ body {
 #fleet-actions .btn:disabled {
   opacity: .45;
   cursor: not-allowed;
+}
+
+.fleet-app-version {
+  margin-top: auto;
+  padding: 0.85rem 1.5rem 1.05rem;
+  border-top: 1px solid color-mix(in srgb, var(--app-sidebar-border) 78%, transparent);
+  color: var(--app-sidebar-muted);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .container:has(#server-info-tab.active) #nav-overview,
@@ -582,6 +595,11 @@ body {
 #fleet-actions {
   padding: 1rem 0.75rem !important;
   gap: 0 !important;
+}
+
+.fleet-app-version {
+  padding: 0.75rem;
+  font-size: 0.75rem;
 }
 
 #fleet-actions .fleet-nav-section {
@@ -1071,6 +1089,10 @@ a,
 
   #fleet-actions {
     padding: 0.75rem !important;
+  }
+
+  .fleet-app-version {
+    display: none;
   }
 
   .fleet-main-shell {
