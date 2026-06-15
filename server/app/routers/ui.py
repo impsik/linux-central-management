@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..deps import get_current_user_from_request, require_ui_user
 from ..models import AppUser
+from ..version import APP_VERSION
 
 router = APIRouter(tags=["ui"])
 
@@ -47,6 +48,7 @@ def _read_template(name: str) -> str:
 def _render_template_with_nonce(name: str, request: Request) -> str:
     html = _read_template(name)
     html = html.replace("__ASSET_VERSION__", ASSET_VERSION)
+    html = html.replace("__APP_VERSION__", APP_VERSION)
     nonce = getattr(getattr(request, "state", None), "csp_nonce", None)
     if nonce:
         return html.replace("__CSP_NONCE__", str(nonce))
