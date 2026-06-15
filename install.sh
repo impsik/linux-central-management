@@ -323,16 +323,32 @@ main() {
     ansible_user="$(prompt "SSH username for managed hosts" "$(id -un 2>/dev/null || printf ubuntu)")"
   fi
 
+  case "$server_url" in
+    https://*)
+      ui_cookie_secure="true"
+      agent_terminal_scheme="wss"
+      allow_insecure_no_agent_token="false"
+      db_auto_create_tables="false"
+      ;;
+    *)
+      ui_cookie_secure="false"
+      agent_terminal_scheme="ws"
+      allow_insecure_no_agent_token="true"
+      db_auto_create_tables="true"
+      warn "Using HTTP/LAN mode. For internet-facing installs, use HTTPS so production guardrails stay enabled."
+      ;;
+  esac
+
   set_env_value "$docker_env" "BOOTSTRAP_USERNAME" "$bootstrap_user"
   set_env_value "$docker_env" "BOOTSTRAP_PASSWORD" "$bootstrap_password"
   set_env_value "$docker_env" "AGENT_SHARED_TOKEN" "$agent_token"
   set_env_value "$docker_env" "MFA_ENCRYPTION_KEY" "$mfa_key"
-  set_env_value "$docker_env" "UI_COOKIE_SECURE" "false"
-  set_env_value "$docker_env" "ALLOW_INSECURE_NO_AGENT_TOKEN" "false"
-  set_env_value "$docker_env" "DB_AUTO_CREATE_TABLES" "true"
+  set_env_value "$docker_env" "UI_COOKIE_SECURE" "$ui_cookie_secure"
+  set_env_value "$docker_env" "ALLOW_INSECURE_NO_AGENT_TOKEN" "$allow_insecure_no_agent_token"
+  set_env_value "$docker_env" "DB_AUTO_CREATE_TABLES" "$db_auto_create_tables"
   set_env_value "$docker_env" "DB_REQUIRE_MIGRATIONS_UP_TO_DATE" "true"
   set_env_value "$docker_env" "AGENT_TERMINAL_TOKEN" "$terminal_token"
-  set_env_value "$docker_env" "AGENT_TERMINAL_SCHEME" "ws"
+  set_env_value "$docker_env" "AGENT_TERMINAL_SCHEME" "$agent_terminal_scheme"
 
   final_agent_token="$(get_env_value "$docker_env" "AGENT_SHARED_TOKEN")"
   final_terminal_token="$(get_env_value "$docker_env" "AGENT_TERMINAL_TOKEN")"
