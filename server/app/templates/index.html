@@ -120,6 +120,18 @@
                   </div>
                 </div>
               </div>
+              <div class="admin-card host-disk-cleanup-card" style="margin-top:0;max-width:760px;">
+                <div class="admin-card-title">Disk cleanup</div>
+                <div class="admin-card-body" style="display:grid;gap:0.55rem;">
+                  <div class="status-muted" style="font-size:0.86rem;">Safe cleanup covers package caches, journald vacuum to 500M, and /home user cache files older than 14 days.</div>
+                  <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
+                    <button class="btn" id="disk-cleanup-dry-run" type="button">Dry run</button>
+                    <button class="btn btn-warning" id="disk-cleanup-apply" type="button">Run cleanup</button>
+                    <span id="disk-cleanup-status" class="status-muted" role="status" aria-live="polite" style="font-size:0.85rem;"></span>
+                  </div>
+                  <pre id="disk-cleanup-output" class="terminal-output" style="display:none;max-height:220px;overflow:auto;white-space:pre-wrap;margin:0;"></pre>
+                </div>
+              </div>
             </div>
 
             <div class="metrics-grid">
@@ -1977,6 +1989,8 @@
         const osText = osParts.length ? escapeHtml(osParts.join(' ')) : 'n/a';
         detailsEl.innerHTML = `
           <span class="detail-pill">Agent ID: <code>${agentText}</code></span>
+          <span class="detail-pill">Agent: <code>${escapeHtml(hostObj?.agent_version || 'unknown')}</code></span>
+          <span class="detail-pill">Health: <code>${hostObj?.is_online ? 'online' : 'offline'}</code></span>
           <span class="detail-pill">OS: <code>${osText}</code></span>
         `;
       }
@@ -1996,6 +2010,9 @@
         const hostActionsMod = window.phase3HostActions;
         if (hostActionsMod && typeof hostActionsMod.populateHostMetadataEditor === 'function') {
           hostActionsMod.populateHostMetadataEditor(hostObj || { agent_id: agentId, hostname });
+        }
+        if (hostActionsMod && typeof hostActionsMod.populateDiskCleanupPanel === 'function') {
+          hostActionsMod.populateDiskCleanupPanel(hostObj || { agent_id: agentId, hostname });
         }
       } catch (_) { }
 
@@ -4655,6 +4672,15 @@
       }
     }
 
+    function initDiskCleanupControls() {
+      const mod = window.phase3HostActions;
+      if (mod && typeof mod.initDiskCleanupControls === 'function') {
+        return mod.initDiskCleanupControls({
+          getCurrentAgentId: () => currentAgentId,
+        });
+      }
+    }
+
     function getSshUiCtx() {
       return {
         loadSshKeys,
@@ -5490,6 +5516,7 @@
       safeInit('initHostActionControls', initHostActionControls);
       safeInit('initHostFirewallControls', initHostFirewallControls);
       safeInit('initHostMetadataEditor', initHostMetadataEditor);
+      safeInit('initDiskCleanupControls', initDiskCleanupControls);
       safeInit('initAuditDetailModalControls', initAuditDetailModalControls);
       safeInit('initApprovalDetailModalControls', initApprovalDetailModalControls);
       safeInit('initFailedRunDetailModalControls', initFailedRunDetailModalControls);

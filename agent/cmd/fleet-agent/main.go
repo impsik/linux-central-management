@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
@@ -18,6 +19,8 @@ import (
 	"sync"
 	"time"
 )
+
+const AgentVersion = "0.0.3-alpha"
 
 type Config struct {
 	ServerURL  string
@@ -30,14 +33,15 @@ type Config struct {
 }
 
 type RegisterPayload struct {
-	AgentID   string            `json:"agent_id"`
-	Hostname  string            `json:"hostname"`
-	FQDN      string            `json:"fqdn,omitempty"`
-	IPs       []string          `json:"ip_addresses,omitempty"`
-	OSID      string            `json:"os_id,omitempty"`
-	OSVersion string            `json:"os_version,omitempty"`
-	Kernel    string            `json:"kernel,omitempty"`
-	Labels    map[string]string `json:"labels"`
+	AgentID      string            `json:"agent_id"`
+	Hostname     string            `json:"hostname"`
+	FQDN         string            `json:"fqdn,omitempty"`
+	IPs          []string          `json:"ip_addresses,omitempty"`
+	OSID         string            `json:"os_id,omitempty"`
+	OSVersion    string            `json:"os_version,omitempty"`
+	Kernel       string            `json:"kernel,omitempty"`
+	AgentVersion string            `json:"agent_version,omitempty"`
+	Labels       map[string]string `json:"labels"`
 }
 
 type InventoryPayload struct {
@@ -71,18 +75,20 @@ type NextJobResponse struct {
 }
 
 type Job struct {
-	JobID       string   `json:"job_id"`
-	Type        string   `json:"type"`
-	Packages    []string `json:"packages,omitempty"`
-	ServiceName string   `json:"service_name,omitempty"`
-	Action      string   `json:"action,omitempty"`
-	PackageName string   `json:"package_name,omitempty"`
-	Refresh     bool     `json:"refresh,omitempty"`
-	CVE         string   `json:"cve,omitempty"`
-	Port        int      `json:"port,omitempty"`
-	Protocol    string   `json:"protocol,omitempty"`
-	Source      string   `json:"source,omitempty"`
-	Service     string   `json:"service,omitempty"`
+	JobID          string   `json:"job_id"`
+	Type           string   `json:"type"`
+	Packages       []string `json:"packages,omitempty"`
+	ServiceName    string   `json:"service_name,omitempty"`
+	Action         string   `json:"action,omitempty"`
+	PackageName    string   `json:"package_name,omitempty"`
+	Refresh        bool     `json:"refresh,omitempty"`
+	CVE            string   `json:"cve,omitempty"`
+	Port           int      `json:"port,omitempty"`
+	Protocol       string   `json:"protocol,omitempty"`
+	Source         string   `json:"source,omitempty"`
+	Service        string   `json:"service,omitempty"`
+	DryRun         bool     `json:"dry_run,omitempty"`
+	CleanupActions []string `json:"cleanup_actions,omitempty"`
 }
 
 type JobEvent struct {
@@ -110,13 +116,14 @@ func main() {
 	hostname, _ := os.Hostname()
 
 	reg := RegisterPayload{
-		AgentID:   cfg.AgentID,
-		Hostname:  hostname,
-		IPs:       localIPv4Addresses(),
-		Labels:    cfg.Labels,
-		OSID:      readOSID(),
-		OSVersion: readOSVersion(),
-		Kernel:    readKernel(),
+		AgentID:      cfg.AgentID,
+		Hostname:     hostname,
+		IPs:          localIPv4Addresses(),
+		Labels:       cfg.Labels,
+		OSID:         readOSID(),
+		OSVersion:    readOSVersion(),
+		Kernel:       readKernel(),
+		AgentVersion: AgentVersion,
 	}
 
 	lastRegisterAttempt := time.Time{}
@@ -143,7 +150,7 @@ func main() {
 		t := time.NewTicker(cfg.HbEvery)
 		defer t.Stop()
 		for {
-			req, _ := http.NewRequest("POST", cfg.ServerURL+"/agent/heartbeat?agent_id="+cfg.AgentID, nil)
+			req, _ := http.NewRequest("POST", cfg.ServerURL+"/agent/heartbeat?agent_id="+url.QueryEscape(cfg.AgentID)+"&agent_version="+url.QueryEscape(AgentVersion), nil)
 			if cfg.AgentToken != "" {
 				req.Header.Set("X-Fleet-Agent-Token", cfg.AgentToken)
 			}
@@ -663,6 +670,20 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
 		return
 
+	case "disk-cleanup":
+		stdout, stderr, code, errMsg := runDiskCleanup(ctx, job.DryRun, job.CleanupActions)
+		if code == 0 && errMsg == "" {
+			ev.Status = "success"
+		} else {
+			ev.Status = "failed"
+		}
+		ev.ExitCode = &code
+		ev.Stdout = stdout
+		ev.Stderr = stderr
+		ev.Error = errMsg
+		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
+		return
+
 	case "query-service-details":
 		name := strings.TrimSpace(job.ServiceName)
 		if name == "" {
@@ -787,6 +808,249 @@ func queryDf(ctx context.Context) (string, string, int, string) {
 	}
 
 	return string(out), "", 0, ""
+}
+
+type DiskCleanupActionResult struct {
+	Key              string `json:"key"`
+	Label            string `json:"label"`
+	Status           string `json:"status"`
+	ReclaimableBytes int64  `json:"reclaimable_bytes,omitempty"`
+	ReclaimableHuman string `json:"reclaimable_human,omitempty"`
+	Detail           string `json:"detail,omitempty"`
+	Stdout           string `json:"stdout,omitempty"`
+	Stderr           string `json:"stderr,omitempty"`
+}
+
+func runDiskCleanup(ctx context.Context, dryRun bool, requested []string) (string, string, int, string) {
+	allowed := map[string]bool{
+		"apt_cache":      true,
+		"dnf_cache":      true,
+		"journald":       true,
+		"user_cache_old": true,
+	}
+	defaults := []string{"apt_cache", "dnf_cache", "journald", "user_cache_old"}
+	actions := make([]string, 0, len(requested))
+	seen := map[string]bool{}
+	for _, a := range requested {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		if !allowed[a] {
+			return "", "", 1, "unsupported cleanup action: " + a
+		}
+		if !seen[a] {
+			seen[a] = true
+			actions = append(actions, a)
+		}
+	}
+	if len(actions) == 0 {
+		actions = defaults
+	}
+
+	results := make([]DiskCleanupActionResult, 0, len(actions))
+	for _, action := range actions {
+		switch action {
+		case "apt_cache":
+			results = append(results, cleanupAptCache(ctx, dryRun))
+		case "dnf_cache":
+			results = append(results, cleanupDnfCache(ctx, dryRun))
+		case "journald":
+			results = append(results, cleanupJournald(ctx, dryRun))
+		case "user_cache_old":
+			results = append(results, cleanupOldUserCache(ctx, dryRun))
+		}
+	}
+
+	total := int64(0)
+	for _, r := range results {
+		total += r.ReclaimableBytes
+	}
+	payload := map[string]any{
+		"dry_run":                 dryRun,
+		"actions":                 results,
+		"total_reclaimable_bytes": total,
+		"total_reclaimable_human": formatBytes(total),
+		"note":                    "Dry run estimates cache space. Actual reclaimed space can differ after cleanup.",
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
+	}
+	return string(b), "", 0, ""
+}
+
+func cleanupAptCache(ctx context.Context, dryRun bool) DiskCleanupActionResult {
+	r := DiskCleanupActionResult{Key: "apt_cache", Label: "APT package cache"}
+	if _, err := exec.LookPath("apt-get"); err != nil {
+		r.Status = "skipped"
+		r.Detail = "apt-get not found"
+		return r
+	}
+	size := dirSizeBytes(ctx, "/var/cache/apt")
+	r.ReclaimableBytes = size
+	r.ReclaimableHuman = formatBytes(size)
+	if dryRun {
+		r.Status = "ok"
+		r.Detail = "Would run apt-get clean"
+		return r
+	}
+	stdout, stderr, code, errMsg := runCleanupCommand(ctx, 60*time.Second, "apt-get", "clean")
+	r.Stdout, r.Stderr = stdout, stderr
+	if code == 0 && errMsg == "" {
+		r.Status = "ok"
+		r.Detail = "Ran apt-get clean"
+	} else {
+		r.Status = "failed"
+		r.Detail = errMsg
+	}
+	return r
+}
+
+func cleanupDnfCache(ctx context.Context, dryRun bool) DiskCleanupActionResult {
+	r := DiskCleanupActionResult{Key: "dnf_cache", Label: "DNF/YUM package cache"}
+	frontend := rpmFrontend()
+	if frontend == "" {
+		r.Status = "skipped"
+		r.Detail = "dnf/yum not found"
+		return r
+	}
+	size := dirSizeBytes(ctx, "/var/cache/dnf") + dirSizeBytes(ctx, "/var/cache/yum")
+	r.ReclaimableBytes = size
+	r.ReclaimableHuman = formatBytes(size)
+	if dryRun {
+		r.Status = "ok"
+		r.Detail = "Would run " + frontend + " clean all"
+		return r
+	}
+	stdout, stderr, code, errMsg := runCleanupCommand(ctx, 90*time.Second, frontend, "clean", "all")
+	r.Stdout, r.Stderr = stdout, stderr
+	if code == 0 && errMsg == "" {
+		r.Status = "ok"
+		r.Detail = "Ran " + frontend + " clean all"
+	} else {
+		r.Status = "failed"
+		r.Detail = errMsg
+	}
+	return r
+}
+
+func cleanupJournald(ctx context.Context, dryRun bool) DiskCleanupActionResult {
+	r := DiskCleanupActionResult{Key: "journald", Label: "systemd journal"}
+	if _, err := exec.LookPath("journalctl"); err != nil {
+		r.Status = "skipped"
+		r.Detail = "journalctl not found"
+		return r
+	}
+	if dryRun {
+		stdout, stderr, code, errMsg := runCleanupCommand(ctx, 15*time.Second, "journalctl", "--disk-usage", "--no-pager")
+		r.Stdout, r.Stderr = stdout, stderr
+		if code == 0 && errMsg == "" {
+			r.Status = "ok"
+			r.Detail = strings.TrimSpace(stdout)
+		} else {
+			r.Status = "failed"
+			r.Detail = errMsg
+		}
+		return r
+	}
+	stdout, stderr, code, errMsg := runCleanupCommand(ctx, 60*time.Second, "journalctl", "--vacuum-size=500M")
+	r.Stdout, r.Stderr = stdout, stderr
+	if code == 0 && errMsg == "" {
+		r.Status = "ok"
+		r.Detail = "Vacuumed journal to 500M"
+	} else {
+		r.Status = "failed"
+		r.Detail = errMsg
+	}
+	return r
+}
+
+func cleanupOldUserCache(ctx context.Context, dryRun bool) DiskCleanupActionResult {
+	r := DiskCleanupActionResult{Key: "user_cache_old", Label: "User cache files older than 14 days"}
+	if _, err := os.Stat("/home"); err != nil {
+		r.Status = "skipped"
+		r.Detail = "/home not found"
+		return r
+	}
+	count, size := oldUserCacheStats(ctx)
+	r.ReclaimableBytes = size
+	r.ReclaimableHuman = formatBytes(size)
+	if dryRun {
+		r.Status = "ok"
+		r.Detail = fmt.Sprintf("Would delete %d file(s) under /home/*/.cache older than 14 days", count)
+		return r
+	}
+	script := "find /home -path '*/.cache/*' -type f -mtime +14 -delete 2>/dev/null"
+	stdout, stderr, code, errMsg := runCleanupShell(ctx, 120*time.Second, script)
+	r.Stdout, r.Stderr = stdout, stderr
+	if code == 0 && errMsg == "" {
+		r.Status = "ok"
+		r.Detail = fmt.Sprintf("Deleted cache files older than 14 days; estimated before cleanup: %d file(s), %s", count, formatBytes(size))
+	} else {
+		r.Status = "failed"
+		r.Detail = errMsg
+	}
+	return r
+}
+
+func oldUserCacheStats(ctx context.Context) (int64, int64) {
+	script := "find /home -path '*/.cache/*' -type f -mtime +14 -printf '%s\\n' 2>/dev/null | awk '{n++; s+=$1} END {printf \"%d %d\\n\", n, s+0}'"
+	stdout, _, code, _ := runCleanupShell(ctx, 45*time.Second, script)
+	if code != 0 {
+		return 0, 0
+	}
+	fields := strings.Fields(stdout)
+	if len(fields) < 2 {
+		return 0, 0
+	}
+	count, _ := strconv.ParseInt(fields[0], 10, 64)
+	size, _ := strconv.ParseInt(fields[1], 10, 64)
+	return count, size
+}
+
+func dirSizeBytes(ctx context.Context, path string) int64 {
+	if _, err := os.Stat(path); err != nil {
+		return 0
+	}
+	stdout, _, code, _ := runCleanupCommand(ctx, 15*time.Second, "du", "-sb", path)
+	if code != 0 {
+		return 0
+	}
+	fields := strings.Fields(stdout)
+	if len(fields) == 0 {
+		return 0
+	}
+	n, _ := strconv.ParseInt(fields[0], 10, 64)
+	return n
+}
+
+func runCleanupCommand(ctx context.Context, timeout time.Duration, name string, args ...string) (string, string, int, string) {
+	queryCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	cmd := exec.CommandContext(queryCtx, name, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	errMsg := ""
+	if err != nil {
+		code = 1
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		}
+		errMsg = err.Error()
+	}
+	if queryCtx.Err() == context.DeadlineExceeded {
+		code = 124
+		errMsg = "command timed out"
+	}
+	return stdout.String(), stderr.String(), code, errMsg
+}
+
+func runCleanupShell(ctx context.Context, timeout time.Duration, script string) (string, string, int, string) {
+	return runCleanupCommand(ctx, timeout, "sh", "-c", script)
 }
 
 func queryServiceDetails(ctx context.Context, serviceName string) (string, string, int, string) {

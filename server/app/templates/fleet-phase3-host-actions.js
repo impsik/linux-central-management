@@ -79,6 +79,93 @@
     if (statusEl) statusEl.textContent = '';
   }
 
+  function populateDiskCleanupPanel(host) {
+    const statusEl = document.getElementById('disk-cleanup-status');
+    const outputEl = document.getElementById('disk-cleanup-output');
+    if (statusEl) {
+      const online = host?.is_online ? 'Ready' : 'Agent offline';
+      statusEl.textContent = online;
+    }
+    if (outputEl) {
+      outputEl.style.display = 'none';
+      outputEl.textContent = '';
+    }
+  }
+
+  function formatDiskCleanupResult(data) {
+    const lines = [];
+    const dryRun = !!data?.dry_run;
+    lines.push((dryRun ? 'Dry run' : 'Cleanup complete') + ': estimated reclaimable ' + (data?.total_reclaimable_human || '0B'));
+    const actions = Array.isArray(data?.actions) ? data.actions : [];
+    actions.forEach((item) => {
+      const label = item?.label || item?.key || 'action';
+      const status = item?.status || 'unknown';
+      const reclaim = item?.reclaimable_human ? ' · ' + item.reclaimable_human : '';
+      const detail = item?.detail ? ' · ' + item.detail : '';
+      lines.push('- ' + label + ': ' + status + reclaim + detail);
+    });
+    if (data?.note) lines.push('', data.note);
+    return lines.join('\n');
+  }
+
+  function initDiskCleanupControls(ctx) {
+    const api = ctx || {};
+    const dryBtn = document.getElementById('disk-cleanup-dry-run');
+    const applyBtn = document.getElementById('disk-cleanup-apply');
+    const statusEl = document.getElementById('disk-cleanup-status');
+    const outputEl = document.getElementById('disk-cleanup-output');
+
+    async function runCleanup(dryRun) {
+      const agentId = (typeof api.getCurrentAgentId === 'function') ? api.getCurrentAgentId() : null;
+      if (!agentId) return;
+      if (!dryRun && !confirm('Run safe disk cleanup on this host now?')) return;
+
+      const buttons = [dryBtn, applyBtn].filter(Boolean);
+      try {
+        buttons.forEach((btn) => { btn.disabled = true; });
+        if (statusEl) statusEl.textContent = dryRun ? 'Checking cleanup…' : 'Running cleanup…';
+        if (outputEl) {
+          outputEl.style.display = 'block';
+          outputEl.textContent = '';
+        }
+        const r = await fetch(`/hosts/${encodeURIComponent(agentId)}/disk-cleanup?wait=true`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'content-type': 'application/json',
+            'X-CSRF-Token': (typeof w.getCookie === 'function' ? (w.getCookie('fleet_csrf') || '') : ''),
+          },
+          body: JSON.stringify({ dry_run: !!dryRun }),
+        });
+        const raw = await r.text();
+        let data = null; try { data = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((data && (data.detail || data.error)) || raw || `Cleanup failed (${r.status})`);
+        if (outputEl) outputEl.textContent = formatDiskCleanupResult(data || {});
+        if (statusEl) statusEl.textContent = dryRun ? 'Dry run complete.' : 'Cleanup complete.';
+        if (typeof w.showToast === 'function') w.showToast(dryRun ? 'Disk cleanup dry run complete' : 'Disk cleanup complete', 'success');
+      } catch (err) {
+        const msg = err?.message || String(err);
+        if (statusEl) statusEl.textContent = msg;
+        if (outputEl) {
+          outputEl.style.display = 'block';
+          outputEl.textContent = msg;
+        }
+        if (typeof w.showToast === 'function') w.showToast(msg, 'error');
+      } finally {
+        buttons.forEach((btn) => { btn.disabled = false; });
+      }
+    }
+
+    dryBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      runCleanup(true);
+    });
+    applyBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      runCleanup(false);
+    });
+  }
+
   function normalizeHostMetadataPayload(input) {
     const src = input || {};
     const envIn = (src.env && typeof src.env === 'object') ? src.env : {};
@@ -172,6 +259,8 @@
     normalizeHostMetadataPayload: normalizeHostMetadataPayload,
     initHostMetadataEditor: initHostMetadataEditor,
     populateHostMetadataEditor: populateHostMetadataEditor,
+    populateDiskCleanupPanel: populateDiskCleanupPanel,
+    initDiskCleanupControls: initDiskCleanupControls,
     initCommonModalDismissHandlers: initCommonModalDismissHandlers,
   };
 })(window);

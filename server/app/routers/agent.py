@@ -50,6 +50,7 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
             "os_id": payload.os_id,
             "os_version": payload.os_version,
             "kernel": payload.kernel,
+            "agent_version": payload.agent_version,
             "labels": payload.labels or {},
             "last_seen": now,
         }
@@ -65,6 +66,8 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
         host.os_id = payload.os_id
         host.os_version = payload.os_version
         host.kernel = payload.kernel
+        if payload.agent_version:
+            host.agent_version = payload.agent_version
 
         # Preserve UI-managed metadata (e.g. role/env) when agent re-registers without labels.
         existing_labels = dict(host.labels or {}) if isinstance(host.labels, dict) else {}
@@ -83,7 +86,12 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
 
 
 @router.post("/heartbeat")
-def agent_heartbeat(agent_id: str, request: Request, db: Session = Depends(get_db)):
+def agent_heartbeat(
+    request: Request,
+    agent_id: str,
+    agent_version: str | None = None,
+    db: Session = Depends(get_db),
+):
     require_agent_token(request)
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
@@ -92,6 +100,9 @@ def agent_heartbeat(agent_id: str, request: Request, db: Session = Depends(get_d
     client_ip = get_client_ip(request)
     if client_ip and hasattr(host, "ip_address") and not host.ip_address:
         host.ip_address = client_ip
+
+    if agent_version:
+        host.agent_version = agent_version
 
     host.last_seen = datetime.now(timezone.utc)
     db.commit()
@@ -215,6 +226,13 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
             return {"job_id": job_row.job_key, "type": "inventory-now"}
         if t == "query-pkg-version":
             return {"job_id": job_row.job_key, "type": "query-pkg-version", "packages": payload.get("packages") or []}
+        if t == "disk-cleanup":
+            return {
+                "job_id": job_row.job_key,
+                "type": "disk-cleanup",
+                "dry_run": bool(payload.get("dry_run", True)),
+                "cleanup_actions": payload.get("actions") or [],
+            }
         if t == "pkg-upgrade":
             packages = payload.get("packages") or []
             by = payload.get("packages_by_agent") or {}

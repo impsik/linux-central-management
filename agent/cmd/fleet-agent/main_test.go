@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -266,5 +268,15 @@ func TestBuildFirewalldRejectRule(t *testing.T) {
 	want := `rule family="ipv4" source address="10.0.0.0/8" port port="443" protocol="tcp" reject`
 	if got != want {
 		t.Fatalf("rich rule = %q, want %q", got, want)
+	}
+}
+
+func TestRunDiskCleanupRejectsUnsupportedAction(t *testing.T) {
+	_, _, code, errMsg := runDiskCleanup(context.Background(), true, []string{"wipe-everything"})
+	if code == 0 {
+		t.Fatal("runDiskCleanup returned success for unsupported action")
+	}
+	if !strings.Contains(errMsg, "unsupported cleanup action") {
+		t.Fatalf("error = %q, want unsupported cleanup action", errMsg)
 	}
 }

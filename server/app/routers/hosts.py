@@ -20,7 +20,7 @@ from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
 from ..services.package_names import sanitize_package_list
 from ..services.deb_version import is_vulnerable
-from ..schemas import FirewallRuleRequest, HostMetadataUpdate
+from ..schemas import DiskCleanupRequest, FirewallRuleRequest, HostMetadataUpdate
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
 
@@ -76,8 +76,10 @@ def list_hosts(online_only: bool = False, db: Session = Depends(get_db), user=De
             "os_id": h.os_id,
             "os_version": h.os_version,
             "kernel": h.kernel,
+            "agent_version": getattr(h, "agent_version", None),
             "labels": h.labels,
             "last_seen": h.last_seen,
+            "last_seen_seconds_ago": seconds_since_seen(h),
             "reboot_required": bool(getattr(h, "reboot_required", False)),
             "is_online": is_host_online(h, now),
         }
@@ -389,6 +391,17 @@ def host_drift(
             "status": "pass" if online else "warn",
             "severity": "ok" if online else "critical",
             "detail": "Host heartbeat is healthy" if online else "Host is offline/stale",
+        },
+        {
+            "key": "agent_version",
+            "title": "Agent version",
+            "status": "pass" if str(getattr(host, "agent_version", "") or "").strip() else "warn",
+            "severity": "ok" if str(getattr(host, "agent_version", "") or "").strip() else "warn",
+            "detail": (
+                f"Agent version {host.agent_version}"
+                if str(getattr(host, "agent_version", "") or "").strip()
+                else "Agent has not reported a version yet"
+            ),
         },
         {
             "key": "inventory_freshness",
@@ -1543,6 +1556,104 @@ async def get_df(agent_id: str, wait: bool = True, db: Session = Depends(get_db)
         raise HTTPException(500, f"df query failed: {msg}")
 
     return {"stdout": run.stdout or ""}
+
+
+@router.post("/{agent_id}/disk-cleanup")
+async def disk_cleanup_host(
+    agent_id: str,
+    payload: DiskCleanupRequest,
+    request: Request,
+    wait: bool = True,
+    db: Session = Depends(get_db),
+    user=Depends(require_ui_user),
+):
+    perms = permissions_for(user)
+    if not perms.get("can_manage_packages"):
+        raise HTTPException(403, "Insufficient permissions to run disk cleanup")
+
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host or not is_host_visible_to_user(db, user, host):
+        raise HTTPException(404, "Host not found")
+
+    if not is_host_online(host):
+        t = seconds_since_seen(host)
+        if t is not None:
+            raise HTTPException(503, f"Agent appears offline (last seen {int(t)}s ago)")
+        raise HTTPException(503, "Agent appears offline")
+
+    allowed_actions = {"apt_cache", "dnf_cache", "journald", "user_cache_old"}
+    actions = []
+    seen = set()
+    for raw in payload.actions or []:
+        action = str(raw or "").strip()
+        if not action:
+            continue
+        if action not in allowed_actions:
+            raise HTTPException(400, f"Unsupported cleanup action: {action}")
+        if action not in seen:
+            seen.add(action)
+            actions.append(action)
+
+    if not actions:
+        actions = ["apt_cache", "dnf_cache", "journald", "user_cache_old"]
+
+    with transaction(db):
+        created = create_job_with_runs(
+            db=db,
+            job_type="disk-cleanup",
+            payload={"dry_run": bool(payload.dry_run), "actions": actions},
+            agent_ids=[agent_id],
+            commit=False,
+            created_by=getattr(user, "username", None) or "api",
+        )
+
+        try:
+            log_event(
+                db,
+                action="hosts.disk_cleanup.dry_run" if payload.dry_run else "hosts.disk_cleanup.apply",
+                actor=user,
+                request=request,
+                target_type="host",
+                target_id=str(agent_id),
+                target_name=str(getattr(host, "hostname", None) or agent_id),
+                meta={"job_id": created.job_key, "dry_run": bool(payload.dry_run), "actions": actions},
+            )
+        except Exception:
+            pass
+
+    job_id = created.job.id
+
+    await push_job_to_agents(
+        agent_ids=[agent_id],
+        job_payload_builder=lambda aid: {
+            "job_id": created.job_key,
+            "type": "disk-cleanup",
+            "dry_run": bool(payload.dry_run),
+            "cleanup_actions": actions,
+        },
+    )
+
+    if not wait:
+        return {"job_id": created.job_key, "status": "queued", "dry_run": bool(payload.dry_run), "actions": actions}
+
+    timeout = 45
+    res = await wait_for_job_run(job_id=job_id, agent_id=agent_id, timeout_s=timeout, poll_interval_s=0.3)
+    if not res.run:
+        raise HTTPException(504, f"Timeout waiting for disk cleanup after {timeout}s")
+
+    run = res.run
+    if run.status == "failed":
+        msg = run.error or run.stderr or run.stdout or "Unknown error"
+        raise HTTPException(500, f"Disk cleanup failed: {msg}")
+
+    from ..services.json_utils import loads_or
+
+    result = loads_or(run.stdout, {})
+    if not isinstance(result, dict):
+        result = {"stdout": run.stdout or ""}
+    result.setdefault("job_id", created.job_key)
+    result.setdefault("status", "success")
+    return result
 
 
 @router.get("/{agent_id}/metrics")
