@@ -44,8 +44,16 @@ sudo dnf config-manager --add-repo \
 
 sudo dnf install -y git curl ca-certificates python3 openssl ansible-core golang docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 ```
+Make sure you have sudo rights on target server(s)!
+On admin server (if needed):
 
-Run this on the Ubuntu/Debian/RedHat server that will host the web UI (RedHat based will be added, maybe):
+```bash
+ssh-keygen
+ssh-copy-id sudo-user@192.168.100.181 (for example)
+```
+Also, makse sure docker service is working on admin node.
+
+Run this on the Ubuntu/Debian/RedHat server that will host the web UI:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
