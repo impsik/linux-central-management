@@ -135,7 +135,7 @@
 
     async function initOidcButton() {
       try {
-        const r = await fetch('/auth/admin-info');
+        const r = await fetch('/auth/admin-info', { cache: 'no-store', credentials: 'same-origin' });
         if (!r.ok) throw new Error('admin info unavailable');
         const d = await r.json();
         adEnabled = !!(d && d.ad_enabled);

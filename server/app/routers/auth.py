@@ -292,11 +292,14 @@ def auth_ad_login(payload: LoginRequest, request: Request, db: Session = Depends
 def auth_admin_info(db: Session = Depends(get_db)):
     row = db.get(AppAuthSettings, 1)
     ad_enabled = bool(getattr(row, "ad_enabled", False)) if row else False
-    return {
-        "admin_username": getattr(settings, "bootstrap_username", "admin"),
-        "oidc_enabled": bool(getattr(settings, "auth_oidc_enabled", False)),
-        "ad_enabled": ad_enabled,
-    }
+    return JSONResponse(
+        {
+            "admin_username": getattr(settings, "bootstrap_username", "admin"),
+            "oidc_enabled": bool(getattr(settings, "auth_oidc_enabled", False)),
+            "ad_enabled": ad_enabled,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 def _oidc_discovery() -> dict:
