@@ -19,7 +19,8 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
-from ..models import AppSavedView, AppSession, AppUser, AppUserScope, Host, OIDCAuthEvent
+from ..models import AppAuthSettings, AppSavedView, AppSession, AppUser, AppUserScope, Host, OIDCAuthEvent
+from ..services.ad_auth import authenticate_ad, encrypt_password
 from ..services.user_scopes import get_user_scope_selectors, is_host_visible_to_user, user_has_scope_limits
 from ..services.audit import log_event
 from ..services.db_utils import transaction
@@ -131,6 +132,18 @@ class ResetPasswordRequest(BaseModel):
     password: str
 
 
+class ADSettingsRequest(BaseModel):
+    enabled: bool = False
+    server_uri: str | None = None
+    domain: str | None = None
+    base_dn: str | None = None
+    bind_dn: str | None = None
+    bind_password: str | None = None
+    user_filter: str = "(sAMAccountName={username})"
+    use_ssl: bool = True
+    role: str = "operator"
+
+
 class SaveViewRequest(BaseModel):
     scope: str = "hosts"
     name: str
@@ -151,6 +164,50 @@ class UserScopeSetRequest(BaseModel):
 
 class OidcMapPreviewRequest(BaseModel):
     claims: dict = {}
+
+
+def _get_auth_settings(db: Session) -> AppAuthSettings:
+    row = db.get(AppAuthSettings, 1)
+    if not row:
+        row = AppAuthSettings(id=1)
+        db.add(row)
+        db.flush()
+    return row
+
+
+def _session_response_for_user(user: AppUser, request: Request, db: Session, *, action: str) -> JSONResponse:
+    token = secrets.token_urlsafe(32)
+    token_hash = sha256_hex(token)
+    now = datetime.now(timezone.utc)
+    expires = _compute_session_expiry(now)
+
+    try:
+        db.execute(delete(AppSession).where(AppSession.expires_at <= now))
+    except Exception:
+        pass
+
+    role = (getattr(user, "role", "operator") or "operator").lower()
+    require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+
+    sess = AppSession(user_id=user.id, token_sha256=token_hash, expires_at=expires)
+    if not require_mfa:
+        sess.mfa_verified_at = now
+    db.add(sess)
+    log_event(db, action=action, actor=user, request=request)
+    db.commit()
+
+    mfa_enabled = bool(getattr(user, "mfa_enabled", False))
+    has_pending_enroll = bool(getattr(user, "totp_secret_pending_enc", None))
+
+    body: dict = {"ok": True, "username": user.username}
+    if require_mfa or has_pending_enroll:
+        body["mfa_setup_required"] = bool((require_mfa and not mfa_enabled) or has_pending_enroll)
+        body["mfa_required"] = bool(require_mfa and mfa_enabled)
+        body["mfa_redirect"] = "/?mfa=required"
+
+    resp = JSONResponse(body)
+    _set_auth_cookies(resp, token=token, session_expires=expires, request=request)
+    return resp
 
 
 @router.post("/login")
@@ -180,53 +237,65 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     ).scalar_one_or_none()
     if not user or not pwd_context.verify(password, user.password_hash):
         raise HTTPException(401, "Invalid username or password")
+    if (getattr(user, "auth_provider", "local") or "local") != "local":
+        raise HTTPException(401, "Use Active Directory login for this account")
 
-    token = secrets.token_urlsafe(32)
-    token_hash = sha256_hex(token)
-    now = datetime.now(timezone.utc)
-    expires = _compute_session_expiry(now)
+    return _session_response_for_user(user, request, db, action="auth.login")
 
-    # Cleanup expired sessions (best-effort)
+
+@router.post("/ad/login")
+def auth_ad_login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    username = (payload.username or "").strip()
+    password = payload.password or ""
+    if not username or not password:
+        raise HTTPException(400, "username and password are required")
+
+    row = _get_auth_settings(db)
+    if not bool(getattr(row, "ad_enabled", False)):
+        raise HTTPException(404, "Active Directory login is disabled")
+
     try:
-        db.execute(delete(AppSession).where(AppSession.expires_at <= now))
-    except Exception:
-        pass
+        ad_user = authenticate_ad(row, username, password)
+    except ValueError:
+        raise HTTPException(401, "Invalid username or password")
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
 
-    # MFA gating: for admin/operator, require MFA enrollment and per-session verification.
-    role = (getattr(user, "role", "operator") or "operator").lower()
-    require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
+    existing = db.execute(select(AppUser).where(AppUser.username == ad_user.username)).scalar_one_or_none()
+    if existing and (getattr(existing, "auth_provider", "local") or "local") != "ad":
+        raise HTTPException(409, "An existing local user has this username")
 
-    sess = AppSession(user_id=user.id, token_sha256=token_hash, expires_at=expires)
-    if not require_mfa:
-        sess.mfa_verified_at = now
-    db.add(sess)
-    # Audit: successful login (no secrets)
-    log_event(db, action="auth.login", actor=user, request=request)
-    db.commit()
+    role = (getattr(row, "ad_role", "operator") or "operator").lower()
+    if role not in {"operator", "readonly"}:
+        role = "operator"
 
-    mfa_enabled = bool(getattr(user, "mfa_enabled", False))
-    has_pending_enroll = bool(getattr(user, "totp_secret_pending_enc", None))
+    if not existing:
+        existing = AppUser(
+            username=ad_user.username,
+            password_hash=pwd_context.hash(secrets.token_urlsafe(32)),
+            auth_provider="ad",
+            role=role,
+            is_active=True,
+        )
+        db.add(existing)
+        db.flush()
+    else:
+        existing.role = role
 
-    body: dict = {"ok": True, "username": user.username}
-    if require_mfa or has_pending_enroll:
-        body["mfa_setup_required"] = bool((require_mfa and not mfa_enabled) or has_pending_enroll)
-        body["mfa_required"] = bool(require_mfa and mfa_enabled)
-        body["mfa_redirect"] = "/?mfa=required"
+    if not bool(getattr(existing, "is_active", True)):
+        raise HTTPException(403, "User is inactive")
 
-    resp = JSONResponse(body)
-
-    # CSRF protection: double-submit cookie.
-    # Frontend must echo this value in X-CSRF-Token for state-changing requests.
-    _set_auth_cookies(resp, token=token, session_expires=expires, request=request)
-
-    return resp
+    return _session_response_for_user(existing, request, db, action="auth.login.ad")
 
 
 @router.get("/admin-info")
-def auth_admin_info():
+def auth_admin_info(db: Session = Depends(get_db)):
+    row = db.get(AppAuthSettings, 1)
+    ad_enabled = bool(getattr(row, "ad_enabled", False)) if row else False
     return {
         "admin_username": getattr(settings, "bootstrap_username", "admin"),
         "oidc_enabled": bool(getattr(settings, "auth_oidc_enabled", False)),
+        "ad_enabled": ad_enabled,
     }
 
 
@@ -720,7 +789,13 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
 
     user = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
     if not user:
-        user = AppUser(username=username, password_hash=pwd_context.hash(secrets.token_urlsafe(24)), role=mapped_role, is_active=True)
+        user = AppUser(
+            username=username,
+            password_hash=pwd_context.hash(secrets.token_urlsafe(24)),
+            auth_provider="oidc",
+            role=mapped_role,
+            is_active=True,
+        )
         db.add(user)
         db.flush()
     else:
@@ -814,6 +889,7 @@ def auth_admin_users(request: Request, db: Session = Depends(get_db)):
             {
                 "id": str(u.id),
                 "username": u.username,
+                "auth_provider": (getattr(u, "auth_provider", "local") or "local"),
                 "role": (getattr(u, "role", "operator") or "operator"),
                 "active": bool(getattr(u, "is_active", True)),
                 "mfa_enabled": bool(getattr(u, "mfa_enabled", False)),
@@ -821,6 +897,82 @@ def auth_admin_users(request: Request, db: Session = Depends(get_db)):
             }
         )
     return {"items": items}
+
+
+@router.get("/admin/ad-settings")
+def auth_admin_get_ad_settings(request: Request, db: Session = Depends(get_db), admin: AppUser = Depends(require_admin_user)):
+    row = _get_auth_settings(db)
+    return {
+        "enabled": bool(getattr(row, "ad_enabled", False)),
+        "server_uri": getattr(row, "ad_server_uri", None) or "",
+        "domain": getattr(row, "ad_domain", None) or "",
+        "base_dn": getattr(row, "ad_base_dn", None) or "",
+        "bind_dn": getattr(row, "ad_bind_dn", None) or "",
+        "bind_password_set": bool(getattr(row, "ad_bind_password_enc", None)),
+        "user_filter": getattr(row, "ad_user_filter", None) or "(sAMAccountName={username})",
+        "use_ssl": bool(getattr(row, "ad_use_ssl", True)),
+        "role": getattr(row, "ad_role", "operator") or "operator",
+        "updated_at": row.updated_at.isoformat() if getattr(row, "updated_at", None) else None,
+    }
+
+
+@router.post("/admin/ad-settings")
+def auth_admin_save_ad_settings(
+    payload: ADSettingsRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin: AppUser = Depends(require_admin_user),
+):
+    row = _get_auth_settings(db)
+
+    server_uri = (payload.server_uri or "").strip()
+    domain = (payload.domain or "").strip()
+    base_dn = (payload.base_dn or "").strip()
+    bind_dn = (payload.bind_dn or "").strip()
+    user_filter = (payload.user_filter or "(sAMAccountName={username})").strip()
+    role = (payload.role or "operator").strip().lower()
+
+    if role not in {"operator", "readonly"}:
+        raise HTTPException(400, "AD users can only be operator or readonly")
+    if "{username}" not in user_filter:
+        raise HTTPException(400, "user filter must contain {username}")
+    if payload.enabled:
+        missing = []
+        if not server_uri:
+            missing.append("server URI")
+        if not base_dn:
+            missing.append("base DN")
+        if not bind_dn:
+            missing.append("bind DN")
+        if not (payload.bind_password or getattr(row, "ad_bind_password_enc", None)):
+            missing.append("bind password")
+        if missing:
+            raise HTTPException(400, "Missing AD settings: " + ", ".join(missing))
+
+    row.ad_enabled = bool(payload.enabled)
+    row.ad_server_uri = server_uri or None
+    row.ad_domain = domain or None
+    row.ad_base_dn = base_dn or None
+    row.ad_bind_dn = bind_dn or None
+    if payload.bind_password is not None and payload.bind_password != "":
+        try:
+            row.ad_bind_password_enc = encrypt_password(payload.bind_password)
+        except RuntimeError as e:
+            raise HTTPException(500, str(e))
+    row.ad_user_filter = user_filter
+    row.ad_use_ssl = bool(payload.use_ssl)
+    row.ad_role = role
+
+    log_event(
+        db,
+        action="auth.admin.ad_settings.update",
+        actor=admin,
+        request=request,
+        meta={"enabled": row.ad_enabled, "server_uri": row.ad_server_uri, "base_dn": row.ad_base_dn, "role": row.ad_role},
+    )
+    db.commit()
+
+    return {"ok": True, "enabled": row.ad_enabled, "bind_password_set": bool(row.ad_bind_password_enc)}
 
 
 @router.post("/users/{username}/delete")
@@ -912,7 +1064,7 @@ def auth_register(payload: RegisterRequest, request: Request, db: Session = Depe
     if existing:
         raise HTTPException(409, "username already exists")
 
-    u = AppUser(username=username, password_hash=pwd_context.hash(password), is_active=True)
+    u = AppUser(username=username, password_hash=pwd_context.hash(password), auth_provider="local", is_active=True)
     db.add(u)
     # Audit
     admin = require_ui_user(request, db)
@@ -934,6 +1086,8 @@ def auth_reset_password(payload: ResetPasswordRequest, request: Request, db: Ses
     user = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
     if not user:
         raise HTTPException(404, "user not found")
+    if (getattr(user, "auth_provider", "local") or "local") != "local":
+        raise HTTPException(400, "Password reset is only available for local users")
 
     user.password_hash = pwd_context.hash(password)
     # Audit

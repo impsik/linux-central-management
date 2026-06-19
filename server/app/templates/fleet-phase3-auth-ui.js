@@ -111,6 +111,14 @@ function initAdminPanel() {
           if (e.key === 'Enter') resetSubmit();
         });
       }
+
+      const adSaveButton = document.getElementById('ad-settings-save');
+      adSaveButton?.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (typeof window.saveAdminAdSettings === 'function') {
+          window.saveAdminAdSettings();
+        }
+      });
     }
 
     function initSettingsMenu() {
@@ -172,4 +180,3 @@ function initAdminPanel() {
         if (e.key === 'Escape') closeMenu();
       });
     }
-

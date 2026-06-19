@@ -142,6 +142,11 @@ def _startup() -> None:
                 app_saved_views_cols = {c.get("name") for c in insp.get_columns("app_saved_views")}
             except Exception:
                 app_saved_views_cols = set()
+            has_app_auth_settings = False
+            try:
+                has_app_auth_settings = insp.has_table("app_auth_settings")
+            except Exception:
+                has_app_auth_settings = False
             ssh_deploy_cols = set()
             try:
                 ssh_deploy_cols = {c.get("name") for c in insp.get_columns("ssh_key_deployment_requests")}
@@ -165,6 +170,8 @@ def _startup() -> None:
                     stmts.append("ALTER TABLE app_users ADD COLUMN recovery_codes JSONB NOT NULL DEFAULT '[]'::jsonb")
                 else:
                     stmts.append("ALTER TABLE app_users ADD COLUMN recovery_codes JSON NOT NULL DEFAULT '[]'")
+            if "auth_provider" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'local'")
             if "mfa_verified_at" not in app_session_cols:
                 stmts.append("ALTER TABLE app_sessions ADD COLUMN mfa_verified_at TIMESTAMP WITH TIME ZONE")
             if app_saved_views_cols and "is_shared" not in app_saved_views_cols:
@@ -179,6 +186,8 @@ def _startup() -> None:
                     for sql in stmts:
                         conn.execute(text(sql))
                 logger.warning("Applied legacy MFA schema backfill (%s statements)", len(stmts))
+            if not has_app_auth_settings:
+                Base.metadata.tables["app_auth_settings"].create(bind=engine, checkfirst=True)
         except Exception:
             logger.exception("Legacy MFA schema backfill failed")
 
@@ -232,7 +241,7 @@ def _startup() -> None:
     try:
         existing = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
         if not existing:
-            db.add(AppUser(username=username, password_hash=pwd_context.hash(password), role="admin", is_active=True))
+            db.add(AppUser(username=username, password_hash=pwd_context.hash(password), auth_provider="local", role="admin", is_active=True))
             db.commit()
             logger.info(f"Seeded initial UI user '{username}'")
     except Exception as e:
@@ -451,7 +460,7 @@ def create_app() -> FastAPI:
         # - websockets
         # - login (no session yet)
         # - logout (safe to allow without CSRF to prevent MFA lock-in loops)
-        if path.startswith("/agent/") or path == "/health" or path.startswith("/ws/") or path in ("/auth/login", "/auth/logout"):
+        if path.startswith("/agent/") or path == "/health" or path.startswith("/ws/") or path in ("/auth/login", "/auth/ad/login", "/auth/logout"):
             return await call_next(request)
 
         if method in ("GET", "HEAD", "OPTIONS"):

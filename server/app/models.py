@@ -140,6 +140,7 @@ class AppUser(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     username = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
+    auth_provider = Column(String, nullable=False, default="local", index=True)  # local|ad|oidc
     role = Column(String, nullable=False, default="operator", index=True)  # admin|operator|readonly
     is_active = Column(Boolean, nullable=False, default=True)
 
@@ -207,6 +208,22 @@ class AppSavedView(Base):
         UniqueConstraint("user_id", "scope", "name", name="uq_app_saved_views_user_scope_name"),
         Index("ix_app_saved_views_user_scope", "user_id", "scope"),
     )
+
+
+class AppAuthSettings(Base):
+    __tablename__ = "app_auth_settings"
+
+    id = Column(Integer, primary_key=True, default=1)
+    ad_enabled = Column(Boolean, nullable=False, default=False)
+    ad_server_uri = Column(String)
+    ad_domain = Column(String)
+    ad_base_dn = Column(String)
+    ad_bind_dn = Column(String)
+    ad_bind_password_enc = Column(Text)
+    ad_user_filter = Column(String, nullable=False, default="(sAMAccountName={username})")
+    ad_use_ssl = Column(Boolean, nullable=False, default=True)
+    ad_role = Column(String, nullable=False, default="operator")
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class AnsibleRun(Base):
