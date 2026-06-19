@@ -1161,6 +1161,34 @@
                 <div class="admin-note">Admin access required to manage app users.</div>
               </div>
             </div>
+
+            <div class="admin-card" id="admin-ad-settings-card" style="margin-top:1rem;">
+              <div class="admin-card-title">Active Directory</div>
+              <div class="admin-card-body">
+                <label style="display:flex;align-items:center;gap:0.5rem;color:var(--muted-2);font-size:0.9rem;margin-bottom:0.6rem;">
+                  <input id="ad-enabled" type="checkbox" style="width:auto;" />
+                  Enable Active Directory login
+                </label>
+                <input id="ad-server-uri" class="admin-input" type="text" placeholder="ldaps://dc.example.local:636" />
+                <input id="ad-domain" class="admin-input" type="text" placeholder="example.local" />
+                <input id="ad-base-dn" class="admin-input" type="text" placeholder="DC=example,DC=local" />
+                <input id="ad-bind-dn" class="admin-input" type="text" placeholder="CN=fleet-bind,OU=Service Accounts,DC=example,DC=local" />
+                <input id="ad-bind-password" class="admin-input" type="password" placeholder="Bind password" />
+                <input id="ad-user-filter" class="admin-input" type="text" placeholder="(sAMAccountName={username})" />
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;align-items:center;margin-top:0.45rem;">
+                  <label style="display:flex;align-items:center;gap:0.5rem;color:var(--muted-2);font-size:0.9rem;">
+                    <input id="ad-use-ssl" type="checkbox" style="width:auto;" checked />
+                    Use LDAPS
+                  </label>
+                  <select id="ad-role" class="admin-input" style="margin-top:0;">
+                    <option value="operator">Operator</option>
+                    <option value="readonly">Read-only</option>
+                  </select>
+                </div>
+                <button class="btn btn-primary" id="ad-settings-save" type="button" style="margin-top:0.75rem;">Save AD settings</button>
+                <div class="admin-status" id="ad-settings-status"></div>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -1175,6 +1203,7 @@
                     <thead>
                       <tr>
                         <th>Username</th>
+                        <th>Source</th>
                         <th>Role</th>
                         <th>Active</th>
                         <th>MFA</th>
@@ -1183,7 +1212,7 @@
                       </tr>
                     </thead>
                     <tbody id="admin-users-table">
-                      <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                      <tr><td colspan="7" style="text-align:center;" class="status-muted">Loading…</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -2621,7 +2650,7 @@
       if (!tbody) return;
 
       try {
-        setTableState(tbody, 6, 'loading', 'Loading…');
+        setTableState(tbody, 7, 'loading', 'Loading…');
         if (statusEl) statusEl.textContent = '';
         const r = await fetch('/auth/admin/users', { credentials: 'include' });
         const raw = await r.text();
@@ -2630,12 +2659,13 @@
 
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
-          setTableState(tbody, 6, 'empty', 'No users');
+          setTableState(tbody, 7, 'empty', 'No users');
           return;
         }
         tbody.innerHTML = '';
         for (const u of items) {
           const tr = document.createElement('tr');
+          const source = String(u.auth_provider || 'local');
           const role = String(u.role || 'operator');
           const active = (u.active === false) ? 'no' : 'yes';
           const mfa = u.mfa_enabled ? 'enabled' : 'off';
@@ -2648,6 +2678,7 @@
 
           tr.innerHTML = `
             <td><code>${escapeHtml(uname)}</code></td>
+            <td>${escapeHtml(source)}</td>
             <td>${escapeHtml(role)}</td>
             <td>${escapeHtml(active)}</td>
             <td>${escapeHtml(mfa)}</td>
@@ -2761,9 +2792,89 @@
 
         if (showToastOnManual) showToast('Users refreshed', 'success');
       } catch (e) {
-        setTableState(tbody, 6, 'error', e.message || String(e));
+        setTableState(tbody, 7, 'error', e.message || String(e));
         if (statusEl) statusEl.textContent = e.message;
         if (showToastOnManual) showToast(e.message, 'error');
+      }
+    }
+
+    async function loadAdminAdSettings(showToastOnManual = false) {
+      const statusEl = document.getElementById('ad-settings-status');
+      const setStatus = (msg, type) => {
+        if (!statusEl) return;
+        statusEl.textContent = msg || '';
+        statusEl.className = `admin-status ${type ? `status-${type}` : ''}`;
+      };
+
+      try {
+        setStatus('Loading...', null);
+        const r = await fetch('/auth/admin/ad-settings', { credentials: 'include', cache: 'no-store' });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `AD settings fetch failed (${r.status})`);
+
+        document.getElementById('ad-enabled').checked = !!d.enabled;
+        document.getElementById('ad-server-uri').value = d.server_uri || '';
+        document.getElementById('ad-domain').value = d.domain || '';
+        document.getElementById('ad-base-dn').value = d.base_dn || '';
+        document.getElementById('ad-bind-dn').value = d.bind_dn || '';
+        document.getElementById('ad-bind-password').value = '';
+        document.getElementById('ad-bind-password').placeholder = d.bind_password_set ? 'Bind password already saved' : 'Bind password';
+        document.getElementById('ad-user-filter').value = d.user_filter || '(sAMAccountName={username})';
+        document.getElementById('ad-use-ssl').checked = d.use_ssl !== false;
+        document.getElementById('ad-role').value = d.role || 'operator';
+        setStatus(d.enabled ? 'Active Directory login is enabled.' : 'Active Directory login is disabled.', d.enabled ? 'success' : null);
+        if (showToastOnManual) showToast('AD settings loaded', 'success');
+      } catch (e) {
+        setStatus(e.message || String(e), 'error');
+        if (showToastOnManual) showToast(e.message || String(e), 'error');
+      }
+    }
+
+    async function saveAdminAdSettings() {
+      const btn = document.getElementById('ad-settings-save');
+      const statusEl = document.getElementById('ad-settings-status');
+      const setStatus = (msg, type) => {
+        if (!statusEl) return;
+        statusEl.textContent = msg || '';
+        statusEl.className = `admin-status ${type ? `status-${type}` : ''}`;
+      };
+      if (!btn) return;
+
+      const payload = {
+        enabled: !!document.getElementById('ad-enabled')?.checked,
+        server_uri: document.getElementById('ad-server-uri')?.value || '',
+        domain: document.getElementById('ad-domain')?.value || '',
+        base_dn: document.getElementById('ad-base-dn')?.value || '',
+        bind_dn: document.getElementById('ad-bind-dn')?.value || '',
+        bind_password: document.getElementById('ad-bind-password')?.value || '',
+        user_filter: document.getElementById('ad-user-filter')?.value || '(sAMAccountName={username})',
+        use_ssl: !!document.getElementById('ad-use-ssl')?.checked,
+        role: document.getElementById('ad-role')?.value || 'operator',
+      };
+
+      btn.disabled = true;
+      setStatus('Saving...', null);
+      try {
+        const r = await fetch('/auth/admin/ad-settings', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+          body: JSON.stringify(payload),
+        });
+        const raw = await r.text();
+        let d = null; try { d = raw ? JSON.parse(raw) : null; } catch {}
+        if (!r.ok) throw new Error((d && (d.detail || d.error)) || raw || `AD settings save failed (${r.status})`);
+        document.getElementById('ad-bind-password').value = '';
+        document.getElementById('ad-bind-password').placeholder = d.bind_password_set ? 'Bind password already saved' : 'Bind password';
+        setStatus(d.enabled ? 'Saved. Active Directory login is enabled.' : 'Saved. Active Directory login is disabled.', 'success');
+        showToast('AD settings saved', 'success');
+        loadAdminAudit();
+      } catch (e) {
+        setStatus(e.message || String(e), 'error');
+        showToast(e.message || String(e), 'error', 5000);
+      } finally {
+        btn.disabled = false;
       }
     }
 
@@ -3112,6 +3223,7 @@
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('admin-tab').classList.add('active');
       loadAdminUsers();
+      loadAdminAdSettings();
       loadAdminAudit();
     }
 
@@ -4687,6 +4799,8 @@
         maybeLoadSshKeyAdminQueue,
         loadAdminSshKeys,
         loadAdminUsers,
+        loadAdminAdSettings,
+        saveAdminAdSettings,
         loadAdminOidcEvents,
         loadAdminApprovals,
         loadAdminNotificationDedupe,

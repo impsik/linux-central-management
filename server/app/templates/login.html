@@ -42,10 +42,18 @@
     input:focus { outline:2px solid var(--focus-ring); outline-offset:1px; box-shadow:none; }
     button { margin-top:1rem; width:100%; min-height:2rem; padding:0.375rem 0.75rem; border:1px solid var(--primary); border-radius:3px; background:var(--primary); color:white; font-size:0.875rem; font-weight:400; cursor:pointer; }
     button:hover { background:var(--primary-2); border-color:var(--primary-2); }
+    .btn-ad { background:#1d4ed8; }
+    .btn-ad:hover { background:#1e40af; border-color:#1e40af; }
     .btn-oidc { background: var(--oidc-bg); }
     .btn-oidc:hover { background:color-mix(in srgb, var(--oidc-bg) 82%, #000); border-color:color-mix(in srgb, var(--oidc-bg) 82%, #000); }
     .theme-btn:hover { border-color:color-mix(in srgb, var(--border) 50%, var(--text)); background:var(--panel-2); }
     button:disabled { opacity:0.6; cursor:not-allowed; }
+    .link-btn { width:auto; min-height:0; margin:0.85rem auto 0; padding:0; border:0; background:transparent; color:var(--primary); text-decoration:underline; display:block; }
+    .link-btn:hover { background:transparent; border:0; color:var(--primary-2); }
+    .divider { display:flex; align-items:center; gap:0.65rem; color:var(--muted); font-size:0.8rem; margin:1rem 0 0.25rem; }
+    .divider::before, .divider::after { content:""; height:1px; background:var(--border); flex:1; }
+    .login-mode { margin-top:0.25rem; color:var(--muted); font-size:0.85rem; }
+    .local-login { display:none; }
     .err { display:none; }
     .hint { margin-top:0.75rem; color:var(--muted); font-size:0.8rem; }
     .caps-hint { margin-top:0.5rem; color:#b45309; font-size:0.8rem; display:none; }
@@ -62,12 +70,18 @@
       <h1>Sign in</h1>
       <button class="theme-btn" id="theme-btn" type="button">Theme</button>
     </div>
+    <div class="login-mode" id="login-mode">Active Directory</div>
     <label for="u">Username</label>
     <input id="u" autocomplete="username" />
     <label for="p">Password</label>
     <input id="p" type="password" autocomplete="current-password" />
     <div class="caps-hint" id="caps-hint">Caps Lock is on.</div>
-    <button id="btn">Login</button>
+    <button id="btn" class="btn-ad">Sign in with Active Directory</button>
+    <button id="local-link" class="link-btn" type="button" style="display:none;">Use a Local User</button>
+    <div class="local-login" id="local-actions">
+      <div class="divider">Local user</div>
+      <button id="local-btn" type="button">Login</button>
+    </div>
     <button id="btn-oidc" class="btn-oidc" style="display:none;">Sign in with SSO</button>
     <div class="err" id="err"></div>
     <div class="hint">Your session is stored in a secure cookie (HttpOnly). Passwords are stored hashed in DB.</div>
@@ -85,6 +99,13 @@
     const err = document.getElementById('err');
     const capsHint = document.getElementById('caps-hint');
     const oidcBtn = document.getElementById('btn-oidc');
+    const localLink = document.getElementById('local-link');
+    const localActions = document.getElementById('local-actions');
+    const localBtn = document.getElementById('local-btn');
+    const loginMode = document.getElementById('login-mode');
+    let adEnabled = false;
+    let useLocalLogin = true;
+    if (btn) btn.disabled = true;
 
     setTimeout(() => { u?.focus(); }, 0);
 
@@ -115,8 +136,21 @@
     async function initOidcButton() {
       try {
         const r = await fetch('/auth/admin-info');
-        if (!r.ok) return;
+        if (!r.ok) throw new Error('admin info unavailable');
         const d = await r.json();
+        adEnabled = !!(d && d.ad_enabled);
+        if (adEnabled) {
+          useLocalLogin = false;
+          btn.textContent = 'Sign in with Active Directory';
+          btn.classList.add('btn-ad');
+          if (localLink) localLink.style.display = 'block';
+          if (loginMode) loginMode.textContent = 'Active Directory';
+        } else {
+          useLocalLogin = true;
+          btn.textContent = 'Login';
+          btn.classList.remove('btn-ad');
+          if (loginMode) loginMode.textContent = 'Local user';
+        }
         if (d && d.oidc_enabled && oidcBtn) {
           oidcBtn.style.display = 'block';
           oidcBtn.addEventListener('click', (e) => {
@@ -124,14 +158,32 @@
             window.location.href = '/auth/oidc/login';
           });
         }
-      } catch {}
+      } catch {
+        useLocalLogin = true;
+        btn.textContent = 'Login';
+        btn.classList.remove('btn-ad');
+        if (loginMode) loginMode.textContent = 'Local user';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function showLocalLogin() {
+      useLocalLogin = true;
+      btn.style.display = 'none';
+      if (localLink) localLink.style.display = 'none';
+      if (localActions) localActions.style.display = 'block';
+      if (loginMode) loginMode.textContent = 'Local user';
+      u?.focus();
     }
 
     async function login() {
       err.textContent = '';
       btn.disabled = true;
+      if (localBtn) localBtn.disabled = true;
       try {
-        const resp = await fetch('/auth/login', {
+        const endpoint = useLocalLogin ? '/auth/login' : '/auth/ad/login';
+        const resp = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: u.value || '', password: p.value || '' })
@@ -156,9 +208,12 @@
         showToast(msg, 'error');
       } finally {
         btn.disabled = false;
+        if (localBtn) localBtn.disabled = false;
       }
     }
     btn.addEventListener('click', (e) => { e.preventDefault(); login(); });
+    localBtn?.addEventListener('click', (e) => { e.preventDefault(); login(); });
+    localLink?.addEventListener('click', (e) => { e.preventDefault(); showLocalLogin(); });
     p.addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
     initOidcButton();
   </script>
