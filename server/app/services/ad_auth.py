@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 from cryptography.fernet import Fernet, InvalidToken
 from ldap3 import ALL, NTLM, Connection, Server, Tls
-from ldap3.core.exceptions import LDAPException
+from ldap3.core.exceptions import LDAPAttributeError, LDAPException
 
 from ..config import settings
 
@@ -89,6 +89,38 @@ def _server_from_uri(server_uri: str, use_ssl_default: bool) -> Server:
     return Server(host, port=port, use_ssl=use_ssl, tls=tls, get_info=ALL)
 
 
+def _search_user(conn: Connection, base_dn: str, search_filter: str) -> None:
+    # Generic LDAP directories, such as ForumSys/OpenLDAP, can reject AD-only
+    # attributes in the requested attribute list. Prefer generic attributes
+    # when the configured user filter is clearly not AD-specific.
+    filter_lower = search_filter.lower()
+    ad_specific_filter = any(
+        attr in filter_lower for attr in ("samaccountname", "userprincipalname", "distinguishedname")
+    )
+    preferred_attrs = (
+        ["distinguishedName", "displayName", "mail", "sAMAccountName", "userPrincipalName"]
+        if ad_specific_filter
+        else ["*", "+"]
+    )
+    fallback_attrs = ["*", "+"]
+    try:
+        ok = conn.search(
+            search_base=base_dn,
+            search_filter=search_filter,
+            attributes=preferred_attrs,
+            size_limit=2,
+        )
+    except LDAPAttributeError:
+        ok = conn.search(
+            search_base=base_dn,
+            search_filter=search_filter,
+            attributes=fallback_attrs,
+            size_limit=2,
+        )
+    if not ok or len(conn.entries) != 1:
+        raise ValueError("Invalid username or password")
+
+
 def authenticate_ad(settings_row, username: str, password: str) -> ADAuthResult:
     if not bool(getattr(settings_row, "ad_enabled", False)):
         raise ValueError("Active Directory login is disabled")
@@ -115,17 +147,10 @@ def authenticate_ad(settings_row, username: str, password: str) -> ADAuthResult:
 
     try:
         with Connection(server, user=bind_dn, password=bind_password, auto_bind=True) as conn:
-            ok = conn.search(
-                search_base=base_dn,
-                search_filter=search_filter,
-                attributes=["distinguishedName", "displayName", "mail", "sAMAccountName", "userPrincipalName"],
-                size_limit=2,
-            )
-            if not ok or len(conn.entries) != 1:
-                raise ValueError("Invalid username or password")
+            _search_user(conn, base_dn, search_filter)
             entry = conn.entries[0]
             dn = str(getattr(entry, "distinguishedName", "") or entry.entry_dn or "").strip()
-            display_name = str(getattr(entry, "displayName", "") or "").strip() or None
+            display_name = str(getattr(entry, "displayName", "") or getattr(entry, "cn", "") or "").strip() or None
             email = str(getattr(entry, "mail", "") or "").strip() or None
     except ValueError:
         raise

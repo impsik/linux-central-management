@@ -67,6 +67,107 @@ def test_admin_can_save_ad_settings_without_exposing_bind_password(monkeypatch):
         assert "secret-bind-password" not in got.text
 
 
+def test_ad_enabled_exposes_login_switch_state(monkeypatch):
+    _base_env(monkeypatch)
+    _reload_app_modules()
+
+    app = importlib.import_module("app.app_factory").create_app()
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        headers = _login_admin(client)
+        r = client.post(
+            "/auth/admin/ad-settings",
+            headers=headers,
+            json={
+                "enabled": True,
+                "server_uri": "ldaps://dc.example.local:636",
+                "domain": "example.local",
+                "base_dn": "DC=example,DC=local",
+                "bind_dn": "CN=fleet-bind,DC=example,DC=local",
+                "bind_password": "secret-bind-password",
+                "user_filter": "(sAMAccountName={username})",
+                "use_ssl": True,
+                "role": "operator",
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        info = client.get("/auth/admin-info")
+        assert info.status_code == 200, info.text
+        assert info.json()["ad_enabled"] is True
+        assert info.headers["cache-control"] == "no-store"
+
+        login_page = client.get("/login")
+        assert login_page.status_code == 200, login_page.text
+        assert "Use a Local User" in login_page.text
+        assert "cache: 'no-store'" in login_page.text
+
+
+def test_ad_search_uses_generic_attributes_for_generic_ldap_filters(monkeypatch):
+    _base_env(monkeypatch)
+    _reload_app_modules()
+
+    ad_mod = importlib.import_module("app.services.ad_auth")
+
+    class Entry:
+        entry_dn = "uid=gauss,dc=example,dc=com"
+        cn = "Carl Friedrich Gauss"
+        mail = "gauss@ldap.forumsys.com"
+
+    class Conn:
+        def __init__(self):
+            self.entries = []
+            self.searches = []
+
+        def search(self, search_base, search_filter, attributes, size_limit):
+            self.searches.append(attributes)
+            if "sAMAccountName" in attributes:
+                raise ad_mod.LDAPAttributeError("invalid attribute type sAMAccountName")
+            self.entries = [Entry()]
+            return True
+
+    conn = Conn()
+    ad_mod._search_user(conn, "dc=example,dc=com", "(uid=gauss)")
+
+    assert conn.searches == [["*", "+"]]
+    assert len(conn.entries) == 1
+
+
+def test_ad_search_falls_back_for_ad_attribute_rejection(monkeypatch):
+    _base_env(monkeypatch)
+    _reload_app_modules()
+
+    ad_mod = importlib.import_module("app.services.ad_auth")
+
+    class Entry:
+        entry_dn = "uid=gauss,dc=example,dc=com"
+        cn = "Carl Friedrich Gauss"
+        mail = "gauss@ldap.forumsys.com"
+
+    class Conn:
+        def __init__(self):
+            self.entries = []
+            self.searches = []
+
+        def search(self, search_base, search_filter, attributes, size_limit):
+            self.searches.append(attributes)
+            if "sAMAccountName" in attributes:
+                raise ad_mod.LDAPAttributeError("invalid attribute type sAMAccountName")
+            self.entries = [Entry()]
+            return True
+
+    conn = Conn()
+    ad_mod._search_user(conn, "dc=example,dc=com", "(sAMAccountName=gauss)")
+
+    assert conn.searches == [
+        ["distinguishedName", "displayName", "mail", "sAMAccountName", "userPrincipalName"],
+        ["*", "+"],
+    ]
+    assert len(conn.entries) == 1
+
+
 def test_ad_login_auto_creates_operator_user(monkeypatch):
     _base_env(monkeypatch)
     _reload_app_modules()
