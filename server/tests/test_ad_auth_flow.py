@@ -105,7 +105,7 @@ def test_ad_enabled_exposes_login_switch_state(monkeypatch):
         assert "cache: 'no-store'" in login_page.text
 
 
-def test_ad_search_falls_back_for_generic_ldap_attributes(monkeypatch):
+def test_ad_search_uses_generic_attributes_for_generic_ldap_filters(monkeypatch):
     _base_env(monkeypatch)
     _reload_app_modules()
 
@@ -130,6 +130,36 @@ def test_ad_search_falls_back_for_generic_ldap_attributes(monkeypatch):
 
     conn = Conn()
     ad_mod._search_user(conn, "dc=example,dc=com", "(uid=gauss)")
+
+    assert conn.searches == [["*", "+"]]
+    assert len(conn.entries) == 1
+
+
+def test_ad_search_falls_back_for_ad_attribute_rejection(monkeypatch):
+    _base_env(monkeypatch)
+    _reload_app_modules()
+
+    ad_mod = importlib.import_module("app.services.ad_auth")
+
+    class Entry:
+        entry_dn = "uid=gauss,dc=example,dc=com"
+        cn = "Carl Friedrich Gauss"
+        mail = "gauss@ldap.forumsys.com"
+
+    class Conn:
+        def __init__(self):
+            self.entries = []
+            self.searches = []
+
+        def search(self, search_base, search_filter, attributes, size_limit):
+            self.searches.append(attributes)
+            if "sAMAccountName" in attributes:
+                raise ad_mod.LDAPAttributeError("invalid attribute type sAMAccountName")
+            self.entries = [Entry()]
+            return True
+
+    conn = Conn()
+    ad_mod._search_user(conn, "dc=example,dc=com", "(sAMAccountName=gauss)")
 
     assert conn.searches == [
         ["distinguishedName", "displayName", "mail", "sAMAccountName", "userPrincipalName"],

@@ -90,18 +90,31 @@ def _server_from_uri(server_uri: str, use_ssl_default: bool) -> Server:
 
 
 def _search_user(conn: Connection, base_dn: str, search_filter: str) -> None:
+    # Generic LDAP directories, such as ForumSys/OpenLDAP, can reject AD-only
+    # attributes in the requested attribute list. Prefer generic attributes
+    # when the configured user filter is clearly not AD-specific.
+    filter_lower = search_filter.lower()
+    ad_specific_filter = any(
+        attr in filter_lower for attr in ("samaccountname", "userprincipalname", "distinguishedname")
+    )
+    preferred_attrs = (
+        ["distinguishedName", "displayName", "mail", "sAMAccountName", "userPrincipalName"]
+        if ad_specific_filter
+        else ["*", "+"]
+    )
+    fallback_attrs = ["*", "+"]
     try:
         ok = conn.search(
             search_base=base_dn,
             search_filter=search_filter,
-            attributes=["distinguishedName", "displayName", "mail", "sAMAccountName", "userPrincipalName"],
+            attributes=preferred_attrs,
             size_limit=2,
         )
     except LDAPAttributeError:
         ok = conn.search(
             search_base=base_dn,
             search_filter=search_filter,
-            attributes=["*", "+"],
+            attributes=fallback_attrs,
             size_limit=2,
         )
     if not ok or len(conn.entries) != 1:
