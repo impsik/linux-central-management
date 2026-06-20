@@ -61,6 +61,7 @@
   function populateHostMetadataEditor(host) {
     const nameEl = document.getElementById('host-meta-name');
     const roleEl = document.getElementById('host-meta-role');
+    const teamEl = document.getElementById('host-meta-team');
     const ownerEl = document.getElementById('host-meta-owner');
     const list = document.getElementById('host-meta-env-list');
     const statusEl = document.getElementById('host-meta-status');
@@ -71,6 +72,7 @@
 
     nameEl.value = String(host?.hostname || host?.agent_id || '');
     roleEl.value = String(labels.role || '');
+    if (teamEl) teamEl.value = String(labels.team || '');
     ownerEl.value = String(labels.owner || '');
     list.innerHTML = '';
     const pairs = Object.entries(envVars);
@@ -178,9 +180,25 @@
     return {
       hostname: String(src.hostname || '').trim(),
       role: String(src.role || '').trim(),
+      team: String(src.team || '').trim(),
       owner: String(src.owner || '').trim(),
       env,
     };
+  }
+
+  function canManageHostAssignments(api) {
+    const perms = (api && typeof api.getCurrentPermissions === 'function') ? (api.getCurrentPermissions() || {}) : {};
+    return String(perms.role || '').toLowerCase() === 'admin' || !!perms.can_manage_users;
+  }
+
+  function updateHostMetadataPermissions(api) {
+    const canManage = canManageHostAssignments(api);
+    ['host-meta-name', 'host-meta-team', 'host-meta-owner'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = !canManage;
+      el.title = canManage ? '' : 'Admin privileges required';
+    });
   }
 
   function initHostMetadataEditor(ctx) {
@@ -194,6 +212,8 @@
       appendEnvRow('', '');
     });
 
+    updateHostMetadataPermissions(api);
+
     saveBtn?.addEventListener('click', async (e) => {
       e.preventDefault();
       const agentId = (typeof api.getCurrentAgentId === 'function') ? api.getCurrentAgentId() : null;
@@ -201,9 +221,15 @@
       const payload = normalizeHostMetadataPayload({
         hostname: document.getElementById('host-meta-name')?.value || '',
         role: document.getElementById('host-meta-role')?.value || '',
+        team: document.getElementById('host-meta-team')?.value || '',
         owner: document.getElementById('host-meta-owner')?.value || '',
         env: collectEnvEntriesFromDom(),
       });
+      if (!canManageHostAssignments(api)) {
+        delete payload.hostname;
+        delete payload.team;
+        delete payload.owner;
+      }
 
       try {
         saveBtn.disabled = true;

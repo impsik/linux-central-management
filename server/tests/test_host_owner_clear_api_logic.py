@@ -88,3 +88,45 @@ def test_update_host_metadata_rejects_nonexistent_owner(monkeypatch):
     assert "does not exist" in str(exc.value.detail)
     assert db.committed is False
     assert 'owner' not in host.labels
+
+
+def test_visible_non_admin_can_update_role_and_env(monkeypatch):
+    from app.routers import hosts as hosts_router
+    from app.schemas import HostMetadataUpdate
+
+    host = SimpleNamespace(agent_id='agent-1', hostname='srv-1', labels={'owner': 'gauss', 'role': 'old'})
+    db = _HostLookupDB(host)
+    user = SimpleNamespace(username='gauss')
+
+    monkeypatch.setattr(hosts_router, 'permissions_for', lambda user: {'can_manage_users': False})
+    monkeypatch.setattr(hosts_router, 'is_host_visible_to_user', lambda db, user, host_obj: True)
+
+    payload = HostMetadataUpdate(role='web', env={'env': 'prod'})
+    out = hosts_router.update_host_metadata('agent-1', payload, db=db, user=user)
+
+    assert db.committed is True
+    assert out['host']['labels']['role'] == 'web'
+    assert out['host']['labels']['env_vars'] == {'env': 'prod'}
+    assert out['host']['labels']['env'] == 'prod'
+    assert out['host']['labels']['owner'] == 'gauss'
+
+
+def test_visible_non_admin_cannot_change_owner_or_team(monkeypatch):
+    from app.routers import hosts as hosts_router
+    from app.schemas import HostMetadataUpdate
+
+    host = SimpleNamespace(agent_id='agent-1', hostname='srv-1', labels={'owner': 'gauss', 'team': 'Linux'})
+    db = _HostLookupDB(host)
+    user = SimpleNamespace(username='gauss')
+
+    monkeypatch.setattr(hosts_router, 'permissions_for', lambda user: {'can_manage_users': False})
+    monkeypatch.setattr(hosts_router, 'is_host_visible_to_user', lambda db, user, host_obj: True)
+
+    with pytest.raises(HTTPException) as owner_exc:
+        hosts_router.update_host_metadata('agent-1', HostMetadataUpdate(owner='alice'), db=db, user=user)
+    assert owner_exc.value.status_code == 403
+
+    db = _HostLookupDB(host)
+    with pytest.raises(HTTPException) as team_exc:
+        hosts_router.update_host_metadata('agent-1', HostMetadataUpdate(team='Database'), db=db, user=user)
+    assert team_exc.value.status_code == 403

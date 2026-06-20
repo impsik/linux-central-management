@@ -97,8 +97,7 @@ def update_host_metadata(
     user=Depends(require_ui_user),
 ):
     perms = permissions_for(user)
-    if not perms.get("can_manage_users"):
-        raise HTTPException(403, "Admin privileges required")
+    is_admin_user = bool(perms.get("can_manage_users"))
 
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host or not is_host_visible_to_user(db, user, host):
@@ -108,8 +107,21 @@ def update_host_metadata(
 
     next_hostname = _clean_optional_str(payload.hostname, field="hostname")
     next_role = _clean_optional_str(payload.role, field="role")
+    next_team = _clean_optional_str(payload.team, field="team")
     next_owner = _clean_optional_str(payload.owner, field="owner")
+    hostname_provided = "hostname" in provided_fields
+    team_provided = "team" in provided_fields
     owner_provided = "owner" in provided_fields
+
+    labels = dict(host.labels or {}) if isinstance(host.labels, dict) else {}
+
+    if not is_admin_user:
+        if hostname_provided and next_hostname not in (None, "", str(host.hostname or "").strip()):
+            raise HTTPException(403, "Admin privileges required to change host name")
+        if team_provided and next_team != str(labels.get("team", "") or "").strip():
+            raise HTTPException(403, "Admin privileges required to change host team")
+        if owner_provided and next_owner != str(labels.get("owner", "") or "").strip():
+            raise HTTPException(403, "Admin privileges required to change host owner")
 
     if owner_provided and next_owner:
         owner_user = db.execute(select(AppUser).where(AppUser.username == next_owner, AppUser.is_active == True)).scalar_one_or_none()  # noqa: E712
@@ -130,13 +142,16 @@ def update_host_metadata(
                 raise HTTPException(400, f"env value too long for key '{kk}' (max 2048)")
             next_env[kk] = vv
 
-    labels = dict(host.labels or {}) if isinstance(host.labels, dict) else {}
-
-    if next_hostname is not None and next_hostname != "":
+    if is_admin_user and next_hostname is not None and next_hostname != "":
         host.hostname = next_hostname
     if next_role is not None:
         labels["role"] = next_role
-    if owner_provided:
+    if is_admin_user and team_provided:
+        if next_team:
+            labels["team"] = next_team
+        else:
+            labels.pop("team", None)
+    if is_admin_user and owner_provided:
         if next_owner:
             labels["owner"] = next_owner
         else:

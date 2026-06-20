@@ -97,5 +97,6 @@ class FirewallRuleRequest(BaseModel):
 class HostMetadataUpdate(BaseModel):
     hostname: Optional[str] = None
     role: Optional[str] = None
+    team: Optional[str] = None
     owner: Optional[str] = None
     env: Optional[Dict[str, str]] = None

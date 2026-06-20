@@ -21,7 +21,7 @@ from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
 from ..models import AppAuthSettings, AppSavedView, AppSession, AppUser, AppUserScope, Host, OIDCAuthEvent
 from ..services.ad_auth import authenticate_ad, encrypt_password
-from ..services.user_scopes import get_user_scope_selectors, is_host_visible_to_user, user_has_scope_limits
+from ..services.user_scopes import get_user_scope_selectors, is_host_visible_to_user, selector_matches_labels, user_has_scope_limits
 from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.rbac import permissions_for
@@ -1337,7 +1337,7 @@ def auth_admin_rbac_explain(
             misses = []
             for k, allowed_vals in sel.items():
                 actual = str(labels.get(k, "")).strip()
-                if actual not in allowed_vals:
+                if not selector_matches_labels({k: allowed_vals}, labels):
                     misses.append({
                         "key": _safe_short(k, 40),
                         "actual": _safe_short(actual, 60),
@@ -1348,13 +1348,18 @@ def auth_admin_rbac_explain(
             if matched and matched_selector is None:
                 matched_selector = _sanitize_selector(sel)
 
-        allowed = bool(host_owner) and host_owner == target_username
-        if not host_owner:
-            reason = "host has no owner label; non-admin visibility is denied"
-        elif host_owner != target_username:
-            reason = "host owner does not match username"
-        else:
+        if host_owner and host_owner == target_username:
+            allowed = True
             reason = "host owner matches username"
+        elif matched_selector:
+            allowed = True
+            reason = "host labels match user scope selector"
+        elif not host_owner:
+            allowed = False
+            reason = "host has no owner label and no scope selector matched"
+        else:
+            allowed = False
+            reason = "host owner does not match username and no scope selector matched"
 
     out = {
         "allowed": allowed,
