@@ -21,13 +21,14 @@ describe('phase3 host metadata payload normalization', () => {
   const scriptPath = path.join(root, 'server/app/templates/fleet-phase3-host-actions.js');
   const indexPath = path.join(root, 'server/app/templates/index.html');
 
-  it('trims hostname/role/owner and drops blank env keys', () => {
+  it('trims hostname/role/team/owner and drops blank env keys', () => {
     const ctx = loadScript(scriptPath);
     const fn = ctx.phase3HostActions.normalizeHostMetadataPayload;
 
     const got = fn({
       hostname: '  web-01  ',
       role: '  app  ',
+      team: '  Linux, Database  ',
       owner: '  imre  ',
       env: {
         ' FOO ': '  bar ',
@@ -39,6 +40,7 @@ describe('phase3 host metadata payload normalization', () => {
     expect(got).toEqual({
       hostname: 'web-01',
       role: 'app',
+      team: 'Linux, Database',
       owner: 'imre',
       env: { FOO: 'bar' },
     });
@@ -60,6 +62,8 @@ describe('phase3 host metadata payload normalization', () => {
 
   it('renders a host owner field in the metadata editor', () => {
     const html = fs.readFileSync(indexPath, 'utf8');
+    expect(html).toContain('id="host-meta-team"');
+    expect(html).toContain('Team(s), comma-separated');
     expect(html).toContain('id="host-meta-owner"');
     expect(html).toContain('Owner username (blank to clear)');
   });

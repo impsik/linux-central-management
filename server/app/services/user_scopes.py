@@ -7,6 +7,23 @@ from ..models import AppUser, AppUserScope, Host
 from .rbac import is_admin
 
 
+def _split_label_values(value) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, list):
+        raw_values = value
+    else:
+        raw_values = [value]
+
+    out: set[str] = set()
+    for raw in raw_values:
+        for part in str(raw or "").split(","):
+            item = part.strip()
+            if item:
+                out.add(item)
+    return out
+
+
 def _normalize_selector(raw: dict | None) -> dict[str, list[str]]:
     if not isinstance(raw, dict):
         return {}
@@ -25,6 +42,20 @@ def _normalize_selector(raw: dict | None) -> dict[str, list[str]]:
         if vals:
             out[key] = sorted(list(set(vals)))
     return out
+
+
+def selector_matches_labels(selector: dict[str, list[str]], labels: dict) -> bool:
+    if not selector:
+        return False
+
+    for key, allowed_vals in selector.items():
+        allowed = set()
+        for val in allowed_vals or []:
+            allowed.update(_split_label_values(val))
+        actual = _split_label_values(labels.get(key))
+        if not actual or not allowed.intersection(actual):
+            return False
+    return True
 
 
 def get_user_scope_selectors(db: Session, user: AppUser) -> list[dict[str, list[str]]]:
@@ -64,9 +95,10 @@ def is_host_visible_to_user(db: Session, user: AppUser, host: Host) -> bool:
         return False
 
     owner = str(labels.get("owner", "") or "").strip()
-    if not owner:
-        return False
-    return owner == username
+    if owner and owner == username:
+        return True
+
+    return any(selector_matches_labels(sel, labels) for sel in get_user_scope_selectors(db, user))
 
 
 def filter_agent_ids_for_user(db: Session, user: AppUser, agent_ids: list[str]) -> list[str]:

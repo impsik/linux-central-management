@@ -110,6 +110,7 @@
                 <div class="admin-card-body" style="display:grid;gap:0.45rem;">
                   <input id="host-meta-name" class="host-search" type="text" placeholder="Agent display name / hostname" />
                   <input id="host-meta-role" class="host-search" type="text" placeholder="Role (e.g. web, db, worker)" />
+                  <input id="host-meta-team" class="host-search" type="text" placeholder="Team(s), comma-separated (e.g. Linux, Database)" />
                   <input id="host-meta-owner" class="host-search" type="text" placeholder="Owner username (blank to clear)" />
                   <div id="host-meta-env-list" style="display:grid;gap:0.35rem;"></div>
                   <div style="display:flex;gap:0.45rem;flex-wrap:wrap;">
@@ -1199,7 +1200,7 @@
               </div>
               <div class="admin-card-body">
                 <div style="overflow-x:auto;">
-                  <table class="process-table" style="min-width:720px;">
+                  <table class="process-table" style="min-width:860px;">
                     <thead>
                       <tr>
                         <th>Username</th>
@@ -1207,12 +1208,13 @@
                         <th>Role</th>
                         <th>Active</th>
                         <th>MFA</th>
+                        <th>Teams</th>
                         <th>Created</th>
                         <th></th>
                       </tr>
                     </thead>
                     <tbody id="admin-users-table">
-                      <tr><td colspan="7" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                      <tr><td colspan="8" style="text-align:center;" class="status-muted">Loading…</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -2030,9 +2032,11 @@
         const envVars = (labels.env_vars && typeof labels.env_vars === 'object') ? labels.env_vars : {};
         const env = labels.env ? String(labels.env) : (envVars.env ? String(envVars.env) : '');
         const role = labels.role ? String(labels.role) : '';
+        const team = labels.team ? String(labels.team) : '';
         const parts = [];
         if (env) parts.push(`<span class="label-badge">env: <code>${escapeHtml(env)}</code></span>`);
         if (role) parts.push(`<span class="label-badge">role: <code>${escapeHtml(role)}</code></span>`);
+        if (team) parts.push(`<span class="label-badge">team: <code>${escapeHtml(team)}</code></span>`);
         labelsEl.innerHTML = parts.length ? parts.join('') : `<span class="label-badge">env: <code>n/a</code></span><span class="label-badge">role: <code>n/a</code></span>`;
       }
       try {
@@ -2650,7 +2654,7 @@
       if (!tbody) return;
 
       try {
-        setTableState(tbody, 7, 'loading', 'Loading…');
+        setTableState(tbody, 8, 'loading', 'Loading…');
         if (statusEl) statusEl.textContent = '';
         const r = await fetch('/auth/admin/users', { credentials: 'include' });
         const raw = await r.text();
@@ -2659,7 +2663,7 @@
 
         const items = (d && d.items) ? d.items : [];
         if (!items.length) {
-          setTableState(tbody, 7, 'empty', 'No users');
+          setTableState(tbody, 8, 'empty', 'No users');
           return;
         }
         tbody.innerHTML = '';
@@ -2682,6 +2686,12 @@
             <td>${escapeHtml(role)}</td>
             <td>${escapeHtml(active)}</td>
             <td>${escapeHtml(mfa)}</td>
+            <td>
+              <div style="display:flex;gap:0.35rem;align-items:center;min-width:210px;">
+                <input class="admin-input" data-user-team-scope="${escapeHtml(uname)}" type="text" placeholder="Linux, Database" style="margin:0;min-width:150px;" />
+                <button class="btn" data-user-team-scope-save="${escapeHtml(uname)}" type="button">Save</button>
+              </div>
+            </td>
             <td class="status-muted">${escapeHtml(created)}</td>
             <td style="text-align:right;white-space:nowrap;display:flex;gap:0.4rem;justify-content:flex-end;">
               <button class="btn" data-user-mfa-reset="${escapeHtml(uname)}" ${canResetMfa ? '' : 'disabled'} title="${canResetMfa ? 'Reset MFA for this user' : 'Cannot reset your own MFA here'}">Reset MFA</button>
@@ -2691,7 +2701,56 @@
           tbody.appendChild(tr);
         }
 
-        // Scope selectors removed from Admin view.
+        const teamScopeInputs = Array.from(tbody.querySelectorAll('input[data-user-team-scope]'));
+        for (const input of teamScopeInputs) {
+          const uname = input.getAttribute('data-user-team-scope') || '';
+          if (!uname) continue;
+          try {
+            const rs = await fetch(`/auth/admin/users/${encodeURIComponent(uname)}/scopes`, { credentials: 'include' });
+            if (!rs.ok) continue;
+            const ds = await rs.json();
+            const selectors = Array.isArray(ds?.selectors) ? ds.selectors : [];
+            const teams = [];
+            selectors.forEach((sel) => {
+              const vals = Array.isArray(sel?.team) ? sel.team : (sel?.team ? [sel.team] : []);
+              vals.forEach((v) => {
+                String(v || '').split(',').forEach((part) => {
+                  const item = part.trim();
+                  if (item && !teams.includes(item)) teams.push(item);
+                });
+              });
+            });
+            input.value = teams.join(', ');
+          } catch {}
+        }
+
+        tbody.querySelectorAll('button[data-user-team-scope-save]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const uname = btn.getAttribute('data-user-team-scope-save') || '';
+            const input = tbody.querySelector(`input[data-user-team-scope="${CSS.escape(uname)}"]`);
+            if (!uname || !input) return;
+            const teams = String(input.value || '').split(',').map(v => v.trim()).filter(Boolean);
+            const selectors = teams.length ? [{ team: teams }] : [];
+            try {
+              const r3 = await fetch(`/auth/admin/users/${encodeURIComponent(uname)}/scopes`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (getCookie('fleet_csrf') || '') },
+                body: JSON.stringify({ selectors }),
+              });
+              const raw3 = await r3.text();
+              let d3 = null; try { d3 = raw3 ? JSON.parse(raw3) : null; } catch {}
+              if (!r3.ok) throw new Error((d3 && (d3.detail||d3.error)) || raw3 || 'Team scope save failed');
+              showToast(`Teams updated for ${uname}`, 'success');
+              loadAdminAudit();
+            } catch (err) {
+              showToast(err.message || String(err), 'error', 5000);
+            }
+          });
+        });
+
+        // Legacy JSON scope editor support, if a custom template still renders it.
         const scopeAreas = Array.from(tbody.querySelectorAll('textarea[data-user-scope]'));
         for (const ta of scopeAreas) {
           const uname = ta.getAttribute('data-user-scope') || '';
@@ -4748,6 +4807,7 @@
       if (mod && typeof mod.initHostMetadataEditor === 'function') {
         return mod.initHostMetadataEditor({
           getCurrentAgentId: () => currentAgentId,
+          getCurrentPermissions: () => currentPermissions,
           onMetadataSaved: (updatedHost) => {
             if (!updatedHost || !updatedHost.agent_id) return;
             const idx = (allHosts || []).findIndex(h => h.agent_id === updatedHost.agent_id);
@@ -4763,9 +4823,11 @@
                 const envVars = (labels.env_vars && typeof labels.env_vars === 'object') ? labels.env_vars : {};
                 const env = labels.env ? String(labels.env) : (envVars.env ? String(envVars.env) : '');
                 const role = labels.role ? String(labels.role) : '';
+                const team = labels.team ? String(labels.team) : '';
                 const parts = [];
                 if (env) parts.push(`<span class="label-badge">env: <code>${escapeHtml(env)}</code></span>`);
                 if (role) parts.push(`<span class="label-badge">role: <code>${escapeHtml(role)}</code></span>`);
+                if (team) parts.push(`<span class="label-badge">team: <code>${escapeHtml(team)}</code></span>`);
                 labelsEl.innerHTML = parts.length ? parts.join('') : `<span class="label-badge">env: <code>n/a</code></span><span class="label-badge">role: <code>n/a</code></span>`;
               }
 
