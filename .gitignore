@@ -33,3 +33,7 @@ node_modules/
 .DS_Store
 .vscode/
 .idea/
+
+# ansible inventory file
+ansible/inventory.yml
+
