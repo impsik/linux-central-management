@@ -292,9 +292,12 @@ def auth_ad_login(payload: LoginRequest, request: Request, db: Session = Depends
 def auth_admin_info(db: Session = Depends(get_db)):
     row = db.get(AppAuthSettings, 1)
     ad_enabled = bool(getattr(row, "ad_enabled", False)) if row else False
+    user_count = int(db.execute(select(func.count()).select_from(AppUser)).scalar_one() or 0)
+    bootstrap_complete = user_count > 0
     return JSONResponse(
         {
-            "admin_username": getattr(settings, "bootstrap_username", "admin"),
+            "admin_username": None if bootstrap_complete else getattr(settings, "bootstrap_username", "admin"),
+            "bootstrap_complete": bootstrap_complete,
             "oidc_enabled": bool(getattr(settings, "auth_oidc_enabled", False)),
             "ad_enabled": ad_enabled,
         },
