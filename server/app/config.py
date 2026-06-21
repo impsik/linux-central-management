@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://fleet:fleet@localhost:5432/fleet"
 
+    # Server bind metadata used by startup guardrails. Keep this aligned with the
+    # uvicorn --host value in deployment entrypoints.
+    server_bind_host: str = "127.0.0.1"
+
     # Database schema management
     # For production: set db_auto_create_tables=false and run `alembic upgrade head` during deploy.
     db_auto_create_tables: bool = True

@@ -13,6 +13,7 @@ def _reload_app_modules():
 
 def _boot_app(monkeypatch, *, insecure_no_token: bool, token: str = ''):
     monkeypatch.setenv('DATABASE_URL', 'sqlite+pysqlite:///:memory:')
+    monkeypatch.setenv('SERVER_BIND_HOST', '127.0.0.1')
     monkeypatch.setenv('BOOTSTRAP_PASSWORD', 'admin-password-123')
     monkeypatch.setenv('UI_COOKIE_SECURE', 'false')
     monkeypatch.setenv('ALLOW_INSECURE_NO_AGENT_TOKEN', 'true' if insecure_no_token else 'false')

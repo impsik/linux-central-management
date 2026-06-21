@@ -27,6 +27,7 @@ services:
       ANSIBLE_DIR: /ansible
       ANSIBLE_INVENTORY: /ansible/inventory.yml
       ANSIBLE_LOG_DIR: /ansible_logs
+      SERVER_BIND_HOST: ${SERVER_BIND_HOST:-0.0.0.0}
 
       # UI bootstrap admin user (set in .env; do NOT commit real values)
       BOOTSTRAP_USERNAME: ${BOOTSTRAP_USERNAME:-admin}
