@@ -186,6 +186,9 @@ func terminalSSHTarget() string {
 	if target := strings.TrimSpace(os.Getenv("FLEET_TERMINAL_SSH_HOST")); target != "" {
 		return target
 	}
+	if target := firstIPv4FromHostnameI(); target != "" {
+		return target
+	}
 	ifaces, err := net.Interfaces()
 	if err == nil {
 		for _, iface := range ifaces {
@@ -214,6 +217,27 @@ func terminalSSHTarget() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+func firstIPv4FromHostnameI() string {
+	hostnamePath := commandPath("/usr/bin/hostname", "/bin/hostname", "hostname")
+	if hostnamePath == "" {
+		return ""
+	}
+	out, err := exec.Command(hostnamePath, "-I").Output()
+	if err != nil {
+		return ""
+	}
+	for _, field := range strings.Fields(string(out)) {
+		ip := net.ParseIP(strings.TrimSpace(field))
+		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			continue
+		}
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	return ""
 }
 
 func terminalSSHCommand(username string) *exec.Cmd {
