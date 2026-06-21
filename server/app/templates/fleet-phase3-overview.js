@@ -745,6 +745,7 @@
           ip_address: it.ip_address || '',
           os_id: it.os_id || '',
           os_version: it.os_version || '',
+          agent_version: it.agent_version || '',
           labels: (it.labels && typeof it.labels === 'object') ? it.labels : {},
           is_online: !!it.is_online,
           last_seen: it.last_seen || null,
