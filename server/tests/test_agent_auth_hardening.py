@@ -74,6 +74,36 @@ def test_agent_routes_require_token_when_configured(monkeypatch):
         assert ok.json()['ok'] is True
 
 
+def test_each_agent_route_rejects_missing_token_when_configured(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    requests = [
+        ('post', '/agent/register', {'json': _register_payload()}),
+        ('post', '/agent/heartbeat?agent_id=srv-001', {}),
+        (
+            'post',
+            '/agent/inventory/packages',
+            {'json': {'agent_id': 'srv-001', 'collected_at_unix': 1_700_000_000, 'packages': []}},
+        ),
+        (
+            'post',
+            '/agent/inventory/package-updates',
+            {'json': {'agent_id': 'srv-001', 'checked_at_unix': 1_700_000_000, 'updates': []}},
+        ),
+        ('get', '/agent/next-job?agent_id=srv-001', {}),
+        (
+            'post',
+            '/agent/job-event',
+            {'json': {'agent_id': 'srv-001', 'job_id': 'job-001', 'status': 'running'}},
+        ),
+    ]
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        for method, path, kwargs in requests:
+            response = getattr(client, method)(path, **kwargs)
+            assert response.status_code == 401, f'{method.upper()} {path}: {response.text}'
+
+
 def test_agent_register_prefers_reported_guest_ip_over_request_peer(monkeypatch):
     app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
 
