@@ -110,8 +110,11 @@ def _enforce_non_local_security_guardrails() -> None:
 
     terminal_token = getattr(settings, "agent_terminal_token", None)
     terminal_scheme = str(getattr(settings, "agent_terminal_scheme", "ws") or "ws").lower()
-    if terminal_token and terminal_scheme != "wss":
-        failures.append("AGENT_TERMINAL_SCHEME must be 'wss' when terminal proxy is enabled")
+    if terminal_token:
+        if _is_placeholder_secret(terminal_token):
+            failures.append("AGENT_TERMINAL_TOKEN is placeholder")
+        if terminal_scheme != "wss":
+            failures.append("AGENT_TERMINAL_SCHEME must be 'wss' when terminal proxy is enabled")
 
     if failures:
         raise RuntimeError("Startup blocked by production guardrails: " + "; ".join(failures))

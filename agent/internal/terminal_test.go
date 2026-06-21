@@ -60,3 +60,43 @@ func TestSameHostOrigin(t *testing.T) {
 		t.Fatal("sameHostOrigin cross-site Origin = true, want false")
 	}
 }
+
+func TestTerminalListenDefaultsToLoopback(t *testing.T) {
+	t.Setenv("FLEET_TERMINAL_LISTEN", "")
+
+	if got := terminalListenAddr(); got != "127.0.0.1:18080" {
+		t.Fatalf("terminalListenAddr() = %q, want loopback default", got)
+	}
+}
+
+func TestTerminalTokenFromRequestRequiresHeader(t *testing.T) {
+	req, err := http.NewRequest("GET", "/terminal/ws?token=query-secret", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := terminalTokenFromRequest(req); got != "" {
+		t.Fatalf("terminalTokenFromRequest() = %q, want empty without header", got)
+	}
+
+	req.Header.Set("X-Fleet-Terminal-Token", "header-secret")
+	if got := terminalTokenFromRequest(req); got != "header-secret" {
+		t.Fatalf("terminalTokenFromRequest() = %q, want header token", got)
+	}
+}
+
+func TestPlaceholderTerminalTokensAreRejected(t *testing.T) {
+	placeholders := []string{
+		"change-me-terminal-token",
+		"change-me-anything",
+		"changeme",
+	}
+	for _, token := range placeholders {
+		if !isPlaceholderTerminalToken(token) {
+			t.Fatalf("isPlaceholderTerminalToken(%q) = false, want true", token)
+		}
+	}
+
+	if isPlaceholderTerminalToken("actual-random-token") {
+		t.Fatal("isPlaceholderTerminalToken(actual-random-token) = true, want false")
+	}
+}

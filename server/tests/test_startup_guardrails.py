@@ -52,6 +52,24 @@ def test_insecure_no_agent_token_startup_allows_loopback_bind(monkeypatch):
     app_factory._startup()
 
 
+def test_non_local_terminal_token_rejects_placeholder(monkeypatch):
+    config_mod = importlib.import_module("app.config")
+    app_factory = importlib.import_module("app.app_factory")
+
+    monkeypatch.setattr(config_mod.settings, "allow_insecure_no_agent_token", False)
+    monkeypatch.setattr(config_mod.settings, "database_url", "postgresql+psycopg://fleet:fleet@db:5432/fleet")
+    monkeypatch.setattr(config_mod.settings, "bootstrap_password", "real-bootstrap-password")
+    monkeypatch.setattr(config_mod.settings, "agent_shared_token", "real-agent-token")
+    monkeypatch.setattr(config_mod.settings, "mfa_require_for_privileged", False)
+    monkeypatch.setattr(config_mod.settings, "ui_cookie_secure", True)
+    monkeypatch.setattr(config_mod.settings, "db_auto_create_tables", False)
+    monkeypatch.setattr(config_mod.settings, "agent_terminal_token", "change-me-terminal-token")
+    monkeypatch.setattr(config_mod.settings, "agent_terminal_scheme", "wss")
+
+    with pytest.raises(RuntimeError, match="AGENT_TERMINAL_TOKEN is placeholder"):
+        app_factory._enforce_non_local_security_guardrails()
+
+
 def test_docker_compose_defaults_require_agent_token():
     root = Path(__file__).resolve().parents[2]
     for rel_path in ("deploy/docker/docker-compose.yml", "deploy/docker/env.example"):
