@@ -66,6 +66,10 @@ def require_agent_token_dep(request: Request, db: Session = Depends(get_db)) -> 
     got = request.headers.get("X-Fleet-Agent-Token")
     expected = getattr(settings, "agent_shared_token", None)
     if expected and _safe_equal(got, expected):
+        path = str(getattr(getattr(request, "url", None), "path", "") or "")
+        if path != "/agent/register" and not bool(getattr(settings, "agent_shared_token_allow_runtime", False)):
+            _log_agent_auth_failure(db, request, "shared_token_not_allowed_for_runtime")
+            raise HTTPException(403, "Shared agent token is only valid for registration")
         request.state.agent_auth_kind = "shared"
         request.state.agent_auth_agent_id = None
         return

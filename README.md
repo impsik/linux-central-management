@@ -117,6 +117,7 @@ Keep `.env` files private.
 - Use HTTPS if exposing the UI outside a trusted LAN.
 - Keep `AGENT_SHARED_TOKEN`, `AGENT_TERMINAL_TOKEN`, and
   `MFA_ENCRYPTION_KEY` secret.
+- Keep `AGENT_SHARED_TOKEN_ALLOW_RUNTIME=false` once updated agents are
+  deployed; it should only be enabled temporarily for old-agent compatibility.
 - MFA is enabled for privileged users by default.
 - The browser terminal feature is powerful; enable it only where needed.
-

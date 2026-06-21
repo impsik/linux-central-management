@@ -22,10 +22,12 @@ class Settings(BaseSettings):
     # 10s is too aggressive for real-world jitter and can cause transient 503s.
     agent_online_grace_seconds: int = 30
 
-    # Agent authentication (shared secret MVP)
-    # By default, the server requires a shared token for all /agent/* endpoints.
-    # Set AGENT_SHARED_TOKEN (recommended) or explicitly allow insecure dev mode.
+    # Agent authentication
+    # AGENT_SHARED_TOKEN is now a bootstrap registration credential by default.
+    # Agents receive a per-agent token from /agent/register for runtime calls.
     agent_shared_token: str | None = None
+    # Temporary rollout escape hatch for older agents that only know the shared token.
+    agent_shared_token_allow_runtime: bool = False
     allow_insecure_no_agent_token: bool = False
 
     # Ansible integration

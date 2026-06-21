@@ -55,9 +55,13 @@ Do not commit secrets. Prefer:
 
 Secrets to protect:
 - `BOOTSTRAP_PASSWORD`
-- `AGENT_SHARED_TOKEN`
+- `AGENT_SHARED_TOKEN` (bootstrap registration only by default)
 - `AGENT_TERMINAL_TOKEN`
 - `MFA_ENCRYPTION_KEY`
+
+Keep `AGENT_SHARED_TOKEN_ALLOW_RUNTIME=false` after updated agents are rolled
+out. Set it to `true` only as a temporary compatibility escape hatch for old
+agents that have not yet switched to per-agent runtime tokens.
 
 ## 6) Auditability
 - Audit logging is enabled for auth, MFA, user lifecycle, and package actions.
