@@ -141,6 +141,8 @@ class AppUser(Base):
     username = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
     auth_provider = Column(String, nullable=False, default="local", index=True)  # local|ad|oidc
+    oidc_issuer = Column(String, nullable=True, index=True)
+    oidc_subject = Column(String, nullable=True, index=True)
     role = Column(String, nullable=False, default="operator", index=True)  # admin|operator|readonly
     is_active = Column(Boolean, nullable=False, default=True)
 
@@ -154,6 +156,10 @@ class AppUser(Base):
     recovery_codes = Column(JSON, nullable=False, default=list)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_app_users_oidc_identity"),
+    )
 
 class AppUserScope(Base):
     __tablename__ = "app_user_scopes"

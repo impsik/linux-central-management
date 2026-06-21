@@ -752,13 +752,43 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         )
         raise HTTPException(502, "OIDC userinfo response invalid")
 
+    id_subject = str(id_claims.get("sub") or "").strip()
+    userinfo_subject = str(claims.get("sub") or "").strip()
+    if id_subject and userinfo_subject and id_subject != userinfo_subject:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="userinfo",
+            status="error",
+            error_code="subject_mismatch",
+            error_message="OIDC userinfo subject does not match ID token subject",
+            subject=userinfo_subject[:128] or None,
+            commit=True,
+        )
+        raise HTTPException(403, "OIDC subject mismatch")
+
     # Prefer userinfo claims; fill required fields from id_token claims if missing.
-    if not claims.get("sub") and id_claims.get("sub"):
-        claims["sub"] = id_claims.get("sub")
+    if not userinfo_subject and id_subject:
+        claims["sub"] = id_subject
     if not claims.get("email") and id_claims.get("email"):
         claims["email"] = id_claims.get("email")
     if not claims.get("preferred_username") and id_claims.get("preferred_username"):
         claims["preferred_username"] = id_claims.get("preferred_username")
+
+    subject = str(claims.get("sub") or "").strip()
+    if not subject:
+        _log_oidc_event(
+            db,
+            correlation_id=correlation_id,
+            provider=provider,
+            stage="userinfo",
+            status="error",
+            error_code="subject_missing",
+            error_message="OIDC subject is missing",
+            commit=True,
+        )
+        raise HTTPException(403, "OIDC subject is required")
 
     email = str(claims.get("email") or "").strip().lower() or None
     if not _oidc_allowed_domain(email):
@@ -771,7 +801,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
             error_code="domain_not_allowed",
             error_message="OIDC email domain is not allowed",
             email=email,
-            subject=str(claims.get("sub") or "")[:128] or None,
+            subject=subject[:128] or None,
             commit=True,
         )
         raise HTTPException(403, "OIDC email domain is not allowed")
@@ -783,27 +813,56 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         stage="domain_check",
         status="success",
         email=email,
-        subject=str(claims.get("sub") or "")[:128] or None,
+        subject=subject[:128] or None,
     )
 
     username = _oidc_username_from_claims(claims)
     mapped_role = _oidc_role_from_claims(claims)
     mapped_scopes = _oidc_scope_selectors_from_claims(claims)
 
-    user = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
+    user = db.execute(
+        select(AppUser).where(AppUser.oidc_issuer == provider, AppUser.oidc_subject == subject)
+    ).scalar_one_or_none()
     if not user:
-        user = AppUser(
-            username=username,
-            password_hash=pwd_context.hash(secrets.token_urlsafe(24)),
-            auth_provider="oidc",
-            role=mapped_role,
-            is_active=True,
-        )
-        db.add(user)
-        db.flush()
-    else:
-        # Sync role from OIDC mapping on each login (safe: defaults to readonly).
-        user.role = mapped_role
+        username_user = db.execute(select(AppUser).where(AppUser.username == username)).scalar_one_or_none()
+        if username_user:
+            is_legacy_oidc = (
+                (getattr(username_user, "auth_provider", "local") or "local") == "oidc"
+                and not getattr(username_user, "oidc_issuer", None)
+                and not getattr(username_user, "oidc_subject", None)
+            )
+            if not is_legacy_oidc:
+                _log_oidc_event(
+                    db,
+                    correlation_id=correlation_id,
+                    provider=provider,
+                    stage="login_success",
+                    status="error",
+                    error_code="username_conflict",
+                    error_message="OIDC username collides with an existing account",
+                    username=username,
+                    email=email,
+                    subject=subject[:128] or None,
+                    commit=True,
+                )
+                raise HTTPException(409, "OIDC username conflicts with an existing account")
+            user = username_user
+            user.oidc_issuer = provider
+            user.oidc_subject = subject
+        else:
+            user = AppUser(
+                username=username,
+                password_hash=pwd_context.hash(secrets.token_urlsafe(24)),
+                auth_provider="oidc",
+                oidc_issuer=provider,
+                oidc_subject=subject,
+                role=mapped_role,
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
+    # Sync role from OIDC mapping on each login (safe: defaults to readonly).
+    user.role = mapped_role
 
     # Sync user scopes from OIDC group mapping (label_selector scope type).
     db.execute(delete(AppUserScope).where(AppUserScope.user_id == user.id, AppUserScope.scope_type == "label_selector"))
@@ -821,7 +880,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
             error_message="User is inactive",
             username=username,
             email=email,
-            subject=str(claims.get("sub") or "")[:128] or None,
+            subject=subject[:128] or None,
             commit=True,
         )
         raise HTTPException(403, "User is inactive")
@@ -852,7 +911,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         request=request,
         meta={
             "email": email,
-            "subject": str(claims.get("sub") or "")[:80],
+            "subject": subject[:80],
             "role": mapped_role,
             "groups_count": len(claims.get("groups") or []) if isinstance(claims.get("groups"), list) else 0,
             "scope_selectors": len(mapped_scopes),
@@ -867,7 +926,7 @@ def auth_oidc_callback(request: Request, code: str | None = None, state: str | N
         status="success",
         username=username,
         email=email,
-        subject=str(claims.get("sub") or "")[:128] or None,
+        subject=subject[:128] or None,
         meta={"role": mapped_role, "scope_selectors": len(mapped_scopes)},
     )
     db.commit()

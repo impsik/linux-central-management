@@ -195,6 +195,10 @@ def _startup() -> None:
                     stmts.append("ALTER TABLE app_users ADD COLUMN recovery_codes JSON NOT NULL DEFAULT '[]'")
             if "auth_provider" not in app_user_cols:
                 stmts.append("ALTER TABLE app_users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'local'")
+            if "oidc_issuer" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN oidc_issuer TEXT")
+            if "oidc_subject" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN oidc_subject TEXT")
             if "mfa_verified_at" not in app_session_cols:
                 stmts.append("ALTER TABLE app_sessions ADD COLUMN mfa_verified_at TIMESTAMP WITH TIME ZONE")
             if app_saved_views_cols and "is_shared" not in app_saved_views_cols:
