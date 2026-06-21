@@ -23,13 +23,15 @@ import (
 const AgentVersion = "0.0.3-alpha"
 
 type Config struct {
-	ServerURL  string
-	AgentID    string
-	Labels     map[string]string
-	PollEvery  time.Duration
-	InvEvery   time.Duration
-	HbEvery    time.Duration
-	AgentToken string
+	ServerURL      string
+	AgentID        string
+	Labels         map[string]string
+	PollEvery      time.Duration
+	InvEvery       time.Duration
+	HbEvery        time.Duration
+	AgentToken     string
+	BootstrapToken string
+	AgentTokenFile string
 }
 
 type RegisterPayload struct {
@@ -144,6 +146,11 @@ func main() {
 		tokenMu.Lock()
 		cfg.AgentToken = token
 		tokenMu.Unlock()
+		if cfg.AgentTokenFile != "" && token != cfg.BootstrapToken {
+			if err := writeAgentTokenFile(cfg.AgentTokenFile, token); err != nil {
+				log.Printf("could not persist per-agent token: %v", err)
+			}
+		}
 	}
 	registerAgent := func(reason string) {
 		regMu.Lock()
@@ -161,6 +168,19 @@ func main() {
 			}
 			if err := json.Unmarshal(body, &parsed); err == nil && strings.TrimSpace(parsed.AgentToken) != "" {
 				setToken(parsed.AgentToken)
+			}
+		} else if status == 401 || status == 403 {
+			if cfg.BootstrapToken != "" && getToken() != cfg.BootstrapToken {
+				log.Printf("registration with stored token was rejected; retrying with bootstrap token")
+				body, status = postJSON(client, cfg.ServerURL+"/agent/register", reg, cfg.BootstrapToken)
+				if status >= 200 && status < 300 {
+					var parsed struct {
+						AgentToken string `json:"agent_token"`
+					}
+					if err := json.Unmarshal(body, &parsed); err == nil && strings.TrimSpace(parsed.AgentToken) != "" {
+						setToken(parsed.AgentToken)
+					}
+				}
 			}
 		}
 	}
@@ -254,14 +274,25 @@ func loadConfig() Config {
 		}
 	}
 
+	bootstrapToken := getenv("FLEET_AGENT_TOKEN", "")
+	tokenFile := getenv("FLEET_AGENT_TOKEN_FILE", "/var/lib/fleet-agent/agent-token")
+	agentToken := bootstrapToken
+	if token, err := readAgentTokenFile(tokenFile); err == nil && token != "" {
+		agentToken = token
+	} else if err != nil && !os.IsNotExist(err) {
+		log.Printf("could not read per-agent token file: %v", err)
+	}
+
 	return Config{
-		ServerURL:  server,
-		AgentID:    agentID,
-		Labels:     labels,
-		PollEvery:  2 * time.Second,
-		InvEvery:   5 * time.Minute,
-		HbEvery:    5 * time.Second,
-		AgentToken: getenv("FLEET_AGENT_TOKEN", ""),
+		ServerURL:      server,
+		AgentID:        agentID,
+		Labels:         labels,
+		PollEvery:      2 * time.Second,
+		InvEvery:       5 * time.Minute,
+		HbEvery:        5 * time.Second,
+		AgentToken:     agentToken,
+		BootstrapToken: bootstrapToken,
+		AgentTokenFile: tokenFile,
 	}
 }
 
@@ -271,6 +302,40 @@ func getenv(k, d string) string {
 		return d
 	}
 	return v
+}
+
+func readAgentTokenFile(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func writeAgentTokenFile(path string, token string) error {
+	path = strings.TrimSpace(path)
+	token = strings.TrimSpace(token)
+	if path == "" || token == "" {
+		return nil
+	}
+	if err := os.MkdirAll(pathDir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func pathDir(path string) string {
+	idx := strings.LastIndex(path, "/")
+	if idx <= 0 {
+		return "."
+	}
+	return path[:idx]
 }
 
 func mustPostJSON(client *http.Client, url string, payload any, token string) {

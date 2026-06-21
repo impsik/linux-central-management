@@ -242,6 +242,10 @@ ANSIBLE_COMMON_ARGS+=("--ssh-common-args=-o StrictHostKeyChecking=no")
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m file -a "path=/opt/fleet-agent state=directory mode=0755" \
   || log_warn "Agent deploy: could not reach some hosts (dir create step)"
 
+# Per-agent runtime token storage. The shared token remains in /etc/fleet-agent.env as bootstrap material only.
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m file -a "path=/var/lib/fleet-agent state=directory mode=0700" \
+  || log_warn "Agent deploy: could not reach some hosts (state dir create step)"
+
 # Copy agent binary
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" \
   || log_warn "Agent deploy: could not reach some hosts (copy step)"
@@ -268,6 +272,7 @@ FLEET_SERVER_URL=\$SERVER_URL
 FLEET_AGENT_ID=\$HOSTID
 FLEET_LABELS=\$LABELS
 FLEET_AGENT_TOKEN=\$TOKEN
+FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 FLEET_TERMINAL_TOKEN=\$TERM_TOKEN
 FLEET_TERMINAL_LISTEN=$REMOTE_TERMINAL_LISTEN
 FLEET_TERMINAL_BACKEND=\$TERM_BACKEND
@@ -290,6 +295,7 @@ EnvironmentFile=/etc/fleet-agent.env
 Environment=FLEET_SERVER_URL=$SERVER_URL
 Environment=FLEET_AGENT_ID=%H
 Environment=FLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN
+Environment=FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 Environment=FLEET_TERMINAL_TOKEN=$REMOTE_TERMINAL_TOKEN
 Environment=FLEET_TERMINAL_LISTEN=$REMOTE_TERMINAL_LISTEN
 Environment=FLEET_TERMINAL_BACKEND=$REMOTE_TERMINAL_BACKEND

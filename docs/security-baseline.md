@@ -62,6 +62,8 @@ Secrets to protect:
 Keep `AGENT_SHARED_TOKEN_ALLOW_RUNTIME=false` after updated agents are rolled
 out. Set it to `true` only as a temporary compatibility escape hatch for old
 agents that have not yet switched to per-agent runtime tokens.
+Deployed agents persist their per-agent runtime token at
+`/var/lib/fleet-agent/agent-token` with `0600` permissions.
 
 ## 6) Auditability
 - Audit logging is enabled for auth, MFA, user lifecycle, and package actions.

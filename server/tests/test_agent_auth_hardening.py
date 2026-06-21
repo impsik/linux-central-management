@@ -169,6 +169,32 @@ def test_per_agent_token_requires_agent_id_header(monkeypatch):
         assert denied.status_code == 401, denied.text
 
 
+def test_shared_token_cannot_re_register_existing_bound_agent(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        agent_token = _register_agent(client, 'srv-bound-existing')
+
+        denied = client.post(
+            '/agent/register',
+            json=_register_payload('srv-bound-existing'),
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert denied.status_code == 403, denied.text
+        assert 'existing agent requires per-agent token' in denied.text
+
+        ok = client.post(
+            '/agent/register',
+            json=_register_payload('srv-bound-existing'),
+            headers={
+                'X-Fleet-Agent-ID': 'srv-bound-existing',
+                'X-Fleet-Agent-Token': agent_token,
+            },
+        )
+        assert ok.status_code == 200, ok.text
+        assert ok.json() == {'ok': True}
+
+
 def test_shared_token_runtime_is_rejected_and_audited(monkeypatch):
     app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
 

@@ -8,6 +8,8 @@ Type=simple
 Environment=FLEET_SERVER_URL=http://mgmt.example.local:8000
 Environment=FLEET_AGENT_ID=srv-001
 Environment=FLEET_LABELS=env=prod,role=web
+Environment=FLEET_AGENT_TOKEN=change-me-bootstrap-token
+Environment=FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 ExecStart=/usr/local/bin/fleet-agent
 Restart=always
 RestartSec=3

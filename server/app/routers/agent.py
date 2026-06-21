@@ -107,6 +107,12 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
         host = Host(**host_data)
         db.add(host)
     else:
+        if (
+            getattr(request.state, "agent_auth_kind", "shared") == "shared"
+            and (getattr(host, "agent_token_hash", None) or "").strip()
+        ):
+            raise HTTPException(403, "existing agent requires per-agent token")
+
         host.hostname = payload.hostname
         host.fqdn = payload.fqdn
         if host_ip and hasattr(host, "ip_address"):
