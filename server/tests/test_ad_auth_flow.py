@@ -97,12 +97,30 @@ def test_ad_enabled_exposes_login_switch_state(monkeypatch):
         info = client.get("/auth/admin-info")
         assert info.status_code == 200, info.text
         assert info.json()["ad_enabled"] is True
+        assert info.json()["bootstrap_complete"] is True
+        assert info.json()["admin_username"] is None
         assert info.headers["cache-control"] == "no-store"
 
         login_page = client.get("/login")
         assert login_page.status_code == 200, login_page.text
         assert "Use a Local User" in login_page.text
         assert "cache: 'no-store'" in login_page.text
+
+
+def test_admin_info_exposes_bootstrap_username_only_before_setup(monkeypatch):
+    _base_env(monkeypatch)
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "")
+    _reload_app_modules()
+
+    app = importlib.import_module("app.app_factory").create_app()
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        info = client.get("/auth/admin-info")
+        assert info.status_code == 200, info.text
+        assert info.json()["bootstrap_complete"] is False
+        assert info.json()["admin_username"] == "admin"
 
 
 def test_ad_search_uses_generic_attributes_for_generic_ldap_filters(monkeypatch):

@@ -101,7 +101,6 @@ ensure_file_from_template "$ROOT_ENV_FILE" "$ROOT_DIR/env.example"
 # --- Generate/preserve server-side secrets ---
 set_env_value_if_missing "$DOCKER_ENV_FILE" "BOOTSTRAP_PASSWORD" "$(secure_random_alnum 28)"
 set_env_value_if_missing "$DOCKER_ENV_FILE" "AGENT_SHARED_TOKEN" "$(secure_random_hex 32)"
-set_env_value_if_missing "$DOCKER_ENV_FILE" "AGENT_TERMINAL_TOKEN" "$(secure_random_hex 32)"
 set_env_value_if_missing "$DOCKER_ENV_FILE" "MFA_ENCRYPTION_KEY" "$(fernet_key)"
 
 # Mirror server token values to root .env defaults, but keep user-provided values if present.
@@ -110,13 +109,14 @@ DOCKER_TERM_TOKEN="$(get_env_value "$DOCKER_ENV_FILE" "AGENT_TERMINAL_TOKEN")"
 
 set_env_value_if_missing "$ROOT_ENV_FILE" "AGENT_TOKEN" "$DOCKER_SHARED_TOKEN"
 set_env_value_if_missing "$ROOT_ENV_FILE" "TERM_TOKEN" "$DOCKER_TERM_TOKEN"
+set_env_value_if_missing "$ROOT_ENV_FILE" "TERM_LISTEN" "auto:18080"
 set_env_value_if_missing "$ROOT_ENV_FILE" "SERVER_URL" "http://192.168.100.240:8000"
 
 chmod 600 "$DOCKER_ENV_FILE" "$ROOT_ENV_FILE"
 log_info "Applied secure permissions (chmod 600) to env files"
 
 # Load local env defaults if present.
-# NOTE: This script relies on environment variables (SERVER_URL, AGENT_TOKEN, TERM_TOKEN).
+# NOTE: This script relies on environment variables (SERVER_URL, AGENT_TOKEN, TERM_TOKEN, TERM_LISTEN).
 if [ -f "$ROOT_ENV_FILE" ]; then
   set -a
   # shellcheck disable=SC1090
@@ -140,6 +140,11 @@ if [ -n "${AGENT_SHARED_TOKEN:-}" ]; then
 fi
 if [ -n "${AGENT_TERMINAL_TOKEN:-}" ]; then
   TERM_TOKEN="$AGENT_TERMINAL_TOKEN"
+fi
+if [ "${TERM_LISTEN:-}" = "127.0.0.1:18080" ] && [ -n "${TERM_TOKEN:-}" ]; then
+  log_warn "Migrating terminal listener from loopback-only 127.0.0.1:18080 to management bind auto:18080"
+  TERM_LISTEN="auto:18080"
+  set_env_value "$ROOT_ENV_FILE" "TERM_LISTEN" "$TERM_LISTEN"
 fi
 
 # Default server URL for this environment (override by exporting SERVER_URL or setting it in .env).
@@ -237,6 +242,10 @@ ANSIBLE_COMMON_ARGS+=("--ssh-common-args=-o StrictHostKeyChecking=no")
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m file -a "path=/opt/fleet-agent state=directory mode=0755" \
   || log_warn "Agent deploy: could not reach some hosts (dir create step)"
 
+# Per-agent runtime token storage. The shared token remains in /etc/fleet-agent.env as bootstrap material only.
+ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m file -a "path=/var/lib/fleet-agent state=directory mode=0700" \
+  || log_warn "Agent deploy: could not reach some hosts (state dir create step)"
+
 # Copy agent binary
 ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755" \
   || log_warn "Agent deploy: could not reach some hosts (copy step)"
@@ -247,6 +256,7 @@ ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m copy -
 SERVER_URL="${SERVER_URL:-}"
 REMOTE_AGENT_TOKEN="${AGENT_TOKEN:-}"
 REMOTE_TERMINAL_TOKEN="${TERM_TOKEN:-}"
+REMOTE_TERMINAL_LISTEN="${TERM_LISTEN:-auto:18080}"
 REMOTE_TERMINAL_BACKEND="${TERM_BACKEND:-auto}"
 
 if [ -n "$SERVER_URL" ] && [ -n "$REMOTE_AGENT_TOKEN" ]; then
@@ -262,7 +272,9 @@ FLEET_SERVER_URL=\$SERVER_URL
 FLEET_AGENT_ID=\$HOSTID
 FLEET_LABELS=\$LABELS
 FLEET_AGENT_TOKEN=\$TOKEN
+FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 FLEET_TERMINAL_TOKEN=\$TERM_TOKEN
+FLEET_TERMINAL_LISTEN=$REMOTE_TERMINAL_LISTEN
 FLEET_TERMINAL_BACKEND=\$TERM_BACKEND
 EOF" || log_warn "Agent deploy: could not reach some hosts (env file step)"
 
@@ -283,7 +295,9 @@ EnvironmentFile=/etc/fleet-agent.env
 Environment=FLEET_SERVER_URL=$SERVER_URL
 Environment=FLEET_AGENT_ID=%H
 Environment=FLEET_AGENT_TOKEN=$REMOTE_AGENT_TOKEN
+Environment=FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 Environment=FLEET_TERMINAL_TOKEN=$REMOTE_TERMINAL_TOKEN
+Environment=FLEET_TERMINAL_LISTEN=$REMOTE_TERMINAL_LISTEN
 Environment=FLEET_TERMINAL_BACKEND=$REMOTE_TERMINAL_BACKEND
 
 ExecStart=/opt/fleet-agent/fleet-agent
@@ -297,8 +311,15 @@ chmod 0644 /etc/systemd/system/fleet-agent.service" \
     || log_warn "Agent deploy: could not reach some hosts (systemd unit step)"
 
   if [ -n "$REMOTE_TERMINAL_TOKEN" ]; then
+    case "$REMOTE_TERMINAL_LISTEN" in
+      127.0.0.1:*|localhost:*|\[::1\]:*|::1:*)
+        log_info "Terminal listener is loopback-only ($REMOTE_TERMINAL_LISTEN); skipping firewall changes"
+        ;;
+      *)
     ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then firewall-cmd --add-port=18080/tcp --permanent && firewall-cmd --reload; fi" \
       || log_warn "Agent deploy: could not update firewalld for terminal port 18080"
+        ;;
+    esac
   fi
 
   ansible "$TARGETS" -i "$ROOT_DIR/hosts" -b "${ANSIBLE_COMMON_ARGS[@]}" -m shell -a "systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl is-active fleet-agent" \

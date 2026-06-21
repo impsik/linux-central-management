@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"net/http"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -24,6 +27,46 @@ func TestIsEnabledState(t *testing.T) {
 		if got != want {
 			t.Fatalf("isEnabledState(%q)=%v, want %v", in, got, want)
 		}
+	}
+}
+
+func TestAgentTokenFileReadWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fleet-agent", "agent-token")
+
+	if err := writeAgentTokenFile(path, " per-agent-token "); err != nil {
+		t.Fatalf("writeAgentTokenFile returned error: %v", err)
+	}
+
+	got, err := readAgentTokenFile(path)
+	if err != nil {
+		t.Fatalf("readAgentTokenFile returned error: %v", err)
+	}
+	if got != "per-agent-token" {
+		t.Fatalf("read token = %q, want per-agent-token", got)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat token file: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("token file mode = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestSignAgentRequestAddsHeaders(t *testing.T) {
+	req, err := http.NewRequest("POST", "http://example.test/agent/heartbeat?agent_id=srv-1", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+
+	signAgentRequest(req, "agent-token", nil)
+
+	if req.Header.Get("X-Fleet-Agent-Timestamp") == "" {
+		t.Fatal("missing X-Fleet-Agent-Timestamp")
+	}
+	if req.Header.Get("X-Fleet-Agent-Signature") == "" {
+		t.Fatal("missing X-Fleet-Agent-Signature")
 	}
 }
 

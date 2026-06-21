@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import ipaddress
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
@@ -13,7 +14,8 @@ from ..dispatcher import dispatcher
 from ..models import Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
-from ..services.agent_auth import require_agent_token, require_agent_token_dep
+from ..services.agent_auth import hash_agent_token, require_agent_token_dep
+from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs
 
@@ -32,9 +34,84 @@ def _preferred_reported_ip(ip_addresses: list[str] | None) -> str | None:
     return None
 
 
+def _ensure_job_run_nonce(run: JobRun) -> str:
+    nonce = (getattr(run, "job_nonce", None) or "").strip()
+    if not nonce:
+        nonce = secrets.token_urlsafe(32)
+        run.job_nonce = nonce
+    return nonce
+
+
+def _with_job_nonce(payload: dict, run: JobRun) -> dict:
+    out = dict(payload)
+    out["job_nonce"] = _ensure_job_run_nonce(run)
+    return out
+
+
+def _audit_unknown_agent(db: Session, request: Request, agent_id: str, action: str) -> None:
+    try:
+        log_event(
+            db,
+            action="agent.unknown",
+            actor=None,
+            request=request,
+            target_type="agent",
+            target_id=agent_id,
+            meta={"agent_action": action},
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def _audit_agent_ip_change(
+    db: Session,
+    request: Request,
+    *,
+    agent_id: str,
+    old_ip: str | None,
+    new_ip: str | None,
+    reported_ip: str | None,
+    client_ip: str | None,
+) -> None:
+    if not old_ip or not new_ip or old_ip == new_ip:
+        return
+    log_event(
+        db,
+        action="agent.ip.changed",
+        actor=None,
+        request=request,
+        target_type="agent",
+        target_id=agent_id,
+        meta={
+            "old_ip": old_ip,
+            "new_ip": new_ip,
+            "reported_ip": reported_ip,
+            "client_ip": client_ip,
+            "auth_kind": getattr(request.state, "agent_auth_kind", "shared"),
+        },
+    )
+
+
+def _ensure_agent_identity(request: Request, agent_id: str) -> None:
+    auth_kind = getattr(request.state, "agent_auth_kind", "shared")
+    auth_agent_id = getattr(request.state, "agent_auth_agent_id", None)
+    if auth_kind == "per_agent" and auth_agent_id != agent_id:
+        raise HTTPException(403, "agent token does not match agent_id")
+
+
+def _issue_agent_token(host: Host) -> str:
+    token = secrets.token_urlsafe(32)
+    host.agent_token_hash = hash_agent_token(token)
+    return token
+
+
 @router.post("/register")
 def agent_register(payload: AgentRegister, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     now = datetime.now(timezone.utc)
 
@@ -59,9 +136,25 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
         host = Host(**host_data)
         db.add(host)
     else:
+        if (
+            getattr(request.state, "agent_auth_kind", "shared") == "shared"
+            and (getattr(host, "agent_token_hash", None) or "").strip()
+            and not bool(getattr(settings, "agent_shared_token_allow_rebind", True))
+        ):
+            raise HTTPException(403, "existing agent requires per-agent token")
+
         host.hostname = payload.hostname
         host.fqdn = payload.fqdn
         if host_ip and hasattr(host, "ip_address"):
+            _audit_agent_ip_change(
+                db,
+                request,
+                agent_id=payload.agent_id,
+                old_ip=host.ip_address,
+                new_ip=host_ip,
+                reported_ip=reported_ip,
+                client_ip=client_ip,
+            )
             host.ip_address = host_ip
         host.os_id = payload.os_id
         host.os_version = payload.os_version
@@ -81,8 +174,15 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
 
         host.last_seen = now
 
+    agent_token = None
+    if getattr(request.state, "agent_auth_kind", "shared") == "shared":
+        agent_token = _issue_agent_token(host)
+
     db.commit()
-    return {"ok": True}
+    body = {"ok": True}
+    if agent_token:
+        body["agent_token"] = agent_token
+    return body
 
 
 @router.post("/heartbeat")
@@ -92,9 +192,10 @@ def agent_heartbeat(
     agent_version: str | None = None,
     db: Session = Depends(get_db),
 ):
-    require_agent_token(request)
+    _ensure_agent_identity(request, agent_id)
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, agent_id, "heartbeat")
         raise HTTPException(404, "unknown agent")
 
     client_ip = get_client_ip(request)
@@ -111,9 +212,10 @@ def agent_heartbeat(
 
 @router.post("/inventory/packages")
 def agent_inventory_packages(payload: PackagesInventory, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, payload.agent_id, "inventory_packages")
         raise HTTPException(404, "unknown agent")
 
     collected_at = datetime.fromtimestamp(payload.collected_at_unix, tz=timezone.utc)
@@ -146,9 +248,10 @@ def agent_inventory_packages(payload: PackagesInventory, request: Request, db: S
 
 @router.post("/inventory/package-updates")
 def agent_inventory_package_updates(payload: PackageUpdatesInventory, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, payload.agent_id, "inventory_package_updates")
         raise HTTPException(404, "unknown agent")
 
     checked_at = datetime.fromtimestamp(payload.checked_at_unix, tz=timezone.utc)
@@ -196,9 +299,10 @@ def agent_inventory_package_updates(payload: PackageUpdatesInventory, request: R
 
 @router.get("/next-job")
 async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, agent_id)
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, agent_id, "next_job")
         raise HTTPException(404, "unknown agent")
 
     host.last_seen = datetime.now(timezone.utc)
@@ -207,6 +311,21 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
     # Primary: in-memory dispatcher queue (fast path)
     job = await dispatcher.pop_job(agent_id, timeout=settings.agent_poll_timeout_seconds)
     if job is not None:
+        job_key = str((job or {}).get("job_id") or "").strip()
+        if job_key:
+            row = (
+                db.execute(
+                    select(JobRun, Job)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == job_key, JobRun.agent_id == agent_id)
+                )
+                .first()
+            )
+            if row:
+                run, _job_row = row
+                job = _with_job_nonce(job, run)
+                db.commit()
+                return {"job": job}
         return {"job": job}
 
     # Fallback: DB-backed dispatch for queued jobs.
@@ -261,12 +380,12 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
         run.status = "running"
         run.started_at = run.started_at or now
 
-        return {"job": build_agent_payload(job_row, agent_id)}
+        return {"job": _with_job_nonce(build_agent_payload(job_row, agent_id), run)}
 
 
 @router.post("/job-event")
 def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     job = db.execute(select(Job).where(Job.job_key == payload.job_id)).scalar_one_or_none()
     if not job:
         raise HTTPException(404, "unknown job")
@@ -275,7 +394,28 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
         select(JobRun).where(JobRun.job_id == job.id, JobRun.agent_id == payload.agent_id)
     ).scalar_one_or_none()
     if not run:
+        _audit_unknown_agent(db, request, payload.agent_id, "job_event_unknown_run")
         raise HTTPException(404, "unknown job run")
+
+    expected_nonce = (getattr(run, "job_nonce", None) or "").strip()
+    if expected_nonce and payload.job_nonce != expected_nonce:
+        try:
+            log_event(
+                db,
+                action="agent.job_event.invalid_nonce",
+                actor=None,
+                request=request,
+                target_type="job_run",
+                target_id=payload.job_id,
+                meta={"agent_id": payload.agent_id, "status": payload.status},
+            )
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        raise HTTPException(403, "invalid job nonce")
 
     now = datetime.now(timezone.utc)
     if payload.status == "running":

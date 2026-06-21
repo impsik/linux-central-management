@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import secrets
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -44,7 +45,7 @@ def create_job_with_runs(
         db.flush()  # get job.id
 
         for aid in agent_ids:
-            db.add(JobRun(job_id=job.id, agent_id=aid, status="queued"))
+            db.add(JobRun(job_id=job.id, agent_id=aid, job_nonce=secrets.token_urlsafe(32), status="queued"))
 
         return job
 

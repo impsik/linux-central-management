@@ -127,6 +127,8 @@ def test_oidc_callback_provisions_user_with_role_and_scope(monkeypatch):
         u = db.execute(select(AppUser).where(AppUser.username == "alice")).scalar_one_or_none()
         assert u is not None
         assert u.role == "operator"
+        assert u.oidc_issuer == "https://issuer.example"
+        assert u.oidc_subject == "sub-123"
 
         scopes = db.execute(select(AppUserScope).where(AppUserScope.user_id == u.id)).scalars().all()
         assert len(scopes) == 1
@@ -193,3 +195,93 @@ def test_oidc_callback_rejects_disallowed_email_domain(monkeypatch):
         assert any(ev.stage == "domain_check" and ev.status == "error" for ev in events)
     finally:
         db.close()
+
+
+def test_oidc_callback_rejects_userinfo_subject_mismatch(monkeypatch):
+    _base_env(monkeypatch)
+    _reload_app_modules()
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    auth_mod = importlib.import_module("app.routers.auth")
+
+    def fake_get(url, headers=None, timeout=0):
+        if "/.well-known/openid-configuration" in url:
+            return _Resp(200, {
+                "authorization_endpoint": "https://issuer.example/auth",
+                "token_endpoint": "https://issuer.example/token",
+                "userinfo_endpoint": "https://issuer.example/userinfo",
+                "jwks_uri": "https://issuer.example/jwks",
+            })
+        if url == "https://issuer.example/userinfo":
+            return _Resp(200, {
+                "sub": "sub-userinfo",
+                "email": "alice@example.com",
+                "preferred_username": "alice",
+            })
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr(auth_mod.httpx, "get", fake_get)
+    monkeypatch.setattr(auth_mod.httpx, "post", lambda *a, **k: _Resp(200, {"access_token": "at-123", "id_token": "id-123"}))
+    monkeypatch.setattr(auth_mod, "_oidc_validate_id_token", lambda *a, **k: {"sub": "sub-id-token"})
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        r = client.get("/auth/oidc/login", follow_redirects=False)
+        assert r.status_code == 302
+        state = client.cookies.get("fleet_oidc_state")
+        bad = client.get(f"/auth/oidc/callback?code=ok&state={state}")
+        assert bad.status_code == 403
+        assert "subject mismatch" in bad.text.lower()
+
+
+def test_oidc_callback_rejects_local_username_collision(monkeypatch):
+    _base_env(monkeypatch)
+    _reload_app_modules()
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    auth_mod = importlib.import_module("app.routers.auth")
+
+    from app.db import SessionLocal
+    from app.models import AppUser
+
+    def fake_get(url, headers=None, timeout=0):
+        if "/.well-known/openid-configuration" in url:
+            return _Resp(200, {
+                "authorization_endpoint": "https://issuer.example/auth",
+                "token_endpoint": "https://issuer.example/token",
+                "userinfo_endpoint": "https://issuer.example/userinfo",
+                "jwks_uri": "https://issuer.example/jwks",
+            })
+        if url == "https://issuer.example/userinfo":
+            return _Resp(200, {
+                "sub": "sub-123",
+                "email": "alice@example.com",
+                "preferred_username": "alice",
+            })
+        raise AssertionError(f"unexpected GET {url}")
+
+    monkeypatch.setattr(auth_mod.httpx, "get", fake_get)
+    monkeypatch.setattr(auth_mod.httpx, "post", lambda *a, **k: _Resp(200, {"access_token": "at-123", "id_token": "id-123"}))
+    monkeypatch.setattr(auth_mod, "_oidc_validate_id_token", lambda *a, **k: {"sub": "sub-123"})
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        db = SessionLocal()
+        try:
+            db.add(AppUser(username="alice", password_hash="local-hash", auth_provider="local", role="admin", is_active=True))
+            db.commit()
+        finally:
+            db.close()
+
+        r = client.get("/auth/oidc/login", follow_redirects=False)
+        assert r.status_code == 302
+        state = client.cookies.get("fleet_oidc_state")
+        conflict = client.get(f"/auth/oidc/callback?code=ok&state={state}")
+        assert conflict.status_code == 409
+        assert "conflicts" in conflict.text.lower()

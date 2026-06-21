@@ -67,6 +67,7 @@ class JobPreflightRequest(BaseModel):
 class JobEvent(BaseModel):
     agent_id: str
     job_id: str
+    job_nonce: Optional[str] = None
     status: str
     exit_code: Optional[int] = None
     stdout: Optional[str] = None

@@ -57,6 +57,12 @@ def test_agent_version_is_listed_and_disk_cleanup_can_be_queued(monkeypatch):
         assert row["is_online"] is True
         assert isinstance(row["last_seen_seconds_ago"], (int, float))
 
+        r = client.get("/reports/hosts-updates?only_pending=false&online_only=false")
+        assert r.status_code == 200, r.text
+        report_items = r.json()["items"]
+        report_row = next(h for h in report_items if h["agent_id"] == "srv-health-001")
+        assert report_row["agent_version"] == "0.0.3-alpha"
+
         r = client.post(
             "/hosts/srv-health-001/disk-cleanup?wait=false",
             json={"dry_run": True, "actions": ["apt_cache", "journald"]},

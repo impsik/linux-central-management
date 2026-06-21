@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+import ipaddress
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -38,6 +39,18 @@ _PLACEHOLDER_VALUES = {
 def _is_placeholder_secret(value: str | None) -> bool:
     v = (value or "").strip().lower()
     return v in _PLACEHOLDER_VALUES or v.startswith("change-me")
+
+
+def _is_loopback_bind_host(value: str | None) -> bool:
+    host = (value or "").strip().lower()
+    if host in {"localhost", "testclient"}:
+        return True
+    if not host:
+        return False
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def _is_non_local_deployment() -> bool:
@@ -97,8 +110,11 @@ def _enforce_non_local_security_guardrails() -> None:
 
     terminal_token = getattr(settings, "agent_terminal_token", None)
     terminal_scheme = str(getattr(settings, "agent_terminal_scheme", "ws") or "ws").lower()
-    if terminal_token and terminal_scheme != "wss":
-        failures.append("AGENT_TERMINAL_SCHEME must be 'wss' when terminal proxy is enabled")
+    if terminal_token:
+        if _is_placeholder_secret(terminal_token):
+            failures.append("AGENT_TERMINAL_TOKEN is placeholder")
+        if terminal_scheme != "wss":
+            failures.append("AGENT_TERMINAL_SCHEME must be 'wss' when terminal proxy is enabled")
 
     if failures:
         raise RuntimeError("Startup blocked by production guardrails: " + "; ".join(failures))
@@ -107,12 +123,19 @@ def _enforce_non_local_security_guardrails() -> None:
 def _startup() -> None:
     from .config import settings
 
-    # Security guardrail: require AGENT_SHARED_TOKEN unless explicitly running insecure local dev mode.
-    if not getattr(settings, "agent_shared_token", None) and not bool(getattr(settings, "allow_insecure_no_agent_token", False)):
-        raise RuntimeError(
-            "AGENT_SHARED_TOKEN is required to start the server. "
-            "If you intentionally run without it, ALLOW_INSECURE_NO_AGENT_TOKEN only permits loopback/test-client agent calls."
-        )
+    # Security guardrail: require AGENT_SHARED_TOKEN unless explicitly running insecure loopback-only dev/test mode.
+    if not getattr(settings, "agent_shared_token", None):
+        insecure_no_token = bool(getattr(settings, "allow_insecure_no_agent_token", False))
+        bind_host = getattr(settings, "server_bind_host", None)
+        if insecure_no_token and _is_loopback_bind_host(bind_host):
+            pass
+        else:
+            bind_detail = f" SERVER_BIND_HOST={bind_host!r} is not loopback." if insecure_no_token else ""
+            raise RuntimeError(
+                "AGENT_SHARED_TOKEN is required to start the server. "
+                "ALLOW_INSECURE_NO_AGENT_TOKEN only permits loopback/test-client agent calls."
+                + bind_detail
+            )
 
     # OIDC config sanity checks (enabled path only)
     if bool(getattr(settings, "auth_oidc_enabled", False)):
@@ -152,6 +175,11 @@ def _startup() -> None:
                 ssh_deploy_cols = {c.get("name") for c in insp.get_columns("ssh_key_deployment_requests")}
             except Exception:
                 ssh_deploy_cols = set()
+            job_run_cols = set()
+            try:
+                job_run_cols = {c.get("name") for c in insp.get_columns("job_runs")}
+            except Exception:
+                job_run_cols = set()
 
             dialect = engine.dialect.name
             stmts: list[str] = []
@@ -172,6 +200,10 @@ def _startup() -> None:
                     stmts.append("ALTER TABLE app_users ADD COLUMN recovery_codes JSON NOT NULL DEFAULT '[]'")
             if "auth_provider" not in app_user_cols:
                 stmts.append("ALTER TABLE app_users ADD COLUMN auth_provider TEXT NOT NULL DEFAULT 'local'")
+            if "oidc_issuer" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN oidc_issuer TEXT")
+            if "oidc_subject" not in app_user_cols:
+                stmts.append("ALTER TABLE app_users ADD COLUMN oidc_subject TEXT")
             if "mfa_verified_at" not in app_session_cols:
                 stmts.append("ALTER TABLE app_sessions ADD COLUMN mfa_verified_at TIMESTAMP WITH TIME ZONE")
             if app_saved_views_cols and "is_shared" not in app_saved_views_cols:
@@ -180,6 +212,11 @@ def _startup() -> None:
                 stmts.append("ALTER TABLE app_saved_views ADD COLUMN is_default_startup BOOLEAN NOT NULL DEFAULT false")
             if ssh_deploy_cols and "sudo_profile" not in ssh_deploy_cols:
                 stmts.append("ALTER TABLE ssh_key_deployment_requests ADD COLUMN sudo_profile TEXT NOT NULL DEFAULT 'B'")
+            if job_run_cols and "job_nonce" not in job_run_cols:
+                stmts.append("ALTER TABLE job_runs ADD COLUMN job_nonce TEXT")
+            host_cols = {c.get("name") for c in insp.get_columns("hosts")}
+            if "agent_token_hash" not in host_cols:
+                stmts.append("ALTER TABLE hosts ADD COLUMN agent_token_hash TEXT")
 
             if stmts:
                 with engine.begin() as conn:

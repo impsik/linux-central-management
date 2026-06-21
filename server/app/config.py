@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://fleet:fleet@localhost:5432/fleet"
 
+    # Server bind metadata used by startup guardrails. Keep this aligned with the
+    # uvicorn --host value in deployment entrypoints.
+    server_bind_host: str = "127.0.0.1"
+
     # Database schema management
     # For production: set db_auto_create_tables=false and run `alembic upgrade head` during deploy.
     db_auto_create_tables: bool = True
@@ -18,10 +22,19 @@ class Settings(BaseSettings):
     # 10s is too aggressive for real-world jitter and can cause transient 503s.
     agent_online_grace_seconds: int = 30
 
-    # Agent authentication (shared secret MVP)
-    # By default, the server requires a shared token for all /agent/* endpoints.
-    # Set AGENT_SHARED_TOKEN (recommended) or explicitly allow insecure dev mode.
+    # Agent authentication
+    # AGENT_SHARED_TOKEN is now a bootstrap registration credential by default.
+    # Agents receive a per-agent token from /agent/register for runtime calls.
     agent_shared_token: str | None = None
+    # Temporary rollout escape hatch for older agents that only know the shared token.
+    agent_shared_token_allow_runtime: bool = False
+    # Temporary migration path for agents upgraded after per-agent tokens were introduced
+    # but before their runtime token was persisted locally.
+    agent_shared_token_allow_rebind: bool = False
+    # Optional stronger request authentication for per-agent tokens. Updated agents
+    # send HMAC signatures automatically; set true after rollout to require them.
+    agent_hmac_required: bool = False
+    agent_hmac_max_skew_seconds: int = 300
     allow_insecure_no_agent_token: bool = False
 
     # Ansible integration
@@ -41,6 +54,8 @@ class Settings(BaseSettings):
     ui_session_idle_minutes: int = 60
     # Optional hard cap in hours (absolute timeout). 0 disables this extra cap.
     ui_session_max_hours: int = 24
+    # Single-process login brute-force guard.
+    login_rate_limit_per_minute: int = 50
     # If true, revoke all UI sessions on server startup (restart => forced relogin).
     ui_revoke_all_sessions_on_startup: bool = False
 

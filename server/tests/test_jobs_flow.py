@@ -5,6 +5,22 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 
+def _job_nonce(job_id: str, agent_id: str) -> str:
+    from app.db import SessionLocal
+    from app.models import Job, JobRun
+
+    with SessionLocal() as db:
+        row = (
+            db.execute(
+                select(JobRun)
+                .join(Job, Job.id == JobRun.job_id)
+                .where(Job.job_key == job_id, JobRun.agent_id == agent_id)
+            )
+            .scalar_one()
+        )
+        return row.job_nonce
+
+
 def test_job_flow_sqlite(monkeypatch):
     # Configure test environment BEFORE importing app modules (engine is created at import time).
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
@@ -23,6 +39,8 @@ def test_job_flow_sqlite(monkeypatch):
     app = app_factory.create_app()
 
     from fastapi.testclient import TestClient
+    from app.db import SessionLocal
+    from app.models import AuditEvent
 
     with TestClient(app) as client:
         # Monkeypatch ansible runner to avoid calling external ansible-playbook
@@ -59,11 +77,23 @@ def test_job_flow_sqlite(monkeypatch):
         r = client.post("/jobs/pkg-query", json={"agent_ids": ["srv-001"], "packages": ["bash"]}, headers=headers)
         assert r.status_code == 200, r.text
         job_id = r.json()["job_id"]
+        job_nonce = _job_nonce(job_id, "srv-001")
+
+        bad_nonce = client.post(
+            "/agent/job-event",
+            json={"agent_id": "srv-001", "job_id": job_id, "status": "running"},
+        )
+        assert bad_nonce.status_code == 403, bad_nonce.text
+        with SessionLocal() as db:
+            invalid_nonce_event = db.execute(
+                select(AuditEvent).where(AuditEvent.action == "agent.job_event.invalid_nonce")
+            ).scalar_one()
+            assert invalid_nonce_event.meta["agent_id"] == "srv-001"
 
         # Agent reports job running + success
         r = client.post(
             "/agent/job-event",
-            json={"agent_id": "srv-001", "job_id": job_id, "status": "running"},
+            json={"agent_id": "srv-001", "job_id": job_id, "job_nonce": job_nonce, "status": "running"},
         )
         assert r.status_code == 200, r.text
 
@@ -72,6 +102,7 @@ def test_job_flow_sqlite(monkeypatch):
             json={
                 "agent_id": "srv-001",
                 "job_id": job_id,
+                "job_nonce": job_nonce,
                 "status": "success",
                 "exit_code": 0,
                 "stdout": '{"packages":[{"name":"bash","version":"5.1","found":true}]}',
@@ -199,12 +230,14 @@ def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
         )
         assert create.status_code == 200, create.text
         job_id = create.json()["job_id"]
+        job_nonce = _job_nonce(job_id, "srv-dev")
 
         ev = admin_client.post(
             "/agent/job-event",
             json={
                 "agent_id": "srv-dev",
                 "job_id": job_id,
+                "job_nonce": job_nonce,
                 "status": "success",
                 "exit_code": 0,
                 "stdout": '{"packages":[{"name":"bash","version":"5.1","found":true}]}',
@@ -395,12 +428,14 @@ def test_pkg_upgrade_success_invalidates_cve_cache_and_queues_inventory(monkeypa
             db.commit()
 
         job_id = created.job_key
+        job_nonce = _job_nonce(job_id, "srv-cve")
 
         done = client.post(
             "/agent/job-event",
             json={
                 "agent_id": "srv-cve",
                 "job_id": job_id,
+                "job_nonce": job_nonce,
                 "status": "success",
                 "exit_code": 0,
                 "stdout": "upgrade completed",

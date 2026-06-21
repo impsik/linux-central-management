@@ -40,6 +40,56 @@ func sameHostOrigin(r *http.Request) bool {
 	return strings.EqualFold(u.Host, r.Host)
 }
 
+func isPlaceholderTerminalToken(value string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		return false
+	}
+	return v == "changeme" ||
+		v == "change-me" ||
+		v == "change_me" ||
+		v == "change-me-terminal-token" ||
+		strings.HasPrefix(v, "change-me")
+}
+
+func terminalSharedToken() string {
+	token := getenv("FLEET_TERMINAL_TOKEN", "")
+	if token == "" {
+		token = getenv("AGENT_TERMINAL_TOKEN", "")
+	}
+	if token == "" {
+		token = getenv("TERM_TOKEN", "")
+	}
+	return strings.TrimSpace(token)
+}
+
+func terminalListenAddr() string {
+	return resolveTerminalListenAddr(getenv("FLEET_TERMINAL_LISTEN", "auto:18080"))
+}
+
+func resolveTerminalListenAddr(value string) string {
+	listen := strings.TrimSpace(value)
+	if listen == "" {
+		listen = "auto:18080"
+	}
+	if strings.HasPrefix(strings.ToLower(listen), "auto:") {
+		parts := strings.SplitN(listen, ":", 2)
+		port := ""
+		if len(parts) == 2 {
+			port = strings.TrimSpace(parts[1])
+		}
+		if port == "" {
+			port = "18080"
+		}
+		return net.JoinHostPort(terminalSSHTarget(), port)
+	}
+	return listen
+}
+
+func terminalTokenFromRequest(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("X-Fleet-Terminal-Token"))
+}
+
 func commandPath(candidates ...string) string {
 	for _, candidate := range candidates {
 		if candidate == "" {
@@ -136,6 +186,9 @@ func terminalSSHTarget() string {
 	if target := strings.TrimSpace(os.Getenv("FLEET_TERMINAL_SSH_HOST")); target != "" {
 		return target
 	}
+	if target := firstIPv4FromHostnameI(); target != "" {
+		return target
+	}
 	ifaces, err := net.Interfaces()
 	if err == nil {
 		for _, iface := range ifaces {
@@ -164,6 +217,27 @@ func terminalSSHTarget() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+func firstIPv4FromHostnameI() string {
+	hostnamePath := commandPath("/usr/bin/hostname", "/bin/hostname", "hostname")
+	if hostnamePath == "" {
+		return ""
+	}
+	out, err := exec.Command(hostnamePath, "-I").Output()
+	if err != nil {
+		return ""
+	}
+	for _, field := range strings.Fields(string(out)) {
+		ip := net.ParseIP(strings.TrimSpace(field))
+		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
+			continue
+		}
+		if v4 := ip.To4(); v4 != nil {
+			return v4.String()
+		}
+	}
+	return ""
 }
 
 func terminalSSHCommand(username string) *exec.Cmd {
@@ -216,26 +290,21 @@ func StartTerminalServer() {
 	// - preferred: FLEET_TERMINAL_TOKEN (agent-side)
 	// - legacy:   AGENT_TERMINAL_TOKEN (server-side name; some deploys reused it)
 	// - legacy:   TERM_TOKEN (used by script.sh)
-	token := getenv("FLEET_TERMINAL_TOKEN", "")
-	if token == "" {
-		token = getenv("AGENT_TERMINAL_TOKEN", "")
-	}
-	if token == "" {
-		token = getenv("TERM_TOKEN", "")
-	}
+	token := terminalSharedToken()
 	if token == "" {
 		log.Println("Terminal server disabled (set FLEET_TERMINAL_TOKEN)")
 		return
 	}
-	listenAddr := getenv("FLEET_TERMINAL_LISTEN", "0.0.0.0:18080")
+	if isPlaceholderTerminalToken(token) {
+		log.Println("Terminal server disabled (FLEET_TERMINAL_TOKEN is a placeholder)")
+		return
+	}
+	listenAddr := terminalListenAddr()
 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/terminal/ws", func(w http.ResponseWriter, r *http.Request) {
-		got := r.Header.Get("X-Fleet-Terminal-Token")
-		if got == "" {
-			got = r.URL.Query().Get("token")
-		}
+		got := terminalTokenFromRequest(r)
 		if got != token {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -7,7 +8,7 @@ from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..deps import require_ui_user
+from ..deps import require_admin_user, require_ui_user
 from ..config import settings
 from ..models import Host, HostMetricsSnapshot, HostPackage, HostPackageUpdate, HostLoadMetric
 from ..models import HostCVEStatus, HostUser, PatchCampaign, PatchCampaignHost, Job, JobRun, CVEPackage, CronJob, AppUser
@@ -16,6 +17,7 @@ from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.hosts import is_host_online, seconds_since_seen
 from ..services.job_wait import wait_for_job_run
 from ..services.audit import log_event
+from ..services.agent_auth import hash_agent_token
 from ..services.rbac import permissions_for
 from ..services.user_scopes import is_host_visible_to_user
 from ..services.package_names import sanitize_package_list
@@ -182,6 +184,64 @@ def update_host_metadata(
             "labels": host.labels or {},
         },
     }
+
+
+@router.post("/{agent_id}/agent-token/rotate")
+def rotate_host_agent_token(
+    agent_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin_user),
+):
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host:
+        raise HTTPException(404, "Host not found")
+
+    token = secrets.token_urlsafe(32)
+    host.agent_token_hash = hash_agent_token(token)
+    log_event(
+        db,
+        action="agent.token.rotated",
+        actor=admin,
+        request=request,
+        target_type="agent",
+        target_id=agent_id,
+        target_name=host.hostname,
+        meta={"recovery": False},
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "agent_id": agent_id,
+        "agent_token": token,
+        "token_file": "/var/lib/fleet-agent/agent-token",
+    }
+
+
+@router.post("/{agent_id}/agent-token/bootstrap-reset")
+def reset_host_agent_token_for_bootstrap(
+    agent_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    admin=Depends(require_admin_user),
+):
+    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+    if not host:
+        raise HTTPException(404, "Host not found")
+
+    host.agent_token_hash = None
+    log_event(
+        db,
+        action="agent.token.bootstrap_reset",
+        actor=admin,
+        request=request,
+        target_type="agent",
+        target_id=agent_id,
+        target_name=host.hostname,
+        meta={"next_registration": "shared_bootstrap_token"},
+    )
+    db.commit()
+    return {"ok": True, "agent_id": agent_id}
 
 
 @router.post("/{agent_id}/reboot")

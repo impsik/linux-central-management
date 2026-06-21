@@ -15,6 +15,7 @@ class Host(Base):
     os_version = Column(String)
     kernel = Column(String)
     agent_version = Column(String)
+    agent_token_hash = Column(String, nullable=True, index=True)
     labels = Column(JSON, nullable=False, default=dict)
     last_seen = Column(DateTime(timezone=True))
     reboot_required = Column(Boolean, nullable=False, default=False)
@@ -98,6 +99,7 @@ class JobRun(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     agent_id = Column(String, nullable=False, index=True)
+    job_nonce = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, index=True)
     started_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
@@ -141,6 +143,8 @@ class AppUser(Base):
     username = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
     auth_provider = Column(String, nullable=False, default="local", index=True)  # local|ad|oidc
+    oidc_issuer = Column(String, nullable=True, index=True)
+    oidc_subject = Column(String, nullable=True, index=True)
     role = Column(String, nullable=False, default="operator", index=True)  # admin|operator|readonly
     is_active = Column(Boolean, nullable=False, default=True)
 
@@ -154,6 +158,10 @@ class AppUser(Base):
     recovery_codes = Column(JSON, nullable=False, default=list)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_app_users_oidc_identity"),
+    )
 
 class AppUserScope(Base):
     __tablename__ = "app_user_scopes"

@@ -65,38 +65,6 @@
     return raw || fallback;
   }
 
-  const URGENT_UPDATES_CACHE_KEY = 'fleet.dashboard.urgentUpdates.v1';
-
-  function sameLocalDay(left, right) {
-    if (!(left instanceof Date) || !(right instanceof Date)) return false;
-    return left.getFullYear() === right.getFullYear()
-      && left.getMonth() === right.getMonth()
-      && left.getDate() === right.getDate();
-  }
-
-  function readUrgentUpdatesCache() {
-    try {
-      const raw = w.localStorage?.getItem(URGENT_UPDATES_CACHE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      const cachedAt = parsed?.cached_at ? new Date(parsed.cached_at) : null;
-      const items = Array.isArray(parsed?.items) ? parsed.items : null;
-      if (!cachedAt || Number.isNaN(cachedAt.getTime()) || !items) return null;
-      return { cachedAt, items };
-    } catch (_) {
-      return null;
-    }
-  }
-
-  function writeUrgentUpdatesCache(items) {
-    try {
-      w.localStorage?.setItem(URGENT_UPDATES_CACHE_KEY, JSON.stringify({
-        cached_at: new Date().toISOString(),
-        items: Array.isArray(items) ? items : [],
-      }));
-    } catch (_) { }
-  }
-
   async function loadFleetOverview(ctx, forceLive, backgroundRefresh) {
     const isBackgroundRefresh = !!backgroundRefresh;
     const onlineEl = document.getElementById('kpi-online');
@@ -113,7 +81,7 @@
     try {
       // First hydrate update KPIs from hosts report (more resilient than summary-only path).
       try {
-        const rr0 = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include' });
+        const rr0 = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include', cache: 'no-store' });
         if (rr0.ok) {
           const report0 = await rr0.json();
           const items0 = Array.isArray(report0?.items) ? report0.items : [];
@@ -124,7 +92,7 @@
         }
       } catch (_) { }
 
-      const r = await fetch('/dashboard/summary', { credentials: 'include' });
+      const r = await fetch('/dashboard/summary', { credentials: 'include', cache: 'no-store' });
       if (!r.ok) {
         if (r.status === 403) {
           // Expected transient state during MFA gating.
@@ -322,7 +290,7 @@
     } catch (e) {
       // Fallback: keep KPI cards populated even if summary endpoint fails.
       try {
-        const rf = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include' });
+        const rf = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include', cache: 'no-store' });
         if (rf.ok) {
           const dd = await rf.json();
           const items = Array.isArray(dd?.items) ? dd.items : [];
@@ -744,7 +712,7 @@
       w.setTableState(tbody, 10, 'loading', 'Loading…');
       const effectiveSort = sort === 'owner' ? 'hostname' : sort;
       const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(effectiveSort)}&order=${encodeURIComponent(order)}&limit=500`;
-      const r = await fetch(url, { credentials: 'include' });
+      const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
       if (!r.ok) throw await buildHttpError(r, 'hosts report failed');
       const d = await r.json();
       const items = d?.items || [];
@@ -777,6 +745,7 @@
           ip_address: it.ip_address || '',
           os_id: it.os_id || '',
           os_version: it.os_version || '',
+          agent_version: it.agent_version || '',
           labels: (it.labels && typeof it.labels === 'object') ? it.labels : {},
           is_online: !!it.is_online,
           last_seen: it.last_seen || null,
@@ -844,7 +813,7 @@
 
     try {
       const url = `/reports/hosts-updates?only_pending=true&online_only=false&sort=${encodeURIComponent(sort)}&order=${encodeURIComponent(order)}&limit=100`;
-      const r = await fetch(url, { credentials: 'include' });
+      const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
       if (!r.ok) throw await buildHttpError(r, 'report failed');
       const d = await r.json();
       const items = d?.items || [];
@@ -933,20 +902,14 @@
     const tbody = document.getElementById('overview-urgent-updates');
     if (!tbody) return;
     const isBackgroundRefresh = !!backgroundRefresh;
-    const cached = readUrgentUpdatesCache();
-    if (!forceRefresh && cached && sameLocalDay(cached.cachedAt, new Date())) {
-      renderUrgentUpdates(ctx, tbody, cached.items);
-      return;
-    }
 
     if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');
 
     try {
-      const r = await fetch('/dashboard/urgent-updates?limit=10', { credentials: 'include' });
+      const r = await fetch('/dashboard/urgent-updates?limit=10', { credentials: 'include', cache: 'no-store' });
       if (!r.ok) throw await buildHttpError(r, 'urgent updates failed');
       const d = await r.json();
       const items = Array.isArray(d?.items) ? d.items : [];
-      writeUrgentUpdatesCache(items);
       renderUrgentUpdates(ctx, tbody, items);
     } catch (e) {
       if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'error', `Urgent updates error: ${e.message || String(e)}`);

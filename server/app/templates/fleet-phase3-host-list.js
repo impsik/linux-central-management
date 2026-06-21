@@ -163,7 +163,7 @@
         controller = new AbortController();
         timeout = setTimeout(() => controller.abort(), 8000);
       }
-      const response = await fetch('/hosts?online_only=true', { credentials: 'include', ...(controller ? { signal: controller.signal } : {}) });
+      const response = await fetch('/hosts?online_only=true', { credentials: 'include', cache: 'no-store', ...(controller ? { signal: controller.signal } : {}) });
       if (!response.ok) {
         if (response.status === 403 && typeof w.loadAuthInfo === 'function') {
           try { await w.loadAuthInfo(); } catch (_) {}

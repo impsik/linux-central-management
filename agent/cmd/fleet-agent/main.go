@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/yourorg/fleet-agent/internal"
@@ -23,13 +25,15 @@ import (
 const AgentVersion = "0.0.3-alpha"
 
 type Config struct {
-	ServerURL  string
-	AgentID    string
-	Labels     map[string]string
-	PollEvery  time.Duration
-	InvEvery   time.Duration
-	HbEvery    time.Duration
-	AgentToken string
+	ServerURL      string
+	AgentID        string
+	Labels         map[string]string
+	PollEvery      time.Duration
+	InvEvery       time.Duration
+	HbEvery        time.Duration
+	AgentToken     string
+	BootstrapToken string
+	AgentTokenFile string
 }
 
 type RegisterPayload struct {
@@ -76,6 +80,7 @@ type NextJobResponse struct {
 
 type Job struct {
 	JobID          string   `json:"job_id"`
+	JobNonce       string   `json:"job_nonce,omitempty"`
 	Type           string   `json:"type"`
 	Packages       []string `json:"packages,omitempty"`
 	ServiceName    string   `json:"service_name,omitempty"`
@@ -94,6 +99,7 @@ type Job struct {
 type JobEvent struct {
 	AgentID  string `json:"agent_id"`
 	JobID    string `json:"job_id"`
+	JobNonce string `json:"job_nonce,omitempty"`
 	Status   string `json:"status"`
 	ExitCode *int   `json:"exit_code,omitempty"`
 	Stdout   string `json:"stdout,omitempty"`
@@ -128,6 +134,26 @@ func main() {
 
 	lastRegisterAttempt := time.Time{}
 	var regMu sync.Mutex
+	var tokenMu sync.RWMutex
+	getToken := func() string {
+		tokenMu.RLock()
+		defer tokenMu.RUnlock()
+		return cfg.AgentToken
+	}
+	setToken := func(token string) {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			return
+		}
+		tokenMu.Lock()
+		cfg.AgentToken = token
+		tokenMu.Unlock()
+		if cfg.AgentTokenFile != "" && token != cfg.BootstrapToken {
+			if err := writeAgentTokenFile(cfg.AgentTokenFile, token); err != nil {
+				log.Printf("could not persist per-agent token: %v", err)
+			}
+		}
+	}
 	registerAgent := func(reason string) {
 		regMu.Lock()
 		defer regMu.Unlock()
@@ -137,7 +163,28 @@ func main() {
 		}
 		lastRegisterAttempt = time.Now()
 		log.Printf("Re-registering agent (reason: %s)...", reason)
-		mustPostJSON(client, cfg.ServerURL+"/agent/register", reg, cfg.AgentToken)
+		body, status := postJSON(client, cfg.ServerURL+"/agent/register", reg, getToken())
+		if status >= 200 && status < 300 {
+			var parsed struct {
+				AgentToken string `json:"agent_token"`
+			}
+			if err := json.Unmarshal(body, &parsed); err == nil && strings.TrimSpace(parsed.AgentToken) != "" {
+				setToken(parsed.AgentToken)
+			}
+		} else if status == 401 || status == 403 {
+			if cfg.BootstrapToken != "" && getToken() != cfg.BootstrapToken {
+				log.Printf("registration with stored token was rejected; retrying with bootstrap token")
+				body, status = postJSON(client, cfg.ServerURL+"/agent/register", reg, cfg.BootstrapToken)
+				if status >= 200 && status < 300 {
+					var parsed struct {
+						AgentToken string `json:"agent_token"`
+					}
+					if err := json.Unmarshal(body, &parsed); err == nil && strings.TrimSpace(parsed.AgentToken) != "" {
+						setToken(parsed.AgentToken)
+					}
+				}
+			}
+		}
 	}
 
 	// Initial registration
@@ -151,8 +198,10 @@ func main() {
 		defer t.Stop()
 		for {
 			req, _ := http.NewRequest("POST", cfg.ServerURL+"/agent/heartbeat?agent_id="+url.QueryEscape(cfg.AgentID)+"&agent_version="+url.QueryEscape(AgentVersion), nil)
-			if cfg.AgentToken != "" {
-				req.Header.Set("X-Fleet-Agent-Token", cfg.AgentToken)
+			req.Header.Set("X-Fleet-Agent-ID", cfg.AgentID)
+			if token := getToken(); token != "" {
+				req.Header.Set("X-Fleet-Agent-Token", token)
+				signAgentRequest(req, token, nil)
 			}
 			resp, err := client.Do(req)
 			if err == nil {
@@ -180,7 +229,7 @@ func main() {
 					Manager:         manager,
 					Packages:        pkgs,
 				}
-				mustPostJSON(client, cfg.ServerURL+"/agent/inventory/packages", inv, cfg.AgentToken)
+				mustPostJSON(client, cfg.ServerURL+"/agent/inventory/packages", inv, getToken())
 				// Also send upgradable package snapshot (no apt-get update here; uses local apt cache)
 				lastInv = now
 				go func() {
@@ -190,7 +239,7 @@ func main() {
 							CheckedAtUnix: time.Now().Unix(),
 							Updates:       updates,
 						}
-						mustPostJSON(client, cfg.ServerURL+"/agent/inventory/package-updates", upInv, cfg.AgentToken)
+						mustPostJSON(client, cfg.ServerURL+"/agent/inventory/package-updates", upInv, getToken())
 					}
 				}()
 			} else {
@@ -198,9 +247,10 @@ func main() {
 			}
 		}
 
-		job := pollNextJob(client, cfg.ServerURL, cfg.AgentID, registerAgent, cfg.AgentToken)
+		token := getToken()
+		job := pollNextJob(client, cfg.ServerURL, cfg.AgentID, registerAgent, token)
 		if job != nil {
-			handleJob(ctx, client, cfg.ServerURL, cfg.AgentID, job, cfg.AgentToken)
+			handleJob(ctx, client, cfg.ServerURL, cfg.AgentID, job, token)
 		}
 
 		time.Sleep(cfg.PollEvery)
@@ -227,14 +277,25 @@ func loadConfig() Config {
 		}
 	}
 
+	bootstrapToken := getenv("FLEET_AGENT_TOKEN", "")
+	tokenFile := getenv("FLEET_AGENT_TOKEN_FILE", "/var/lib/fleet-agent/agent-token")
+	agentToken := bootstrapToken
+	if token, err := readAgentTokenFile(tokenFile); err == nil && token != "" {
+		agentToken = token
+	} else if err != nil && !os.IsNotExist(err) {
+		log.Printf("could not read per-agent token file: %v", err)
+	}
+
 	return Config{
-		ServerURL:  server,
-		AgentID:    agentID,
-		Labels:     labels,
-		PollEvery:  2 * time.Second,
-		InvEvery:   5 * time.Minute,
-		HbEvery:    5 * time.Second,
-		AgentToken: getenv("FLEET_AGENT_TOKEN", ""),
+		ServerURL:      server,
+		AgentID:        agentID,
+		Labels:         labels,
+		PollEvery:      2 * time.Second,
+		InvEvery:       5 * time.Minute,
+		HbEvery:        5 * time.Second,
+		AgentToken:     agentToken,
+		BootstrapToken: bootstrapToken,
+		AgentTokenFile: tokenFile,
 	}
 }
 
@@ -246,23 +307,120 @@ func getenv(k, d string) string {
 	return v
 }
 
+func readAgentTokenFile(path string) (string, error) {
+	if strings.TrimSpace(path) == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func writeAgentTokenFile(path string, token string) error {
+	path = strings.TrimSpace(path)
+	token = strings.TrimSpace(token)
+	if path == "" || token == "" {
+		return nil
+	}
+	if err := os.MkdirAll(pathDir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(token+"\n"), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
+}
+
+func pathDir(path string) string {
+	idx := strings.LastIndex(path, "/")
+	if idx <= 0 {
+		return "."
+	}
+	return path[:idx]
+}
+
+func signAgentRequest(req *http.Request, token string, body []byte) {
+	token = strings.TrimSpace(token)
+	if req == nil || token == "" {
+		return
+	}
+	tokenHash := sha256.Sum256([]byte(token))
+	bodyHash := sha256.Sum256(body)
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	target := req.URL.RequestURI()
+	msg := strings.Join(
+		[]string{
+			strings.ToUpper(req.Method),
+			target,
+			ts,
+			fmt.Sprintf("%x", bodyHash[:]),
+		},
+		"\n",
+	)
+	mac := hmac.New(sha256.New, []byte(fmt.Sprintf("%x", tokenHash[:])))
+	_, _ = mac.Write([]byte(msg))
+	req.Header.Set("X-Fleet-Agent-Timestamp", ts)
+	req.Header.Set("X-Fleet-Agent-Signature", fmt.Sprintf("%x", mac.Sum(nil)))
+}
+
 func mustPostJSON(client *http.Client, url string, payload any, token string) {
+	postJSON(client, url, payload, token)
+}
+
+func postJSON(client *http.Client, url string, payload any, token string) ([]byte, int) {
 	b, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("X-Fleet-Agent-Token", token)
+		signAgentRequest(req, token, b)
+	}
+	if agentID := agentIDForPayload(payload); agentID != "" {
+		req.Header.Set("X-Fleet-Agent-ID", agentID)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "POST %s error: %v\n", url, err)
-		return
+		return nil, 0
 	}
-	io.Copy(io.Discard, resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "POST %s status: %s\n", url, resp.Status)
 	}
+	return body, resp.StatusCode
+}
+
+func agentIDForPayload(payload any) string {
+	switch v := payload.(type) {
+	case RegisterPayload:
+		return strings.TrimSpace(v.AgentID)
+	case *RegisterPayload:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	case InventoryPayload:
+		return strings.TrimSpace(v.AgentID)
+	case *InventoryPayload:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	case UpdatesInventoryPayload:
+		return strings.TrimSpace(v.AgentID)
+	case *UpdatesInventoryPayload:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	case JobEvent:
+		return strings.TrimSpace(v.AgentID)
+	case *JobEvent:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	}
+	return ""
 }
 
 func detectPackageManager() string {
@@ -365,8 +523,10 @@ func collectUpgradablePackages(ctx context.Context) ([]UpdateItem, error) {
 func pollNextJob(client *http.Client, serverURL, agentID string, registerAgent func(reason string), token string) *Job {
 	u := fmt.Sprintf("%s/agent/next-job?agent_id=%s", serverURL, agentID)
 	req, _ := http.NewRequest("GET", u, nil)
+	req.Header.Set("X-Fleet-Agent-ID", agentID)
 	if token != "" {
 		req.Header.Set("X-Fleet-Agent-Token", token)
+		signAgentRequest(req, token, nil)
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -392,11 +552,12 @@ func pollNextJob(client *http.Client, serverURL, agentID string, registerAgent f
 }
 
 func handleJob(ctx context.Context, client *http.Client, serverURL, agentID string, job *Job, token string) {
-	mustPostJSON(client, serverURL+"/agent/job-event", JobEvent{AgentID: agentID, JobID: job.JobID, Status: "running"}, token)
+	mustPostJSON(client, serverURL+"/agent/job-event", JobEvent{AgentID: agentID, JobID: job.JobID, JobNonce: job.JobNonce, Status: "running"}, token)
 
 	var ev JobEvent
 	ev.AgentID = agentID
 	ev.JobID = job.JobID
+	ev.JobNonce = job.JobNonce
 
 	switch job.Type {
 	case "pkg-upgrade":
