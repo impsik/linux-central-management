@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     agent_shared_token: str | None = None
     # Temporary rollout escape hatch for older agents that only know the shared token.
     agent_shared_token_allow_runtime: bool = False
+    # Temporary migration path for agents upgraded after per-agent tokens were introduced
+    # but before their runtime token was persisted locally.
+    agent_shared_token_allow_rebind: bool = True
     allow_insecure_no_agent_token: bool = False
 
     # Ansible integration

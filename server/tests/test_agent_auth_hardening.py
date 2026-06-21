@@ -11,7 +11,14 @@ def _reload_app_modules():
             sys.modules.pop(name, None)
 
 
-def _boot_app(monkeypatch, *, insecure_no_token: bool, token: str = '', allow_shared_runtime: bool = False):
+def _boot_app(
+    monkeypatch,
+    *,
+    insecure_no_token: bool,
+    token: str = '',
+    allow_shared_runtime: bool = False,
+    allow_shared_rebind: bool = True,
+):
     monkeypatch.setenv('DATABASE_URL', 'sqlite+pysqlite:///:memory:')
     monkeypatch.setenv('SERVER_BIND_HOST', '127.0.0.1')
     monkeypatch.setenv('BOOTSTRAP_PASSWORD', 'admin-password-123')
@@ -19,6 +26,7 @@ def _boot_app(monkeypatch, *, insecure_no_token: bool, token: str = '', allow_sh
     monkeypatch.setenv('ALLOW_INSECURE_NO_AGENT_TOKEN', 'true' if insecure_no_token else 'false')
     monkeypatch.setenv('AGENT_SHARED_TOKEN', token)
     monkeypatch.setenv('AGENT_SHARED_TOKEN_ALLOW_RUNTIME', 'true' if allow_shared_runtime else 'false')
+    monkeypatch.setenv('AGENT_SHARED_TOKEN_ALLOW_REBIND', 'true' if allow_shared_rebind else 'false')
     monkeypatch.setenv('DB_AUTO_CREATE_TABLES', 'true')
     monkeypatch.setenv('DB_REQUIRE_MIGRATIONS_UP_TO_DATE', 'false')
     monkeypatch.setenv('MFA_REQUIRE_FOR_PRIVILEGED', 'false')
@@ -169,8 +177,39 @@ def test_per_agent_token_requires_agent_id_header(monkeypatch):
         assert denied.status_code == 401, denied.text
 
 
-def test_shared_token_cannot_re_register_existing_bound_agent(monkeypatch):
+def test_shared_token_can_rebind_existing_agent_during_migration(monkeypatch):
     app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        old_token = _register_agent(client, 'srv-bound-existing')
+
+        rebound = client.post(
+            '/agent/register',
+            json=_register_payload('srv-bound-existing'),
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert rebound.status_code == 200, rebound.text
+        new_token = rebound.json()['agent_token']
+        assert new_token
+        assert new_token != old_token
+
+        ok = client.post(
+            '/agent/heartbeat?agent_id=srv-bound-existing',
+            headers={
+                'X-Fleet-Agent-ID': 'srv-bound-existing',
+                'X-Fleet-Agent-Token': new_token,
+            },
+        )
+        assert ok.status_code == 200, ok.text
+
+
+def test_shared_token_rebind_can_be_disabled(monkeypatch):
+    app = _boot_app(
+        monkeypatch,
+        insecure_no_token=False,
+        token='shared-secret-123',
+        allow_shared_rebind=False,
+    )
 
     with TestClient(app, client=('192.168.100.50', 12345)) as client:
         agent_token = _register_agent(client, 'srv-bound-existing')

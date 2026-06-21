@@ -110,6 +110,7 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
         if (
             getattr(request.state, "agent_auth_kind", "shared") == "shared"
             and (getattr(host, "agent_token_hash", None) or "").strip()
+            and not bool(getattr(settings, "agent_shared_token_allow_rebind", True))
         ):
             raise HTTPException(403, "existing agent requires per-agent token")
 
