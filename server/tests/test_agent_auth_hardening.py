@@ -336,6 +336,43 @@ def test_agent_register_prefers_reported_guest_ip_over_request_peer(monkeypatch)
             assert host.ip_address == '192.16.1.25'
 
 
+def test_agent_register_ip_change_is_audited(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.1', 12345)) as client:
+        payload = _register_payload('srv-ip-change')
+        payload['ip_addresses'] = ['192.16.1.25']
+        first = client.post(
+            '/agent/register',
+            json=payload,
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert first.status_code == 200, first.text
+        agent_token = first.json()['agent_token']
+
+        payload['ip_addresses'] = ['192.16.1.27']
+        changed = client.post(
+            '/agent/register',
+            json=payload,
+            headers={
+                'X-Fleet-Agent-ID': 'srv-ip-change',
+                'X-Fleet-Agent-Token': agent_token,
+            },
+        )
+        assert changed.status_code == 200, changed.text
+
+        db_mod = importlib.import_module('app.db')
+        models = importlib.import_module('app.models')
+        with db_mod.SessionLocal() as db:
+            event = db.query(models.AuditEvent).filter_by(action='agent.ip.changed').one()
+            assert event.target_id == 'srv-ip-change'
+            assert event.meta['old_ip'] == '192.16.1.25'
+            assert event.meta['new_ip'] == '192.16.1.27'
+            assert event.meta['reported_ip'] == '192.16.1.27'
+            assert event.meta['client_ip'] == '192.168.100.1'
+            assert event.meta['auth_kind'] == 'per_agent'
+
+
 def test_agent_heartbeat_does_not_clobber_reported_guest_ip(monkeypatch):
     app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
 

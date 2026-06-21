@@ -67,6 +67,35 @@ def _audit_unknown_agent(db: Session, request: Request, agent_id: str, action: s
             pass
 
 
+def _audit_agent_ip_change(
+    db: Session,
+    request: Request,
+    *,
+    agent_id: str,
+    old_ip: str | None,
+    new_ip: str | None,
+    reported_ip: str | None,
+    client_ip: str | None,
+) -> None:
+    if not old_ip or not new_ip or old_ip == new_ip:
+        return
+    log_event(
+        db,
+        action="agent.ip.changed",
+        actor=None,
+        request=request,
+        target_type="agent",
+        target_id=agent_id,
+        meta={
+            "old_ip": old_ip,
+            "new_ip": new_ip,
+            "reported_ip": reported_ip,
+            "client_ip": client_ip,
+            "auth_kind": getattr(request.state, "agent_auth_kind", "shared"),
+        },
+    )
+
+
 def _ensure_agent_identity(request: Request, agent_id: str) -> None:
     auth_kind = getattr(request.state, "agent_auth_kind", "shared")
     auth_agent_id = getattr(request.state, "agent_auth_agent_id", None)
@@ -117,6 +146,15 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
         host.hostname = payload.hostname
         host.fqdn = payload.fqdn
         if host_ip and hasattr(host, "ip_address"):
+            _audit_agent_ip_change(
+                db,
+                request,
+                agent_id=payload.agent_id,
+                old_ip=host.ip_address,
+                new_ip=host_ip,
+                reported_ip=reported_ip,
+                client_ip=client_ip,
+            )
             host.ip_address = host_ip
         host.os_id = payload.os_id
         host.os_version = payload.os_version
