@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import ipaddress
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
@@ -30,6 +31,20 @@ def _preferred_reported_ip(ip_addresses: list[str] | None) -> str | None:
             continue
         return str(ip)
     return None
+
+
+def _ensure_job_run_nonce(run: JobRun) -> str:
+    nonce = (getattr(run, "job_nonce", None) or "").strip()
+    if not nonce:
+        nonce = secrets.token_urlsafe(32)
+        run.job_nonce = nonce
+    return nonce
+
+
+def _with_job_nonce(payload: dict, run: JobRun) -> dict:
+    out = dict(payload)
+    out["job_nonce"] = _ensure_job_run_nonce(run)
+    return out
 
 
 @router.post("/register")
@@ -207,6 +222,21 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
     # Primary: in-memory dispatcher queue (fast path)
     job = await dispatcher.pop_job(agent_id, timeout=settings.agent_poll_timeout_seconds)
     if job is not None:
+        job_key = str((job or {}).get("job_id") or "").strip()
+        if job_key:
+            row = (
+                db.execute(
+                    select(JobRun, Job)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == job_key, JobRun.agent_id == agent_id)
+                )
+                .first()
+            )
+            if row:
+                run, _job_row = row
+                job = _with_job_nonce(job, run)
+                db.commit()
+                return {"job": job}
         return {"job": job}
 
     # Fallback: DB-backed dispatch for queued jobs.
@@ -261,7 +291,7 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
         run.status = "running"
         run.started_at = run.started_at or now
 
-        return {"job": build_agent_payload(job_row, agent_id)}
+        return {"job": _with_job_nonce(build_agent_payload(job_row, agent_id), run)}
 
 
 @router.post("/job-event")
@@ -276,6 +306,10 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
     ).scalar_one_or_none()
     if not run:
         raise HTTPException(404, "unknown job run")
+
+    expected_nonce = (getattr(run, "job_nonce", None) or "").strip()
+    if expected_nonce and payload.job_nonce != expected_nonce:
+        raise HTTPException(403, "invalid job nonce")
 
     now = datetime.now(timezone.utc)
     if payload.status == "running":

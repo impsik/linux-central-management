@@ -76,6 +76,7 @@ type NextJobResponse struct {
 
 type Job struct {
 	JobID          string   `json:"job_id"`
+	JobNonce       string   `json:"job_nonce,omitempty"`
 	Type           string   `json:"type"`
 	Packages       []string `json:"packages,omitempty"`
 	ServiceName    string   `json:"service_name,omitempty"`
@@ -94,6 +95,7 @@ type Job struct {
 type JobEvent struct {
 	AgentID  string `json:"agent_id"`
 	JobID    string `json:"job_id"`
+	JobNonce string `json:"job_nonce,omitempty"`
 	Status   string `json:"status"`
 	ExitCode *int   `json:"exit_code,omitempty"`
 	Stdout   string `json:"stdout,omitempty"`
@@ -392,11 +394,12 @@ func pollNextJob(client *http.Client, serverURL, agentID string, registerAgent f
 }
 
 func handleJob(ctx context.Context, client *http.Client, serverURL, agentID string, job *Job, token string) {
-	mustPostJSON(client, serverURL+"/agent/job-event", JobEvent{AgentID: agentID, JobID: job.JobID, Status: "running"}, token)
+	mustPostJSON(client, serverURL+"/agent/job-event", JobEvent{AgentID: agentID, JobID: job.JobID, JobNonce: job.JobNonce, Status: "running"}, token)
 
 	var ev JobEvent
 	ev.AgentID = agentID
 	ev.JobID = job.JobID
+	ev.JobNonce = job.JobNonce
 
 	switch job.Type {
 	case "pkg-upgrade":

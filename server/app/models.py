@@ -98,6 +98,7 @@ class JobRun(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     job_id = Column(UUID(as_uuid=True), ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, index=True)
     agent_id = Column(String, nullable=False, index=True)
+    job_nonce = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, index=True)
     started_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
