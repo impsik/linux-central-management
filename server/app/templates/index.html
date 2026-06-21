@@ -3333,7 +3333,7 @@
 
         // Fallback path so UI doesn't stay stuck when module fails to load.
         console.error('[loadHosts] phase3HostList module missing; using inline fallback');
-        const r = await fetch('/hosts?online_only=true', { credentials: 'include' });
+        const r = await fetch('/hosts?online_only=true', { credentials: 'include', cache: 'no-store' });
         if (!r.ok) throw new Error(`hosts failed (${r.status})`);
         const items = await r.json();
         const hosts = Array.isArray(items) ? items : [];
