@@ -355,6 +355,7 @@ main() {
   set_env_value "$root_env" "SERVER_URL" "$server_url"
   set_env_value "$root_env" "AGENT_TOKEN" "$final_agent_token"
   set_env_value "$root_env" "TERM_TOKEN" "$final_terminal_token"
+  set_env_value "$root_env" "TERM_LISTEN" "auto:18080"
 
   chmod 600 "$docker_env" "$root_env"
 

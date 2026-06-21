@@ -141,6 +141,11 @@ fi
 if [ -n "${AGENT_TERMINAL_TOKEN:-}" ]; then
   TERM_TOKEN="$AGENT_TERMINAL_TOKEN"
 fi
+if [ "${TERM_LISTEN:-}" = "127.0.0.1:18080" ] && [ -n "${TERM_TOKEN:-}" ]; then
+  log_warn "Migrating terminal listener from loopback-only 127.0.0.1:18080 to management bind auto:18080"
+  TERM_LISTEN="auto:18080"
+  set_env_value "$ROOT_ENV_FILE" "TERM_LISTEN" "$TERM_LISTEN"
+fi
 
 # Default server URL for this environment (override by exporting SERVER_URL or setting it in .env).
 SERVER_URL="${SERVER_URL:-http://192.168.100.240:8000}"
