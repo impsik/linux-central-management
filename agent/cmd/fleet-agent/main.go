@@ -130,6 +130,21 @@ func main() {
 
 	lastRegisterAttempt := time.Time{}
 	var regMu sync.Mutex
+	var tokenMu sync.RWMutex
+	getToken := func() string {
+		tokenMu.RLock()
+		defer tokenMu.RUnlock()
+		return cfg.AgentToken
+	}
+	setToken := func(token string) {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			return
+		}
+		tokenMu.Lock()
+		cfg.AgentToken = token
+		tokenMu.Unlock()
+	}
 	registerAgent := func(reason string) {
 		regMu.Lock()
 		defer regMu.Unlock()
@@ -139,7 +154,15 @@ func main() {
 		}
 		lastRegisterAttempt = time.Now()
 		log.Printf("Re-registering agent (reason: %s)...", reason)
-		mustPostJSON(client, cfg.ServerURL+"/agent/register", reg, cfg.AgentToken)
+		body, status := postJSON(client, cfg.ServerURL+"/agent/register", reg, getToken())
+		if status >= 200 && status < 300 {
+			var parsed struct {
+				AgentToken string `json:"agent_token"`
+			}
+			if err := json.Unmarshal(body, &parsed); err == nil && strings.TrimSpace(parsed.AgentToken) != "" {
+				setToken(parsed.AgentToken)
+			}
+		}
 	}
 
 	// Initial registration
@@ -153,8 +176,9 @@ func main() {
 		defer t.Stop()
 		for {
 			req, _ := http.NewRequest("POST", cfg.ServerURL+"/agent/heartbeat?agent_id="+url.QueryEscape(cfg.AgentID)+"&agent_version="+url.QueryEscape(AgentVersion), nil)
-			if cfg.AgentToken != "" {
-				req.Header.Set("X-Fleet-Agent-Token", cfg.AgentToken)
+			req.Header.Set("X-Fleet-Agent-ID", cfg.AgentID)
+			if token := getToken(); token != "" {
+				req.Header.Set("X-Fleet-Agent-Token", token)
 			}
 			resp, err := client.Do(req)
 			if err == nil {
@@ -182,7 +206,7 @@ func main() {
 					Manager:         manager,
 					Packages:        pkgs,
 				}
-				mustPostJSON(client, cfg.ServerURL+"/agent/inventory/packages", inv, cfg.AgentToken)
+				mustPostJSON(client, cfg.ServerURL+"/agent/inventory/packages", inv, getToken())
 				// Also send upgradable package snapshot (no apt-get update here; uses local apt cache)
 				lastInv = now
 				go func() {
@@ -192,7 +216,7 @@ func main() {
 							CheckedAtUnix: time.Now().Unix(),
 							Updates:       updates,
 						}
-						mustPostJSON(client, cfg.ServerURL+"/agent/inventory/package-updates", upInv, cfg.AgentToken)
+						mustPostJSON(client, cfg.ServerURL+"/agent/inventory/package-updates", upInv, getToken())
 					}
 				}()
 			} else {
@@ -200,9 +224,10 @@ func main() {
 			}
 		}
 
-		job := pollNextJob(client, cfg.ServerURL, cfg.AgentID, registerAgent, cfg.AgentToken)
+		token := getToken()
+		job := pollNextJob(client, cfg.ServerURL, cfg.AgentID, registerAgent, token)
 		if job != nil {
-			handleJob(ctx, client, cfg.ServerURL, cfg.AgentID, job, cfg.AgentToken)
+			handleJob(ctx, client, cfg.ServerURL, cfg.AgentID, job, token)
 		}
 
 		time.Sleep(cfg.PollEvery)
@@ -249,22 +274,60 @@ func getenv(k, d string) string {
 }
 
 func mustPostJSON(client *http.Client, url string, payload any, token string) {
+	postJSON(client, url, payload, token)
+}
+
+func postJSON(client *http.Client, url string, payload any, token string) ([]byte, int) {
 	b, _ := json.Marshal(payload)
 	req, _ := http.NewRequest("POST", url, bytes.NewReader(b))
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("X-Fleet-Agent-Token", token)
 	}
+	if agentID := agentIDForPayload(payload); agentID != "" {
+		req.Header.Set("X-Fleet-Agent-ID", agentID)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "POST %s error: %v\n", url, err)
-		return
+		return nil, 0
 	}
-	io.Copy(io.Discard, resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
 	if resp.StatusCode >= 300 {
 		fmt.Fprintf(os.Stderr, "POST %s status: %s\n", url, resp.Status)
 	}
+	return body, resp.StatusCode
+}
+
+func agentIDForPayload(payload any) string {
+	switch v := payload.(type) {
+	case RegisterPayload:
+		return strings.TrimSpace(v.AgentID)
+	case *RegisterPayload:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	case InventoryPayload:
+		return strings.TrimSpace(v.AgentID)
+	case *InventoryPayload:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	case UpdatesInventoryPayload:
+		return strings.TrimSpace(v.AgentID)
+	case *UpdatesInventoryPayload:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	case JobEvent:
+		return strings.TrimSpace(v.AgentID)
+	case *JobEvent:
+		if v != nil {
+			return strings.TrimSpace(v.AgentID)
+		}
+	}
+	return ""
 }
 
 func detectPackageManager() string {
@@ -367,6 +430,7 @@ func collectUpgradablePackages(ctx context.Context) ([]UpdateItem, error) {
 func pollNextJob(client *http.Client, serverURL, agentID string, registerAgent func(reason string), token string) *Job {
 	u := fmt.Sprintf("%s/agent/next-job?agent_id=%s", serverURL, agentID)
 	req, _ := http.NewRequest("GET", u, nil)
+	req.Header.Set("X-Fleet-Agent-ID", agentID)
 	if token != "" {
 		req.Header.Set("X-Fleet-Agent-Token", token)
 	}

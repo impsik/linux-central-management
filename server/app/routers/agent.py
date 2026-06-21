@@ -14,7 +14,7 @@ from ..dispatcher import dispatcher
 from ..models import Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
-from ..services.agent_auth import require_agent_token, require_agent_token_dep
+from ..services.agent_auth import hash_agent_token, require_agent_token_dep
 from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs
@@ -67,9 +67,22 @@ def _audit_unknown_agent(db: Session, request: Request, agent_id: str, action: s
             pass
 
 
+def _ensure_agent_identity(request: Request, agent_id: str) -> None:
+    auth_kind = getattr(request.state, "agent_auth_kind", "shared")
+    auth_agent_id = getattr(request.state, "agent_auth_agent_id", None)
+    if auth_kind == "per_agent" and auth_agent_id != agent_id:
+        raise HTTPException(403, "agent token does not match agent_id")
+
+
+def _issue_agent_token(host: Host) -> str:
+    token = secrets.token_urlsafe(32)
+    host.agent_token_hash = hash_agent_token(token)
+    return token
+
+
 @router.post("/register")
 def agent_register(payload: AgentRegister, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     now = datetime.now(timezone.utc)
 
@@ -116,8 +129,15 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
 
         host.last_seen = now
 
+    agent_token = None
+    if getattr(request.state, "agent_auth_kind", "shared") == "shared":
+        agent_token = _issue_agent_token(host)
+
     db.commit()
-    return {"ok": True}
+    body = {"ok": True}
+    if agent_token:
+        body["agent_token"] = agent_token
+    return body
 
 
 @router.post("/heartbeat")
@@ -127,7 +147,7 @@ def agent_heartbeat(
     agent_version: str | None = None,
     db: Session = Depends(get_db),
 ):
-    require_agent_token(request)
+    _ensure_agent_identity(request, agent_id)
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
         _audit_unknown_agent(db, request, agent_id, "heartbeat")
@@ -147,7 +167,7 @@ def agent_heartbeat(
 
 @router.post("/inventory/packages")
 def agent_inventory_packages(payload: PackagesInventory, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     if not host:
         _audit_unknown_agent(db, request, payload.agent_id, "inventory_packages")
@@ -183,7 +203,7 @@ def agent_inventory_packages(payload: PackagesInventory, request: Request, db: S
 
 @router.post("/inventory/package-updates")
 def agent_inventory_package_updates(payload: PackageUpdatesInventory, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     if not host:
         _audit_unknown_agent(db, request, payload.agent_id, "inventory_package_updates")
@@ -234,7 +254,7 @@ def agent_inventory_package_updates(payload: PackageUpdatesInventory, request: R
 
 @router.get("/next-job")
 async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, agent_id)
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
         _audit_unknown_agent(db, request, agent_id, "next_job")
@@ -320,7 +340,7 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
 
 @router.post("/job-event")
 def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(get_db)):
-    require_agent_token(request)
+    _ensure_agent_identity(request, payload.agent_id)
     job = db.execute(select(Job).where(Job.job_key == payload.job_id)).scalar_one_or_none()
     if not job:
         raise HTTPException(404, "unknown job")

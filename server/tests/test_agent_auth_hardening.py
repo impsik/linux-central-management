@@ -73,12 +73,87 @@ def test_agent_routes_require_token_when_configured(monkeypatch):
         )
         assert ok.status_code == 200, ok.text
         assert ok.json()['ok'] is True
+        assert ok.json()['agent_token']
 
         db_mod = importlib.import_module('app.db')
         models = importlib.import_module('app.models')
         with db_mod.SessionLocal() as db:
             failures = db.query(models.AuditEvent).filter_by(action='agent.auth.failed').all()
             assert len(failures) >= 2
+
+
+def test_agent_register_issues_per_agent_token(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        reg = client.post(
+            '/agent/register',
+            json=_register_payload('srv-token'),
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert reg.status_code == 200, reg.text
+        agent_token = reg.json().get('agent_token')
+        assert agent_token
+        assert agent_token != 'shared-secret-123'
+
+        hb = client.post(
+            '/agent/heartbeat?agent_id=srv-token',
+            headers={
+                'X-Fleet-Agent-ID': 'srv-token',
+                'X-Fleet-Agent-Token': agent_token,
+            },
+        )
+        assert hb.status_code == 200, hb.text
+
+        db_mod = importlib.import_module('app.db')
+        models = importlib.import_module('app.models')
+        agent_auth = importlib.import_module('app.services.agent_auth')
+        with db_mod.SessionLocal() as db:
+            host = db.query(models.Host).filter_by(agent_id='srv-token').one()
+            assert host.agent_token_hash == agent_auth.hash_agent_token(agent_token)
+            assert host.agent_token_hash != agent_token
+
+
+def test_per_agent_token_cannot_claim_another_agent_id(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        reg = client.post(
+            '/agent/register',
+            json=_register_payload('srv-bound'),
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert reg.status_code == 200, reg.text
+        agent_token = reg.json()['agent_token']
+
+        denied = client.post(
+            '/agent/heartbeat?agent_id=srv-other',
+            headers={
+                'X-Fleet-Agent-ID': 'srv-bound',
+                'X-Fleet-Agent-Token': agent_token,
+            },
+        )
+        assert denied.status_code == 403, denied.text
+        assert 'agent token does not match agent_id' in denied.text
+
+
+def test_per_agent_token_requires_agent_id_header(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        reg = client.post(
+            '/agent/register',
+            json=_register_payload('srv-header'),
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert reg.status_code == 200, reg.text
+        agent_token = reg.json()['agent_token']
+
+        denied = client.post(
+            '/agent/heartbeat?agent_id=srv-header',
+            headers={'X-Fleet-Agent-Token': agent_token},
+        )
+        assert denied.status_code == 401, denied.text
 
 
 def test_unknown_agent_attempt_is_audited(monkeypatch):

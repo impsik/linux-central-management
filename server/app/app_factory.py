@@ -214,6 +214,9 @@ def _startup() -> None:
                 stmts.append("ALTER TABLE ssh_key_deployment_requests ADD COLUMN sudo_profile TEXT NOT NULL DEFAULT 'B'")
             if job_run_cols and "job_nonce" not in job_run_cols:
                 stmts.append("ALTER TABLE job_runs ADD COLUMN job_nonce TEXT")
+            host_cols = {c.get("name") for c in insp.get_columns("hosts")}
+            if "agent_token_hash" not in host_cols:
+                stmts.append("ALTER TABLE hosts ADD COLUMN agent_token_hash TEXT")
 
             if stmts:
                 with engine.begin() as conn:
