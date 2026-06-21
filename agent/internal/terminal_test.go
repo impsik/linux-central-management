@@ -61,11 +61,20 @@ func TestSameHostOrigin(t *testing.T) {
 	}
 }
 
-func TestTerminalListenDefaultsToLoopback(t *testing.T) {
+func TestTerminalListenDefaultsToManagementTarget(t *testing.T) {
 	t.Setenv("FLEET_TERMINAL_LISTEN", "")
+	t.Setenv("FLEET_TERMINAL_SSH_HOST", "192.0.2.10")
+
+	if got := terminalListenAddr(); got != "192.0.2.10:18080" {
+		t.Fatalf("terminalListenAddr() = %q, want management target default", got)
+	}
+}
+
+func TestTerminalListenAllowsExplicitLoopback(t *testing.T) {
+	t.Setenv("FLEET_TERMINAL_LISTEN", "127.0.0.1:18080")
 
 	if got := terminalListenAddr(); got != "127.0.0.1:18080" {
-		t.Fatalf("terminalListenAddr() = %q, want loopback default", got)
+		t.Fatalf("terminalListenAddr() = %q, want explicit loopback", got)
 	}
 }
 

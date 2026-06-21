@@ -64,7 +64,26 @@ func terminalSharedToken() string {
 }
 
 func terminalListenAddr() string {
-	return getenv("FLEET_TERMINAL_LISTEN", "127.0.0.1:18080")
+	return resolveTerminalListenAddr(getenv("FLEET_TERMINAL_LISTEN", "auto:18080"))
+}
+
+func resolveTerminalListenAddr(value string) string {
+	listen := strings.TrimSpace(value)
+	if listen == "" {
+		listen = "auto:18080"
+	}
+	if strings.HasPrefix(strings.ToLower(listen), "auto:") {
+		parts := strings.SplitN(listen, ":", 2)
+		port := ""
+		if len(parts) == 2 {
+			port = strings.TrimSpace(parts[1])
+		}
+		if port == "" {
+			port = "18080"
+		}
+		return net.JoinHostPort(terminalSSHTarget(), port)
+	}
+	return listen
 }
 
 func terminalTokenFromRequest(r *http.Request) string {
