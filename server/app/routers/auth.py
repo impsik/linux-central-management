@@ -221,10 +221,9 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     from ..services.rate_limit import FixedWindowRateLimiter
 
     global _LOGIN_LIMITER  # noqa: PLW0603
-    try:
-        _LOGIN_LIMITER
-    except NameError:
-        _LOGIN_LIMITER = FixedWindowRateLimiter(limit=10, window_seconds=60)
+    limit = max(1, int(getattr(settings, "login_rate_limit_per_minute", 50) or 50))
+    if "_LOGIN_LIMITER" not in globals() or getattr(_LOGIN_LIMITER, "limit", None) != limit:
+        _LOGIN_LIMITER = FixedWindowRateLimiter(limit=limit, window_seconds=60)
 
     ip = (getattr(request.client, "host", None) or "unknown").strip()
     rl = _LOGIN_LIMITER.check(f"login:{ip}:{username.lower()}")

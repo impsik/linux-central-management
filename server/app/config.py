@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     ui_session_idle_minutes: int = 60
     # Optional hard cap in hours (absolute timeout). 0 disables this extra cap.
     ui_session_max_hours: int = 24
+    # Single-process login brute-force guard.
+    login_rate_limit_per_minute: int = 50
     # If true, revoke all UI sessions on server startup (restart => forced relogin).
     ui_revoke_all_sessions_on_startup: bool = False
 

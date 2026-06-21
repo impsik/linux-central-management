@@ -134,3 +134,5 @@ async def require_agent_token_dep(request: Request, db: Session = Depends(get_db
     except HTTPException as exc:
         _log_agent_auth_failure(db, request, str(exc.detail or "invalid_agent_token"))
         raise
+    request.state.agent_auth_kind = "shared" if expected else "insecure_loopback"
+    request.state.agent_auth_agent_id = None

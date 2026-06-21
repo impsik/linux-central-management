@@ -400,7 +400,7 @@ def hosts_updates_report(
                 "os_id": r.os_id,
                 "os_version": r.os_version,
                 "kernel": r.kernel,
-                "agent_version": r.agent_version,
+                "agent_version": getattr(r, "agent_version", None),
                 "labels": r.labels or {},
                 "last_seen": r.last_seen,
                 "is_online": is_online,
