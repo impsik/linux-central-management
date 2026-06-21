@@ -64,9 +64,14 @@ out. Set it to `true` only as a temporary compatibility escape hatch for old
 agents that have not yet switched to per-agent runtime tokens.
 Deployed agents persist their per-agent runtime token at
 `/var/lib/fleet-agent/agent-token` with `0600` permissions.
-Keep `AGENT_SHARED_TOKEN_ALLOW_REBIND=true` during the first rollout where
-agents create that token file, then set it to `false` once all agents have
-checked in successfully with persisted per-agent tokens.
+Keep `AGENT_SHARED_TOKEN_ALLOW_REBIND=false` after agents have checked in
+successfully with persisted per-agent tokens. If a host loses its token file,
+an admin can reset that host for bootstrap registration or rotate a one-time
+replacement token through the host agent-token admin API.
+
+Updated agents send HMAC request signatures derived from their per-agent token.
+Set `AGENT_HMAC_REQUIRED=true` after all agents have this version to reject
+unsigned per-agent requests.
 
 ## 6) Auditability
 - Audit logging is enabled for auth, MFA, user lifecycle, and package actions.

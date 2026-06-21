@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"github.com/yourorg/fleet-agent/internal"
@@ -199,6 +201,7 @@ func main() {
 			req.Header.Set("X-Fleet-Agent-ID", cfg.AgentID)
 			if token := getToken(); token != "" {
 				req.Header.Set("X-Fleet-Agent-Token", token)
+				signAgentRequest(req, token, nil)
 			}
 			resp, err := client.Do(req)
 			if err == nil {
@@ -338,6 +341,30 @@ func pathDir(path string) string {
 	return path[:idx]
 }
 
+func signAgentRequest(req *http.Request, token string, body []byte) {
+	token = strings.TrimSpace(token)
+	if req == nil || token == "" {
+		return
+	}
+	tokenHash := sha256.Sum256([]byte(token))
+	bodyHash := sha256.Sum256(body)
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	target := req.URL.RequestURI()
+	msg := strings.Join(
+		[]string{
+			strings.ToUpper(req.Method),
+			target,
+			ts,
+			fmt.Sprintf("%x", bodyHash[:]),
+		},
+		"\n",
+	)
+	mac := hmac.New(sha256.New, []byte(fmt.Sprintf("%x", tokenHash[:])))
+	_, _ = mac.Write([]byte(msg))
+	req.Header.Set("X-Fleet-Agent-Timestamp", ts)
+	req.Header.Set("X-Fleet-Agent-Signature", fmt.Sprintf("%x", mac.Sum(nil)))
+}
+
 func mustPostJSON(client *http.Client, url string, payload any, token string) {
 	postJSON(client, url, payload, token)
 }
@@ -348,6 +375,7 @@ func postJSON(client *http.Client, url string, payload any, token string) ([]byt
 	req.Header.Set("Content-Type", "application/json")
 	if token != "" {
 		req.Header.Set("X-Fleet-Agent-Token", token)
+		signAgentRequest(req, token, b)
 	}
 	if agentID := agentIDForPayload(payload); agentID != "" {
 		req.Header.Set("X-Fleet-Agent-ID", agentID)
@@ -498,6 +526,7 @@ func pollNextJob(client *http.Client, serverURL, agentID string, registerAgent f
 	req.Header.Set("X-Fleet-Agent-ID", agentID)
 	if token != "" {
 		req.Header.Set("X-Fleet-Agent-Token", token)
+		signAgentRequest(req, token, nil)
 	}
 	resp, err := client.Do(req)
 	if err != nil {

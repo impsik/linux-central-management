@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -50,6 +51,22 @@ func TestAgentTokenFileReadWrite(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("token file mode = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestSignAgentRequestAddsHeaders(t *testing.T) {
+	req, err := http.NewRequest("POST", "http://example.test/agent/heartbeat?agent_id=srv-1", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("NewRequest returned error: %v", err)
+	}
+
+	signAgentRequest(req, "agent-token", nil)
+
+	if req.Header.Get("X-Fleet-Agent-Timestamp") == "" {
+		t.Fatal("missing X-Fleet-Agent-Timestamp")
+	}
+	if req.Header.Get("X-Fleet-Agent-Signature") == "" {
+		t.Fatal("missing X-Fleet-Agent-Signature")
 	}
 }
 

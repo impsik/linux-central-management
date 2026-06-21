@@ -119,7 +119,9 @@ Keep `.env` files private.
   `MFA_ENCRYPTION_KEY` secret.
 - Keep `AGENT_SHARED_TOKEN_ALLOW_RUNTIME=false` once updated agents are
   deployed; it should only be enabled temporarily for old-agent compatibility.
-- Keep `AGENT_SHARED_TOKEN_ALLOW_REBIND=true` for the first per-agent token
-  persistence rollout, then set it to `false` after agents check in.
+- Keep `AGENT_SHARED_TOKEN_ALLOW_REBIND=false` after agents check in with
+  persisted per-agent tokens.
+- Updated agents send HMAC request signatures. Set `AGENT_HMAC_REQUIRED=true`
+  after all managed agents have this version.
 - MFA is enabled for privileged users by default.
 - The browser terminal feature is powerful; enable it only where needed.

@@ -1,5 +1,8 @@
+import hashlib
+import hmac
 import importlib
 import sys
+import time
 
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
@@ -57,6 +60,18 @@ def _register_agent(client, agent_id='srv-001', shared_token='shared-secret-123'
     token = response.json().get('agent_token')
     assert token
     return token
+
+
+def _agent_hmac_headers(token: str, method: str, target: str, body: bytes = b''):
+    ts = str(int(time.time()))
+    token_hash = hashlib.sha256(token.encode('utf-8')).hexdigest()
+    body_hash = hashlib.sha256(body or b'').hexdigest()
+    msg = '\n'.join([method.upper(), target, ts, body_hash])
+    sig = hmac.new(token_hash.encode('utf-8'), msg.encode('utf-8'), hashlib.sha256).hexdigest()
+    return {
+        'X-Fleet-Agent-Timestamp': ts,
+        'X-Fleet-Agent-Signature': sig,
+    }
 
 
 def test_insecure_no_token_mode_is_loopback_only(monkeypatch):
@@ -175,6 +190,43 @@ def test_per_agent_token_requires_agent_id_header(monkeypatch):
             headers={'X-Fleet-Agent-Token': agent_token},
         )
         assert denied.status_code == 401, denied.text
+
+
+def test_per_agent_hmac_can_be_required(monkeypatch):
+    monkeypatch.setenv('AGENT_HMAC_REQUIRED', 'true')
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        agent_token = _register_agent(client, 'srv-hmac')
+        target = '/agent/heartbeat?agent_id=srv-hmac'
+
+        unsigned = client.post(
+            target,
+            headers={
+                'X-Fleet-Agent-ID': 'srv-hmac',
+                'X-Fleet-Agent-Token': agent_token,
+            },
+        )
+        assert unsigned.status_code == 401, unsigned.text
+
+        bad = client.post(
+            target,
+            headers={
+                'X-Fleet-Agent-ID': 'srv-hmac',
+                'X-Fleet-Agent-Token': agent_token,
+                'X-Fleet-Agent-Timestamp': str(int(time.time())),
+                'X-Fleet-Agent-Signature': 'bad',
+            },
+        )
+        assert bad.status_code == 401, bad.text
+
+        signed_headers = {
+            'X-Fleet-Agent-ID': 'srv-hmac',
+            'X-Fleet-Agent-Token': agent_token,
+            **_agent_hmac_headers(agent_token, 'POST', target),
+        }
+        ok = client.post(target, headers=signed_headers)
+        assert ok.status_code == 200, ok.text
 
 
 def test_shared_token_can_rebind_existing_agent_during_migration(monkeypatch):

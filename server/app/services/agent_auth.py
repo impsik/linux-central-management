@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import time
 
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
@@ -28,6 +29,46 @@ def _safe_equal(left: str | None, right: str | None) -> bool:
     if not left or not right:
         return False
     return hmac.compare_digest(str(left), str(right))
+
+
+def _request_target(request: Request) -> str:
+    path = str(getattr(getattr(request, "url", None), "path", "") or "")
+    query = str(getattr(getattr(request, "url", None), "query", "") or "")
+    return f"{path}?{query}" if query else path
+
+
+async def _verify_agent_hmac(request: Request, token_hash: str) -> tuple[bool, str | None]:
+    ts_raw = str(request.headers.get("X-Fleet-Agent-Timestamp") or "").strip()
+    sig = str(request.headers.get("X-Fleet-Agent-Signature") or "").strip().lower()
+    required = bool(getattr(settings, "agent_hmac_required", False))
+    if not ts_raw and not sig and not required:
+        return True, None
+    if not ts_raw or not sig:
+        return False, "missing_hmac_signature"
+
+    try:
+        ts = int(ts_raw)
+    except ValueError:
+        return False, "invalid_hmac_timestamp"
+
+    max_skew = int(getattr(settings, "agent_hmac_max_skew_seconds", 300) or 300)
+    if abs(int(time.time()) - ts) > max(1, max_skew):
+        return False, "stale_hmac_timestamp"
+
+    body = await request.body()
+    body_hash = hashlib.sha256(body or b"").hexdigest()
+    msg = "\n".join(
+        [
+            str(getattr(request, "method", "") or "").upper(),
+            _request_target(request),
+            ts_raw,
+            body_hash,
+        ]
+    )
+    expected = hmac.new(token_hash.encode("utf-8"), msg.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not _safe_equal(sig, expected):
+        return False, "invalid_hmac_signature"
+    return True, None
 
 
 def require_agent_token(request: Request) -> None:
@@ -62,7 +103,7 @@ def _log_agent_auth_failure(db: Session, request: Request, reason: str) -> None:
             pass
 
 
-def require_agent_token_dep(request: Request, db: Session = Depends(get_db)) -> None:
+async def require_agent_token_dep(request: Request, db: Session = Depends(get_db)) -> None:
     got = request.headers.get("X-Fleet-Agent-Token")
     expected = getattr(settings, "agent_shared_token", None)
     if expected and _safe_equal(got, expected):
@@ -79,8 +120,13 @@ def require_agent_token_dep(request: Request, db: Session = Depends(get_db)) -> 
         host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
         expected_hash = getattr(host, "agent_token_hash", None) if host else None
         if expected_hash and _safe_equal(hash_agent_token(got), expected_hash):
+            ok, reason = await _verify_agent_hmac(request, expected_hash)
+            if not ok:
+                _log_agent_auth_failure(db, request, reason or "invalid_hmac_signature")
+                raise HTTPException(401, "Invalid agent request signature")
             request.state.agent_auth_kind = "per_agent"
             request.state.agent_auth_agent_id = agent_id
+            request.state.agent_hmac_verified = bool(request.headers.get("X-Fleet-Agent-Signature"))
             return
 
     try:

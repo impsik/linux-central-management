@@ -52,7 +52,10 @@ services:
       # Temporary rollout escape hatch for old agents. Keep false after agents support per-agent tokens.
       AGENT_SHARED_TOKEN_ALLOW_RUNTIME: ${AGENT_SHARED_TOKEN_ALLOW_RUNTIME:-false}
       # Temporary migration path for agents that need to persist their first per-agent token.
-      AGENT_SHARED_TOKEN_ALLOW_REBIND: ${AGENT_SHARED_TOKEN_ALLOW_REBIND:-true}
+      AGENT_SHARED_TOKEN_ALLOW_REBIND: ${AGENT_SHARED_TOKEN_ALLOW_REBIND:-false}
+      # Optional stronger per-agent request signing. Enable after all agents have this version.
+      AGENT_HMAC_REQUIRED: ${AGENT_HMAC_REQUIRED:-false}
+      AGENT_HMAC_MAX_SKEW_SECONDS: ${AGENT_HMAC_MAX_SKEW_SECONDS:-300}
       # Keep false unless intentionally running loopback-only tests without an agent token.
       ALLOW_INSECURE_NO_AGENT_TOKEN: ${ALLOW_INSECURE_NO_AGENT_TOKEN:-false}
       # High-risk feature: only enable if agent has FLEET_TERMINAL_TOKEN set too
