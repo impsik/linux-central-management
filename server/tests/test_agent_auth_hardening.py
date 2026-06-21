@@ -74,6 +74,30 @@ def test_agent_routes_require_token_when_configured(monkeypatch):
         assert ok.status_code == 200, ok.text
         assert ok.json()['ok'] is True
 
+        db_mod = importlib.import_module('app.db')
+        models = importlib.import_module('app.models')
+        with db_mod.SessionLocal() as db:
+            failures = db.query(models.AuditEvent).filter_by(action='agent.auth.failed').all()
+            assert len(failures) >= 2
+
+
+def test_unknown_agent_attempt_is_audited(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+
+    with TestClient(app, client=('192.168.100.50', 12345)) as client:
+        missing = client.post(
+            '/agent/heartbeat?agent_id=missing-agent',
+            headers={'X-Fleet-Agent-Token': 'shared-secret-123'},
+        )
+        assert missing.status_code == 404, missing.text
+
+        db_mod = importlib.import_module('app.db')
+        models = importlib.import_module('app.models')
+        with db_mod.SessionLocal() as db:
+            event = db.query(models.AuditEvent).filter_by(action='agent.unknown').one()
+            assert event.target_id == 'missing-agent'
+            assert event.meta['agent_action'] == 'heartbeat'
+
 
 def test_each_agent_route_rejects_missing_token_when_configured(monkeypatch):
     app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')

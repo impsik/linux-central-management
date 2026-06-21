@@ -39,6 +39,8 @@ def test_job_flow_sqlite(monkeypatch):
     app = app_factory.create_app()
 
     from fastapi.testclient import TestClient
+    from app.db import SessionLocal
+    from app.models import AuditEvent
 
     with TestClient(app) as client:
         # Monkeypatch ansible runner to avoid calling external ansible-playbook
@@ -82,6 +84,11 @@ def test_job_flow_sqlite(monkeypatch):
             json={"agent_id": "srv-001", "job_id": job_id, "status": "running"},
         )
         assert bad_nonce.status_code == 403, bad_nonce.text
+        with SessionLocal() as db:
+            invalid_nonce_event = db.execute(
+                select(AuditEvent).where(AuditEvent.action == "agent.job_event.invalid_nonce")
+            ).scalar_one()
+            assert invalid_nonce_event.meta["agent_id"] == "srv-001"
 
         # Agent reports job running + success
         r = client.post(

@@ -15,6 +15,7 @@ from ..models import Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, H
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
 from ..services.agent_auth import require_agent_token, require_agent_token_dep
+from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs
 
@@ -45,6 +46,25 @@ def _with_job_nonce(payload: dict, run: JobRun) -> dict:
     out = dict(payload)
     out["job_nonce"] = _ensure_job_run_nonce(run)
     return out
+
+
+def _audit_unknown_agent(db: Session, request: Request, agent_id: str, action: str) -> None:
+    try:
+        log_event(
+            db,
+            action="agent.unknown",
+            actor=None,
+            request=request,
+            target_type="agent",
+            target_id=agent_id,
+            meta={"agent_action": action},
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 @router.post("/register")
@@ -110,6 +130,7 @@ def agent_heartbeat(
     require_agent_token(request)
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, agent_id, "heartbeat")
         raise HTTPException(404, "unknown agent")
 
     client_ip = get_client_ip(request)
@@ -129,6 +150,7 @@ def agent_inventory_packages(payload: PackagesInventory, request: Request, db: S
     require_agent_token(request)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, payload.agent_id, "inventory_packages")
         raise HTTPException(404, "unknown agent")
 
     collected_at = datetime.fromtimestamp(payload.collected_at_unix, tz=timezone.utc)
@@ -164,6 +186,7 @@ def agent_inventory_package_updates(payload: PackageUpdatesInventory, request: R
     require_agent_token(request)
     host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, payload.agent_id, "inventory_package_updates")
         raise HTTPException(404, "unknown agent")
 
     checked_at = datetime.fromtimestamp(payload.checked_at_unix, tz=timezone.utc)
@@ -214,6 +237,7 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
     require_agent_token(request)
     host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
     if not host:
+        _audit_unknown_agent(db, request, agent_id, "next_job")
         raise HTTPException(404, "unknown agent")
 
     host.last_seen = datetime.now(timezone.utc)
@@ -305,10 +329,27 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
         select(JobRun).where(JobRun.job_id == job.id, JobRun.agent_id == payload.agent_id)
     ).scalar_one_or_none()
     if not run:
+        _audit_unknown_agent(db, request, payload.agent_id, "job_event_unknown_run")
         raise HTTPException(404, "unknown job run")
 
     expected_nonce = (getattr(run, "job_nonce", None) or "").strip()
     if expected_nonce and payload.job_nonce != expected_nonce:
+        try:
+            log_event(
+                db,
+                action="agent.job_event.invalid_nonce",
+                actor=None,
+                request=request,
+                target_type="job_run",
+                target_id=payload.job_id,
+                meta={"agent_id": payload.agent_id, "status": payload.status},
+            )
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
         raise HTTPException(403, "invalid job nonce")
 
     now = datetime.now(timezone.utc)
