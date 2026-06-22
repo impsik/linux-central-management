@@ -65,6 +65,116 @@
     return raw || fallback;
   }
 
+  let attentionItemsCache = [];
+  let attentionPage = 1;
+
+  function getAttentionPageSize() {
+    const raw = String(document.getElementById('overview-attention-page-size')?.value || '10').trim().toLowerCase();
+    if (raw === 'all') return Infinity;
+    const n = Number(raw);
+    return n === 50 ? 50 : 10;
+  }
+
+  function setAttentionPage(page) {
+    const n = Number(page);
+    attentionPage = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+  }
+
+  function updateAttentionPagination(totalCount) {
+    const pageSize = getAttentionPageSize();
+    const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(totalCount / pageSize));
+    if (attentionPage > totalPages) attentionPage = totalPages;
+    if (attentionPage < 1) attentionPage = 1;
+
+    const prevBtn = document.getElementById('overview-attention-page-prev');
+    const nextBtn = document.getElementById('overview-attention-page-next');
+    const labelEl = document.getElementById('overview-attention-page-label');
+    if (prevBtn) prevBtn.disabled = attentionPage <= 1 || totalPages <= 1;
+    if (nextBtn) nextBtn.disabled = attentionPage >= totalPages || totalPages <= 1;
+    if (labelEl) labelEl.textContent = pageSize === Infinity ? 'All hosts' : `Page ${attentionPage} / ${totalPages}`;
+    return { pageSize, totalPages };
+  }
+
+  function wireAttentionIssueLinks(ctx, attentionEl) {
+    attentionEl.querySelectorAll('a.attention-issue').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        const aid = a.getAttribute('data-agent-id') || '';
+        const hostname = a.getAttribute('data-hostname') || aid;
+        const kind = a.getAttribute('data-kind') || '';
+        if (!aid) return;
+        ctx.selectHost(aid, hostname);
+        if (kind === 'disk') return ctx.openDiskModal(aid);
+        if (kind === 'cpu') {
+          ctx.showServerInfo();
+          document.getElementById('top-processes-body')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        if (kind === 'security_updates' || kind === 'updates') {
+          ctx.showPackages();
+          const updatesOnlyEl = document.getElementById('packages-updates-only');
+          if (updatesOnlyEl) {
+            updatesOnlyEl.checked = true;
+            ctx.setPackagesUpdatesOnly(true);
+            ctx.loadPackages(aid);
+          }
+          return;
+        }
+        if (kind === 'reboot_required') {
+          w.showToast('Host reports reboot required', 'info');
+          return ctx.showServerInfo();
+        }
+        if (kind === 'offline') return w.showToast('Host appears offline', 'error');
+        ctx.showServerInfo();
+      });
+    });
+  }
+
+  function renderAttentionRows(ctx) {
+    const attentionEl = document.getElementById('overview-attention');
+    if (!attentionEl) return;
+    const counterEl = document.getElementById('overview-attention-counter');
+    const rows = Array.isArray(attentionItemsCache) ? attentionItemsCache : [];
+    const totalCount = rows.length;
+    const { pageSize } = updateAttentionPagination(totalCount);
+
+    if (!totalCount) {
+      if (counterEl) counterEl.textContent = '0 / 0 hosts shown';
+      attentionEl.innerHTML = '<div class="status-ok">All clear. No high-priority issues detected.</div>';
+      return;
+    }
+
+    const pageRows = pageSize === Infinity
+      ? rows
+      : rows.slice((attentionPage - 1) * pageSize, attentionPage * pageSize);
+    const start = pageSize === Infinity ? 1 : ((attentionPage - 1) * pageSize) + 1;
+    const end = pageSize === Infinity ? totalCount : Math.min(totalCount, attentionPage * pageSize);
+    if (counterEl) counterEl.textContent = `${start}-${end} / ${totalCount} hosts with issues shown`;
+
+    const html = [];
+    html.push('<div style="overflow:auto;max-width:100%;"><table class="process-table" style="width:100%;table-layout:fixed;"><thead><tr><th style="width:24%;">Host</th><th style="width:46%;">Issues</th><th style="width:30%;">Last seen</th></tr></thead><tbody>');
+    for (const it of pageRows) {
+      const agentId = String(it.agent_id || '');
+      const hostName = String(it.hostname || it.agent_id || '');
+      const host = w.escapeHtml(hostName);
+      const last = it.last_seen ? w.escapeHtml(formatShortTimeSafe(ctx, it.last_seen)) : '–';
+      const issuesHtml = (it.issues || []).map(x => {
+        const kind = String(x.kind || '');
+        const msg = String(x.message || '');
+        return `<a href="#" class="attention-issue" data-agent-id="${w.escapeHtml(agentId)}" data-hostname="${w.escapeHtml(hostName)}" data-kind="${w.escapeHtml(kind)}" style="text-decoration:underline;">${w.escapeHtml(msg)}</a>`;
+      }).join(', ');
+      html.push(`<tr><td style="font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${host}</td><td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35;">${issuesHtml || ''}</td><td style="color:var(--muted-2);white-space:normal;overflow-wrap:anywhere;">${last}</td></tr>`);
+    }
+    html.push('</tbody></table></div>');
+    attentionEl.innerHTML = html.join('');
+    wireAttentionIssueLinks(ctx, attentionEl);
+  }
+
+  function moveAttentionPage(ctx, delta) {
+    setAttentionPage(attentionPage + Number(delta || 0));
+    renderAttentionRows(ctx);
+  }
+
   async function loadFleetOverview(ctx, forceLive, backgroundRefresh) {
     const isBackgroundRefresh = !!backgroundRefresh;
     const onlineEl = document.getElementById('kpi-online');
@@ -230,59 +340,9 @@
           if (!r2.ok) throw await buildHttpError(r2, 'attention failed');
           const a = await r2.json();
           const rows = a?.items || [];
-          if (!rows.length) {
-            attentionEl.innerHTML = '<div class="status-ok">All clear. No high-priority issues detected.</div>';
-          } else {
-            const html = [];
-            html.push('<div style="overflow:auto;max-width:100%;"><table class="process-table" style="width:100%;table-layout:fixed;"><thead><tr><th style="width:24%;">Host</th><th style="width:46%;">Issues</th><th style="width:30%;">Last seen</th></tr></thead><tbody>');
-            for (const it of rows) {
-              const agentId = String(it.agent_id || '');
-              const hostName = String(it.hostname || it.agent_id || '');
-              const host = w.escapeHtml(hostName);
-              const last = it.last_seen ? w.escapeHtml(formatShortTimeSafe(ctx, it.last_seen)) : '–';
-              const issuesHtml = (it.issues || []).map(x => {
-                const kind = String(x.kind || '');
-                const msg = String(x.message || '');
-                return `<a href="#" class="attention-issue" data-agent-id="${w.escapeHtml(agentId)}" data-hostname="${w.escapeHtml(hostName)}" data-kind="${w.escapeHtml(kind)}" style="text-decoration:underline;">${w.escapeHtml(msg)}</a>`;
-              }).join(', ');
-              html.push(`<tr><td style="font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${host}</td><td style="white-space:normal;overflow-wrap:anywhere;word-break:break-word;line-height:1.35;">${issuesHtml || ''}</td><td style="color:var(--muted-2);white-space:normal;overflow-wrap:anywhere;">${last}</td></tr>`);
-            }
-            html.push('</tbody></table></div>');
-            attentionEl.innerHTML = html.join('');
-
-            attentionEl.querySelectorAll('a.attention-issue').forEach(a => {
-              a.addEventListener('click', (e) => {
-                e.preventDefault();
-                const aid = a.getAttribute('data-agent-id') || '';
-                const hostname = a.getAttribute('data-hostname') || aid;
-                const kind = a.getAttribute('data-kind') || '';
-                if (!aid) return;
-                ctx.selectHost(aid, hostname);
-                if (kind === 'disk') return ctx.openDiskModal(aid);
-                if (kind === 'cpu') {
-                  ctx.showServerInfo();
-                  document.getElementById('top-processes-body')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                  return;
-                }
-                if (kind === 'security_updates' || kind === 'updates') {
-                  ctx.showPackages();
-                  const updatesOnlyEl = document.getElementById('packages-updates-only');
-                  if (updatesOnlyEl) {
-                    updatesOnlyEl.checked = true;
-                    ctx.setPackagesUpdatesOnly(true);
-                    ctx.loadPackages(aid);
-                  }
-                  return;
-                }
-                if (kind === 'reboot_required') {
-                  w.showToast('Host reports reboot required', 'info');
-                  return ctx.showServerInfo();
-                }
-                if (kind === 'offline') return w.showToast('Host appears offline', 'error');
-                ctx.showServerInfo();
-              });
-            });
-          }
+          attentionItemsCache = Array.isArray(rows) ? rows : [];
+          if (!isBackgroundRefresh) setAttentionPage(1);
+          renderAttentionRows(ctx);
         } catch (e2) {
           attentionEl.innerHTML = `<div class="error">Attention list error: ${w.escapeHtml(e2.message || String(e2))}</div>`;
         }
@@ -1343,6 +1403,18 @@
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
     const teamsBriefBtn = document.getElementById('teams-send-brief');
+    document.getElementById('overview-attention-page-size')?.addEventListener('change', () => {
+      setAttentionPage(1);
+      renderAttentionRows(ctx);
+    });
+    document.getElementById('overview-attention-page-prev')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      moveAttentionPage(ctx, -1);
+    });
+    document.getElementById('overview-attention-page-next')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      moveAttentionPage(ctx, 1);
+    });
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
     w.wireBusyClick(notificationsRefreshBtn, 'Refreshing…', async () => { await loadNotifications(ctx, true); });
     w.wireBusyClick(teamsTestBtn, 'Sending…', async () => {

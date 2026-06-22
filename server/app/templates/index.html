@@ -256,6 +256,20 @@
               <div class="admin-card" style="margin:0;height:100%;">
                 <div class="admin-card-title">Host Inventory</div>
                 <div class="admin-card-body">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem;">
+                    <span id="overview-attention-counter" role="status" aria-live="polite" style="color:var(--muted-2);font-size:0.85rem;">0 / 0 hosts shown</span>
+                    <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;">
+                      <label style="color:var(--muted-2);font-size:0.85rem;">Rows</label>
+                      <select id="overview-attention-page-size" class="host-search" style="width:auto;padding:0.3rem 0.45rem;">
+                        <option value="10" selected>10</option>
+                        <option value="50">50</option>
+                        <option value="all">All</option>
+                      </select>
+                      <button class="btn" id="overview-attention-page-prev" type="button" style="padding:0.2rem 0.45rem;">Prev</button>
+                      <span id="overview-attention-page-label" style="color:var(--muted-2);font-size:0.85rem;">Page 1 / 1</span>
+                      <button class="btn" id="overview-attention-page-next" type="button" style="padding:0.2rem 0.45rem;">Next</button>
+                    </div>
+                  </div>
                   <div id="overview-attention" class="status-muted">Loading…</div>
                 </div>
               </div>
