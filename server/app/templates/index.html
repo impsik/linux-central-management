@@ -557,6 +557,15 @@
         <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;flex-wrap:wrap;margin-top:0.75rem;">
           <span id="hosts-visible-counter" role="status" aria-live="polite" style="color:var(--muted-2);font-size:0.9rem;">0 / 0 hosts shown</span>
           <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+            <label style="color:var(--muted-2);font-size:0.9rem;">Rows</label>
+            <select id="hosts-page-size" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
+              <option value="10" selected>10</option>
+              <option value="50">50</option>
+              <option value="all">All</option>
+            </select>
+            <button class="btn" id="hosts-page-prev" type="button">Prev</button>
+            <span id="hosts-page-label" style="color:var(--muted-2);font-size:0.9rem;">Page 1 / 1</span>
+            <button class="btn" id="hosts-page-next" type="button">Next</button>
             <label style="color:var(--muted-2);font-size:0.9rem;">Sort</label>
           <select id="hosts-sort" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
             <option value="hostname" selected>Host</option>
@@ -3725,10 +3734,34 @@
       });
       document.getElementById('hosts-sort')?.addEventListener('change', loadHostsTable);
       document.getElementById('hosts-order')?.addEventListener('change', loadHostsTable);
+      document.getElementById('hosts-page-size')?.addEventListener('change', () => {
+        const mod = window.phase3Overview;
+        if (mod && typeof mod.setHostsTablePage === 'function') mod.setHostsTablePage(1);
+        if (mod && typeof mod.applyHostsTableFilters === 'function') mod.applyHostsTableFilters(getOverviewCtx());
+      });
+      document.getElementById('hosts-page-prev')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const mod = window.phase3Overview;
+        if (mod && typeof mod.moveHostsTablePage === 'function') mod.moveHostsTablePage(getOverviewCtx(), -1);
+      });
+      document.getElementById('hosts-page-next')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        const mod = window.phase3Overview;
+        if (mod && typeof mod.moveHostsTablePage === 'function') mod.moveHostsTablePage(getOverviewCtx(), 1);
+      });
 
       document.getElementById('hosts-select-all')?.addEventListener('change', (e) => {
         const checked = !!e.target.checked;
-        document.querySelectorAll('.hosts-row-select').forEach(cb => { cb.checked = checked; });
+        const selected = selectedAgentIds instanceof Set ? selectedAgentIds : new Set();
+        document.querySelectorAll('.hosts-row-select').forEach(cb => {
+          cb.checked = checked;
+          const aid = String(cb.getAttribute('data-agent-id') || '').trim();
+          if (!aid) return;
+          if (checked) selected.add(aid);
+          else selected.delete(aid);
+        });
+        selectedAgentIds = selected;
+        updateUpgradeControlsFn();
       });
 
       async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {

@@ -319,6 +319,39 @@
   }
 
   let hostsTableItemsCache = [];
+  let hostsTablePage = 1;
+
+  function getHostsTablePageSize() {
+    const raw = String(document.getElementById('hosts-page-size')?.value || '10').trim().toLowerCase();
+    if (raw === 'all') return Infinity;
+    const n = Number(raw);
+    return n === 50 ? 50 : 10;
+  }
+
+  function setHostsTablePage(page) {
+    const n = Number(page);
+    hostsTablePage = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1;
+  }
+
+  function updateHostsTablePagination(filteredCount) {
+    const pageSize = getHostsTablePageSize();
+    const totalPages = pageSize === Infinity ? 1 : Math.max(1, Math.ceil(filteredCount / pageSize));
+    if (hostsTablePage > totalPages) hostsTablePage = totalPages;
+    if (hostsTablePage < 1) hostsTablePage = 1;
+
+    const prevBtn = document.getElementById('hosts-page-prev');
+    const nextBtn = document.getElementById('hosts-page-next');
+    const labelEl = document.getElementById('hosts-page-label');
+    if (prevBtn) prevBtn.disabled = hostsTablePage <= 1 || totalPages <= 1;
+    if (nextBtn) nextBtn.disabled = hostsTablePage >= totalPages || totalPages <= 1;
+    if (labelEl) labelEl.textContent = pageSize === Infinity ? 'All hosts' : `Page ${hostsTablePage} / ${totalPages}`;
+    return { pageSize, totalPages };
+  }
+
+  function moveHostsTablePage(ctx, delta) {
+    setHostsTablePage(hostsTablePage + Number(delta || 0));
+    applyHostsTableFilters(ctx);
+  }
 
   function filterHostsTableItems(ctx, items) {
     let out = Array.isArray(items) ? items.slice() : [];
@@ -356,26 +389,41 @@
     if (!tbody) return;
     const counterEl = document.getElementById('hosts-visible-counter');
     const total = Array.isArray(hostsTableItemsCache) ? hostsTableItemsCache.length : 0;
-    if (!items.length) {
+    const filteredItems = Array.isArray(items) ? items : [];
+    const filteredCount = filteredItems.length;
+    const { pageSize } = updateHostsTablePagination(filteredCount);
+    const pageItems = pageSize === Infinity
+      ? filteredItems
+      : filteredItems.slice((hostsTablePage - 1) * pageSize, hostsTablePage * pageSize);
+
+    if (!filteredCount) {
       if (counterEl) counterEl.textContent = `0 / ${total} hosts shown · online 0 · offline 0`;
       w.setTableState(tbody, 10, 'empty', 'No hosts match current filters');
       if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
+      const selectAll = document.getElementById('hosts-select-all');
+      if (selectAll) {
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
+      }
       return;
     }
 
     if (counterEl) {
-      const onlineCount = items.filter((it) => !!it.is_online).length;
-      const offlineCount = Math.max(0, items.length - onlineCount);
-      const withUpdates = items.filter((it) => Number(it.security_updates || 0) > 0 || Number(it.updates || 0) > 0).length;
-      counterEl.textContent = `${items.length} / ${total} hosts shown · online ${onlineCount} · offline ${offlineCount} · pending updates ${withUpdates}`;
+      const onlineCount = pageItems.filter((it) => !!it.is_online).length;
+      const offlineCount = Math.max(0, pageItems.length - onlineCount);
+      const withUpdates = pageItems.filter((it) => Number(it.security_updates || 0) > 0 || Number(it.updates || 0) > 0).length;
+      const start = pageSize === Infinity ? 1 : ((hostsTablePage - 1) * pageSize) + 1;
+      const end = pageSize === Infinity ? filteredCount : Math.min(filteredCount, hostsTablePage * pageSize);
+      const rangeText = filteredCount ? `${start}-${end}` : '0';
+      counterEl.textContent = `${rangeText} / ${filteredCount} filtered hosts shown · ${total} total · online ${onlineCount} · offline ${offlineCount} · pending updates ${withUpdates}`;
     }
 
     if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') {
-      ctx.setLastRenderedAgentIds(items.map((it) => String(it.agent_id || '')).filter(Boolean));
+      ctx.setLastRenderedAgentIds(pageItems.map((it) => String(it.agent_id || '')).filter(Boolean));
     }
 
     tbody.innerHTML = '';
-    for (const it of items) {
+    for (const it of pageItems) {
       const hostName = it.hostname || it.agent_id;
       const owner = String(it?.labels?.owner || '').trim();
       const os = `${it.os_id || ''} ${it.os_version || ''}`.trim() || '–';
@@ -650,6 +698,15 @@
 
       tbody.appendChild(tr);
     }
+
+    const selectAll = document.getElementById('hosts-select-all');
+    if (selectAll) {
+      const selectedAgentIds = (ctx && ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || new Set();
+      const visibleIds = pageItems.map((it) => String(it.agent_id || '')).filter(Boolean);
+      const selectedVisible = visibleIds.filter((aid) => selectedAgentIds.has(aid)).length;
+      selectAll.checked = visibleIds.length > 0 && selectedVisible === visibleIds.length;
+      selectAll.indeterminate = selectedVisible > 0 && selectedVisible < visibleIds.length;
+    }
   }
 
   document.addEventListener('click', () => {
@@ -717,6 +774,7 @@
       const d = await r.json();
       const items = d?.items || [];
       hostsTableItemsCache = Array.isArray(items) ? items : [];
+      setHostsTablePage(1);
       const currentAgentId = (ctx && typeof ctx.getCurrentAgentId === 'function') ? (ctx.getCurrentAgentId() || '') : '';
       if (currentAgentId && !hostsTableItemsCache.some((it) => String(it?.agent_id || '') === String(currentAgentId))) {
         if (ctx && typeof ctx.clearCurrentHostSelection === 'function') ctx.clearCurrentHostSelection();
@@ -1484,5 +1542,5 @@
     } catch (_) { }
   }
 
-  w.phase3Overview = { loadFleetOverview, loadHostsTable, applyHostsTableFilters, loadPendingUpdatesReport, initFleetOverviewControls };
+  w.phase3Overview = { loadFleetOverview, loadHostsTable, applyHostsTableFilters, setHostsTablePage, moveHostsTablePage, loadPendingUpdatesReport, initFleetOverviewControls };
 })(window);
