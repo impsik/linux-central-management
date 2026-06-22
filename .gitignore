@@ -26,6 +26,10 @@ agent/fleet-agent
 *.log
 ansible_logs/
 
+# Load-test artifacts
+.loadtest-agent-tokens.json
+loadtest-*.csv
+
 # Node/frontend
 node_modules/
 
@@ -36,4 +40,3 @@ node_modules/
 
 # ansible inventory file
 ansible/inventory.yml
-
