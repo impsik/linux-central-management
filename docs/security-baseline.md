@@ -70,8 +70,9 @@ an admin can reset that host for bootstrap registration or rotate a one-time
 replacement token through the host agent-token admin API.
 
 Updated agents send HMAC request signatures derived from their per-agent token.
-Set `AGENT_HMAC_REQUIRED=true` after all agents have this version to reject
-unsigned per-agent requests.
+`AGENT_HMAC_REQUIRED=true` is the default for new deployments and rejects
+unsigned per-agent requests. Set it to `false` only as a temporary migration
+escape hatch for old agents.
 
 ## 6) Auditability
 - Audit logging is enabled for auth, MFA, user lifecycle, and package actions.

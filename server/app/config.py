@@ -31,9 +31,10 @@ class Settings(BaseSettings):
     # Temporary migration path for agents upgraded after per-agent tokens were introduced
     # but before their runtime token was persisted locally.
     agent_shared_token_allow_rebind: bool = False
-    # Optional stronger request authentication for per-agent tokens. Updated agents
-    # send HMAC signatures automatically; set true after rollout to require them.
-    agent_hmac_required: bool = False
+    # Require request authentication for per-agent tokens. Updated agents send
+    # HMAC signatures automatically; set false only as a temporary old-agent
+    # migration escape hatch.
+    agent_hmac_required: bool = True
     agent_hmac_max_skew_seconds: int = 300
     allow_insecure_no_agent_token: bool = False
 
