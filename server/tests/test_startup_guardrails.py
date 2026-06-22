@@ -85,3 +85,16 @@ def test_docker_compose_defaults_bind_server_to_network_interface():
 
     assert "SERVER_BIND_HOST: ${SERVER_BIND_HOST:-0.0.0.0}" in compose
     assert "--host ${SERVER_BIND_HOST:-0.0.0.0}" in dockerfile
+
+
+def test_new_deployments_require_agent_hmac_by_default():
+    root = Path(__file__).resolve().parents[2]
+    config = (root / "server/app/config.py").read_text(encoding="utf-8")
+    compose = (root / "deploy/docker/docker-compose.yml").read_text(encoding="utf-8")
+    env_example = (root / "deploy/docker/env.example").read_text(encoding="utf-8")
+    install_script = (root / "install.sh").read_text(encoding="utf-8")
+
+    assert "agent_hmac_required: bool = True" in config
+    assert "AGENT_HMAC_REQUIRED: ${AGENT_HMAC_REQUIRED:-true}" in compose
+    assert "AGENT_HMAC_REQUIRED=true" in env_example
+    assert 'set_env_value "$docker_env" "AGENT_HMAC_REQUIRED" "true"' in install_script

@@ -344,7 +344,7 @@ main() {
   set_env_value "$docker_env" "AGENT_SHARED_TOKEN" "$agent_token"
   set_env_value "$docker_env" "AGENT_SHARED_TOKEN_ALLOW_RUNTIME" "false"
   set_env_value "$docker_env" "AGENT_SHARED_TOKEN_ALLOW_REBIND" "false"
-  set_env_value "$docker_env" "AGENT_HMAC_REQUIRED" "false"
+  set_env_value "$docker_env" "AGENT_HMAC_REQUIRED" "true"
   set_env_value "$docker_env" "AGENT_HMAC_MAX_SKEW_SECONDS" "300"
   set_env_value "$docker_env" "MFA_ENCRYPTION_KEY" "$mfa_key"
   set_env_value "$docker_env" "UI_COOKIE_SECURE" "$ui_cookie_secure"

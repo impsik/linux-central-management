@@ -21,6 +21,7 @@ def _boot_app(
     token: str = '',
     allow_shared_runtime: bool = False,
     allow_shared_rebind: bool = True,
+    hmac_required: bool = False,
 ):
     monkeypatch.setenv('DATABASE_URL', 'sqlite+pysqlite:///:memory:')
     monkeypatch.setenv('SERVER_BIND_HOST', '127.0.0.1')
@@ -30,6 +31,7 @@ def _boot_app(
     monkeypatch.setenv('AGENT_SHARED_TOKEN', token)
     monkeypatch.setenv('AGENT_SHARED_TOKEN_ALLOW_RUNTIME', 'true' if allow_shared_runtime else 'false')
     monkeypatch.setenv('AGENT_SHARED_TOKEN_ALLOW_REBIND', 'true' if allow_shared_rebind else 'false')
+    monkeypatch.setenv('AGENT_HMAC_REQUIRED', 'true' if hmac_required else 'false')
     monkeypatch.setenv('DB_AUTO_CREATE_TABLES', 'true')
     monkeypatch.setenv('DB_REQUIRE_MIGRATIONS_UP_TO_DATE', 'false')
     monkeypatch.setenv('MFA_REQUIRE_FOR_PRIVILEGED', 'false')
@@ -193,8 +195,7 @@ def test_per_agent_token_requires_agent_id_header(monkeypatch):
 
 
 def test_per_agent_hmac_can_be_required(monkeypatch):
-    monkeypatch.setenv('AGENT_HMAC_REQUIRED', 'true')
-    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123')
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123', hmac_required=True)
 
     with TestClient(app, client=('192.168.100.50', 12345)) as client:
         agent_token = _register_agent(client, 'srv-hmac')
