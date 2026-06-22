@@ -120,6 +120,23 @@ def _enforce_non_local_security_guardrails() -> None:
         raise RuntimeError("Startup blocked by production guardrails: " + "; ".join(failures))
 
 
+def _default_content_security_policy(nonce: str) -> str:
+    return (
+        "default-src 'self'; "
+        "script-src 'self' 'nonce-" + str(nonce) + "'; "
+        "script-src-attr 'none'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' ws: wss:; "
+        "form-action 'self'; "
+        "frame-src 'none'; "
+        "manifest-src 'self'; "
+        "worker-src 'none'; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+    )
+
+
 def _startup() -> None:
     from .config import settings
 
@@ -546,16 +563,7 @@ def create_app() -> FastAPI:
             resp.headers.setdefault("Content-Security-Policy", str(csp))
         else:
             nonce = getattr(getattr(request, "state", None), "csp_nonce", "")
-            resp.headers.setdefault(
-                "Content-Security-Policy",
-                "default-src 'self'; "
-                "script-src 'self' 'nonce-" + str(nonce) + "'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data:; "
-                "font-src 'self' data:; "
-                "connect-src 'self' ws: wss:; "
-                "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
-            )
+            resp.headers.setdefault("Content-Security-Policy", _default_content_security_policy(str(nonce)))
 
         return resp
 

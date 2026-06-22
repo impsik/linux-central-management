@@ -88,3 +88,9 @@ break-glass operation.
 - Restrict UI access to VPN/LAN.
 - Restrict agent-to-server access to expected networks.
 - Consider firewall rules and rate limiting at the proxy.
+
+## 9) Browser security headers
+The default `Content-Security-Policy` uses per-response script nonces, blocks
+inline script attributes, disallows framing, blocks plugins/workers by default,
+and restricts form targets to the app origin. Inline styles remain allowed
+because the current server-rendered UI uses inline style attributes heavily.
