@@ -123,5 +123,7 @@ Keep `.env` files private.
   persisted per-agent tokens.
 - Updated agents send HMAC request signatures. Keep `AGENT_HMAC_REQUIRED=true`
   except during temporary old-agent migration.
+- Two-person approval is enabled by default for high-risk actions such as
+  `dist-upgrade` and `security-campaign`.
 - MFA is enabled for privileged users by default.
 - The browser terminal feature is powerful; enable it only where needed.

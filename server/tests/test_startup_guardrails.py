@@ -98,3 +98,17 @@ def test_new_deployments_require_agent_hmac_by_default():
     assert "AGENT_HMAC_REQUIRED: ${AGENT_HMAC_REQUIRED:-true}" in compose
     assert "AGENT_HMAC_REQUIRED=true" in env_example
     assert 'set_env_value "$docker_env" "AGENT_HMAC_REQUIRED" "true"' in install_script
+
+
+def test_new_deployments_enable_high_risk_approval_by_default():
+    root = Path(__file__).resolve().parents[2]
+    config = (root / "server/app/config.py").read_text(encoding="utf-8")
+    compose = (root / "deploy/docker/docker-compose.yml").read_text(encoding="utf-8")
+    env_example = (root / "deploy/docker/env.example").read_text(encoding="utf-8")
+    install_script = (root / "install.sh").read_text(encoding="utf-8")
+
+    assert "high_risk_approval_enabled: bool = True" in config
+    assert "HIGH_RISK_APPROVAL_ENABLED: ${HIGH_RISK_APPROVAL_ENABLED:-true}" in compose
+    assert "HIGH_RISK_APPROVAL_ENABLED=true" in env_example
+    assert 'set_env_value "$docker_env" "HIGH_RISK_APPROVAL_ENABLED" "true"' in install_script
+    assert 'set_env_value "$docker_env" "HIGH_RISK_APPROVAL_ACTIONS" "dist-upgrade,security-campaign"' in install_script

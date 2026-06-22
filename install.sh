@@ -353,6 +353,8 @@ main() {
   set_env_value "$docker_env" "DB_REQUIRE_MIGRATIONS_UP_TO_DATE" "true"
   set_env_value "$docker_env" "AGENT_TERMINAL_TOKEN" "$terminal_token"
   set_env_value "$docker_env" "AGENT_TERMINAL_SCHEME" "$agent_terminal_scheme"
+  set_env_value "$docker_env" "HIGH_RISK_APPROVAL_ENABLED" "true"
+  set_env_value "$docker_env" "HIGH_RISK_APPROVAL_ACTIONS" "dist-upgrade,security-campaign"
 
   final_agent_token="$(get_env_value "$docker_env" "AGENT_SHARED_TOKEN")"
   final_terminal_token="$(get_env_value "$docker_env" "AGENT_TERMINAL_TOKEN")"

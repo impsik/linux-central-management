@@ -118,7 +118,7 @@ class Settings(BaseSettings):
     maintenance_window_guarded_actions: str = "dist-upgrade,security-campaign"
 
     # Two-person approval for high-risk actions
-    high_risk_approval_enabled: bool = False
+    high_risk_approval_enabled: bool = True
     # CSV list, e.g. "dist-upgrade,security-campaign"
     high_risk_approval_actions: str = "dist-upgrade,security-campaign"
 
