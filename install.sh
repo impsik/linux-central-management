@@ -259,6 +259,8 @@ main() {
 
   docker_env="$APP_DIR/deploy/docker/.env"
   root_env="$APP_DIR/.env"
+  docker_env_existing="false"
+  [ -f "$docker_env" ] && docker_env_existing="true"
   [ -f "$docker_env" ] || cp "$APP_DIR/deploy/docker/env.example" "$docker_env"
   [ -f "$root_env" ] || cp "$APP_DIR/env.example" "$root_env"
 
@@ -317,6 +319,30 @@ main() {
     info "Preserved existing AGENT_TERMINAL_TOKEN"
   fi
 
+  current_postgres_password="$(get_env_value "$docker_env" "POSTGRES_PASSWORD")"
+  current_database_url="$(get_env_value "$docker_env" "DATABASE_URL")"
+  if [ "$docker_env_existing" = "true" ] && [ -z "$current_postgres_password" ] && [ -z "$current_database_url" ]; then
+    postgres_password="fleet"
+    warn "Existing Docker env has no POSTGRES_PASSWORD; preserving legacy database password. Rotate it before production/non-local use."
+  elif is_placeholder_value "$current_postgres_password"; then
+    postgres_password="$(random_hex 24)"
+  elif confirm "Postgres password already exists. Rotate it now? Existing database volume may need manual migration if rotated." "n"; then
+    postgres_password="$(random_hex 24)"
+  else
+    postgres_password="$current_postgres_password"
+    info "Preserved existing POSTGRES_PASSWORD"
+  fi
+
+  case "$current_database_url" in
+    ""|*fleet:fleet@db*|*change-me*@db*)
+      database_url="postgresql+psycopg://fleet:${postgres_password}@db:5432/fleet"
+      ;;
+    *)
+      database_url="$current_database_url"
+      info "Preserved existing DATABASE_URL"
+      ;;
+  esac
+
   deploy_hosts="$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")"
   ansible_user=""
   if [ -n "$deploy_hosts" ]; then
@@ -351,6 +377,8 @@ main() {
   set_env_value "$docker_env" "ALLOW_INSECURE_NO_AGENT_TOKEN" "$allow_insecure_no_agent_token"
   set_env_value "$docker_env" "DB_AUTO_CREATE_TABLES" "$db_auto_create_tables"
   set_env_value "$docker_env" "DB_REQUIRE_MIGRATIONS_UP_TO_DATE" "true"
+  set_env_value "$docker_env" "POSTGRES_PASSWORD" "$postgres_password"
+  set_env_value "$docker_env" "DATABASE_URL" "$database_url"
   set_env_value "$docker_env" "AGENT_TERMINAL_TOKEN" "$terminal_token"
   set_env_value "$docker_env" "AGENT_TERMINAL_SCHEME" "$agent_terminal_scheme"
   set_env_value "$docker_env" "HIGH_RISK_APPROVAL_ENABLED" "true"
