@@ -74,11 +74,17 @@ Updated agents send HMAC request signatures derived from their per-agent token.
 unsigned per-agent requests. Set it to `false` only as a temporary migration
 escape hatch for old agents.
 
-## 6) Auditability
+## 6) High-risk action approvals
+Two-person approval is enabled by default for high-risk actions:
+`dist-upgrade` and `security-campaign`. Keep `HIGH_RISK_APPROVAL_ENABLED=true`
+for production. Set it to `false` only for isolated labs or emergency
+break-glass operation.
+
+## 7) Auditability
 - Audit logging is enabled for auth, MFA, user lifecycle, and package actions.
 - Admin UI contains an audit viewer.
 
-## 7) Network controls (recommended)
+## 8) Network controls (recommended)
 - Restrict UI access to VPN/LAN.
 - Restrict agent-to-server access to expected networks.
 - Consider firewall rules and rate limiting at the proxy.

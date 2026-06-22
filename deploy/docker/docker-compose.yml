@@ -91,7 +91,7 @@ services:
       MAINTENANCE_WINDOW_GUARDED_ACTIONS: ${MAINTENANCE_WINDOW_GUARDED_ACTIONS:-dist-upgrade,security-campaign}
 
       # Two-person approval workflow for high-risk actions
-      HIGH_RISK_APPROVAL_ENABLED: ${HIGH_RISK_APPROVAL_ENABLED:-false}
+      HIGH_RISK_APPROVAL_ENABLED: ${HIGH_RISK_APPROVAL_ENABLED:-true}
       HIGH_RISK_APPROVAL_ACTIONS: ${HIGH_RISK_APPROVAL_ACTIONS:-dist-upgrade,security-campaign}
 
     depends_on:
