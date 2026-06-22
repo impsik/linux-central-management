@@ -58,6 +58,13 @@ Secrets to protect:
 - `AGENT_SHARED_TOKEN` (bootstrap registration only by default)
 - `AGENT_TERMINAL_TOKEN`
 - `MFA_ENCRYPTION_KEY`
+- `POSTGRES_PASSWORD`
+
+Docker Compose requires `POSTGRES_PASSWORD`; the installer generates it for new
+deployments and writes a matching `DATABASE_URL`. Existing legacy deployments
+without this setting preserve the old database password to avoid breaking an
+initialized volume, but non-local startup guardrails reject a missing or
+placeholder database URL password.
 
 Keep `AGENT_SHARED_TOKEN_ALLOW_RUNTIME=false` after updated agents are rolled
 out. Set it to `true` only as a temporary compatibility escape hatch for old
