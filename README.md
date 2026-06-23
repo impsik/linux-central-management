@@ -81,6 +81,7 @@ http://<admin-node-ip>:8000/
 ```
 Log in as "admin" and enable LDAP login if needed, under Settings
 ![Screenshot](docs/screenshots/AD-settings.png)
+
 For testing i used: https://www.forumsys.com/2022/05/10/online-ldap-test-server/
 
 Use the bootstrap admin username and password shown by the installer.
