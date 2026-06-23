@@ -78,6 +78,9 @@ After install, open:
 
 ```text
 http://<admin-node-ip>:8000/
+
+Log in as "admin" and enable LDAP login if needed, unser Settings
+![Screenshot](docs/screenshots/AD-settings.png)
 ```
 
 Use the bootstrap admin username and password shown by the installer.
