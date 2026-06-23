@@ -43,6 +43,10 @@ sudo dnf config-manager --add-repo \
   https://download.docker.com/linux/rhel/docker-ce.repo
 
 sudo dnf install -y git curl ca-certificates python3 openssl ansible-core golang docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo service docker start
+sudo systemctl enable docker
+sudo usermod -aG docker $USER
+sudo newgrp docker
 ```
 Make sure you have sudo rights on target server(s)!
 On admin server (if needed):
