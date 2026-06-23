@@ -236,6 +236,7 @@ docker_compose() {
 
 sync_postgres_password() {
   password="$1"
+  escaped_password="$(printf '%s' "$password" | sed "s/'/''/g")"
   info "Synchronizing bundled Postgres role password"
   i=0
   while [ "$i" -lt 60 ]; do
@@ -251,7 +252,7 @@ sync_postgres_password() {
     return 1
   fi
 
-  if docker_compose exec -T db psql -v ON_ERROR_STOP=1 -U fleet -d fleet -v new_password="$password" -c "ALTER USER fleet WITH PASSWORD :'new_password';" >/dev/null; then
+  if printf "ALTER USER fleet WITH PASSWORD '%s';\n" "$escaped_password" | docker_compose exec -T db psql -v ON_ERROR_STOP=1 -U fleet -d fleet >/dev/null; then
     info "Bundled Postgres role password is in sync"
   else
     warn "Could not synchronize bundled Postgres password. Check: cd $APP_DIR/deploy/docker && docker compose logs db"

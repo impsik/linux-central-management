@@ -143,4 +143,7 @@ def test_new_deployments_require_generated_postgres_password():
     assert 'set_env_value "$docker_env" "POSTGRES_PASSWORD" "$postgres_password"' in install_script
     assert 'set_env_value "$docker_env" "DATABASE_URL" "$database_url"' in install_script
     assert 'sync_postgres_password "$postgres_password"' in install_script
-    assert "ALTER USER fleet WITH PASSWORD :'new_password';" in install_script
+    assert 'ALTER USER fleet WITH PASSWORD' in install_script
+    assert 'escaped_password=' in install_script
+    assert ":'new_password'" not in install_script
+    assert '-c "ALTER USER fleet WITH PASSWORD' not in install_script
