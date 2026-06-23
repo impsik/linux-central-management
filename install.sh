@@ -234,6 +234,31 @@ docker_compose() {
   fi
 }
 
+sync_postgres_password() {
+  password="$1"
+  info "Synchronizing bundled Postgres role password"
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if docker_compose exec -T db pg_isready -U fleet -d fleet >/dev/null 2>&1; then
+      break
+    fi
+    i=$((i + 1))
+    sleep 2
+  done
+
+  if [ "$i" -ge 60 ]; then
+    warn "Bundled Postgres did not become ready; skipping password sync"
+    return 1
+  fi
+
+  if docker_compose exec -T db psql -v ON_ERROR_STOP=1 -U fleet -d fleet -v new_password="$password" -c "ALTER USER fleet WITH PASSWORD :'new_password';" >/dev/null; then
+    info "Bundled Postgres role password is in sync"
+  else
+    warn "Could not synchronize bundled Postgres password. Check: cd $APP_DIR/deploy/docker && docker compose logs db"
+    return 1
+  fi
+}
+
 wait_for_health() {
   url="$1"
   info "Waiting for $url/health"
@@ -396,7 +421,12 @@ main() {
   write_inventory "$deploy_hosts" "$ansible_user"
 
   info "Starting server with Docker Compose"
-  (cd "$APP_DIR/deploy/docker" && docker_compose up -d --build --remove-orphans)
+  (
+    cd "$APP_DIR/deploy/docker"
+    docker_compose up -d db
+    sync_postgres_password "$postgres_password"
+    docker_compose up -d --build --remove-orphans
+  )
   wait_for_health "$server_url"
 
   if [ -n "$deploy_hosts" ]; then
