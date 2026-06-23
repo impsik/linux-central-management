@@ -89,6 +89,7 @@
 
       <div class="host-actions" id="host-actions" style="display: none; padding-top: 0; margin-top: -0.35rem; margin-bottom: 0.75rem;">
         <button class="btn btn-primary host-action-btn" id="host-action-terminal" type="button">Console</button>
+        <span id="host-terminal-policy" class="status-muted" style="align-self:center;font-size:0.82rem;"></span>
         <button class="btn btn-primary host-action-btn" id="host-action-users" type="button">Accounts</button>
         <button class="btn btn-primary host-action-btn" id="host-action-services" type="button">Services</button>
         <button class="btn btn-primary host-action-btn" id="host-action-firewall" type="button">Firewall</button>
@@ -2069,6 +2070,9 @@
         }
         if (hostActionsMod && typeof hostActionsMod.populateDiskCleanupPanel === 'function') {
           hostActionsMod.populateDiskCleanupPanel(hostObj || { agent_id: agentId, hostname });
+        }
+        if (hostActionsMod && typeof hostActionsMod.updateTerminalAccessIndicator === 'function') {
+          hostActionsMod.updateTerminalAccessIndicator(hostObj || { agent_id: agentId, hostname }, currentPermissions);
         }
       } catch (_) { }
 
@@ -4880,6 +4884,10 @@
 
               const headerNameEl = document.getElementById('server-info-hostname');
               if (headerNameEl && updatedHost.hostname) headerNameEl.textContent = String(updatedHost.hostname);
+              const hostActionsMod = window.phase3HostActions;
+              if (hostActionsMod && typeof hostActionsMod.updateTerminalAccessIndicator === 'function') {
+                hostActionsMod.updateTerminalAccessIndicator(updatedHost, currentPermissions);
+              }
             }
 
             rebuildLabelFilterOptions(allHosts);

@@ -94,6 +94,54 @@
     }
   }
 
+  function terminalAccessPolicy(host) {
+    const labels = (host && typeof host.labels === 'object' && host.labels) ? host.labels : {};
+    const raw = String(labels.terminal_access || 'all').trim().toLowerCase();
+    const value = raw === 'disabled' ? 'none' : (raw || 'all');
+    if (value === 'admin') {
+      return {
+        value,
+        label: 'Terminal: admins only',
+        title: 'Host label terminal_access=admin allows admins only.',
+        operatorBlocked: true,
+      };
+    }
+    if (value === 'none') {
+      return {
+        value,
+        label: 'Terminal: restricted',
+        title: 'Host label terminal_access=none blocks operator console access.',
+        operatorBlocked: true,
+      };
+    }
+    return {
+      value: 'all',
+      label: 'Terminal: operators allowed',
+      title: 'Default terminal policy: admins and operators can open console.',
+      operatorBlocked: false,
+    };
+  }
+
+  function updateTerminalAccessIndicator(host, permissions) {
+    const policy = terminalAccessPolicy(host);
+    const badge = document.getElementById('host-terminal-policy');
+    const button = document.getElementById('host-action-terminal');
+    const role = String((permissions && permissions.role) || '').toLowerCase();
+    const canUseTerminal = !permissions || permissions.can_use_terminal !== false;
+    const blockedForCurrentUser = !canUseTerminal || (role === 'operator' && policy.operatorBlocked);
+
+    if (badge) {
+      badge.textContent = policy.label;
+      badge.title = policy.title;
+    }
+    if (button) {
+      button.disabled = !!blockedForCurrentUser;
+      button.title = blockedForCurrentUser ? policy.title : '';
+      button.setAttribute('aria-disabled', blockedForCurrentUser ? 'true' : 'false');
+    }
+    return policy;
+  }
+
   function formatDiskCleanupResult(data) {
     const lines = [];
     const dryRun = !!data?.dry_run;
@@ -286,6 +334,8 @@
     initHostMetadataEditor: initHostMetadataEditor,
     populateHostMetadataEditor: populateHostMetadataEditor,
     populateDiskCleanupPanel: populateDiskCleanupPanel,
+    terminalAccessPolicy: terminalAccessPolicy,
+    updateTerminalAccessIndicator: updateTerminalAccessIndicator,
     initDiskCleanupControls: initDiskCleanupControls,
     initCommonModalDismissHandlers: initCommonModalDismissHandlers,
   };
