@@ -1,5 +1,13 @@
 import importlib
+import asyncio
+import sys
 from datetime import datetime, timedelta, timezone
+
+
+def _reload_app_modules():
+    for name in list(sys.modules.keys()):
+        if name == "app" or name.startswith("app."):
+            sys.modules.pop(name, None)
 
 
 def test_admin_sees_all_cronjobs_and_regular_user_sees_only_own(monkeypatch):
@@ -12,6 +20,7 @@ def test_admin_sees_all_cronjobs_and_regular_user_sees_only_own(monkeypatch):
     monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
     monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    _reload_app_modules()
 
     app_factory = importlib.import_module("app.app_factory")
     app = app_factory.create_app()
@@ -120,3 +129,56 @@ def test_admin_sees_all_cronjobs_and_regular_user_sees_only_own(monkeypatch):
         owners = {it["id"]: it.get("owner_username") for it in admin_items}
         assert owners[admin_cron_id] == "admin"
         assert owners[user_cron_id] == "op1"
+
+
+def test_security_campaign_cronjob_dispatch_creates_patch_campaign(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    _reload_app_modules()
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app):
+        db_mod = importlib.import_module("app.db")
+        models = importlib.import_module("app.models")
+        cronjobs = importlib.import_module("app.services.cronjobs")
+
+        with db_mod.SessionLocal() as db:
+            user = models.AppUser(username="cron-admin", password_hash="x", role="admin")
+            db.add(user)
+            db.flush()
+            db.add(models.Host(agent_id="srv-sec", hostname="srv-sec", labels={}))
+            db.add(
+                models.CronJob(
+                    user_id=user.id,
+                    name="security now",
+                    run_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+                    action="security-campaign",
+                    payload={},
+                    selector={"agent_ids": ["srv-sec"]},
+                    status="scheduled",
+                )
+            )
+            db.commit()
+
+        asyncio.run(cronjobs._run_tick())
+
+        with db_mod.SessionLocal() as db:
+            campaign = db.query(models.PatchCampaign).one()
+            assert campaign.selector == {"labels": None, "agent_ids": ["srv-sec"]}
+            assert campaign.created_by == "cron"
+            cron = db.query(models.CronJob).filter_by(name="security now").one()
+            assert cron.status == "done"
+            run = db.query(models.CronJobRun).one()
+            assert run.status == "success"
+            assert run.job_key == f"patch-campaign:{campaign.campaign_key}"

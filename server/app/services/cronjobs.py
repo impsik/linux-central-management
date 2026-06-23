@@ -135,7 +135,9 @@ async def _dispatch_one(db: Session, cj: CronJob) -> None:
                 campaign = create_patch_campaign(
                     db=db,
                     kind="security-updates",
-                    selector={"agent_ids": agent_ids},
+                    labels=None,
+                    agent_ids=agent_ids,
+                    rings=None,
                     window_start=window_start,
                     window_end=window_end,
                     concurrency=5,

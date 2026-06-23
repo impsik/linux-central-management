@@ -1,11 +1,13 @@
 import hashlib
 import hmac
 import importlib
+import asyncio
 import sys
 import time
 
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from starlette.requests import ClientDisconnect
 
 
 def _reload_app_modules():
@@ -228,6 +230,31 @@ def test_per_agent_hmac_can_be_required(monkeypatch):
         }
         ok = client.post(target, headers=signed_headers)
         assert ok.status_code == 200, ok.text
+
+
+def test_agent_hmac_body_disconnect_is_auth_failure(monkeypatch):
+    app = _boot_app(monkeypatch, insecure_no_token=False, token='shared-secret-123', hmac_required=True)
+    del app
+    agent_auth = importlib.import_module('app.services.agent_auth')
+    token = 'per-agent-token'
+    target = '/agent/heartbeat?agent_id=srv-disconnect'
+
+    class _URL:
+        path = '/agent/heartbeat'
+        query = 'agent_id=srv-disconnect'
+
+    class _Request:
+        method = 'POST'
+        url = _URL()
+        headers = _agent_hmac_headers(token, 'POST', target)
+
+        async def body(self):
+            raise ClientDisconnect()
+
+    ok, reason = asyncio.run(agent_auth._verify_agent_hmac(_Request(), agent_auth.hash_agent_token(token)))
+
+    assert ok is False
+    assert reason == 'client_disconnected'
 
 
 def test_shared_token_can_rebind_existing_agent_during_migration(monkeypatch):

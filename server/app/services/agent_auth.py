@@ -7,6 +7,7 @@ import time
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.requests import ClientDisconnect
 
 from ..config import settings
 from ..db import get_db
@@ -55,7 +56,10 @@ async def _verify_agent_hmac(request: Request, token_hash: str) -> tuple[bool, s
     if abs(int(time.time()) - ts) > max(1, max_skew):
         return False, "stale_hmac_timestamp"
 
-    body = await request.body()
+    try:
+        body = await request.body()
+    except ClientDisconnect:
+        return False, "client_disconnected"
     body_hash = hashlib.sha256(body or b"").hexdigest()
     msg = "\n".join(
         [
