@@ -84,8 +84,11 @@ Log in as "admin" and enable LDAP login if needed, under Settings
 
 For testing i used: https://www.forumsys.com/2022/05/10/online-ldap-test-server/
 
-Use the bootstrap admin username and password shown by the installer.
+Use the bootstrap admin username and password is in linux-central-management/deploy/docker/.env
 
+```bash
+grep "BOOTSTRAP_PASSWORD" linux-central-management/deploy/docker/.env
+```
 ## Add More Hosts Later
 
 On the admin node:
