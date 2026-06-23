@@ -84,6 +84,8 @@ def _is_non_local_deployment() -> bool:
 
 
 def _enforce_non_local_security_guardrails() -> None:
+    from urllib.parse import urlparse
+
     from .config import settings
 
     if not _is_non_local_deployment():
@@ -107,6 +109,14 @@ def _enforce_non_local_security_guardrails() -> None:
 
     if bool(getattr(settings, "db_auto_create_tables", True)):
         failures.append("DB_AUTO_CREATE_TABLES must be false in non-local deployments")
+
+    try:
+        parsed_db = urlparse(str(getattr(settings, "database_url", "") or ""))
+        db_password = parsed_db.password
+    except Exception:
+        db_password = None
+    if _is_placeholder_secret(db_password):
+        failures.append("DATABASE_URL password is missing or placeholder")
 
     terminal_token = getattr(settings, "agent_terminal_token", None)
     terminal_scheme = str(getattr(settings, "agent_terminal_scheme", "ws") or "ws").lower()

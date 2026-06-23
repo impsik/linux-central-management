@@ -234,6 +234,31 @@ docker_compose() {
   fi
 }
 
+sync_postgres_password() {
+  password="$1"
+  info "Synchronizing bundled Postgres role password"
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if docker_compose exec -T db pg_isready -U fleet -d fleet >/dev/null 2>&1; then
+      break
+    fi
+    i=$((i + 1))
+    sleep 2
+  done
+
+  if [ "$i" -ge 60 ]; then
+    warn "Bundled Postgres did not become ready; skipping password sync"
+    return 1
+  fi
+
+  if docker_compose exec -T db psql -v ON_ERROR_STOP=1 -U fleet -d fleet -v new_password="$password" -c "ALTER USER fleet WITH PASSWORD :'new_password';" >/dev/null; then
+    info "Bundled Postgres role password is in sync"
+  else
+    warn "Could not synchronize bundled Postgres password. Check: cd $APP_DIR/deploy/docker && docker compose logs db"
+    return 1
+  fi
+}
+
 wait_for_health() {
   url="$1"
   info "Waiting for $url/health"
@@ -259,6 +284,8 @@ main() {
 
   docker_env="$APP_DIR/deploy/docker/.env"
   root_env="$APP_DIR/.env"
+  docker_env_existing="false"
+  [ -f "$docker_env" ] && docker_env_existing="true"
   [ -f "$docker_env" ] || cp "$APP_DIR/deploy/docker/env.example" "$docker_env"
   [ -f "$root_env" ] || cp "$APP_DIR/env.example" "$root_env"
 
@@ -317,6 +344,30 @@ main() {
     info "Preserved existing AGENT_TERMINAL_TOKEN"
   fi
 
+  current_postgres_password="$(get_env_value "$docker_env" "POSTGRES_PASSWORD")"
+  current_database_url="$(get_env_value "$docker_env" "DATABASE_URL")"
+  if [ "$docker_env_existing" = "true" ] && [ -z "$current_postgres_password" ] && [ -z "$current_database_url" ]; then
+    postgres_password="fleet"
+    warn "Existing Docker env has no POSTGRES_PASSWORD; preserving legacy database password. Rotate it before production/non-local use."
+  elif is_placeholder_value "$current_postgres_password"; then
+    postgres_password="$(random_hex 24)"
+  elif confirm "Postgres password already exists. Rotate it now? Existing database volume may need manual migration if rotated." "n"; then
+    postgres_password="$(random_hex 24)"
+  else
+    postgres_password="$current_postgres_password"
+    info "Preserved existing POSTGRES_PASSWORD"
+  fi
+
+  case "$current_database_url" in
+    ""|*fleet:fleet@db*|*change-me*@db*)
+      database_url="postgresql+psycopg://fleet:${postgres_password}@db:5432/fleet"
+      ;;
+    *)
+      database_url="$current_database_url"
+      info "Preserved existing DATABASE_URL"
+      ;;
+  esac
+
   deploy_hosts="$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")"
   ansible_user=""
   if [ -n "$deploy_hosts" ]; then
@@ -351,6 +402,8 @@ main() {
   set_env_value "$docker_env" "ALLOW_INSECURE_NO_AGENT_TOKEN" "$allow_insecure_no_agent_token"
   set_env_value "$docker_env" "DB_AUTO_CREATE_TABLES" "$db_auto_create_tables"
   set_env_value "$docker_env" "DB_REQUIRE_MIGRATIONS_UP_TO_DATE" "true"
+  set_env_value "$docker_env" "POSTGRES_PASSWORD" "$postgres_password"
+  set_env_value "$docker_env" "DATABASE_URL" "$database_url"
   set_env_value "$docker_env" "AGENT_TERMINAL_TOKEN" "$terminal_token"
   set_env_value "$docker_env" "AGENT_TERMINAL_SCHEME" "$agent_terminal_scheme"
   set_env_value "$docker_env" "HIGH_RISK_APPROVAL_ENABLED" "true"
@@ -368,7 +421,12 @@ main() {
   write_inventory "$deploy_hosts" "$ansible_user"
 
   info "Starting server with Docker Compose"
-  (cd "$APP_DIR/deploy/docker" && docker_compose up -d --build --remove-orphans)
+  (
+    cd "$APP_DIR/deploy/docker"
+    docker_compose up -d db
+    sync_postgres_password "$postgres_password"
+    docker_compose up -d --build --remove-orphans
+  )
   wait_for_health "$server_url"
 
   if [ -n "$deploy_hosts" ]; then
