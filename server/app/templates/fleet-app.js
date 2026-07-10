@@ -792,9 +792,9 @@
       setHostActionActive('terminal');
       // Stop metrics updates when leaving server info view
       stopMetricsPolling(metricsLifecycleState);
-      connect(currentAgentId);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('terminal-tab').classList.add('active');
+      connect(currentAgentId);
       window.requestAnimationFrame(() => {
         fitTerminalViewport();
         setTimeout(fitTerminalViewport, 60);

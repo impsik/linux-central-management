@@ -44,4 +44,16 @@ describe('terminal input transport', () => {
     expect(main).toContain("if (typeof term.reset === 'function') term.reset();");
     expect(phase3).toContain("if (typeof term.reset === 'function') term.reset();");
   });
+
+  it('shows the terminal tab before connecting xterm', () => {
+    const src = fs.readFileSync(appPath, 'utf8');
+    const start = src.indexOf('function showTerminal()');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const section = src.slice(start, start + 520);
+
+    const activateIdx = section.indexOf("document.getElementById('terminal-tab').classList.add('active');");
+    const connectIdx = section.indexOf('connect(currentAgentId);');
+    expect(activateIdx).toBeGreaterThanOrEqual(0);
+    expect(connectIdx).toBeGreaterThan(activateIdx);
+  });
 });
