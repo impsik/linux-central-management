@@ -116,7 +116,7 @@
     }
     return {
       value: 'all',
-      label: 'Terminal: operators allowed',
+      label: 'Terminal: admins + operators allowed',
       title: 'Default terminal policy: admins and operators can open console.',
       operatorBlocked: false,
     };
