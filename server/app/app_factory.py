@@ -207,6 +207,16 @@ def _startup() -> None:
                 job_run_cols = {c.get("name") for c in insp.get_columns("job_runs")}
             except Exception:
                 job_run_cols = set()
+            cve_definition_cols = set()
+            try:
+                cve_definition_cols = {c.get("name") for c in insp.get_columns("cve_definitions")}
+            except Exception:
+                cve_definition_cols = set()
+            cve_package_cols = set()
+            try:
+                cve_package_cols = {c.get("name") for c in insp.get_columns("cve_packages")}
+            except Exception:
+                cve_package_cols = set()
 
             dialect = engine.dialect.name
             stmts: list[str] = []
@@ -248,12 +258,16 @@ def _startup() -> None:
                 stmts.append("ALTER TABLE hosts ADD COLUMN agent_version TEXT")
             if "agent_token_hash" not in host_cols:
                 stmts.append("ALTER TABLE hosts ADD COLUMN agent_token_hash TEXT")
+            if cve_definition_cols and "severity" not in cve_definition_cols:
+                stmts.append("ALTER TABLE cve_definitions ADD COLUMN severity TEXT")
+            if cve_package_cols and "severity" not in cve_package_cols:
+                stmts.append("ALTER TABLE cve_packages ADD COLUMN severity TEXT")
 
             if stmts:
                 with engine.begin() as conn:
                     for sql in stmts:
                         conn.execute(text(sql))
-                logger.warning("Applied legacy MFA schema backfill (%s statements)", len(stmts))
+                logger.warning("Applied legacy schema backfill (%s statements)", len(stmts))
             if not has_app_auth_settings:
                 Base.metadata.tables["app_auth_settings"].create(bind=engine, checkfirst=True)
         except Exception:

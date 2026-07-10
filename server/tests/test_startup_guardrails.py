@@ -131,6 +131,16 @@ def test_new_deployments_enable_high_risk_approval_by_default():
     assert 'set_env_value "$docker_env" "HIGH_RISK_APPROVAL_ACTIONS" "dist-upgrade,security-campaign"' in install_script
 
 
+def test_legacy_schema_backfill_covers_runtime_cve_severity_columns():
+    root = Path(__file__).resolve().parents[2]
+    app_factory = (root / "server/app/app_factory.py").read_text(encoding="utf-8")
+
+    assert 'insp.get_columns("cve_definitions")' in app_factory
+    assert 'ALTER TABLE cve_definitions ADD COLUMN severity TEXT' in app_factory
+    assert 'insp.get_columns("cve_packages")' in app_factory
+    assert 'ALTER TABLE cve_packages ADD COLUMN severity TEXT' in app_factory
+
+
 def test_new_deployments_require_generated_postgres_password():
     root = Path(__file__).resolve().parents[2]
     compose = (root / "deploy/docker/docker-compose.yml").read_text(encoding="utf-8")
