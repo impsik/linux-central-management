@@ -1,58 +1,8 @@
+@import url('/assets/fleet-theme-tokens.css?v=__ASSET_VERSION__');
+
 /* --------------------------------------------------------------------------
    Linux Central dashboard redesign (layout + visual polish, no JS hook changes)
 --------------------------------------------------------------------------- */
-
-:root {
-  --app-surface: #f4f7fb;
-  --app-sidebar: #111827;
-  --app-sidebar-border: #1f2937;
-  --app-sidebar-text: #e5e7eb;
-  --app-sidebar-muted: #a1a1aa;
-  --app-sidebar-active: #2a2a2d;
-  --app-shell-border: #d9e3f0;
-  --app-shell-shadow: 0 14px 32px rgba(8, 15, 31, 0.08);
-  --quality-bar-start: #2563eb;
-  --quality-bar-end: #0ea5e9;
-  --chart-grid: #cbd5e1;
-  --chart-line: #0f766e;
-  --chart-point: #0f766e;
-  --disk-usage-track: rgba(148, 163, 184, 0.24);
-  --sudo-mode-label-text: var(--text);
-  --nav-indicator-error: #dc2626;
-  --nav-indicator-warn: #d97706;
-  --report-th-bg: color-mix(in srgb, var(--panel-2) 92%, #ffffff);
-  --report-code-bg: color-mix(in srgb, var(--panel-2) 86%, #ffffff);
-  --report-pill-online-bg: rgba(22, 163, 74, 0.16);
-  --report-pill-online-text: #166534;
-  --report-pill-offline-bg: rgba(220, 38, 38, 0.14);
-  --report-pill-offline-text: #991b1b;
-}
-
-:root[data-theme="dark"] {
-  --app-surface: #050a13;
-  --app-sidebar: #111111;
-  --app-sidebar-border: #2c2c2c;
-  --app-sidebar-text: #f3f4f6;
-  --app-sidebar-muted: #a3a3a3;
-  --app-sidebar-active: #2a2a2a;
-  --app-shell-border: #173044;
-  --app-shell-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
-  --quality-bar-start: #14b8a6;
-  --quality-bar-end: #22c55e;
-  --chart-grid: #334155;
-  --chart-line: #667eea;
-  --chart-point: #667eea;
-  --disk-usage-track: rgba(148, 163, 184, 0.25);
-  --sudo-mode-label-text: var(--text);
-  --nav-indicator-error: #ef4444;
-  --nav-indicator-warn: #f59e0b;
-  --report-th-bg: #111827;
-  --report-code-bg: #0f172a;
-  --report-pill-online-bg: #14532d;
-  --report-pill-online-text: #bbf7d0;
-  --report-pill-offline-bg: #7f1d1d;
-  --report-pill-offline-text: #fecaca;
-}
 
 body {
   font-family: "Inter", "IBM Plex Sans", "Noto Sans", sans-serif;
@@ -65,8 +15,8 @@ body {
   z-index: 20;
   min-height: 58px;
   border-bottom: 1px solid var(--app-shell-border);
-  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.22);
-  background: color-mix(in srgb, var(--panel) 94%, #020617);
+  box-shadow: 0 8px 24px var(--shadow);
+  background: color-mix(in srgb, var(--panel) 94%, var(--bg));
 }
 
 #app-title {
@@ -78,8 +28,8 @@ body {
 
 .guardian-top-search .host-search {
   border-radius: 9px;
-  border-color: color-mix(in srgb, #14b8a6 38%, var(--border));
-  background: color-mix(in srgb, #0b1220 78%, var(--panel));
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  background: color-mix(in srgb, var(--panel-2) 78%, var(--panel));
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   padding-left: .65rem;
@@ -189,7 +139,7 @@ body {
 
 .fleet-main-shell {
   min-width: 0;
-  background: color-mix(in srgb, var(--panel) 95%, #020617);
+  background: color-mix(in srgb, var(--panel) 95%, var(--bg));
   border: 1px solid var(--app-shell-border);
   border-radius: 0;
   box-shadow: var(--app-shell-shadow);
@@ -213,9 +163,9 @@ body {
 }
 
 #host-actions .host-action-btn.active {
-  background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 80%, #0b1220), color-mix(in srgb, #0f766e 82%, #050b16));
-  border-color: color-mix(in srgb, #14b8a6 75%, #0f172a);
-  color: #ecfeff;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
 }
 
 #server-info-header .server-info-title {
@@ -237,13 +187,13 @@ body {
 .overview-card,
 .server-info-content .kpi-card,
 .server-info-content .stat-card {
-  border-color: color-mix(in srgb, #14b8a6 25%, var(--border)) !important;
-  background: color-mix(in srgb, var(--panel) 90%, #020617) !important;
-  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.04);
+  border-color: color-mix(in srgb, var(--primary) 25%, var(--border)) !important;
+  background: var(--panel) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 4%, transparent);
 }
 
 .process-table th {
-  color: color-mix(in srgb, var(--muted-2) 90%, #9dd9f5) !important;
+  color: var(--muted-2) !important;
   text-transform: uppercase;
   letter-spacing: .08em;
   font-size: 11px;
@@ -254,9 +204,9 @@ body {
 }
 
 .btn.btn-primary {
-  background: linear-gradient(180deg, color-mix(in srgb, #14b8a6 75%, #0b1220), color-mix(in srgb, #0f766e 78%, #050b16));
-  border-color: color-mix(in srgb, #14b8a6 70%, #0f172a);
-  color: #e7fffb;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
 }
 
 .btn.btn-primary:hover {
@@ -282,14 +232,14 @@ body {
 #server-info-placeholder .metric-card {
   min-height: 96px;
   border-radius: 9px;
-  background: linear-gradient(180deg, color-mix(in srgb, #0f172a 86%, var(--panel)), color-mix(in srgb, #020617 94%, var(--panel))) !important;
+  background: color-mix(in srgb, var(--panel) 94%, var(--panel-2)) !important;
 }
 
 #server-info-placeholder .metric-card .metric-label {
   text-transform: uppercase;
   font-size: 9px;
   letter-spacing: .11em;
-  color: #8bb8d7;
+  color: var(--muted-2);
 }
 
 #server-info-placeholder .metric-card .metric-value {
@@ -376,8 +326,8 @@ body {
 }
 
 .hosts-table tbody tr.host-row-active {
-  background: color-mix(in srgb, #14b8a6 12%, transparent) !important;
-  box-shadow: inset 2px 0 0 #14b8a6;
+  background: color-mix(in srgb, var(--primary) 12%, transparent) !important;
+  box-shadow: inset 2px 0 0 var(--primary);
 }
 
 /* Light-theme fixes for v2: neutralize hardcoded dark blends */
@@ -386,8 +336,8 @@ body {
 }
 
 :root[data-theme="light"] .header {
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
-  background: color-mix(in srgb, var(--panel) 97%, #ffffff);
+  box-shadow: 0 8px 18px var(--shadow);
+  background: color-mix(in srgb, var(--panel) 97%, var(--bg));
 }
 
 :root[data-theme="light"] #fleet-actions {
@@ -406,14 +356,14 @@ body {
 }
 
 :root[data-theme="light"] .guardian-top-search .host-search {
-  border-color: color-mix(in srgb, #14b8a6 22%, var(--border));
-  background: color-mix(in srgb, var(--panel-2) 88%, #ffffff);
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
+  background: color-mix(in srgb, var(--panel-2) 88%, var(--panel));
   color: var(--text);
 }
 
 :root[data-theme="light"] .fleet-main-shell {
-  background: color-mix(in srgb, var(--panel) 98%, #ffffff);
-  border-color: #d9e3ef;
+  background: color-mix(in srgb, var(--panel) 98%, var(--bg));
+  border-color: var(--app-shell-border);
 }
 
 :root[data-theme="light"] .metric-card,
@@ -422,21 +372,21 @@ body {
 :root[data-theme="light"] .overview-card,
 :root[data-theme="light"] .server-info-content .kpi-card,
 :root[data-theme="light"] .server-info-content .stat-card {
-  border-color: color-mix(in srgb, var(--border) 88%, #ffffff) !important;
-  background: color-mix(in srgb, var(--panel) 98%, #ffffff) !important;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  border-color: color-mix(in srgb, var(--border) 88%, var(--panel)) !important;
+  background: color-mix(in srgb, var(--panel) 98%, var(--bg)) !important;
+  box-shadow: 0 1px 2px var(--shadow), inset 0 0 0 1px color-mix(in srgb, var(--panel) 50%, transparent);
 }
 
 :root[data-theme="light"] #server-info-placeholder .metric-card {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 97%, #ffffff), color-mix(in srgb, var(--panel-2) 90%, #ffffff)) !important;
+  background: color-mix(in srgb, var(--panel) 97%, var(--panel-2)) !important;
 }
 
 :root[data-theme="light"] #server-info-placeholder .metric-card .metric-label {
-  color: color-mix(in srgb, var(--muted-2) 88%, #0f172a);
+  color: color-mix(in srgb, var(--muted-2) 88%, var(--text));
 }
 
 :root[data-theme="light"] .process-table th {
-  color: color-mix(in srgb, var(--muted-2) 92%, #334155) !important;
+  color: color-mix(in srgb, var(--muted-2) 92%, var(--muted)) !important;
 }
 
 @media (max-width: 1100px) {
@@ -490,68 +440,6 @@ body {
    without changing view wiring.
 --------------------------------------------------------------------------- */
 
-:root {
-  --app-surface: #f0f0f0;
-  --app-sidebar: #151515;
-  --app-sidebar-border: #3d3d3d;
-  --app-sidebar-text: #f0f0f0;
-  --app-sidebar-muted: #b8bbbe;
-  --app-sidebar-active: #2b2b2b;
-  --app-shell-border: #d2d2d2;
-  --app-shell-shadow: none;
-  --bg: #f0f0f0;
-  --panel: #ffffff;
-  --panel-2: #f5f5f5;
-  --border: #d2d2d2;
-  --text: #151515;
-  --muted: #3d3d3d;
-  --muted-2: #6a6e73;
-  --primary: #06c;
-  --primary-2: #004080;
-  --danger: #c9190b;
-  --warning: #f0ab00;
-  --success: #3d7317;
-  --focus-ring: rgba(0, 102, 204, 0.25);
-  --header-bg: #151515;
-  --header-text: #f0f0f0;
-  --header-subtle: #b8bbbe;
-  --report-th-bg: #f5f5f5;
-  --report-code-bg: #f5f5f5;
-  --report-pill-online-bg: #f3faf2;
-  --report-pill-online-text: #3d7317;
-  --report-pill-offline-bg: #faeae8;
-  --report-pill-offline-text: #a30000;
-}
-
-:root[data-theme="dark"] {
-  --app-surface: #1b1b1b;
-  --app-sidebar: #151515;
-  --app-sidebar-border: #3d3d3d;
-  --app-sidebar-text: #f0f0f0;
-  --app-sidebar-muted: #b8bbbe;
-  --app-sidebar-active: #2b2b2b;
-  --app-shell-border: #4f5255;
-  --app-shell-shadow: none;
-  --bg: #1b1b1b;
-  --panel: #26292d;
-  --panel-2: #303437;
-  --border: #4f5255;
-  --text: #f0f0f0;
-  --muted: #d2d2d2;
-  --muted-2: #b8bbbe;
-  --primary: #73bcf7;
-  --primary-2: #2b9af3;
-  --danger: #f66151;
-  --warning: #f0ab00;
-  --success: #5ba352;
-  --focus-ring: rgba(115, 188, 247, 0.28);
-  --header-bg: #151515;
-  --header-text: #f0f0f0;
-  --header-subtle: #b8bbbe;
-  --report-th-bg: #303437;
-  --report-code-bg: #303437;
-}
-
 body {
   font-family: "RedHatText", "Noto Sans", "Liberation Sans", Arial, sans-serif;
   font-size: 14px;
@@ -562,7 +450,7 @@ body {
 .header {
   min-height: 52px;
   padding: 0.65rem 1rem;
-  border-bottom: 1px solid #000;
+  border-bottom: 1px solid var(--app-sidebar-border);
   box-shadow: none;
   background: var(--header-bg);
 }
@@ -619,7 +507,7 @@ body {
 }
 
 #fleet-actions .btn:hover {
-  background: #262626;
+  background: var(--app-sidebar-active);
 }
 
 .container:has(#server-info-tab.active) #nav-overview,
@@ -630,7 +518,7 @@ body {
 .container:has(#sshkeys-tab.active) #nav-sshkeys,
 .container:has(#reports-tab.active) #nav-reports {
   background: var(--app-sidebar-active);
-  box-shadow: inset 3px 0 0 #06c;
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .fleet-main-shell {
@@ -861,12 +749,12 @@ textarea:focus {
 .btn.btn-primary {
   background: var(--primary);
   border-color: var(--primary);
-  color: #fff;
+  color: var(--primary-text);
 }
 
 :root[data-theme="dark"] .btn-primary,
 :root[data-theme="dark"] .btn.btn-primary {
-  color: #151515;
+  color: var(--primary-text);
 }
 
 .btn-primary:hover,
@@ -878,7 +766,7 @@ textarea:focus {
 .btn-success {
   background: var(--success);
   border-color: var(--success);
-  color: #fff;
+  color: var(--primary-text);
 }
 
 .btn-warning {
@@ -925,7 +813,7 @@ input[type="radio"] {
 
 .settings-dropdown {
   border-radius: 0;
-  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.18);
+  box-shadow: 0 0.5rem 1rem var(--shadow);
   padding: 0.25rem;
 }
 
@@ -935,7 +823,7 @@ input[type="radio"] {
 }
 
 .modal-overlay {
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--modal-overlay-bg);
 }
 
 .modal-header,
@@ -1070,7 +958,7 @@ table {
 
 .toast {
   border-radius: 0;
-  box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.18);
+  box-shadow: 0 0.35rem 1rem var(--shadow);
 }
 
 a,

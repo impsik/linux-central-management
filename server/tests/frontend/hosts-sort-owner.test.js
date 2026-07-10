@@ -5,15 +5,17 @@ import path from 'node:path';
 describe('hosts owner sorting UI', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
   const htmlPath = path.join(root, 'server/app/templates/index.html');
+  const appPath = path.join(root, 'server/app/templates/fleet-app.js');
   const overviewPath = path.join(root, 'server/app/templates/fleet-phase3-overview.js');
   const html = fs.readFileSync(htmlPath, 'utf8');
+  const app = fs.readFileSync(appPath, 'utf8');
   const overview = fs.readFileSync(overviewPath, 'utf8');
 
   it('offers owner in the Hosts sort dropdown and exposes an Owner sortable header', () => {
     expect(html).toContain('<option value="owner">Owner</option>');
     expect(html).toContain('id="hosts-th-owner"');
     expect(html).toContain('title="Sort by owner"');
-    expect(html).toContain("bindSortableHeader('hosts-th-owner', () => setSort('owner'));");
+    expect(app).toContain("bindSortableHeader('hosts-th-owner', () => setSort('owner'));");
   });
 
   it('renders the owner value as its own Hosts table column', () => {

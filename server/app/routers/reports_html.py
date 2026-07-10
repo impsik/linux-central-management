@@ -110,6 +110,7 @@ def hosts_updates_html(
   <meta charset='utf-8' />
   <title>Fleet Report - Pending Updates</title>
   <link rel='stylesheet' href='/assets/fleet-ui.css' />
+  <link rel='stylesheet' href='/assets/fleet-theme-tokens.css' />
   <script src='/assets/fleet-theme-bootstrap.js'></script>
 </head>
 <body class='fleet-report'>
@@ -208,6 +209,7 @@ def cve_high_severity_html(
   <meta charset='utf-8' />
   <title>Fleet Report - High Severity CVE Packages</title>
   <link rel='stylesheet' href='/assets/fleet-ui.css' />
+  <link rel='stylesheet' href='/assets/fleet-theme-tokens.css' />
   <script src='/assets/fleet-theme-bootstrap.js'></script>
 </head>
 <body class='fleet-report'>
@@ -478,6 +480,7 @@ async def user_presence_html(
   <meta charset='utf-8' />
   <title>Fleet Report - User Presence</title>
   <link rel='stylesheet' href='/assets/fleet-ui.css' />
+  <link rel='stylesheet' href='/assets/fleet-theme-tokens.css' />
   <script src='/assets/fleet-theme-bootstrap.js'></script>
 </head>
 <body class='fleet-report'>

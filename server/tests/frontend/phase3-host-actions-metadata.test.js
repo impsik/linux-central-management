@@ -20,6 +20,7 @@ describe('phase3 host metadata payload normalization', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
   const scriptPath = path.join(root, 'server/app/templates/fleet-phase3-host-actions.js');
   const indexPath = path.join(root, 'server/app/templates/index.html');
+  const appPath = path.join(root, 'server/app/templates/fleet-app.js');
 
   it('trims hostname/role/team/owner and drops blank env keys', () => {
     const ctx = loadScript(scriptPath);
@@ -69,9 +70,9 @@ describe('phase3 host metadata payload normalization', () => {
   });
 
   it('refreshes dashboard host data after metadata save', () => {
-    const html = fs.readFileSync(indexPath, 'utf8');
-    expect(html).toContain('onMetadataSaved: (updatedHost) => {');
-    expect(html).toContain('loadHostsTable()');
-    expect(html).toContain('loadHosts()');
+    const app = fs.readFileSync(appPath, 'utf8');
+    expect(app).toContain('onMetadataSaved: (updatedHost) => {');
+    expect(app).toContain('loadHostsTable()');
+    expect(app).toContain('loadHosts()');
   });
 });

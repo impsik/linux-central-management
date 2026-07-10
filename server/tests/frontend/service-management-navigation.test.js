@@ -5,9 +5,14 @@ import path from 'node:path';
 describe('service management navigation', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
   const indexPath = path.join(root, 'server/app/templates/index.html');
+  const appPath = path.join(root, 'server/app/templates/fleet-app.js');
+  const serviceManagementPath = path.join(root, 'server/app/templates/fleet-service-management-ui.js');
   const overviewPath = path.join(root, 'server/app/templates/fleet-phase3-overview.js');
   const hostWorkflowsPath = path.join(root, 'server/app/templates/fleet-phase3-host-workflows.js');
   const indexSrc = fs.readFileSync(indexPath, 'utf8');
+  const appSrc = fs.readFileSync(appPath, 'utf8');
+  const serviceManagementSrc = fs.readFileSync(serviceManagementPath, 'utf8');
+  const shellSrc = `${indexSrc}\n${appSrc}\n${serviceManagementSrc}`;
   const overviewSrc = fs.readFileSync(overviewPath, 'utf8');
   const hostWorkflowsSrc = fs.readFileSync(hostWorkflowsPath, 'utf8');
 
@@ -34,7 +39,7 @@ describe('service management navigation', () => {
   it('labels service enablement as autostart instead of current access', () => {
     expect(indexSrc).toContain('<th>Autostart</th>');
     expect(indexSrc).not.toContain('<th>Enabled</th>');
-    expect(indexSrc).toContain("${it.enabled ? 'yes' : 'manual'}");
+    expect(serviceManagementSrc).toContain("${it.enabled ? 'yes' : 'manual'}");
     expect(hostWorkflowsSrc).toContain('✓ Autostart');
     expect(hostWorkflowsSrc).toContain('✗ Manual start');
   });
@@ -42,12 +47,12 @@ describe('service management navigation', () => {
   it('supports bulk enabling selected service matches', () => {
     expect(indexSrc).toContain('id="service-management-start"');
     expect(indexSrc).toContain('Start selected');
-    expect(indexSrc).toContain("void runServiceOperation('start')");
-    expect(indexSrc).toContain("await queueServiceAction('start', agentIds)");
+    expect(shellSrc).toContain("void runServiceOperation('start')");
+    expect(shellSrc).toContain("await queueServiceAction('start', agentIds)");
     expect(indexSrc).toContain('id="service-management-enable"');
     expect(indexSrc).toContain('Enable selected');
-    expect(indexSrc).toContain("void runServiceOperation('enable')");
-    expect(indexSrc).toContain("await queueServiceAction('enable', agentIds)");
+    expect(shellSrc).toContain("void runServiceOperation('enable')");
+    expect(shellSrc).toContain("await queueServiceAction('enable', agentIds)");
   });
 
   it('refreshes service state after a completed per-host service action', () => {

@@ -17,7 +17,7 @@ from ..services.agents import get_client_ip
 from ..services.agent_auth import hash_agent_token, require_agent_token_dep
 from ..services.audit import log_event
 from ..services.db_utils import transaction
-from ..services.jobs import create_job_with_runs
+from ..services.jobs import claim_queued_job_for_agent, create_job_with_runs
 
 router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_token_dep)])
 
@@ -32,20 +32,6 @@ def _preferred_reported_ip(ip_addresses: list[str] | None) -> str | None:
             continue
         return str(ip)
     return None
-
-
-def _ensure_job_run_nonce(run: JobRun) -> str:
-    nonce = (getattr(run, "job_nonce", None) or "").strip()
-    if not nonce:
-        nonce = secrets.token_urlsafe(32)
-        run.job_nonce = nonce
-    return nonce
-
-
-def _with_job_nonce(payload: dict, run: JobRun) -> dict:
-    out = dict(payload)
-    out["job_nonce"] = _ensure_job_run_nonce(run)
-    return out
 
 
 def _audit_unknown_agent(db: Session, request: Request, agent_id: str, action: str) -> None:
@@ -308,79 +294,26 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
     host.last_seen = datetime.now(timezone.utc)
     db.commit()
 
-    # Primary: in-memory dispatcher queue (fast path)
-    job = await dispatcher.pop_job(agent_id, timeout=settings.agent_poll_timeout_seconds)
-    if job is not None:
-        job_key = str((job or {}).get("job_id") or "").strip()
-        if job_key:
-            row = (
-                db.execute(
-                    select(JobRun, Job)
-                    .join(Job, Job.id == JobRun.job_id)
-                    .where(Job.job_key == job_key, JobRun.agent_id == agent_id)
-                )
-                .first()
-            )
-            if row:
-                run, _job_row = row
-                job = _with_job_nonce(job, run)
-                db.commit()
-                return {"job": job}
-        return {"job": job}
+    # Durable DB queue first. This survives process restarts and works without
+    # relying on the in-memory dispatcher.
+    claimed = claim_queued_job_for_agent(db, agent_id)
+    if claimed is not None:
+        return {"job": claimed}
 
-    # Fallback: DB-backed dispatch for queued jobs.
-    # This avoids jobs getting stuck in "queued" forever after server restarts
-    # (in-memory queues are lost on restart).
-    now = datetime.now(timezone.utc)
+    # No queued DB work right now. Wait for the in-memory wake-up signal used by
+    # active long-poll requests, then claim from DB again so the database remains
+    # the source of truth.
+    wake = await dispatcher.pop_job(agent_id, timeout=settings.agent_poll_timeout_seconds)
+    if wake is not None:
+        job_key = str((wake or {}).get("job_id") or "").strip() or None
+        claimed = claim_queued_job_for_agent(db, agent_id, job_key=job_key)
+        if claimed is not None:
+            return {"job": claimed}
+        claimed = claim_queued_job_for_agent(db, agent_id)
+        if claimed is not None:
+            return {"job": claimed}
 
-    def build_agent_payload(job_row: Job, agent_id: str) -> dict:
-        t = job_row.job_type
-        payload = job_row.payload or {}
-
-        if t == "cve-check":
-            return {"job_id": job_row.job_key, "type": "cve-check", "cve": payload.get("cve")}
-        if t == "dist-upgrade":
-            return {"job_id": job_row.job_key, "type": "dist-upgrade"}
-        if t == "inventory-now":
-            return {"job_id": job_row.job_key, "type": "inventory-now"}
-        if t == "query-pkg-version":
-            return {"job_id": job_row.job_key, "type": "query-pkg-version", "packages": payload.get("packages") or []}
-        if t == "disk-cleanup":
-            return {
-                "job_id": job_row.job_key,
-                "type": "disk-cleanup",
-                "dry_run": bool(payload.get("dry_run", True)),
-                "cleanup_actions": payload.get("actions") or [],
-            }
-        if t == "pkg-upgrade":
-            packages = payload.get("packages") or []
-            by = payload.get("packages_by_agent") or {}
-            pkgs = by.get(agent_id) or packages
-            return {"job_id": job_row.job_key, "type": "pkg-upgrade", "packages": pkgs or []}
-
-        # Unknown job type: return minimal shape; agent will report failure.
-        return {"job_id": job_row.job_key, "type": t}
-
-    with transaction(db):
-        row = (
-            db.execute(
-                select(JobRun, Job)
-                .join(Job, Job.id == JobRun.job_id)
-                .where(JobRun.agent_id == agent_id, JobRun.status == "queued")
-                .order_by(Job.created_at.asc())
-                .limit(1)
-            )
-            .first()
-        )
-
-        if not row:
-            return {"job": None}
-
-        run, job_row = row
-        run.status = "running"
-        run.started_at = run.started_at or now
-
-        return {"job": _with_job_nonce(build_agent_payload(job_row, agent_id), run)}
+    return {"job": None}
 
 
 @router.post("/job-event")

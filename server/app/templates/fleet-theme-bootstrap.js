@@ -10,8 +10,9 @@
   try {
     const params = new URLSearchParams(window.location.search || '');
     const uiParam = (params.get('ui') || '').trim().toLowerCase();
+    const skipV2 = !!document.querySelector('meta[name="fleet-skip-ui-v2"][content="1"]');
     // v2 is default; allow temporary fallback with ?ui=v1
-    const isV2 = uiParam !== 'v1';
+    const isV2 = !skipV2 && uiParam !== 'v1';
     document.documentElement.dataset.uiVersion = isV2 ? 'v2' : 'v1';
 
     if (isV2) {

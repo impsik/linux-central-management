@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     # Mark host offline only after this many seconds since last heartbeat.
     # 10s is too aggressive for real-world jitter and can cause transient 503s.
     agent_online_grace_seconds: int = 30
+    # Running job runs older than this are considered abandoned and can be
+    # re-queued by the durable DB queue. Set 0 to disable stale recovery.
+    job_run_stale_after_seconds: int = 1800
+    # Number of stale re-queues before a run is marked failed.
+    job_run_max_retries: int = 1
+    # Queued jobs older than this are highlighted in UI/API observability.
+    job_queued_warn_after_seconds: int = 1800
 
     # Agent authentication
     # AGENT_SHARED_TOKEN is now a bootstrap registration credential by default.

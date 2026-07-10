@@ -4,9 +4,11 @@ import path from 'node:path';
 
 describe('terminal input transport', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
+  const appPath = path.join(root, 'server/app/templates/fleet-app.js');
+  const terminalPath = path.join(root, 'server/app/templates/fleet-terminal-ui.js');
 
   it('sends xterm input as websocket text frames in the main console', () => {
-    const src = fs.readFileSync(path.join(root, 'server/app/templates/index.html'), 'utf8');
+    const src = fs.readFileSync(terminalPath, 'utf8');
     const marker = 'term.onData(data => {';
     const start = src.indexOf(marker);
     expect(start).toBeGreaterThanOrEqual(0);
@@ -28,7 +30,7 @@ describe('terminal input transport', () => {
   });
 
   it('submits queued commands with carriage return for interactive shells', () => {
-    const main = fs.readFileSync(path.join(root, 'server/app/templates/index.html'), 'utf8');
+    const main = fs.readFileSync(terminalPath, 'utf8');
     const popup = fs.readFileSync(path.join(root, 'server/app/templates/terminal_popup.html'), 'utf8');
 
     expect(main).toContain("ws.send(pendingInteractivePackageCmd + '\\r');");
@@ -36,7 +38,7 @@ describe('terminal input transport', () => {
   });
 
   it('resets xterm state before starting a new main console session', () => {
-    const main = fs.readFileSync(path.join(root, 'server/app/templates/index.html'), 'utf8');
+    const main = fs.readFileSync(terminalPath, 'utf8');
     const phase3 = fs.readFileSync(path.join(root, 'server/app/templates/fleet-phase3.js'), 'utf8');
 
     expect(main).toContain("if (typeof term.reset === 'function') term.reset();");
