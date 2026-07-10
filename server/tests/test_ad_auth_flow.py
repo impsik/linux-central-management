@@ -105,6 +105,8 @@ def test_ad_enabled_exposes_login_switch_state(monkeypatch):
         assert login_page.status_code == 200, login_page.text
         assert "Use a Local User" in login_page.text
         assert "cache: 'no-store'" in login_page.text
+        assert "credentials: 'same-origin'" in login_page.text
+        assert "Cannot reach ${useLocalLogin ? '/auth/login' : '/auth/ad/login'}" in login_page.text
 
 
 def test_admin_info_exposes_bootstrap_username_only_before_setup(monkeypatch):
