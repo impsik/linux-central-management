@@ -72,7 +72,7 @@ services:
 
       # Background CVE sync. Small installs can disable or defer startup sync.
       CVE_SYNC_ENABLED: ${CVE_SYNC_ENABLED:-true}
-      CVE_SYNC_INITIAL_DELAY_SECONDS: ${CVE_SYNC_INITIAL_DELAY_SECONDS:-0}
+      CVE_SYNC_INITIAL_DELAY_SECONDS: ${CVE_SYNC_INITIAL_DELAY_SECONDS:-300}
       CVE_SYNC_INTERVAL_SECONDS: ${CVE_SYNC_INTERVAL_SECONDS:-43200}
 
       # Teams alerts (optional)
