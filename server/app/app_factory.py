@@ -244,6 +244,8 @@ def _startup() -> None:
             if job_run_cols and "retry_count" not in job_run_cols:
                 stmts.append("ALTER TABLE job_runs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
             host_cols = {c.get("name") for c in insp.get_columns("hosts")}
+            if "agent_version" not in host_cols:
+                stmts.append("ALTER TABLE hosts ADD COLUMN agent_version TEXT")
             if "agent_token_hash" not in host_cols:
                 stmts.append("ALTER TABLE hosts ADD COLUMN agent_token_hash TEXT")
 
