@@ -19,7 +19,8 @@ describe('terminal policy visibility', () => {
 
     expect(src).toContain('function terminalAccessPolicy(host)');
     expect(src).toContain("labels.terminal_access || 'all'");
-    expect(src).toContain('Terminal: admins + operators allowed');
+    expect(src).toContain('Terminal: allowed');
+    expect(src).toContain('Terminal: not allowed');
     expect(src).toContain('Terminal: admins only');
     expect(src).toContain('Terminal: restricted');
     expect(src).toContain("role === 'operator' && policy.operatorBlocked");

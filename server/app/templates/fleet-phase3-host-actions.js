@@ -129,9 +129,12 @@
     const role = String((permissions && permissions.role) || '').toLowerCase();
     const canUseTerminal = !permissions || permissions.can_use_terminal !== false;
     const blockedForCurrentUser = !canUseTerminal || (role === 'operator' && policy.operatorBlocked);
+    const currentUserLabel = blockedForCurrentUser
+      ? (policy.value === 'none' ? 'Terminal: restricted' : 'Terminal: not allowed')
+      : 'Terminal: allowed';
 
     if (badge) {
-      badge.textContent = policy.label;
+      badge.textContent = currentUserLabel;
       badge.title = policy.title;
     }
     if (button) {
