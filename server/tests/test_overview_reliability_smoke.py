@@ -62,11 +62,45 @@ def test_overview_and_cron_smoke_sqlite(monkeypatch):
         nd = r.json()
         assert "items" in nd and isinstance(nd["items"], list)
 
+        from app.db import SessionLocal
+        from app.models import Job, JobRun
+        from app.services.jobs import create_job_with_runs
+        from sqlalchemy import select
+
+        with SessionLocal() as db:
+            created = create_job_with_runs(
+                db=db,
+                job_type="query-pkg-version",
+                payload={"packages": ["bash"]},
+                agent_ids=["srv-001"],
+                commit=False,
+            )
+            db.flush()
+            run = (
+                db.execute(
+                    select(JobRun)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == created.job_key, JobRun.agent_id == "srv-001")
+                )
+                .scalar_one()
+            )
+            run.status = "failed"
+            run.retry_count = 1
+            run.started_at = datetime.now(timezone.utc) - timedelta(minutes=40)
+            run.finished_at = datetime.now(timezone.utc)
+            run.exit_code = 1
+            run.error = "simulated failed run"
+            db.commit()
+
         # Failed runs endpoint smoke
         r = client.get("/dashboard/failed-runs", params={"hours": 24, "limit": 20})
         assert r.status_code == 200, r.text
         fd = r.json()
         assert "items" in fd and isinstance(fd["items"], list)
+        failed = next(it for it in fd["items"] if it.get("error") == "simulated failed run")
+        assert failed["retry_count"] == 1
+        assert failed["stale_after_seconds"] >= 0
+        assert failed["run_id"]
 
         # Cron create/list smoke
         run_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
@@ -108,10 +142,10 @@ def test_dashboard_auto_refresh_is_silent():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[2]
-    html = (root / "server" / "app" / "templates" / "index.html").read_text(encoding="utf-8")
+    app = (root / "server" / "app" / "templates" / "fleet-app.js").read_text(encoding="utf-8")
     js = (root / "server" / "app" / "templates" / "fleet-phase3-overview.js").read_text(encoding="utf-8")
 
-    assert "loadFleetOverview(false, true)" in html
+    assert "loadFleetOverview(false, true)" in app
     assert "const isBackgroundRefresh = !!backgroundRefresh;" in js
     assert "if (!isBackgroundRefresh) attentionEl.innerHTML" in js
     assert "if (!isBackgroundRefresh) w.setTableState(tbody, 7, 'loading', 'Loading…');" in js

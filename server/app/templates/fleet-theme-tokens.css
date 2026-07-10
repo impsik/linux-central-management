@@ -1,0 +1,173 @@
+/* Central theme tokens for the fleet UI. Component CSS should consume these. */
+
+:root {
+  --bg: #f0f0f0;
+  --panel: #ffffff;
+  --panel-2: #f5f5f5;
+  --border: #d2d2d2;
+  --text: #151515;
+  --muted: #3d3d3d;
+  --muted-2: #6a6e73;
+  --shadow: rgba(2, 6, 23, 0.08);
+
+  --primary: #06c;
+  --primary-2: #004080;
+  --primary-text: #ffffff;
+  --danger: #c9190b;
+  --warning: #f0ab00;
+  --success: #3d7317;
+  --focus-ring: rgba(0, 102, 204, 0.25);
+
+  --app-surface: #f0f0f0;
+  --app-sidebar: #151515;
+  --app-sidebar-border: #3d3d3d;
+  --app-sidebar-text: #f0f0f0;
+  --app-sidebar-muted: #b8bbbe;
+  --app-sidebar-active: #2b2b2b;
+  --app-shell-border: #d2d2d2;
+  --app-shell-shadow: none;
+
+  --header-bg: #151515;
+  --header-text: #f0f0f0;
+  --header-subtle: #b8bbbe;
+  --admin-divider: rgba(21, 21, 21, 0.18);
+  --admin-status: #6a6e73;
+  --admin-status-error: #a30000;
+  --admin-status-success: #3d7317;
+  --modal-overlay-bg: rgba(21, 21, 21, 0.28);
+  --terminal-surface: #151515;
+  --error-bg: #faeae8;
+  --error-text: #a30000;
+  --empty-state-text: #6a6e73;
+
+  --status-ok-text: #3d7317;
+  --status-warn-text: #795600;
+  --status-error-text: #a30000;
+  --status-muted-text: #6a6e73;
+  --status-link-text: #06c;
+  --status-ok-bg: #f3faf2;
+  --status-ok-border: rgba(61, 115, 23, 0.35);
+  --status-warn-bg: rgba(240, 171, 0, 0.16);
+  --status-warn-border: rgba(240, 171, 0, 0.42);
+
+  --pkg-status-text: #6a6e73;
+  --pkg-badge-good-bg: #f3faf2;
+  --pkg-badge-good-text: #3d7317;
+  --pkg-badge-good-border: rgba(61, 115, 23, 0.35);
+  --pkg-badge-bad-bg: #faeae8;
+  --pkg-badge-bad-text: #a30000;
+  --pkg-badge-bad-border: rgba(163, 0, 0, 0.35);
+  --pkg-badge-neutral-bg: #f5f5f5;
+  --pkg-badge-neutral-text: #3d3d3d;
+  --pkg-badge-neutral-border: #d2d2d2;
+
+  --new-user-bg: rgba(240, 171, 0, 0.16);
+  --new-user-border: rgba(240, 171, 0, 0.45);
+  --new-user-badge-bg: rgba(240, 171, 0, 0.28);
+  --new-user-badge-text: #795600;
+
+  --chart-grid: #d2d2d2;
+  --chart-line: #06c;
+  --chart-point: #06c;
+  --disk-usage-track: rgba(106, 110, 115, 0.22);
+  --quality-bar-start: #06c;
+  --quality-bar-end: #2b9af3;
+  --nav-indicator-error: #c9190b;
+  --nav-indicator-warn: #f0ab00;
+  --sudo-mode-label-text: var(--text);
+  --sudo-mode-select-bg: var(--panel);
+  --sudo-mode-select-border: var(--border);
+  --sudo-mode-select-text: var(--text);
+  --report-th-bg: #f5f5f5;
+  --report-code-bg: #f5f5f5;
+  --report-pill-online-bg: #f3faf2;
+  --report-pill-online-text: #3d7317;
+  --report-pill-offline-bg: #faeae8;
+  --report-pill-offline-text: #a30000;
+}
+
+:root[data-theme="dark"] {
+  --bg: #1b1b1b;
+  --panel: #26292d;
+  --panel-2: #303437;
+  --border: #4f5255;
+  --text: #f0f0f0;
+  --muted: #d2d2d2;
+  --muted-2: #b8bbbe;
+  --shadow: rgba(0, 0, 0, 0.42);
+
+  --primary: #73bcf7;
+  --primary-2: #2b9af3;
+  --primary-text: #151515;
+  --danger: #f66151;
+  --warning: #f0ab00;
+  --success: #5ba352;
+  --focus-ring: rgba(115, 188, 247, 0.28);
+
+  --app-surface: #1b1b1b;
+  --app-sidebar: #151515;
+  --app-sidebar-border: #3d3d3d;
+  --app-sidebar-text: #f0f0f0;
+  --app-sidebar-muted: #b8bbbe;
+  --app-sidebar-active: #2b2b2b;
+  --app-shell-border: #4f5255;
+  --app-shell-shadow: none;
+
+  --header-bg: #151515;
+  --header-text: #f0f0f0;
+  --header-subtle: #b8bbbe;
+  --admin-divider: rgba(240, 240, 240, 0.18);
+  --admin-status: #b8bbbe;
+  --admin-status-error: #f66151;
+  --admin-status-success: #5ba352;
+  --modal-overlay-bg: rgba(0, 0, 0, 0.58);
+  --terminal-surface: #151515;
+  --error-bg: rgba(246, 97, 81, 0.18);
+  --error-text: #ffb3aa;
+  --empty-state-text: #b8bbbe;
+
+  --status-ok-text: #95d58d;
+  --status-warn-text: #f0ab00;
+  --status-error-text: #ffb3aa;
+  --status-muted-text: #b8bbbe;
+  --status-link-text: #73bcf7;
+  --status-ok-bg: rgba(91, 163, 82, 0.18);
+  --status-ok-border: rgba(91, 163, 82, 0.38);
+  --status-warn-bg: rgba(240, 171, 0, 0.16);
+  --status-warn-border: rgba(240, 171, 0, 0.42);
+
+  --pkg-status-text: #d2d2d2;
+  --pkg-badge-good-bg: rgba(91, 163, 82, 0.18);
+  --pkg-badge-good-text: #95d58d;
+  --pkg-badge-good-border: rgba(91, 163, 82, 0.38);
+  --pkg-badge-bad-bg: rgba(246, 97, 81, 0.18);
+  --pkg-badge-bad-text: #ffb3aa;
+  --pkg-badge-bad-border: rgba(246, 97, 81, 0.4);
+  --pkg-badge-neutral-bg: #303437;
+  --pkg-badge-neutral-text: #d2d2d2;
+  --pkg-badge-neutral-border: #4f5255;
+
+  --new-user-bg: rgba(240, 171, 0, 0.16);
+  --new-user-border: rgba(240, 171, 0, 0.45);
+  --new-user-badge-bg: rgba(240, 171, 0, 0.3);
+  --new-user-badge-text: #f8d98a;
+
+  --chart-grid: #4f5255;
+  --chart-line: #73bcf7;
+  --chart-point: #73bcf7;
+  --disk-usage-track: rgba(184, 187, 190, 0.22);
+  --quality-bar-start: #73bcf7;
+  --quality-bar-end: #5ba352;
+  --nav-indicator-error: #f66151;
+  --nav-indicator-warn: #f0ab00;
+  --sudo-mode-label-text: var(--text);
+  --sudo-mode-select-bg: var(--panel);
+  --sudo-mode-select-border: var(--border);
+  --sudo-mode-select-text: var(--text);
+  --report-th-bg: #303437;
+  --report-code-bg: #303437;
+  --report-pill-online-bg: rgba(91, 163, 82, 0.18);
+  --report-pill-online-text: #95d58d;
+  --report-pill-offline-bg: rgba(246, 97, 81, 0.18);
+  --report-pill-offline-text: #ffb3aa;
+}

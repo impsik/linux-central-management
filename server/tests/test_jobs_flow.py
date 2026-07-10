@@ -1,6 +1,6 @@
 import os
 import importlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
 from sqlalchemy import select
 
@@ -32,6 +32,8 @@ def test_job_flow_sqlite(monkeypatch):
     monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
     monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("CVE_SYNC_ENABLED", "false")
+    monkeypatch.setenv("METRICS_BACKGROUND_REFRESH_SECONDS", "0")
 
     # Import after env is set
     app_factory = importlib.import_module("app.app_factory")
@@ -106,6 +108,7 @@ def test_job_flow_sqlite(monkeypatch):
                 "status": "success",
                 "exit_code": 0,
                 "stdout": '{"packages":[{"name":"bash","version":"5.1","found":true}]}',
+                "stderr": "pkg-query warning tail",
             },
         )
         assert r.status_code == 200, r.text
@@ -118,6 +121,11 @@ def test_job_flow_sqlite(monkeypatch):
         assert data["type"] == "query-pkg-version"
         assert data["result"] is not None
         assert "packages" in data["result"]
+        run = data["runs"][0]
+        assert run["stdout_tail"] == '{"packages":[{"name":"bash","version":"5.1","found":true}]}'
+        assert run["stdout_tail_truncated"] is False
+        assert run["stderr_tail"] == "pkg-query warning tail"
+        assert run["stderr_tail_truncated"] is False
 
         # Jobs list endpoint (API v2 style)
         r = client.get("/jobs", params={"agent_id": "srv-001", "limit": 10, "offset": 0})
@@ -184,6 +192,8 @@ def test_jobs_readonly_cannot_run_and_cannot_read_out_of_scope(monkeypatch):
     monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
     monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("CVE_SYNC_ENABLED", "false")
+    monkeypatch.setenv("METRICS_BACKGROUND_REFRESH_SECONDS", "0")
 
     app_factory = importlib.import_module("app.app_factory")
     app = app_factory.create_app()
@@ -275,6 +285,8 @@ def test_ansible_requires_operator_and_owned_targets(monkeypatch):
     monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
     monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("CVE_SYNC_ENABLED", "false")
+    monkeypatch.setenv("METRICS_BACKGROUND_REFRESH_SECONDS", "0")
 
     app_factory = importlib.import_module("app.app_factory")
     app = app_factory.create_app()
@@ -383,6 +395,8 @@ def test_pkg_upgrade_success_invalidates_cve_cache_and_queues_inventory(monkeypa
     monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
     monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
     monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("CVE_SYNC_ENABLED", "false")
+    monkeypatch.setenv("METRICS_BACKGROUND_REFRESH_SECONDS", "0")
 
     app_factory = importlib.import_module("app.app_factory")
     app = app_factory.create_app()
@@ -467,6 +481,258 @@ def test_pkg_upgrade_success_invalidates_cve_cache_and_queues_inventory(monkeypa
             )
             assert refresh is not None
             assert refresh[1].payload["reason"] == "post-pkg-upgrade"
+
+
+def test_agent_next_job_claims_durable_db_queue_without_dispatcher(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import Job, JobRun
+    from app.services.jobs import create_job_with_runs
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-durable",
+                "hostname": "srv-durable",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert r.status_code == 200, r.text
+
+        with SessionLocal() as db:
+            created = create_job_with_runs(
+                db=db,
+                job_type="pkg-upgrade",
+                payload={
+                    "packages": ["bash"],
+                    "packages_by_agent": {"srv-durable": ["openssl"]},
+                    "dry_run": False,
+                },
+                agent_ids=["srv-durable"],
+                commit=False,
+            )
+            db.commit()
+            job_id = created.job_key
+
+        r = client.get("/agent/next-job", params={"agent_id": "srv-durable"})
+        assert r.status_code == 200, r.text
+        job = r.json()["job"]
+        assert job["job_id"] == job_id
+        assert job["type"] == "pkg-upgrade"
+        assert job["packages"] == ["openssl"]
+        assert job["job_nonce"]
+
+        with SessionLocal() as db:
+            run = (
+                db.execute(
+                    select(JobRun)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == job_id, JobRun.agent_id == "srv-durable")
+                )
+                .scalar_one()
+            )
+            assert run.status == "running"
+            assert run.started_at is not None
+            assert run.job_nonce == job["job_nonce"]
+
+
+def test_agent_next_job_recovers_stale_running_job_once_then_fails(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    monkeypatch.setenv("CVE_SYNC_ENABLED", "false")
+    monkeypatch.setenv("METRICS_BACKGROUND_REFRESH_SECONDS", "0")
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from app.db import SessionLocal
+    from app.models import Job, JobRun
+    from app.services.jobs import create_job_with_runs, recover_stale_job_runs_for_agent
+    from fastapi.testclient import TestClient
+
+    old_started_at = datetime.now(timezone.utc) - timedelta(hours=2)
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/agent/register",
+            json={
+                "agent_id": "srv-stale",
+                "hostname": "srv-stale",
+                "fqdn": None,
+                "os_id": "ubuntu",
+                "os_version": "24.04",
+                "kernel": "test",
+                "labels": {"env": "test"},
+            },
+        )
+        assert r.status_code == 200, r.text
+        login = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
+        assert login.status_code == 200, login.text
+        csrf = client.cookies.get("fleet_csrf")
+        headers = {"X-CSRF-Token": csrf} if csrf else {}
+
+        with SessionLocal() as db:
+            created = create_job_with_runs(
+                db=db,
+                job_type="query-pkg-version",
+                payload={"packages": ["bash"]},
+                agent_ids=["srv-stale"],
+                commit=False,
+            )
+            db.flush()
+            run = (
+                db.execute(
+                    select(JobRun)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == created.job_key, JobRun.agent_id == "srv-stale")
+                )
+                .scalar_one()
+            )
+            run.status = "running"
+            run.started_at = old_started_at
+            run.retry_count = 0
+            db.commit()
+            job_id = created.job_key
+
+        detail_before = client.get(f"/jobs/{job_id}")
+        assert detail_before.status_code == 200, detail_before.text
+        before_run = detail_before.json()["runs"][0]
+        assert before_run["retry_count"] == 0
+        assert before_run["is_stale"] is True
+        assert before_run["running_seconds"] >= 3600
+
+        list_before = client.get("/jobs", params={"agent_id": "srv-stale", "limit": 10})
+        assert list_before.status_code == 200, list_before.text
+        list_item = next(it for it in list_before.json()["items"] if it["job_id"] == job_id)
+        assert list_item["runs"]["stale_running"] == 1
+        assert list_item["runs"]["retry_count_max"] == 0
+        assert list_item["observability"]["age_seconds"] >= 0
+        assert list_item["observability"]["is_old_queued"] is False
+
+        with SessionLocal() as db:
+            old_queued = create_job_with_runs(
+                db=db,
+                job_type="inventory-now",
+                payload={"reason": "old-queue-test"},
+                agent_ids=["srv-stale"],
+                commit=False,
+            )
+            db.flush()
+            old_job = db.execute(select(Job).where(Job.job_key == old_queued.job_key)).scalar_one()
+            old_job.created_at = old_started_at
+            db.commit()
+
+        queued_list = client.get("/jobs", params={"agent_id": "srv-stale", "status": "queued", "limit": 10})
+        assert queued_list.status_code == 200, queued_list.text
+        old_item = next(it for it in queued_list.json()["items"] if it["job_id"] == old_queued.job_key)
+        assert old_item["observability"]["age_seconds"] >= 3600
+        assert old_item["observability"]["queued_warn_after_seconds"] == 1800
+        assert old_item["observability"]["is_old_queued"] is True
+
+        old_detail = client.get(f"/jobs/{old_queued.job_key}")
+        assert old_detail.status_code == 200, old_detail.text
+        assert old_detail.json()["observability"]["is_old_queued"] is True
+
+        cancelled = client.post(f"/jobs/{old_queued.job_key}/cancel", headers=headers)
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["cancelled_runs"] == 1
+        old_detail_after_cancel = client.get(f"/jobs/{old_queued.job_key}")
+        assert old_detail_after_cancel.status_code == 200, old_detail_after_cancel.text
+        old_cancelled_run = old_detail_after_cancel.json()["runs"][0]
+        assert old_cancelled_run["status"] == "failed"
+        assert old_cancelled_run["exit_code"] == -1
+        assert old_cancelled_run["error"] == "cancelled before agent claim"
+        assert old_cancelled_run["is_cancelled"] is True
+        cancelled_failed_runs = client.get("/dashboard/failed-runs", params={"hours": 24, "limit": 20})
+        assert cancelled_failed_runs.status_code == 200, cancelled_failed_runs.text
+        cancelled_failed_item = next(
+            it for it in cancelled_failed_runs.json()["items"] if it["job_key"] == old_queued.job_key
+        )
+        assert cancelled_failed_item["is_cancelled"] is True
+        cancelled_job_list = client.get("/jobs", params={"agent_id": "srv-stale", "status": "failed", "limit": 20})
+        assert cancelled_job_list.status_code == 200, cancelled_job_list.text
+        cancelled_job_item = next(it for it in cancelled_job_list.json()["items"] if it["job_id"] == old_queued.job_key)
+        assert cancelled_job_item["runs"]["cancelled"] == 1
+
+        r = client.get("/agent/next-job", params={"agent_id": "srv-stale"})
+        assert r.status_code == 200, r.text
+        job = r.json()["job"]
+        assert job["job_id"] == job_id
+        assert job["type"] == "query-pkg-version"
+        assert job["packages"] == ["bash"]
+
+        with SessionLocal() as db:
+            run = (
+                db.execute(
+                    select(JobRun)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == job_id, JobRun.agent_id == "srv-stale")
+                )
+                .scalar_one()
+            )
+            assert run.status == "running"
+            assert run.retry_count == 1
+            assert run.started_at is not None
+            assert run.error is None
+
+        detail_after = client.get(f"/jobs/{job_id}")
+        assert detail_after.status_code == 200, detail_after.text
+        after_run = detail_after.json()["runs"][0]
+        assert after_run["retry_count"] == 1
+        assert after_run["is_stale"] is False
+        assert after_run["running_seconds"] is not None
+
+        with SessionLocal() as db:
+            failed_job = create_job_with_runs(
+                db=db,
+                job_type="query-pkg-version",
+                payload={"packages": ["coreutils"]},
+                agent_ids=["srv-stale"],
+                commit=False,
+            )
+            db.flush()
+            failed_run = (
+                db.execute(
+                    select(JobRun)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == failed_job.job_key, JobRun.agent_id == "srv-stale")
+                )
+                .scalar_one()
+            )
+            failed_run.status = "running"
+            failed_run.started_at = old_started_at
+            failed_run.retry_count = 1
+            result = recover_stale_job_runs_for_agent(db, "srv-stale")
+            db.commit()
+            assert result["failed"] >= 1
+            assert failed_run.status == "failed"
+            assert failed_run.finished_at is not None
+            assert "stale running" in failed_run.error
 
 
 def test_package_inventory_invalidates_host_cve_cache(monkeypatch):

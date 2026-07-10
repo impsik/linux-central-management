@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..db import get_db
 from ..deps import require_ui_user
 from ..models import HighRiskActionRequest, Host, Job, JobRun
@@ -11,7 +14,7 @@ from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventor
 from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
-from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.jobs import create_job_with_runs, job_run_observability, push_job_to_agents
 from ..services.maintenance import assert_action_allowed_now
 from ..services.rbac import permissions_for
 from ..services.hosts import is_host_online
@@ -20,6 +23,23 @@ from ..services.user_scopes import filter_agent_ids_for_user, is_host_visible_to
 from ..services.package_names import sanitize_package_list
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+
+def _age_seconds(dt: datetime | None, *, now: datetime) -> int | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return max(0, int((now - dt).total_seconds()))
+
+
+def _tail_text(value: str | None, *, max_chars: int = 4000) -> tuple[str | None, bool]:
+    if value is None:
+        return None, False
+    text = str(value)
+    if len(text) <= max_chars:
+        return text, False
+    return text[-max_chars:], True
 
 
 def _require_job_write_access(user) -> None:
@@ -138,10 +158,39 @@ def list_jobs(
     total = db.execute(select(func.count()).select_from(q.subquery())).scalar_one()
 
     rows = db.execute(q.limit(limit).offset(offset)).all()
+    job_ids = [job.id for job, *_ in rows]
+    run_summary: dict = {}
+    now = datetime.now(timezone.utc)
+    if job_ids:
+        run_rows = db.execute(select(JobRun).where(JobRun.job_id.in_(job_ids))).scalars().all()
+        for run in run_rows:
+            summary = run_summary.setdefault(
+                run.job_id,
+                {
+                    "retry_count_max": 0,
+                    "stale_running": 0,
+                    "cancelled": 0,
+                },
+            )
+            obs = job_run_observability(run, now=now)
+            summary["retry_count_max"] = max(summary["retry_count_max"], int(obs["retry_count"] or 0))
+            if obs["is_stale"]:
+                summary["stale_running"] += 1
+            if obs["is_cancelled"]:
+                summary["cancelled"] += 1
 
     items = []
+    queued_warn_after = int(getattr(settings, "job_queued_warn_after_seconds", 1800) or 0)
     for job, computed_status, runs_total, runs_failed, runs_running, runs_success in rows:
         done = bool(runs_total) and computed_status in ("success", "failed")
+        obs_summary = run_summary.get(job.id, {"retry_count_max": 0, "stale_running": 0, "cancelled": 0})
+        age_seconds = _age_seconds(job.created_at, now=now)
+        is_old_queued = (
+            computed_status == "queued"
+            and queued_warn_after > 0
+            and age_seconds is not None
+            and age_seconds >= queued_warn_after
+        )
         items.append(
             {
                 "job_id": job.job_key,
@@ -152,11 +201,19 @@ def list_jobs(
                 "status": computed_status,
                 "done": done,
                 "detail_url": f"/jobs/{job.job_key}",
+                "observability": {
+                    "age_seconds": age_seconds,
+                    "queued_warn_after_seconds": queued_warn_after,
+                    "is_old_queued": is_old_queued,
+                },
                 "runs": {
                     "total": int(runs_total or 0),
                     "running": int(runs_running or 0),
                     "success": int(runs_success or 0),
                     "failed": int(runs_failed or 0),
+                    "retry_count_max": int(obs_summary["retry_count_max"] or 0),
+                    "stale_running": int(obs_summary["stale_running"] or 0),
+                    "cancelled": int(obs_summary["cancelled"] or 0),
                 },
             }
         )
@@ -454,6 +511,35 @@ def job_status(job_id: str, db: Session = Depends(get_db), user=Depends(require_
         if r.status not in ("success", "failed"):
             done = False
             break
+    now = datetime.now(timezone.utc)
+    job_age_seconds = _age_seconds(job.created_at, now=now)
+    queued_warn_after = int(getattr(settings, "job_queued_warn_after_seconds", 1800) or 0)
+    is_old_queued = (
+        not done
+        and all(r.status == "queued" for r in runs)
+        and queued_warn_after > 0
+        and job_age_seconds is not None
+        and job_age_seconds >= queued_warn_after
+    )
+    stdout_full_types = ("query-users", "query-services", "query-firewall", "query-pkg-version", "cve-check")
+
+    def _run_payload(run: JobRun) -> dict:
+        stdout_tail, stdout_tail_truncated = _tail_text(run.stdout)
+        stderr_tail, stderr_tail_truncated = _tail_text(run.stderr)
+        return {
+            "agent_id": run.agent_id,
+            "status": run.status,
+            **job_run_observability(run),
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+            "exit_code": run.exit_code,
+            "error": run.error,
+            "stdout": run.stdout if job.job_type in stdout_full_types else None,
+            "stdout_tail": stdout_tail,
+            "stdout_tail_truncated": stdout_tail_truncated,
+            "stderr_tail": stderr_tail,
+            "stderr_tail_truncated": stderr_tail_truncated,
+        }
 
     return {
         "job_id": job.job_key,
@@ -462,20 +548,58 @@ def job_status(job_id: str, db: Session = Depends(get_db), user=Depends(require_
         "selector": job.selector,
         "created_at": job.created_at,
         "done": done,
-        "runs": [
-            {
-                "agent_id": r.agent_id,
-                "status": r.status,
-                "started_at": r.started_at,
-                "finished_at": r.finished_at,
-                "exit_code": r.exit_code,
-                "error": r.error,
-                "stdout": r.stdout if job.job_type in ("query-users", "query-services", "query-firewall", "query-pkg-version", "cve-check") else None,
-            }
-            for r in runs
-        ],
+        "observability": {
+            "age_seconds": job_age_seconds,
+            "queued_warn_after_seconds": queued_warn_after,
+            "is_old_queued": is_old_queued,
+        },
+        "runs": [_run_payload(r) for r in runs],
         "result": result_data if result_data else None,
     }
+
+
+@router.post("/{job_id}/cancel")
+def cancel_queued_job(job_id: str, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    _require_job_write_access(user)
+    job = db.execute(select(Job).where(Job.job_key == job_id)).scalar_one_or_none()
+    if not job:
+        raise HTTPException(404, "unknown job")
+
+    runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
+    visible_ids = _visible_agent_ids_for_user(db, user, [r.agent_id for r in runs if getattr(r, "agent_id", None)])
+    visible_runs = [r for r in runs if r.agent_id in visible_ids]
+    if not visible_runs:
+        raise HTTPException(404, "unknown job")
+
+    now = datetime.now(timezone.utc)
+    queued_runs = [r for r in visible_runs if r.status == "queued"]
+    with transaction(db):
+        for run in queued_runs:
+            run.status = "failed"
+            run.finished_at = now
+            run.exit_code = run.exit_code if run.exit_code is not None else -1
+            run.error = "cancelled before agent claim"
+        log_event(
+            db,
+            action="jobs.cancel_queued",
+            actor=user,
+            request=request,
+            target_type="job",
+            target_id=job.job_key,
+            target_name=job.job_type,
+            meta={
+                "cancelled_runs": len(queued_runs),
+                "visible_runs": len(visible_runs),
+            },
+        )
+
+    return {
+        "job_id": job.job_key,
+        "status": "cancelled" if queued_runs else "unchanged",
+        "cancelled_runs": len(queued_runs),
+        "visible_runs": len(visible_runs),
+    }
+
 
 @router.get("/{job_id}/runs/{agent_id}/stdout.txt")
 def download_job_run_stdout(job_id: str, agent_id: str, db: Session = Depends(get_db), user=Depends(require_ui_user)):

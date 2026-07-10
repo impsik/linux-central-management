@@ -101,6 +101,7 @@ class JobRun(Base):
     agent_id = Column(String, nullable=False, index=True)
     job_nonce = Column(String, nullable=True, index=True)
     status = Column(String, nullable=False, index=True)
+    retry_count = Column(Integer, nullable=False, default=0)
     started_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
     exit_code = Column(Integer)

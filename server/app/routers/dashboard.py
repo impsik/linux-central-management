@@ -14,7 +14,7 @@ from ..deps import require_admin_user, require_ui_user
 from ..models import BackupVerificationPolicy, BackupVerificationRun, Host, HostMetricsSnapshot, HostPackageUpdate, Job, JobRun, NotificationDedupeState, OIDCAuthEvent
 from ..services.cve_reporting import collect_high_severity_findings
 from ..services.db_utils import transaction
-from ..services.jobs import create_job_with_runs, push_job_to_agents
+from ..services.jobs import create_job_with_runs, job_run_observability, push_job_to_agents
 from ..services.maintenance import is_within_maintenance_window
 from ..services.teams import post_teams_message
 from ..services.user_scopes import is_host_visible_to_user
@@ -781,13 +781,16 @@ def list_failed_runs(
 
     items = []
     for jr, job in rows:
+        obs = job_run_observability(jr, now=now)
         items.append(
             {
+                "run_id": str(jr.id),
                 "job_key": job.job_key,
                 "job_type": job.job_type,
                 "agent_id": jr.agent_id,
                 "finished_at": jr.finished_at.isoformat() if jr.finished_at else None,
                 "exit_code": jr.exit_code,
+                **obs,
                 "error": jr.error,
                 "stderr": (jr.stderr or "")[-4000:],
                 "stdout": (jr.stdout or "")[-4000:],

@@ -24,3 +24,14 @@ def test_startup_auto_create_imports_models_before_create_all():
     assert import_line in src
     assert create_line in src
     assert src.index(import_line) < src.index(create_line)
+
+
+def test_job_run_retry_count_migration_exists():
+    root = Path(__file__).resolve().parents[1]
+    migration = root / "alembic" / "versions" / "20260710_00_job_run_retry_count.py"
+    src = migration.read_text()
+
+    assert 'revision = "20260710_00"' in src
+    assert 'down_revision = "20260621_02"' in src
+    assert '"job_runs"' in src
+    assert '"retry_count"' in src

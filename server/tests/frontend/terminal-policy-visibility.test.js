@@ -6,11 +6,12 @@ describe('terminal policy visibility', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
 
   it('shows terminal access policy next to the Console action', () => {
-    const src = fs.readFileSync(path.join(root, 'server/app/templates/index.html'), 'utf8');
+    const html = fs.readFileSync(path.join(root, 'server/app/templates/index.html'), 'utf8');
+    const app = fs.readFileSync(path.join(root, 'server/app/templates/fleet-app.js'), 'utf8');
 
-    expect(src).toContain('id="host-terminal-policy"');
-    expect(src).toContain('updateTerminalAccessIndicator(hostObj');
-    expect(src).toContain('updateTerminalAccessIndicator(updatedHost');
+    expect(html).toContain('id="host-terminal-policy"');
+    expect(app).toContain('updateTerminalAccessIndicator(hostObj');
+    expect(app).toContain('updateTerminalAccessIndicator(updatedHost');
   });
 
   it('maps terminal_access labels into operator-visible policy states', () => {

@@ -1315,6 +1315,7 @@
       if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadFleetOverview();
       ctx.loadFailedRuns(24, false);
+      ctx.loadQueueHealth(false);
       loadNotifications(ctx, false);
       refreshMaintenanceGuardButtons();
     }
@@ -1400,6 +1401,15 @@
     const bulkOwnerBtn = bulkOwnerButtons.selectedBtn;
     const bulkOwnerVisibleBtn = bulkOwnerButtons.visibleBtn;
     const failedRunsRefreshBtn = document.getElementById('failed-runs-refresh');
+    const queueHealthRefreshBtn = document.getElementById('queue-health-refresh');
+    const queueHealthStatusEl = document.getElementById('queue-health-status');
+    const queueHealthTypeEl = document.getElementById('queue-health-type');
+    const queueHealthAgentEl = document.getElementById('queue-health-agent');
+    const queueHealthOwnerEl = document.getElementById('queue-health-owner');
+    const queueHealthLimitEl = document.getElementById('queue-health-limit');
+    const queueHealthPrevBtn = document.getElementById('queue-health-prev');
+    const queueHealthNextBtn = document.getElementById('queue-health-next');
+    const queueHealthCancelOldBtn = document.getElementById('queue-health-cancel-old');
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
     const teamsBriefBtn = document.getElementById('teams-send-brief');
@@ -1416,6 +1426,34 @@
       moveAttentionPage(ctx, 1);
     });
     w.wireBusyClick(failedRunsRefreshBtn, 'Refreshing…', async () => { await ctx.loadFailedRuns(24, true); });
+    w.wireBusyClick(queueHealthRefreshBtn, 'Refreshing…', async () => { await ctx.loadQueueHealth(true); });
+    const reloadQueueHealthFromFirstPage = () => {
+      if (typeof ctx.resetQueueHealthPagination === 'function') ctx.resetQueueHealthPagination();
+      ctx.loadQueueHealth(false);
+    };
+    [queueHealthStatusEl, queueHealthTypeEl, queueHealthLimitEl].forEach((el) => {
+      el?.addEventListener('change', reloadQueueHealthFromFirstPage);
+    });
+    [queueHealthAgentEl, queueHealthOwnerEl].forEach((el) => {
+      el?.addEventListener('change', reloadQueueHealthFromFirstPage);
+      el?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          reloadQueueHealthFromFirstPage();
+        }
+      });
+    });
+    queueHealthPrevBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (typeof ctx.moveQueueHealthPage === 'function') ctx.moveQueueHealthPage(-1);
+    });
+    queueHealthNextBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (typeof ctx.moveQueueHealthPage === 'function') ctx.moveQueueHealthPage(1);
+    });
+    w.wireBusyClick(queueHealthCancelOldBtn, 'Cancelling…', async () => {
+      if (typeof ctx.cancelVisibleOldQueuedJobs === 'function') await ctx.cancelVisibleOldQueuedJobs();
+    });
     w.wireBusyClick(notificationsRefreshBtn, 'Refreshing…', async () => { await loadNotifications(ctx, true); });
     w.wireBusyClick(teamsTestBtn, 'Sending…', async () => {
       const r = await fetch('/dashboard/alerts/teams/test', { method: 'POST', credentials: 'include' });
@@ -1434,7 +1472,7 @@
       w.showToast('Teams morning brief sent', 'success');
     });
 
-    w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false)]); });
+    w.wireBusyClick(refreshBtn, 'Refreshing…', async () => { await Promise.allSettled([ctx.loadFleetOverview(true), ctx.loadPendingUpdatesReport(), ctx.loadHosts(), ctx.loadFailedRuns(24, false), ctx.loadQueueHealth(false)]); });
     kpiTimeframeEl?.addEventListener('change', () => {
       ctx.loadFleetOverview(true);
     });
