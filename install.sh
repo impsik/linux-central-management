@@ -622,10 +622,10 @@ main() {
       ;;
   esac
 
-  deploy_hosts="$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")"
+  deploy_hosts="${ATTACH_HOSTS:-$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")}"
   ansible_user=""
   if [ -n "$deploy_hosts" ]; then
-    ansible_user="$(prompt "SSH username for managed hosts" "$(id -un 2>/dev/null || printf ubuntu)")"
+    ansible_user="${ANSIBLE_USER:-$(prompt "SSH username for managed hosts" "$(id -un 2>/dev/null || printf ubuntu)")}"
   fi
 
   case "$server_url" in
