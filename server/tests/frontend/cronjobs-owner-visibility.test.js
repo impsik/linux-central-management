@@ -19,4 +19,10 @@ describe('automation cronjobs owner visibility UI', () => {
     expect(app).toContain('void loadCronjobs(ctx);');
     expect(html).toContain('<tbody id="cronjobs-table">\n                  <tr><td colspan="7"');
   });
+
+  it('owns host picker wiring instead of depending on a different UI bundle', () => {
+    expect(app).toContain('function setupCronHostPickerControlsLocal(ctx)');
+    expect(app).toContain("document.getElementById('cron-hosts-open')?.addEventListener('click'");
+    expect(app).not.toContain('setupCronHostPickerControls({');
+  });
 });

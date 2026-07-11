@@ -65,6 +65,70 @@
     panel.style.display = visible ? 'block' : 'none';
   }
 
+  function setupCronScheduleUiLocal() {
+    const kindEl = document.getElementById('cron-schedule-kind');
+    const wrapWeekday = document.getElementById('cron-weekday-wrap');
+    const wrapDom = document.getElementById('cron-dom-wrap');
+    const wrapTime = document.getElementById('cron-time-wrap');
+    const runAtWrap = document.getElementById('cron-run-at')?.parentElement;
+    const actionEl = document.getElementById('cron-action');
+    const nameEl = document.getElementById('cron-name');
+
+    function apply() {
+      const kind = kindEl?.value || 'once';
+      if (wrapWeekday) wrapWeekday.style.display = kind === 'weekly' ? 'block' : 'none';
+      if (wrapDom) wrapDom.style.display = kind === 'monthly' ? 'block' : 'none';
+      if (wrapTime) wrapTime.style.display = ['daily', 'weekly', 'monthly'].includes(kind) ? 'block' : 'none';
+      if (runAtWrap) runAtWrap.style.display = kind === 'once' ? 'block' : 'none';
+    }
+
+    function syncNameToAction() {
+      if (!actionEl || !nameEl) return;
+      const nextAction = String(actionEl.value || '').trim();
+      const currentName = String(nameEl.value || '').trim();
+      if (!currentName || ['dist-upgrade', 'inventory-now', 'security-campaign'].includes(currentName)) {
+        nameEl.value = nextAction;
+      }
+    }
+
+    kindEl?.addEventListener('change', apply);
+    actionEl?.addEventListener('change', syncNameToAction);
+    apply();
+  }
+
+  function setupCronHostPickerControlsLocal(ctx) {
+    const render = () => renderCronHostsList(ctx);
+    document.getElementById('cron-hosts-open')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      setCronHostsPanelVisible(true);
+      render();
+    });
+    document.getElementById('cron-hosts-close')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      setCronHostsPanelVisible(false);
+    });
+    document.getElementById('cron-hosts-search')?.addEventListener('input', render);
+    document.getElementById('cron-hosts-search-clear')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const search = document.getElementById('cron-hosts-search');
+      if (search) search.value = '';
+      render();
+    });
+    document.getElementById('cron-hosts-select-all')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const selectedAgentIds = ctx.getCronSelectedAgentIds();
+      (ctx.getAllHosts() || []).forEach((host) => {
+        if (host.agent_id) selectedAgentIds.add(host.agent_id);
+      });
+      render();
+    });
+    document.getElementById('cron-hosts-select-none')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      ctx.setCronSelectedAgentIds(new Set());
+      render();
+    });
+  }
+
   function renderCronHostsList(ctx) {
     const listEl = document.getElementById('cron-hosts-list');
     const countEl = document.getElementById('cron-hosts-count');
@@ -193,19 +257,12 @@
   }
 
   function initCronjobsControls(ctx) {
-    setupCronScheduleUi();
+    // Do this first so an unrelated control-wiring error cannot leave the
+    // server-rendered Loading row in place indefinitely.
+    void loadCronjobs(ctx);
 
-    setupCronHostPickerControls({
-      setPanelVisible: setCronHostsPanelVisible,
-      renderList: () => renderCronHostsList(ctx),
-      selectAll: () => {
-        const selectedAgentIds = ctx.getCronSelectedAgentIds();
-        (ctx.getAllHosts() || []).forEach(h => { if (h.agent_id) selectedAgentIds.add(h.agent_id); });
-      },
-      clearSelection: () => {
-        ctx.setCronSelectedAgentIds(new Set());
-      },
-    });
+    setupCronScheduleUiLocal();
+    setupCronHostPickerControlsLocal(ctx);
 
     const cronRefreshBtn = document.getElementById('cron-refresh');
     ctx.wireBusyClick(cronRefreshBtn, 'Refreshing…', async () => {
@@ -297,11 +354,6 @@
     runbookSecurityBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible(ctx, 'security-campaign'); });
     runbookDistBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible(ctx, 'dist-upgrade'); });
 
-    // Populate the table during module initialization as well as when the
-    // Automation tab is opened. Relying only on the navigation handler can
-    // leave the server-rendered "Loading…" row in place if tab wiring fails
-    // or the tab was already selected while the UI modules were booting.
-    void loadCronjobs(ctx);
   }
 
   window.fleetCronjobsUi = {
