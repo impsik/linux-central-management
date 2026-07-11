@@ -317,7 +317,23 @@ certificates to be renewed without changing trust stores.
 ## Non-interactive Defaults
 
 The installer is interactive when a terminal is available. Common values can
-also be supplied through environment variables, including:
+also be supplied through environment variables.
+
+### Supported setup variables
+
+- `FLEET_HOSTNAME` — application hostname without a scheme or path;
+- `FLEET_SERVER_IP` — admin node IPv4 address;
+- `FLEET_CA_CERT` — internal CA certificate path;
+- `INSTALL_NGINX` — `yes` or `no`;
+- `ATTACH_HOSTS` — one or more initial managed-host IP addresses or hostnames,
+  separated by spaces or commas;
+- `ANSIBLE_USER` — SSH user used to install the agent on initial hosts;
+- `INSTALL_DIR` — repository/install directory, defaulting to
+  `~/linux-central-management`;
+- `INSTALL_REF` — Git branch or ref to install, defaulting to `main`;
+- `REPO_URL` — alternate Git repository URL.
+
+### Install the admin node without attaching an agent
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | \
@@ -326,6 +342,42 @@ curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/mai
   INSTALL_NGINX=yes \
   sh
 ```
+
+### Install the admin node and attach the first agent
+
+Prepare SSH key access from the admin node to the managed host first. Then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | \
+  FLEET_HOSTNAME=fleet.example.internal \
+  FLEET_SERVER_IP=192.0.2.10 \
+  INSTALL_NGINX=yes \
+  ATTACH_HOSTS=192.0.2.21 \
+  ANSIBLE_USER=fleet-admin \
+  sh
+```
+
+This example installs the control plane on `192.0.2.10` and deploys
+`fleet-agent` to `192.0.2.21` over SSH as `fleet-admin`. The SSH user must have
+working `sudo` access. With key-based SSH and passwordless sudo, no host-login
+password prompt is required.
+
+Multiple initial agents can be supplied as one quoted value:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | \
+  FLEET_HOSTNAME=fleet.example.internal \
+  FLEET_SERVER_IP=192.0.2.10 \
+  INSTALL_NGINX=yes \
+  ATTACH_HOSTS='192.0.2.21 192.0.2.22 server23.example.internal' \
+  ANSIBLE_USER=fleet-admin \
+  sh
+```
+
+The bootstrap admin password is still generated securely when no existing
+password is configured. The installer displays a newly generated password in
+its final summary. Browser terminal access remains an explicit interactive
+opt-in and is not enabled merely by using non-interactive defaults.
 
 Review `install.sh` before unattended production use. Secret rotation and host
 attachment deliberately retain confirmation steps where appropriate.
