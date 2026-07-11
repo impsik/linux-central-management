@@ -89,6 +89,29 @@ primary_ip() {
   printf '127.0.0.1'
 }
 
+url_host() {
+  value="$1"
+  value="${value#http://}"
+  value="${value#https://}"
+  value="${value%%/*}"
+  value="${value%%:*}"
+  printf '%s' "$value"
+}
+
+validate_hostname() {
+  value="$1"
+  printf '%s' "$value" | grep -Eq '^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(\.([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$' \
+    || err "Invalid application hostname: $value"
+}
+
+validate_ipv4() {
+  value="$1"
+  printf '%s\n' "$value" | awk -F. '
+    NF != 4 {exit 1}
+    {for (i=1; i<=4; i++) if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) exit 1}
+  ' || err "Invalid Fleet server IPv4 address: $value"
+}
+
 install_packages() {
   if ! have apt-get; then
     warn "apt-get not found. Please install: git curl ca-certificates docker docker-compose plugin python3 openssl ansible-core golang-go"
@@ -273,6 +296,133 @@ wait_for_health() {
     sleep 2
   done
   warn "Server did not answer $url/health yet. Check: cd $APP_DIR/deploy/docker && docker compose logs server"
+  return 1
+}
+
+prepare_https() {
+  server_url="$1"
+  server_ip="$2"
+  ca_cert="$3"
+  install_nginx="$4"
+
+  case "$server_url" in
+    https://*) ;;
+    *) return 0 ;;
+  esac
+
+  server_host="${server_url#https://}"
+  server_host="${server_host%%/*}"
+  server_host="${server_host%%:*}"
+  ca_key="${ca_cert%.crt}.key"
+  pki_dir="$(dirname "$ca_cert")"
+  work_dir="$(mktemp -d)"
+  trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
+
+  sudo_cmd mkdir -p "$pki_dir"
+  if [ ! -f "$ca_cert" ]; then
+    info "Creating the fleet internal CA"
+    sudo_cmd openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
+      -keyout "$ca_key" -out "$ca_cert" -subj '/CN=Fleet Internal CA' \
+      -addext 'basicConstraints=critical,CA:TRUE' \
+      -addext 'keyUsage=critical,keyCertSign,cRLSign'
+    sudo_cmd chmod 600 "$ca_key"
+    sudo_cmd chmod 644 "$ca_cert"
+  fi
+  [ -f "$ca_key" ] || err "CA private key is required to issue the server certificate: $ca_key"
+
+  sudo_cmd install -m 0644 "$ca_cert" /usr/local/share/ca-certificates/fleet-internal-ca.crt
+  sudo_cmd update-ca-certificates
+  if ! getent hosts "$server_host" 2>/dev/null | awk -v ip="$server_ip" '$1 == ip {found=1} END {exit !found}'; then
+    info "Adding local fallback resolution for $server_host"
+    printf '%s %s\n' "$server_ip" "$server_host" | sudo_cmd tee -a /etc/hosts >/dev/null
+  fi
+
+  cat > "$work_dir/server-ext.cnf" <<EOF
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:$server_host,IP:$server_ip
+EOF
+  info "Issuing an HTTPS certificate for $server_host"
+  sudo_cmd openssl req -new -newkey rsa:3072 -nodes \
+    -keyout "$pki_dir/fleet-server.key" -out "$work_dir/fleet-server.csr" \
+    -subj "/CN=$server_host"
+  sudo_cmd openssl x509 -req -sha256 -days 397 \
+    -in "$work_dir/fleet-server.csr" -CA "$ca_cert" -CAkey "$ca_key" -CAcreateserial \
+    -out "$pki_dir/fleet-server.crt" -extfile "$work_dir/server-ext.cnf"
+  sudo_cmd chmod 600 "$pki_dir/fleet-server.key"
+  sudo_cmd chmod 644 "$pki_dir/fleet-server.crt"
+
+  say "HTTPS certificate files:"
+  say "  CA certificate:     $ca_cert"
+  say "  Server certificate: $pki_dir/fleet-server.crt"
+  say "  Server private key: $pki_dir/fleet-server.key"
+
+  if [ "$install_nginx" != "true" ]; then
+    warn "Automatic nginx setup was declined. Configure Apache, nginx, Caddy, or another reverse proxy to terminate HTTPS for $server_url and proxy to http://127.0.0.1:18000."
+    warn "After the HTTPS endpoint works, run: cd $APP_DIR && ./add-host.sh"
+    return 0
+  fi
+
+  info "Installing and configuring nginx"
+  if have ss && ss -ltn 2>/dev/null | awk '$4 ~ /:443$/ {found=1} END {exit !found}'; then
+    if ! have systemctl || ! systemctl is-active --quiet nginx 2>/dev/null; then
+      err "TCP port 443 is already in use by another service. Choose the externally managed reverse proxy option."
+    fi
+  fi
+  if have apt-get; then
+    sudo_cmd apt-get install -y nginx
+  elif ! have nginx; then
+    err "nginx is not installed and apt-get is unavailable"
+  fi
+  sudo_cmd mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+
+  cat > "$work_dir/nginx-fleet" <<EOF
+map \$http_upgrade \$connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name $server_host $server_ip _;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name $server_host $server_ip _;
+
+    ssl_certificate $pki_dir/fleet-server.crt;
+    ssl_certificate_key $pki_dir/fleet-server.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:FleetTLS:10m;
+    ssl_session_tickets off;
+
+    client_max_body_size 20m;
+    location / {
+        proxy_pass http://127.0.0.1:18000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection \$connection_upgrade;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+EOF
+  sudo_cmd install -m 0644 "$work_dir/nginx-fleet" /etc/nginx/sites-available/fleet
+  [ ! -L /etc/nginx/sites-enabled/default ] || sudo_cmd unlink /etc/nginx/sites-enabled/default
+  [ -e /etc/nginx/sites-enabled/fleet ] || sudo_cmd ln -s /etc/nginx/sites-available/fleet /etc/nginx/sites-enabled/fleet
+  sudo_cmd nginx -t
+  sudo_cmd systemctl enable --now nginx
+  sudo_cmd systemctl reload nginx
 }
 
 main() {
@@ -290,9 +440,46 @@ main() {
   [ -f "$docker_env" ] || cp "$APP_DIR/deploy/docker/env.example" "$docker_env"
   [ -f "$root_env" ] || cp "$APP_DIR/env.example" "$root_env"
 
-  default_url="$(get_env_value "$root_env" "SERVER_URL")"
-  [ -n "$default_url" ] || default_url="http://$(primary_ip):8000"
-  server_url="$(prompt "Server URL agents and browser should use" "$default_url")"
+  existing_url="$(get_env_value "$root_env" "SERVER_URL")"
+  default_host="$(url_host "$existing_url")"
+  [ -n "$default_host" ] || default_host="fleet.local"
+  application_host="${FLEET_HOSTNAME:-$(prompt "Application hostname (without https:// or a path)" "$default_host")}"
+  validate_hostname "$application_host"
+  server_url="https://$application_host"
+
+  fleet_server_ip="$(get_env_value "$root_env" "FLEET_SERVER_IP")"
+  [ -n "$fleet_server_ip" ] || fleet_server_ip="$(primary_ip)"
+  fleet_server_ip="${FLEET_SERVER_IP:-$(prompt "Fleet server IPv4 address" "$fleet_server_ip")}"
+  validate_ipv4 "$fleet_server_ip"
+
+  fleet_ca_cert="$(get_env_value "$root_env" "FLEET_CA_CERT")"
+  [ -n "$fleet_ca_cert" ] || fleet_ca_cert="/etc/fleet-pki/fleet-ca.crt"
+  fleet_ca_cert="${FLEET_CA_CERT:-$(prompt "Internal CA certificate path" "$fleet_ca_cert")}"
+
+  install_nginx="false"
+  if [ -n "${INSTALL_NGINX:-}" ]; then
+    case "$(printf '%s' "$INSTALL_NGINX" | tr '[:upper:]' '[:lower:]')" in
+      y|yes|true|1) install_nginx="true" ;;
+      n|no|false|0) install_nginx="false" ;;
+      *) err "INSTALL_NGINX must be yes/no, true/false, or 1/0" ;;
+    esac
+  elif confirm "Install and configure nginx as the HTTPS reverse proxy?" "n"; then
+    install_nginx="true"
+  else
+    warn "nginx setup skipped; you must configure a reverse proxy before attaching agents."
+  fi
+
+  say ""
+  say "Installation endpoint summary:"
+  say "  Application URL: $server_url"
+  say "  Server IP:       $fleet_server_ip"
+  say "  Internal CA:     $fleet_ca_cert"
+  if [ "$install_nginx" = "true" ]; then
+    say "  Reverse proxy:   nginx (installer managed)"
+  else
+    say "  Reverse proxy:   externally managed"
+  fi
+  say ""
 
   current_bootstrap_user="$(get_env_value "$docker_env" "BOOTSTRAP_USERNAME")"
   [ -n "$current_bootstrap_user" ] || current_bootstrap_user="admin"
@@ -413,6 +600,9 @@ main() {
   final_agent_token="$(get_env_value "$docker_env" "AGENT_SHARED_TOKEN")"
   final_terminal_token="$(get_env_value "$docker_env" "AGENT_TERMINAL_TOKEN")"
   set_env_value "$root_env" "SERVER_URL" "$server_url"
+  set_env_value "$root_env" "FLEET_HOSTNAME" "$application_host"
+  set_env_value "$root_env" "FLEET_SERVER_IP" "$fleet_server_ip"
+  set_env_value "$root_env" "FLEET_CA_CERT" "$fleet_ca_cert"
   set_env_value "$root_env" "AGENT_TOKEN" "$final_agent_token"
   set_env_value "$root_env" "TERM_TOKEN" "$final_terminal_token"
   set_env_value "$root_env" "TERM_LISTEN" "auto:18080"
@@ -428,27 +618,44 @@ main() {
     sync_postgres_password "$postgres_password"
     docker_compose up -d --build --remove-orphans
   )
-  wait_for_health "$server_url"
+  prepare_https "$server_url" "$fleet_server_ip" "$fleet_ca_cert" "$install_nginx"
+  server_ready="true"
+  if ! wait_for_health "$server_url"; then
+    server_ready="false"
+    warn "Agent deployment is deferred until $server_url is reachable with a trusted certificate."
+  fi
 
   if [ -n "$deploy_hosts" ]; then
-    if confirm "Build and deploy fleet-agent to listed hosts now?" "y"; then
-      info "Deploying agent with script.sh"
-      (cd "$APP_DIR" && RUN_SERVER=0 SERVER_URL="$server_url" AGENT_TOKEN="$final_agent_token" TERM_TOKEN="$final_terminal_token" TARGETS=all ./script.sh)
+    if [ "$server_ready" != "true" ]; then
+      warn "Skipped agent deployment. Finish the reverse proxy setup, then run: cd $APP_DIR && ./add-host.sh"
+    elif confirm "Build and deploy fleet-agent to listed hosts now?" "y"; then
+      info "Deploying agents with add-host.sh"
+      (cd "$APP_DIR" && ATTACH_HOSTS="$deploy_hosts" ANSIBLE_USER="$ansible_user" FLEET_SERVER_IP="$fleet_server_ip" FLEET_CA_CERT="$fleet_ca_cert" ./add-host.sh)
     else
       warn "Skipped agent deploy. You can run it later:"
-      say "  cd $APP_DIR && RUN_SERVER=0 SERVER_URL=\"$server_url\" TARGETS=all ./script.sh"
+      say "  cd $APP_DIR && ./add-host.sh"
     fi
   fi
 
   say ""
   say "Install complete."
-  say "Open: $server_url/"
+  if [ "$server_ready" = "true" ]; then
+    say "Status: ready"
+    say "Open: $server_url/"
+  else
+    say "Status: waiting for reverse proxy configuration"
+    say "Expected URL: $server_url/"
+    say "Proxy upstream: http://127.0.0.1:18000"
+  fi
   say "Login: $bootstrap_user"
   say "Password: $bootstrap_password_display"
   say ""
   say "Config files:"
   say "  $docker_env"
   say "  $root_env"
+  say "  CA certificate: $(dirname "$fleet_ca_cert")/$(basename "$fleet_ca_cert")"
+  say "  Server certificate: $(dirname "$fleet_ca_cert")/fleet-server.crt"
+  say "  Server private key: $(dirname "$fleet_ca_cert")/fleet-server.key"
   [ -n "$deploy_hosts" ] && say "  $APP_DIR/hosts"
 }
 

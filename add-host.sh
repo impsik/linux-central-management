@@ -45,6 +45,95 @@ prompt_secret() {
   fi
 }
 
+run_ansible() {
+  if [ -n "${ansible_pass:-}" ]; then
+    ansible "$target_pattern" -i "$HOSTS_FILE" -b -u "$ansible_user" \
+      --extra-vars "ansible_ssh_pass=$ansible_pass ansible_become_pass=$ansible_pass" \
+      --ssh-common-args='-o StrictHostKeyChecking=accept-new' "$@"
+  else
+    ansible "$target_pattern" -i "$HOSTS_FILE" -b -u "$ansible_user" \
+      --ssh-common-args='-o StrictHostKeyChecking=accept-new' "$@"
+  fi
+}
+
+deploy_agent() {
+  server_url="$1"
+  agent_token="$2"
+  term_token="$3"
+  server_ip="$4"
+  ca_cert="$5"
+
+  case "$server_url" in
+    https://*)
+      [ -n "$ca_cert" ] || err "FLEET_CA_CERT is required for HTTPS agent deployment"
+      [ -r "$ca_cert" ] || err "CA certificate is not readable: $ca_cert"
+      ;;
+  esac
+
+  server_host="${server_url#http://}"
+  server_host="${server_host#https://}"
+  server_host="${server_host%%/*}"
+  server_host="${server_host%%:*}"
+
+  info "Building fleet-agent"
+  (cd "$ROOT_DIR/agent" && go build -o fleet-agent ./cmd/fleet-agent)
+
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
+  cat > "$tmp_dir/fleet-agent.env" <<EOF
+FLEET_SERVER_URL=$server_url
+FLEET_AGENT_TOKEN=$agent_token
+FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
+FLEET_TERMINAL_TOKEN=$term_token
+FLEET_TERMINAL_LISTEN=auto:18080
+FLEET_TERMINAL_BACKEND=auto
+EOF
+  cat > "$tmp_dir/fleet-agent.service" <<EOF
+[Unit]
+Description=Fleet Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/fleet-agent.env
+Environment=FLEET_AGENT_ID=%H
+ExecStart=/opt/fleet-agent/fleet-agent
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  chmod 600 "$tmp_dir/fleet-agent.env"
+
+  run_ansible -m file -a 'path=/opt/fleet-agent state=directory mode=0755'
+  run_ansible -m file -a 'path=/var/lib/fleet-agent state=directory mode=0700'
+  run_ansible -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755"
+  run_ansible -m copy -a "src=$tmp_dir/fleet-agent.env dest=/etc/fleet-agent.env mode=0600"
+  run_ansible -m copy -a "src=$tmp_dir/fleet-agent.service dest=/etc/systemd/system/fleet-agent.service mode=0644"
+
+  if [ -n "$ca_cert" ]; then
+    info "Installing the fleet internal CA on managed hosts"
+    run_ansible -m copy -a "src=$ca_cert dest=/usr/local/share/ca-certificates/fleet-internal-ca.crt mode=0644"
+    run_ansible -m command -a update-ca-certificates
+  fi
+
+  if [ -n "$server_ip" ] && [ "$server_host" != "$server_ip" ]; then
+    info "Ensuring $server_host resolves to $server_ip on managed hosts"
+    run_ansible -m blockinfile -a "path=/etc/hosts marker='# {mark} FLEET SERVER' block='$server_ip $server_host'"
+  fi
+
+  case "$server_url" in
+    https://*)
+      info "Verifying HTTPS trust and hostname before starting agents"
+      run_ansible -m uri -a "url=$server_url/health method=GET status_code=200 validate_certs=true return_content=false"
+      ;;
+  esac
+
+  run_ansible -m shell -a 'systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl restart fleet-agent && systemctl is-active fleet-agent'
+}
+
 get_env_value() {
   file="$1"
   key="$2"
@@ -121,11 +210,11 @@ main() {
   term_token="$(get_env_value "$ROOT_ENV_FILE" "TERM_TOKEN")"
   [ -n "$term_token" ] || term_token="$(get_env_value "$DOCKER_ENV_FILE" "AGENT_TERMINAL_TOKEN")"
 
-  hosts_input="$(prompt "New host(s) to attach (space/comma separated)" "")"
+  hosts_input="${ATTACH_HOSTS:-$(prompt "New host(s) to attach (space/comma separated)" "")}"
   [ -n "$hosts_input" ] || err "No hosts provided"
 
-  ansible_user="$(prompt "SSH username for new host(s)" "$(id -un 2>/dev/null || printf ubuntu)")"
-  ansible_pass="$(prompt_secret "SSH password")"
+  ansible_user="${ANSIBLE_USER:-$(prompt "SSH username for new host(s)" "$(id -un 2>/dev/null || printf ubuntu)")}"
+  ansible_pass="${ANSIBLE_PASS:-$(prompt_secret "SSH password")}"
 
   target_pattern=""
   for host in $(normalize_hosts "$hosts_input"); do
@@ -142,11 +231,9 @@ main() {
   chmod 600 "$ROOT_ENV_FILE" "$DOCKER_ENV_FILE"
 
   info "Deploying fleet-agent to: $target_pattern"
-  if [ -n "$ansible_pass" ]; then
-    RUN_SERVER=0 SERVER_URL="$server_url" AGENT_TOKEN="$agent_token" TERM_TOKEN="$term_token" TARGETS="$target_pattern" ANSIBLE_USER="$ansible_user" ANSIBLE_PASS="$ansible_pass" "$ROOT_DIR/script.sh"
-  else
-    RUN_SERVER=0 SERVER_URL="$server_url" AGENT_TOKEN="$agent_token" TERM_TOKEN="$term_token" TARGETS="$target_pattern" ANSIBLE_USER="$ansible_user" "$ROOT_DIR/script.sh"
-  fi
+  fleet_server_ip="${FLEET_SERVER_IP:-$(get_env_value "$ROOT_ENV_FILE" "FLEET_SERVER_IP")}"
+  fleet_ca_cert="${FLEET_CA_CERT:-$(get_env_value "$ROOT_ENV_FILE" "FLEET_CA_CERT")}"
+  deploy_agent "$server_url" "$agent_token" "$term_token" "$fleet_server_ip" "$fleet_ca_cert"
 
   say ""
   say "Host attach complete."
