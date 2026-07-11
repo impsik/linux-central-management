@@ -62,6 +62,7 @@ services:
       AGENT_TERMINAL_TOKEN: ${AGENT_TERMINAL_TOKEN:-}
       # For production behind HTTPS, set AGENT_TERMINAL_SCHEME=wss
       AGENT_TERMINAL_SCHEME: ${AGENT_TERMINAL_SCHEME:-ws}
+      AGENT_TERMINAL_TLS_CA_B64: ${AGENT_TERMINAL_TLS_CA_B64:-}
 
       # Optional CSP baseline (recommended once validated in your environment)
       CONTENT_SECURITY_POLICY: ${CONTENT_SECURITY_POLICY:-}

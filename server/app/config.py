@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     agent_terminal_scheme: str = "ws"  # ws|wss
     agent_terminal_port: int = 18080
     agent_terminal_token: str | None = None  # must match agent-side token
+    # Optional private CA (base64-encoded PEM) used to verify WSS agent
+    # terminal certificates. If unset, the system trust store is used.
+    agent_terminal_tls_ca_b64: str | None = None
 
     # Security headers (recommended if exposed beyond LAN)
     security_headers_enabled: bool = True

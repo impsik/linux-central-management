@@ -1,14 +1,31 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
+import ssl
 from contextlib import suppress
 from codecs import getincrementaldecoder
 from typing import Any
 
 import websockets
 
+from .config import settings
+
 logger = logging.getLogger(__name__)
+
+
+def _agent_terminal_ssl_context(agent_url: str) -> ssl.SSLContext | None:
+    if not str(agent_url or "").lower().startswith("wss://"):
+        return None
+    ca_b64 = str(getattr(settings, "agent_terminal_tls_ca_b64", None) or "").strip()
+    if not ca_b64:
+        return ssl.create_default_context()
+    try:
+        ca_pem = base64.b64decode(ca_b64, validate=True).decode("ascii")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise RuntimeError("AGENT_TERMINAL_TLS_CA_B64 is not valid base64 PEM") from exc
+    return ssl.create_default_context(cadata=ca_pem)
 
 
 async def _connect_agent_ws(
@@ -28,6 +45,7 @@ async def _connect_agent_ws(
             ping_interval=None,
             ping_timeout=None,
             additional_headers=headers,
+            ssl=_agent_terminal_ssl_context(agent_url),
         ),
         timeout=timeout_s,
     )
