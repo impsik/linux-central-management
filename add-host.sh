@@ -74,6 +74,10 @@ deploy_agent() {
   server_host="${server_host#https://}"
   server_host="${server_host%%/*}"
   server_host="${server_host%%:*}"
+  case "$server_url" in
+    https://*) terminal_listen="127.0.0.1:18081" ;;
+    *) terminal_listen="auto:18080" ;;
+  esac
 
   info "Building fleet-agent"
   (cd "$ROOT_DIR/agent" && go build -o fleet-agent ./cmd/fleet-agent)
@@ -85,7 +89,7 @@ FLEET_SERVER_URL=$server_url
 FLEET_AGENT_TOKEN=$agent_token
 FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 FLEET_TERMINAL_TOKEN=$term_token
-FLEET_TERMINAL_LISTEN=auto:18080
+FLEET_TERMINAL_LISTEN=$terminal_listen
 FLEET_TERMINAL_BACKEND=auto
 EOF
   cat > "$tmp_dir/fleet-agent.service" <<EOF
