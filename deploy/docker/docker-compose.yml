@@ -36,7 +36,7 @@ services:
       UI_REVOKE_ALL_SESSIONS_ON_STARTUP: ${UI_REVOKE_ALL_SESSIONS_ON_STARTUP:-false}
 
       # Once Alembic is in use, disable auto-create in production deployments:
-      DB_AUTO_CREATE_TABLES: ${DB_AUTO_CREATE_TABLES:-true}
+      DB_AUTO_CREATE_TABLES: ${DB_AUTO_CREATE_TABLES:-false}
       # In production, keep this true so the server fails fast if migrations are not applied.
       DB_REQUIRE_MIGRATIONS_UP_TO_DATE: ${DB_REQUIRE_MIGRATIONS_UP_TO_DATE:-true}
       # Admin migration endpoint should remain disabled in production:

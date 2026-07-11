@@ -29,6 +29,9 @@ from ..services.rbac import permissions_for
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Always execute one password hash verification, including for unknown users,
+# so login response timing does not reveal whether an account exists.
+_DUMMY_PASSWORD_HASH = pwd_context.hash(secrets.token_urlsafe(32))
 
 
 def _request_is_https(request: Request | None) -> bool:
@@ -217,24 +220,33 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     if not username or not password:
         raise HTTPException(400, "username and password are required")
 
-    # Basic brute-force guard (single-process in-memory). Good enough for LAN MVP.
+    # Apply both focused-account and IP-wide limits. The IP-wide bucket prevents
+    # an attacker from bypassing the guard by rotating usernames.
     from ..services.rate_limit import FixedWindowRateLimiter
 
-    global _LOGIN_LIMITER  # noqa: PLW0603
-    limit = max(1, int(getattr(settings, "login_rate_limit_per_minute", 50) or 50))
-    if "_LOGIN_LIMITER" not in globals() or getattr(_LOGIN_LIMITER, "limit", None) != limit:
-        _LOGIN_LIMITER = FixedWindowRateLimiter(limit=limit, window_seconds=60)
+    global _LOGIN_LIMITER, _LOGIN_IP_LIMITER  # noqa: PLW0603
+    account_limit = max(1, int(getattr(settings, "login_rate_limit_per_minute", 10) or 10))
+    ip_limit = max(1, int(getattr(settings, "login_ip_rate_limit_per_minute", 30) or 30))
+    if "_LOGIN_LIMITER" not in globals() or getattr(_LOGIN_LIMITER, "limit", None) != account_limit:
+        _LOGIN_LIMITER = FixedWindowRateLimiter(limit=account_limit, window_seconds=60)
+    if "_LOGIN_IP_LIMITER" not in globals() or getattr(_LOGIN_IP_LIMITER, "limit", None) != ip_limit:
+        _LOGIN_IP_LIMITER = FixedWindowRateLimiter(limit=ip_limit, window_seconds=60)
 
     ip = (getattr(request.client, "host", None) or "unknown").strip()
-    rl = _LOGIN_LIMITER.check(f"login:{ip}:{username.lower()}")
+    ip_rl = _LOGIN_IP_LIMITER.check(f"login-ip:{ip}")
+    rl = _LOGIN_LIMITER.check(f"login-account:{ip}:{username.lower()}")
+    _LOGIN_IP_LIMITER.cleanup()
     _LOGIN_LIMITER.cleanup()
-    if not rl.allowed:
-        raise HTTPException(429, f"Too many login attempts. Try again in {rl.retry_after_seconds}s")
+    if not ip_rl.allowed or not rl.allowed:
+        retry_after = max(ip_rl.retry_after_seconds, rl.retry_after_seconds)
+        raise HTTPException(429, f"Too many login attempts. Try again in {retry_after}s")
 
     user = db.execute(
         select(AppUser).where(AppUser.username == username, AppUser.is_active == True)  # noqa: E712
     ).scalar_one_or_none()
-    if not user or not pwd_context.verify(password, user.password_hash):
+    password_hash = user.password_hash if user else _DUMMY_PASSWORD_HASH
+    password_ok = pwd_context.verify(password, password_hash)
+    if not user or not password_ok:
         raise HTTPException(401, "Invalid username or password")
     if (getattr(user, "auth_provider", "local") or "local") != "local":
         raise HTTPException(401, "Use Active Directory login for this account")
