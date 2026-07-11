@@ -182,3 +182,70 @@ def test_security_campaign_cronjob_dispatch_creates_patch_campaign(monkeypatch):
             run = db.query(models.CronJobRun).one()
             assert run.status == "success"
             assert run.job_key == f"patch-campaign:{campaign.campaign_key}"
+
+
+def test_recurring_cronjob_missed_window_is_skipped_not_caught_up(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    _reload_app_modules()
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app):
+        db_mod = importlib.import_module("app.db")
+        models = importlib.import_module("app.models")
+        cronjobs = importlib.import_module("app.services.cronjobs")
+
+        missed_run_at = datetime.now(timezone.utc).replace(hour=3, minute=0, second=0, microsecond=0)
+        if missed_run_at > datetime.now(timezone.utc) - timedelta(minutes=30):
+            missed_run_at -= timedelta(days=1)
+
+        with db_mod.SessionLocal() as db:
+            user = models.AppUser(username="cron-admin", password_hash="x", role="admin")
+            db.add(user)
+            db.flush()
+            db.add(models.Host(agent_id="srv-sec", hostname="srv-sec", labels={}))
+            db.add(
+                models.CronJob(
+                    user_id=user.id,
+                    name="missed security daily",
+                    run_at=missed_run_at,
+                    action="security-campaign",
+                    payload={
+                        "schedule": {
+                            "kind": "daily",
+                            "timezone": "UTC",
+                            "time_hhmm": "03:00",
+                        },
+                    },
+                    selector={"agent_ids": ["srv-sec"]},
+                    status="scheduled",
+                )
+            )
+            db.commit()
+
+        asyncio.run(cronjobs._run_tick())
+
+        with db_mod.SessionLocal() as db:
+            assert db.query(models.PatchCampaign).count() == 0
+            cron = db.query(models.CronJob).filter_by(name="missed security daily").one()
+            assert cron.status == "scheduled"
+            next_run_at = cron.run_at
+            if next_run_at.tzinfo is None:
+                next_run_at = next_run_at.replace(tzinfo=timezone.utc)
+            assert next_run_at > datetime.now(timezone.utc)
+            assert next_run_at.hour == 3
+            assert next_run_at.minute == 0
+            run = db.query(models.CronJobRun).one()
+            assert run.status == "skipped"
+            assert "missed scheduled time" in run.error

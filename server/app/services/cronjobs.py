@@ -18,6 +18,8 @@ from .jobs import create_job_with_runs, push_job_to_agents
 
 logger = logging.getLogger(__name__)
 
+MISSED_RECURRING_GRACE = timedelta(minutes=15)
+
 
 async def cronjob_loop(stop_event: asyncio.Event, *, tick_s: float = 2.0) -> None:
     """Background loop that dispatches one-shot cron jobs."""
@@ -58,6 +60,39 @@ async def _run_tick() -> None:
 
 async def _dispatch_one(db: Session, cj: CronJob) -> None:
     now = datetime.now(timezone.utc)
+
+    if _is_missed_recurring_run(cj, now):
+        missed_run_at = cj.run_at
+        next_run_at = _next_recurring_run_at(cj, after=now)
+        done_at = datetime.now(timezone.utc)
+        with transaction(db):
+            cj = db.execute(select(CronJob).where(CronJob.id == cj.id)).scalar_one()
+            if cj.status != "scheduled":
+                return
+            run = CronJobRun(
+                cron_job_id=cj.id,
+                status="skipped",
+                started_at=done_at,
+                finished_at=done_at,
+                error="missed scheduled time; skipped catch-up run",
+            )
+            db.add(run)
+            if next_run_at is not None:
+                cj.run_at = next_run_at
+                cj.status = "scheduled"
+                cj.started_at = None
+                cj.finished_at = None
+                cj.last_error = None
+            else:
+                cj.status = "done"
+                cj.finished_at = done_at
+        logger.warning(
+            "Skipped missed recurring cronjob %s scheduled for %s; next_run_at=%s",
+            getattr(cj, "id", None),
+            missed_run_at,
+            next_run_at,
+        )
+        return
 
     # best-effort lock by flipping status inside a transaction
     with transaction(db):
@@ -152,69 +187,7 @@ async def _dispatch_one(db: Session, cj: CronJob) -> None:
 
         done_at = datetime.now(timezone.utc)
 
-        # If recurring schedule is set, compute next run_at (in user's local time)
-        schedule = (cj.payload or {}).get('schedule') if isinstance(cj.payload, dict) else None
-        kind = (schedule or {}).get('kind') if isinstance(schedule, dict) else None
-        tz_name = (schedule or {}).get('timezone') if isinstance(schedule, dict) else 'UTC'
-        tz_name = str(tz_name or 'UTC')
-
-        next_run_at = None
-        if kind and kind != 'once':
-            try:
-                tz = ZoneInfo(tz_name)
-            except Exception:
-                tz = timezone.utc
-
-            # Determine local time-of-day
-            hhmm = (schedule or {}).get('time_hhmm') or None
-            if hhmm and isinstance(hhmm, str) and ':' in hhmm:
-                try:
-                    hh, mm = hhmm.split(':', 1)
-                    hh_i = int(hh); mm_i = int(mm)
-                    tod = time(hour=max(0, min(23, hh_i)), minute=max(0, min(59, mm_i)))
-                except Exception:
-                    tod = cj.run_at.astimezone(tz).timetz().replace(tzinfo=None)
-            else:
-                # default: use the originally scheduled local time-of-day
-                tod = cj.run_at.astimezone(tz).timetz().replace(tzinfo=None)
-
-            last_local = cj.run_at.astimezone(tz)
-
-            if kind == 'daily':
-                nxt_date = last_local.date() + timedelta(days=1)
-                next_local = datetime.combine(nxt_date, tod, tzinfo=tz)
-                next_run_at = next_local.astimezone(timezone.utc)
-
-            elif kind == 'weekly':
-                wd = (schedule or {}).get('weekday')
-                try:
-                    target_wd = int(wd)
-                except Exception:
-                    target_wd = last_local.weekday()
-                delta = (target_wd - last_local.weekday()) % 7
-                if delta == 0:
-                    delta = 7
-                nxt_date = last_local.date() + timedelta(days=delta)
-                next_local = datetime.combine(nxt_date, tod, tzinfo=tz)
-                next_run_at = next_local.astimezone(timezone.utc)
-
-            elif kind == 'monthly':
-                dom = (schedule or {}).get('day_of_month')
-                try:
-                    dom_i = int(dom)
-                except Exception:
-                    dom_i = last_local.day
-                dom_i = max(1, min(31, dom_i))
-
-                y = last_local.year
-                m = last_local.month + 1
-                if m == 13:
-                    m = 1
-                    y += 1
-                last_day = calendar.monthrange(y, m)[1]
-                day = min(dom_i, last_day)
-                next_local = datetime(y, m, day, tod.hour, tod.minute, 0, tzinfo=tz)
-                next_run_at = next_local.astimezone(timezone.utc)
+        next_run_at = _next_recurring_run_at(cj, after=done_at)
 
         with transaction(db):
             cj = db.execute(select(CronJob).where(CronJob.id == cj.id)).scalar_one()
@@ -243,3 +216,115 @@ async def _dispatch_one(db: Session, cj: CronJob) -> None:
             run2.finished_at = done_at
             run2.error = str(e)
         raise
+
+
+def _schedule_payload(cj: CronJob) -> dict | None:
+    schedule = (cj.payload or {}).get("schedule") if isinstance(cj.payload, dict) else None
+    return schedule if isinstance(schedule, dict) else None
+
+
+def _recurring_kind(cj: CronJob) -> str | None:
+    schedule = _schedule_payload(cj)
+    kind = (schedule or {}).get("kind")
+    kind = str(kind or "").strip().lower()
+    return kind if kind and kind != "once" else None
+
+
+def _cron_timezone(schedule: dict | None):
+    tz_name = str((schedule or {}).get("timezone") or "UTC")
+    try:
+        return ZoneInfo(tz_name)
+    except Exception:
+        return timezone.utc
+
+
+def _cron_time_of_day(cj: CronJob, schedule: dict | None, tz) -> time:
+    hhmm = (schedule or {}).get("time_hhmm") or None
+    if hhmm and isinstance(hhmm, str) and ":" in hhmm:
+        try:
+            hh, mm = hhmm.split(":", 1)
+            hh_i = int(hh)
+            mm_i = int(mm)
+            return time(hour=max(0, min(23, hh_i)), minute=max(0, min(59, mm_i)))
+        except Exception:
+            pass
+    return cj.run_at.astimezone(tz).timetz().replace(tzinfo=None)
+
+
+def _next_recurring_candidate(cj: CronJob) -> datetime | None:
+    schedule = _schedule_payload(cj)
+    kind = _recurring_kind(cj)
+    if not kind:
+        return None
+
+    tz = _cron_timezone(schedule)
+    tod = _cron_time_of_day(cj, schedule, tz)
+    last_local = cj.run_at.astimezone(tz)
+
+    if kind == "daily":
+        nxt_date = last_local.date() + timedelta(days=1)
+        next_local = datetime.combine(nxt_date, tod, tzinfo=tz)
+        return next_local.astimezone(timezone.utc)
+
+    if kind == "weekly":
+        wd = (schedule or {}).get("weekday")
+        try:
+            target_wd = int(wd)
+        except Exception:
+            target_wd = last_local.weekday()
+        delta = (target_wd - last_local.weekday()) % 7
+        if delta == 0:
+            delta = 7
+        nxt_date = last_local.date() + timedelta(days=delta)
+        next_local = datetime.combine(nxt_date, tod, tzinfo=tz)
+        return next_local.astimezone(timezone.utc)
+
+    if kind == "monthly":
+        dom = (schedule or {}).get("day_of_month")
+        try:
+            dom_i = int(dom)
+        except Exception:
+            dom_i = last_local.day
+        dom_i = max(1, min(31, dom_i))
+
+        y = last_local.year
+        m = last_local.month + 1
+        if m == 13:
+            m = 1
+            y += 1
+        last_day = calendar.monthrange(y, m)[1]
+        day = min(dom_i, last_day)
+        next_local = datetime(y, m, day, tod.hour, tod.minute, 0, tzinfo=tz)
+        return next_local.astimezone(timezone.utc)
+
+    return None
+
+
+def _next_recurring_run_at(cj: CronJob, *, after: datetime) -> datetime | None:
+    if after.tzinfo is None:
+        after = after.replace(tzinfo=timezone.utc)
+    else:
+        after = after.astimezone(timezone.utc)
+
+    next_run_at = _next_recurring_candidate(cj)
+    guard = 0
+    original_run_at = cj.run_at
+    try:
+        while next_run_at is not None and next_run_at <= after:
+            cj.run_at = next_run_at
+            next_run_at = _next_recurring_candidate(cj)
+            guard += 1
+            if guard > 400:
+                raise RuntimeError("recurring cron next-run calculation exceeded guard limit")
+    finally:
+        cj.run_at = original_run_at
+    return next_run_at
+
+
+def _is_missed_recurring_run(cj: CronJob, now: datetime) -> bool:
+    if not _recurring_kind(cj):
+        return False
+    run_at = cj.run_at
+    if run_at.tzinfo is None:
+        run_at = run_at.replace(tzinfo=timezone.utc)
+    return now > run_at.astimezone(timezone.utc) + MISSED_RECURRING_GRACE

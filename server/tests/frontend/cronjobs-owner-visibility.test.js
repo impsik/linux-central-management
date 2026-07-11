@@ -14,4 +14,9 @@ describe('automation cronjobs owner visibility UI', () => {
     expect(app).toContain('const owner = String(it.owner_username || \'\').trim();');
     expect(app).toContain('<td>${owner ? `<code>${ctx.escapeHtml(owner)}</code>` : \'<span class="status-muted">—</span>\'}</td>');
   });
+
+  it('loads cronjobs during module initialization instead of relying only on tab navigation', () => {
+    expect(app).toContain('void loadCronjobs(ctx);');
+    expect(html).toContain('<tbody id="cronjobs-table">\n                  <tr><td colspan="7"');
+  });
 });

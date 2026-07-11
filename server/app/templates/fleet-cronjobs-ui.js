@@ -296,6 +296,12 @@
     runbookInventoryBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible(ctx, 'inventory-now'); });
     runbookSecurityBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible(ctx, 'security-campaign'); });
     runbookDistBtn?.addEventListener('click', async (e) => { e.preventDefault(); await runImmediateForVisible(ctx, 'dist-upgrade'); });
+
+    // Populate the table during module initialization as well as when the
+    // Automation tab is opened. Relying only on the navigation handler can
+    // leave the server-rendered "Loading…" row in place if tab wiring fails
+    // or the tab was already selected while the UI modules were booting.
+    void loadCronjobs(ctx);
   }
 
   window.fleetCronjobsUi = {
