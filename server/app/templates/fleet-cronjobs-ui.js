@@ -5,6 +5,11 @@
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   }
 
+  function localDatetimeValue(date) {
+    const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+    return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+  }
+
   function formatInTimezone(value, timezone) {
     if (!value) return '–';
     try {
@@ -134,10 +139,12 @@
     const wrapDom = document.getElementById('cron-dom-wrap');
     const wrapTime = document.getElementById('cron-time-wrap');
     const runAtWrap = document.getElementById('cron-run-at')?.parentElement;
+    const runAtEl = document.getElementById('cron-run-at');
     const actionEl = document.getElementById('cron-action');
     const nameEl = document.getElementById('cron-name');
     const timezoneHint = document.getElementById('cron-timezone-hint');
     if (timezoneHint) timezoneHint.textContent = `Timezone: ${browserTimezone()}`;
+    if (runAtEl) runAtEl.min = localDatetimeValue(new Date(Date.now() + 60 * 1000));
 
     function apply() {
       const kind = kindEl?.value || 'once';

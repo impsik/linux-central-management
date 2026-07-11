@@ -23,6 +23,7 @@ router = APIRouter(prefix="/cronjobs", tags=["cronjobs"])
 
 
 ALLOWED_ACTIONS = {"dist-upgrade", "inventory-now", "security-campaign"}
+MIN_ONCE_SCHEDULE_LEAD = timedelta(minutes=1)
 
 
 class CronJobCreate(BaseModel):
@@ -124,6 +125,8 @@ def create_cronjob(payload: CronJobCreate, request: Request, db: Session = Depen
         if run_at.tzinfo is None:
             run_at = run_at.replace(tzinfo=timezone.utc)
         run_at = run_at.astimezone(timezone.utc)
+        if run_at < datetime.now(timezone.utc) + MIN_ONCE_SCHEDULE_LEAD:
+            raise HTTPException(400, "run_at must be at least 1 minute in the future")
 
     else:
         # Recurring schedules: compute next occurrence from now in user's local time.

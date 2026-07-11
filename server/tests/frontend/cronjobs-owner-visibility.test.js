@@ -7,9 +7,11 @@ describe('automation cronjobs owner visibility UI', () => {
   const htmlPath = path.join(root, 'server/app/templates/index.html');
   const appPath = path.join(root, 'server/app/templates/fleet-cronjobs-ui.js');
   const fleetAppPath = path.join(root, 'server/app/templates/fleet-app.js');
+  const phase3Path = path.join(root, 'server/app/templates/fleet-phase3.js');
   const html = fs.readFileSync(htmlPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
   const fleetApp = fs.readFileSync(fleetAppPath, 'utf8');
+  const phase3 = fs.readFileSync(phase3Path, 'utf8');
 
   it('shows an Owner column in the cronjobs table', () => {
     expect(html).toContain('<th>Owner</th>');
@@ -23,6 +25,12 @@ describe('automation cronjobs owner visibility UI', () => {
     expect(app).toContain('function scheduleLabel(item)');
     expect(app).toContain('data-history-id=');
     expect(app).toContain('/audit`');
+  });
+
+  it('blocks one-shot schedules in the past in both the form and API workflow', () => {
+    expect(app).toContain('runAtEl.min = localDatetimeValue');
+    expect(phase3).toContain('dt.getTime() < Date.now() + 60 * 1000');
+    expect(phase3).toContain('Scheduled time must be at least 1 minute in the future');
   });
 
   it('loads cronjobs during module initialization instead of relying only on tab navigation', () => {

@@ -103,6 +103,22 @@ def test_overview_and_cron_smoke_sqlite(monkeypatch):
         assert failed["run_id"]
 
         # Cron create/list smoke
+        past_run_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        rejected = client.post(
+            "/cronjobs",
+            json={
+                "name": "must not run immediately",
+                "run_at": past_run_at,
+                "action": "dist-upgrade",
+                "agent_ids": ["srv-001"],
+                "schedule_kind": "once",
+                "timezone": "UTC",
+            },
+            headers=headers,
+        )
+        assert rejected.status_code == 400, rejected.text
+        assert rejected.json()["detail"] == "run_at must be at least 1 minute in the future"
+
         run_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         r = client.post(
             "/cronjobs",
