@@ -7,15 +7,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import format_datetime
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import SessionLocal
-from ..models import AppUser, CVEDefinition, CVEPackage, CronJob, Host, HostPackage, HostPackageUpdate
-from .db_utils import transaction
+from ..models import CVEDefinition, CVEPackage, Host, HostPackage, HostPackageUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -326,75 +324,10 @@ def send_report_via_smtp(*, recipient: str, subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-def next_local_3am_utc(now: datetime | None = None) -> datetime:
-    tz_name = str(getattr(settings, "maintenance_window_timezone", "Europe/Tallinn") or "Europe/Tallinn")
-    try:
-        tz = ZoneInfo(tz_name)
-    except Exception:
-        tz = timezone.utc
-    base = (now or datetime.now(timezone.utc)).astimezone(tz)
-    candidate = datetime(base.year, base.month, base.day, 3, 0, 0, tzinfo=tz)
-    if candidate <= base:
-        candidate = candidate + timedelta(days=1)
-    return candidate.astimezone(timezone.utc)
-
-
-def ensure_patch_cronjob(db: Session, *, findings: list[SeverityFinding]) -> str | None:
-    if not findings:
-        return None
-    agent_ids = sorted({item.agent_id for item in findings})
-    target_user = db.execute(select(AppUser).where(AppUser.username == "admin")).scalar_one_or_none()
-    if not target_user:
-        logger.warning("Cannot create CVE patch cronjob: admin user missing")
-        return None
-
-    existing = db.execute(select(CronJob).where(CronJob.name == "Auto patch high severity CVEs at 03:00")).scalar_one_or_none()
-    run_at = next_local_3am_utc()
-    payload = {
-        "schedule": {
-            "kind": "daily",
-            "timezone": str(getattr(settings, "maintenance_window_timezone", "Europe/Tallinn") or "Europe/Tallinn"),
-            "time_hhmm": "03:00",
-            "weekday": None,
-            "day_of_month": None,
-        },
-        "source": "cve-high-severity-reporter",
-        "package_names": sorted({item.package_name for item in findings}),
-        "cves": sorted({item.cve_id for item in findings}),
-    }
-
-    with transaction(db):
-        if existing:
-            existing.user_id = target_user.id
-            existing.run_at = run_at
-            existing.action = "security-campaign"
-            existing.payload = payload
-            existing.selector = {"agent_ids": agent_ids}
-            existing.status = "scheduled"
-            existing.started_at = None
-            existing.finished_at = None
-            existing.last_error = None
-            return str(existing.id)
-
-        cj = CronJob(
-            user_id=target_user.id,
-            name="Auto patch high severity CVEs at 03:00",
-            run_at=run_at,
-            action="security-campaign",
-            payload=payload,
-            selector={"agent_ids": agent_ids},
-            status="scheduled",
-        )
-        db.add(cj)
-        db.flush()
-        return str(cj.id)
-
-
 def run_hourly_report_once(db: Session, *, min_severity: float = 7.0, recipient: str = "imre@localhost") -> dict[str, object]:
     findings = collect_high_severity_findings(db, min_severity=min_severity)
-    cron_id = ensure_patch_cronjob(db, findings=findings)
     if not findings:
-        return {"sent": False, "finding_count": 0, "cronjob_id": cron_id}
+        return {"sent": False, "finding_count": 0}
 
     body = format_report(findings)
     try:
@@ -405,8 +338,8 @@ def run_hourly_report_once(db: Session, *, min_severity: float = 7.0, recipient:
         )
     except (OSError, smtplib.SMTPException) as exc:
         logger.warning("High severity CVE report email skipped: SMTP unavailable: %s", exc)
-        return {"sent": False, "finding_count": len(findings), "cronjob_id": cron_id, "email_error": str(exc)}
-    return {"sent": True, "finding_count": len(findings), "cronjob_id": cron_id}
+        return {"sent": False, "finding_count": len(findings), "email_error": str(exc)}
+    return {"sent": True, "finding_count": len(findings)}
 
 
 async def cve_reporting_loop(stop_event: asyncio.Event, *, interval_s: float = 3600.0) -> None:
