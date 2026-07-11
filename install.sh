@@ -319,7 +319,8 @@ prepare_https() {
   trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
 
   sudo_cmd mkdir -p "$pki_dir"
-  if [ ! -f "$ca_cert" ]; then
+  sudo_cmd chmod 755 "$pki_dir"
+  if ! sudo_cmd test -f "$ca_cert"; then
     info "Creating the fleet internal CA"
     sudo_cmd openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
       -keyout "$ca_key" -out "$ca_cert" -subj '/CN=Fleet Internal CA' \
@@ -328,7 +329,7 @@ prepare_https() {
     sudo_cmd chmod 600 "$ca_key"
     sudo_cmd chmod 644 "$ca_cert"
   fi
-  [ -f "$ca_key" ] || err "CA private key is required to issue the server certificate: $ca_key"
+  sudo_cmd test -f "$ca_key" || err "CA private key is required to issue the server certificate: $ca_key"
 
   sudo_cmd install -m 0644 "$ca_cert" /usr/local/share/ca-certificates/fleet-internal-ca.crt
   sudo_cmd update-ca-certificates
