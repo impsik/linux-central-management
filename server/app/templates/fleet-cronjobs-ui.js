@@ -1,30 +1,59 @@
 (function () {
   'use strict';
 
+  function browserTimezone() {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  }
+
+  function formatInTimezone(value, timezone) {
+    if (!value) return '–';
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'short', timeStyle: 'medium', timeZone: timezone,
+      }).format(new Date(value));
+    } catch (_) {
+      return new Date(value).toLocaleString();
+    }
+  }
+
+  function scheduleLabel(item) {
+    const schedule = item?.schedule || {};
+    const timezone = String(schedule.timezone || 'UTC');
+    const local = formatInTimezone(item?.run_at, timezone);
+    const browserTz = browserTimezone();
+    const browser = formatInTimezone(item?.run_at, browserTz);
+    return {
+      primary: `${local} ${timezone}`,
+      secondary: browserTz === timezone ? '' : `${browser} ${browserTz}`,
+      utc: formatInTimezone(item?.run_at, 'UTC') + ' UTC',
+    };
+  }
+
   async function loadCronjobs(ctx, showToastOnManual = false) {
     const tbody = document.getElementById('cronjobs-table');
     if (!tbody) return;
     try {
-      ctx.setTableState(tbody, 7, 'loading', 'Loading…');
+      ctx.setTableState(tbody, 8, 'loading', 'Loading…');
       const r = await fetch('/cronjobs', { credentials: 'include' });
       if (!r.ok) throw new Error(`cronjobs failed (${r.status})`);
       const d = await r.json();
       const items = d?.items || [];
       if (!items.length) {
-        ctx.setTableState(tbody, 7, 'empty', 'No cronjobs yet');
+        ctx.setTableState(tbody, 8, 'empty', 'No cronjobs yet');
         return;
       }
       tbody.innerHTML = '';
       for (const it of items) {
         const tr = document.createElement('tr');
-        const when = ctx.formatShortTime(it.run_at);
+        const when = scheduleLabel(it);
         const owner = String(it.owner_username || '').trim();
         const targets = Array.isArray(it.selector?.agent_ids) ? it.selector.agent_ids.length : '–';
         const status = it.status || '–';
         tr.innerHTML = `
-          <td class="status-muted">${ctx.escapeHtml(when)}</td>
+          <td class="status-muted" title="${ctx.escapeHtml(when.utc)}">${ctx.escapeHtml(when.primary)}${when.secondary ? `<div style="font-size:0.78rem;">Local: ${ctx.escapeHtml(when.secondary)}</div>` : ''}</td>
           <td>${ctx.escapeHtml(it.name || '')}</td>
           <td>${owner ? `<code>${ctx.escapeHtml(owner)}</code>` : '<span class="status-muted">—</span>'}</td>
+          <td class="status-muted">${ctx.escapeHtml(ctx.formatShortTime(it.created_at))}</td>
           <td><code>${ctx.escapeHtml(it.action || '')}</code></td>
           <td>${ctx.escapeHtml(String(targets))}</td>
           <td>${ctx.escapeHtml(status)}</td>
@@ -37,6 +66,7 @@
               return '';
             })()}
             ${status === 'scheduled' ? ` <button class="btn" data-cancel-id="${ctx.escapeHtml(it.id)}">Cancel</button>` : ''}
+            <button class="btn" data-history-id="${ctx.escapeHtml(it.id)}">History</button>
           </td>
         `;
         tbody.appendChild(tr);
@@ -52,9 +82,42 @@
           loadCronjobs(ctx);
         });
       });
+      tbody.querySelectorAll('button[data-history-id]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const id = btn.getAttribute('data-history-id');
+          const parent = btn.closest('tr');
+          if (!id || !parent) return;
+          const existing = parent.nextElementSibling;
+          if (existing?.dataset?.cronHistoryFor === id) {
+            existing.remove();
+            return;
+          }
+          btn.disabled = true;
+          try {
+            const [runsResponse, auditResponse] = await Promise.all([
+              fetch(`/cronjobs/${encodeURIComponent(id)}/runs`, { credentials: 'include' }),
+              fetch(`/cronjobs/${encodeURIComponent(id)}/audit`, { credentials: 'include' }),
+            ]);
+            if (!runsResponse.ok || !auditResponse.ok) throw new Error('Cronjob history failed to load');
+            const runs = (await runsResponse.json())?.items || [];
+            const audit = (await auditResponse.json())?.items || [];
+            const detail = document.createElement('tr');
+            detail.dataset.cronHistoryFor = id;
+            const runLines = runs.length ? runs.map(run => `<div><b>${ctx.escapeHtml(run.status || '–')}</b> · ${ctx.escapeHtml(ctx.formatShortTime(run.started_at || run.finished_at))}${run.error ? ` · ${ctx.escapeHtml(run.error)}` : ''}</div>`).join('') : '<div class="status-muted">No runs yet</div>';
+            const auditLines = audit.length ? audit.map(event => `<div><b>${ctx.escapeHtml(event.action || '–')}</b> · ${ctx.escapeHtml(event.actor_username || 'system')} · ${ctx.escapeHtml(ctx.formatShortTime(event.created_at))}${event.ip_address ? ` · ${ctx.escapeHtml(event.ip_address)}` : ''}</div>`).join('') : '<div class="status-muted">No lifecycle audit events (older cronjob)</div>';
+            detail.innerHTML = `<td colspan="8"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;padding:0.5rem;"><div><b>Runs</b>${runLines}</div><div><b>Audit</b>${auditLines}</div></div></td>`;
+            parent.after(detail);
+          } catch (err) {
+            ctx.showToast(err.message || String(err), 'error');
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
       if (showToastOnManual) ctx.showToast('Cronjobs refreshed', 'success');
     } catch (e) {
-      ctx.setTableState(tbody, 7, 'error', e.message || String(e));
+      ctx.setTableState(tbody, 8, 'error', e.message || String(e));
       if (showToastOnManual) ctx.showToast(e.message, 'error');
     }
   }
@@ -73,6 +136,8 @@
     const runAtWrap = document.getElementById('cron-run-at')?.parentElement;
     const actionEl = document.getElementById('cron-action');
     const nameEl = document.getElementById('cron-name');
+    const timezoneHint = document.getElementById('cron-timezone-hint');
+    if (timezoneHint) timezoneHint.textContent = `Timezone: ${browserTimezone()}`;
 
     function apply() {
       const kind = kindEl?.value || 'once';

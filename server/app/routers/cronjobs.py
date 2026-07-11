@@ -3,16 +3,18 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta, time
 
 import calendar
+import uuid
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..deps import require_ui_user
-from ..models import CronJob, CronJobRun, AppUser
+from ..models import CronJob, CronJobRun, AppUser, AuditEvent
+from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.user_scopes import filter_agent_ids_for_user
 from ..services.rbac import is_admin
@@ -77,6 +79,7 @@ def list_cronjobs(db: Session = Depends(get_db), user=Depends(require_ui_user)):
                 "selector": c.selector,
                 "status": c.status,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
+                "schedule": (c.payload or {}).get("schedule") or {"kind": "once", "timezone": "UTC"},
                 "last_error": c.last_error,
                 "latest_run": (
                     {
@@ -96,7 +99,7 @@ def list_cronjobs(db: Session = Depends(get_db), user=Depends(require_ui_user)):
 
 
 @router.post("")
-def create_cronjob(payload: CronJobCreate, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+def create_cronjob(payload: CronJobCreate, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
     action = (payload.action or "").strip()
     if action not in ALLOWED_ACTIONS:
         raise HTTPException(400, "invalid action")
@@ -206,13 +209,34 @@ def create_cronjob(payload: CronJobCreate, db: Session = Depends(get_db), user=D
             status="scheduled",
         )
         db.add(cj)
+        db.flush()
+        log_event(
+            db,
+            action="cronjob.create",
+            actor=user,
+            request=request,
+            target_type="cronjob",
+            target_id=str(cj.id),
+            target_name=cj.name,
+            meta={
+                "action": action,
+                "schedule_kind": schedule_kind,
+                "timezone": tz_name,
+                "run_at": run_at.isoformat() if run_at else None,
+                "target_count": len(agent_ids),
+            },
+        )
 
     return {"id": str(cj.id), "status": cj.status}
 
 
 @router.post("/{cron_id}/cancel")
-def cancel_cronjob(cron_id: str, db: Session = Depends(get_db), user=Depends(require_ui_user)):
-    q = select(CronJob).where(CronJob.id == cron_id)
+def cancel_cronjob(cron_id: str, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    try:
+        cron_uuid = uuid.UUID(cron_id)
+    except (TypeError, ValueError):
+        raise HTTPException(404, "unknown cronjob")
+    q = select(CronJob).where(CronJob.id == cron_uuid)
     if not is_admin(user):
         q = q.where(CronJob.user_id == user.id)
     cj = db.execute(q).scalar_one_or_none()
@@ -224,13 +248,27 @@ def cancel_cronjob(cron_id: str, db: Session = Depends(get_db), user=Depends(req
 
     with transaction(db):
         cj.status = "canceled"
+        log_event(
+            db,
+            action="cronjob.cancel",
+            actor=user,
+            request=request,
+            target_type="cronjob",
+            target_id=str(cj.id),
+            target_name=cj.name,
+            meta={"previous_status": "scheduled"},
+        )
 
     return {"id": str(cj.id), "status": cj.status}
 
 
 @router.get("/{cron_id}/runs")
 def cronjob_runs(cron_id: str, db: Session = Depends(get_db), user=Depends(require_ui_user)):
-    q = select(CronJob).where(CronJob.id == cron_id)
+    try:
+        cron_uuid = uuid.UUID(cron_id)
+    except (TypeError, ValueError):
+        raise HTTPException(404, "unknown cronjob")
+    q = select(CronJob).where(CronJob.id == cron_uuid)
     if not is_admin(user):
         q = q.where(CronJob.user_id == user.id)
     cj = db.execute(q).scalar_one_or_none()
@@ -254,5 +292,43 @@ def cronjob_runs(cron_id: str, db: Session = Depends(get_db), user=Depends(requi
                 "error": r.error,
             }
             for r in rows
+        ]
+    }
+
+
+@router.get("/{cron_id}/audit")
+def cronjob_audit(cron_id: str, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    try:
+        cron_uuid = uuid.UUID(cron_id)
+    except (TypeError, ValueError):
+        raise HTTPException(404, "unknown cronjob")
+    q = select(CronJob).where(CronJob.id == cron_uuid)
+    if not is_admin(user):
+        q = q.where(CronJob.user_id == user.id)
+    cj = db.execute(q).scalar_one_or_none()
+    if not cj:
+        raise HTTPException(404, "unknown cronjob")
+
+    rows = (
+        db.execute(
+            select(AuditEvent)
+            .where(AuditEvent.target_type == "cronjob", AuditEvent.target_id == str(cj.id))
+            .order_by(AuditEvent.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": str(event.id),
+                "action": event.action,
+                "actor_username": event.actor_username,
+                "actor_role": event.actor_role,
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+                "ip_address": event.ip_address,
+                "meta": event.meta or {},
+            }
+            for event in rows
         ]
     }

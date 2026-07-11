@@ -931,7 +931,7 @@
     <div class="tab-content-custom" id="cronjobs-tab">
       <div class="admin-content">
         <div class="section-title">Cronjobs</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">One-shot scheduled actions (safe mode). Runs as the agent job type (e.g. dist-upgrade uses sudo on the host).</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Scheduled actions run in the timezone shown below. Missed recurring runs are skipped instead of being started later.</div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">Create cronjob</div>
@@ -967,6 +967,7 @@
               <div style="min-width:220px;display:none;" id="cron-time-wrap">
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Time</label>
                 <input id="cron-time" class="host-search" type="time" />
+                <div id="cron-timezone-hint" class="status-muted" style="font-size:0.78rem;margin-top:0.25rem;"></div>
               </div>
 
               <div style="min-width:220px;">
@@ -1015,9 +1016,10 @@
               <table class="process-table" style="min-width:900px;">
                 <thead>
                   <tr>
-                    <th>Run at</th>
+                    <th>Next run</th>
                     <th>Name</th>
                     <th>Owner</th>
+                    <th>Created</th>
                     <th>Action</th>
                     <th>Targets</th>
                     <th>Status</th>
@@ -1025,7 +1027,7 @@
                   </tr>
                 </thead>
                 <tbody id="cronjobs-table">
-                  <tr><td colspan="7" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                  <tr><td colspan="8" style="text-align:center;" class="status-muted">Loading…</td></tr>
                 </tbody>
               </table>
             </div>

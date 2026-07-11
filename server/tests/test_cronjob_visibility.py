@@ -121,6 +121,8 @@ def test_admin_sees_all_cronjobs_and_regular_user_sees_only_own(monkeypatch):
             json={"username": "admin", "password": "admin-password-123"},
         )
         assert relogin_admin.status_code == 200, relogin_admin.text
+        csrf_admin = admin_client.cookies.get("fleet_csrf")
+        admin_headers = {"X-CSRF-Token": csrf_admin} if csrf_admin else {}
 
         admin_list = admin_client.get("/cronjobs")
         assert admin_list.status_code == 200, admin_list.text
@@ -129,6 +131,25 @@ def test_admin_sees_all_cronjobs_and_regular_user_sees_only_own(monkeypatch):
         owners = {it["id"]: it.get("owner_username") for it in admin_items}
         assert owners[admin_cron_id] == "admin"
         assert owners[user_cron_id] == "op1"
+        admin_item = next(it for it in admin_items if it["id"] == admin_cron_id)
+        assert admin_item["schedule"] == {"kind": "once", "timezone": "UTC", "time_hhmm": None, "weekday": None, "day_of_month": None}
+        assert admin_item["created_at"]
+
+        audit = admin_client.get(f"/cronjobs/{admin_cron_id}/audit")
+        assert audit.status_code == 200, audit.text
+        create_event = audit.json()["items"][0]
+        assert create_event["action"] == "cronjob.create"
+        assert create_event["actor_username"] == "admin"
+        assert create_event["meta"]["timezone"] == "UTC"
+        assert create_event["meta"]["target_count"] == 1
+
+        canceled = admin_client.post(f"/cronjobs/{admin_cron_id}/cancel", headers=admin_headers)
+        assert canceled.status_code == 200, canceled.text
+        audit_after_cancel = admin_client.get(f"/cronjobs/{admin_cron_id}/audit")
+        assert [event["action"] for event in audit_after_cancel.json()["items"][:2]] == [
+            "cronjob.cancel",
+            "cronjob.create",
+        ]
 
 
 def test_security_campaign_cronjob_dispatch_creates_patch_campaign(monkeypatch):

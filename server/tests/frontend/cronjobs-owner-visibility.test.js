@@ -17,9 +17,17 @@ describe('automation cronjobs owner visibility UI', () => {
     expect(app).toContain('<td>${owner ? `<code>${ctx.escapeHtml(owner)}</code>` : \'<span class="status-muted">—</span>\'}</td>');
   });
 
+  it('shows explicit schedule timezone, creation time, and lifecycle history', () => {
+    expect(html).toContain('<th>Created</th>');
+    expect(html).toContain('id="cron-timezone-hint"');
+    expect(app).toContain('function scheduleLabel(item)');
+    expect(app).toContain('data-history-id=');
+    expect(app).toContain('/audit`');
+  });
+
   it('loads cronjobs during module initialization instead of relying only on tab navigation', () => {
     expect(app).toContain('void loadCronjobs(ctx);');
-    expect(html).toContain('<tbody id="cronjobs-table">\n                  <tr><td colspan="7"');
+    expect(html).toContain('<tbody id="cronjobs-table">\n                  <tr><td colspan="8"');
   });
 
   it('owns host picker wiring instead of depending on a different UI bundle', () => {
