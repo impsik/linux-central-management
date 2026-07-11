@@ -481,6 +481,12 @@ main() {
   [ -n "$fleet_ca_cert" ] || fleet_ca_cert="/etc/fleet-pki/fleet-ca.crt"
   fleet_ca_cert="${FLEET_CA_CERT:-$(prompt "Internal CA certificate path" "$fleet_ca_cert")}"
 
+  terminal_ca_cert="$(get_env_value "$root_env" "FLEET_TERMINAL_CA_CERT")"
+  if [ -z "$terminal_ca_cert" ] && sudo_cmd test -f /etc/fleet-pki/terminal-ca.crt; then
+    terminal_ca_cert="/etc/fleet-pki/terminal-ca.crt"
+  fi
+  [ -n "$terminal_ca_cert" ] || terminal_ca_cert="$fleet_ca_cert"
+
   install_nginx="false"
   if [ -n "${INSTALL_NGINX:-}" ]; then
     case "$(printf '%s' "$INSTALL_NGINX" | tr '[:upper:]' '[:lower:]')" in
@@ -628,9 +634,14 @@ main() {
   set_env_value "$root_env" "FLEET_HOSTNAME" "$application_host"
   set_env_value "$root_env" "FLEET_SERVER_IP" "$fleet_server_ip"
   set_env_value "$root_env" "FLEET_CA_CERT" "$fleet_ca_cert"
+  set_env_value "$root_env" "FLEET_TERMINAL_CA_CERT" "$terminal_ca_cert"
   set_env_value "$root_env" "AGENT_TOKEN" "$final_agent_token"
   set_env_value "$root_env" "TERM_TOKEN" "$final_terminal_token"
   set_env_value "$root_env" "TERM_LISTEN" "auto:18080"
+
+  prepare_https "$server_url" "$fleet_server_ip" "$fleet_ca_cert" "$install_nginx"
+  terminal_ca_b64="$(sudo_cmd base64 "$terminal_ca_cert" | tr -d '\r\n')"
+  set_env_value "$docker_env" "AGENT_TERMINAL_TLS_CA_B64" "$terminal_ca_b64"
 
   chmod 600 "$docker_env" "$root_env"
 
@@ -643,7 +654,6 @@ main() {
     sync_postgres_password "$postgres_password"
     docker_compose up -d --build --remove-orphans
   )
-  prepare_https "$server_url" "$fleet_server_ip" "$fleet_ca_cert" "$install_nginx"
   server_ready="true"
   if ! wait_for_health "$server_url" "$fleet_ca_cert"; then
     server_ready="false"

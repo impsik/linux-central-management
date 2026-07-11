@@ -300,6 +300,12 @@ func StartTerminalServer() {
 		return
 	}
 	listenAddr := terminalListenAddr()
+	tlsCert := strings.TrimSpace(os.Getenv("FLEET_TERMINAL_TLS_CERT"))
+	tlsKey := strings.TrimSpace(os.Getenv("FLEET_TERMINAL_TLS_KEY"))
+	if (tlsCert == "") != (tlsKey == "") {
+		log.Println("Terminal server disabled (both FLEET_TERMINAL_TLS_CERT and FLEET_TERMINAL_TLS_KEY are required)")
+		return
+	}
 
 	mux := http.NewServeMux()
 
@@ -349,6 +355,19 @@ func StartTerminalServer() {
 		}
 	})
 
+	if tlsCert != "" {
+		log.Printf("Terminal listening with TLS on %s/terminal/ws", listenAddr)
+		go func() {
+			if err := http.ListenAndServeTLS(listenAddr, tlsCert, tlsKey, mux); err != nil {
+				log.Printf("Terminal TLS server stopped: %v", err)
+			}
+		}()
+		return
+	}
 	log.Printf("Terminal listening on %s/terminal/ws", listenAddr)
-	go http.ListenAndServe(listenAddr, mux)
+	go func() {
+		if err := http.ListenAndServe(listenAddr, mux); err != nil {
+			log.Printf("Terminal server stopped: %v", err)
+		}
+	}()
 }

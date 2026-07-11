@@ -14,6 +14,16 @@ err() { say "[ERROR] $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 is_tty() { [ -r /dev/tty ] && [ -w /dev/tty ]; }
 
+as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  elif have sudo; then
+    sudo "$@"
+  else
+    err "This step needs root privileges. Install sudo or run as root."
+  fi
+}
+
 prompt() {
   question="$1"
   default="$2"
@@ -62,6 +72,8 @@ deploy_agent() {
   term_token="$3"
   server_ip="$4"
   ca_cert="$5"
+  terminal_ca_cert="$6"
+  target_hosts="$7"
 
   case "$server_url" in
     https://*)
@@ -74,10 +86,7 @@ deploy_agent() {
   server_host="${server_host#https://}"
   server_host="${server_host%%/*}"
   server_host="${server_host%%:*}"
-  case "$server_url" in
-    https://*) terminal_listen="127.0.0.1:18081" ;;
-    *) terminal_listen="auto:18080" ;;
-  esac
+  terminal_listen="auto:18080"
 
   info "Building fleet-agent"
   (cd "$ROOT_DIR/agent" && go build -o fleet-agent ./cmd/fleet-agent)
@@ -91,6 +100,8 @@ FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 FLEET_TERMINAL_TOKEN=$term_token
 FLEET_TERMINAL_LISTEN=$terminal_listen
 FLEET_TERMINAL_BACKEND=auto
+FLEET_TERMINAL_TLS_CERT=/etc/fleet-agent/terminal.crt
+FLEET_TERMINAL_TLS_KEY=/etc/fleet-agent/terminal.key
 EOF
   cat > "$tmp_dir/fleet-agent.service" <<EOF
 [Unit]
@@ -135,7 +146,67 @@ EOF
       ;;
   esac
 
+  if [ -n "$term_token" ]; then
+    configure_terminal_tls "$terminal_ca_cert" "$target_hosts" "$server_ip" "$tmp_dir"
+  fi
+
   run_ansible -m shell -a 'systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl restart fleet-agent && systemctl is-active fleet-agent'
+  if [ -n "$term_token" ]; then
+    verify_terminal_tls "$terminal_ca_cert" "$target_hosts"
+  fi
+}
+
+configure_terminal_tls() {
+  terminal_ca_cert="$1"
+  target_hosts="$2"
+  fleet_server_ip="$3"
+  tmp_dir="$4"
+  terminal_ca_key="${terminal_ca_cert%.crt}.key"
+
+  [ -r "$terminal_ca_cert" ] || err "Terminal CA certificate is not readable: $terminal_ca_cert"
+  as_root test -f "$terminal_ca_key" || err "Terminal CA private key is missing: $terminal_ca_key"
+
+  all_targets="$target_pattern"
+  for terminal_target in $target_hosts; do
+    target_ip="$(getent ahostsv4 "$terminal_target" 2>/dev/null | awk 'NR == 1 {print $1}')"
+    [ -n "$target_ip" ] || err "Cannot resolve an IPv4 address for terminal target: $terminal_target"
+    target_name="$(printf '%s' "$terminal_target" | tr -c 'A-Za-z0-9._-' '_')"
+    target_dir="$tmp_dir/terminal-$target_name"
+    mkdir -p "$target_dir"
+
+    cat > "$target_dir/ext.cnf" <<EOF
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=IP:$target_ip
+EOF
+    as_root openssl req -new -newkey rsa:3072 -nodes \
+      -keyout "$target_dir/terminal.key" -out "$target_dir/terminal.csr" \
+      -subj "/CN=$target_ip"
+    as_root openssl x509 -req -sha256 -days 397 \
+      -in "$target_dir/terminal.csr" -CA "$terminal_ca_cert" -CAkey "$terminal_ca_key" -CAcreateserial \
+      -out "$target_dir/terminal.crt" -extfile "$target_dir/ext.cnf"
+    as_root chown "$(id -u):$(id -g)" "$target_dir/terminal.key" "$target_dir/terminal.crt" "$target_dir/terminal.csr"
+    chmod 600 "$target_dir/terminal.key"
+
+    target_pattern="$terminal_target"
+    info "Installing the agent's native WSS certificate on $terminal_target ($target_ip)"
+    run_ansible -m file -a 'path=/etc/fleet-agent state=directory mode=0755'
+    run_ansible -m copy -a "src=$target_dir/terminal.crt dest=/etc/fleet-agent/terminal.crt mode=0644"
+    run_ansible -m copy -a "src=$target_dir/terminal.key dest=/etc/fleet-agent/terminal.key mode=0600"
+    run_ansible -m shell -a "if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then firewall-cmd --add-port=18080/tcp --permanent && firewall-cmd --reload; elif command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then ufw allow from $fleet_server_ip to any port 18080 proto tcp; fi"
+  done
+  target_pattern="$all_targets"
+}
+
+verify_terminal_tls() {
+  terminal_ca_cert="$1"
+  target_hosts="$2"
+  for terminal_target in $target_hosts; do
+    target_ip="$(getent ahostsv4 "$terminal_target" 2>/dev/null | awk 'NR == 1 {print $1}')"
+    status="$(curl -sS --cacert "$terminal_ca_cert" -o /dev/null -w '%{http_code}' --connect-timeout 10 "https://$target_ip:18080/terminal/ws" || true)"
+    [ "$status" = "401" ] || err "Native WSS terminal preflight failed for $terminal_target ($target_ip): expected HTTP 401 without token, got ${status:-connection error}"
+  done
 }
 
 get_env_value() {
@@ -237,7 +308,9 @@ main() {
   info "Deploying fleet-agent to: $target_pattern"
   fleet_server_ip="${FLEET_SERVER_IP:-$(get_env_value "$ROOT_ENV_FILE" "FLEET_SERVER_IP")}"
   fleet_ca_cert="${FLEET_CA_CERT:-$(get_env_value "$ROOT_ENV_FILE" "FLEET_CA_CERT")}"
-  deploy_agent "$server_url" "$agent_token" "$term_token" "$fleet_server_ip" "$fleet_ca_cert"
+  terminal_ca_cert="${FLEET_TERMINAL_CA_CERT:-$(get_env_value "$ROOT_ENV_FILE" "FLEET_TERMINAL_CA_CERT")}"
+  [ -n "$terminal_ca_cert" ] || terminal_ca_cert="$fleet_ca_cert"
+  deploy_agent "$server_url" "$agent_token" "$term_token" "$fleet_server_ip" "$fleet_ca_cert" "$terminal_ca_cert" "$(normalize_hosts "$hosts_input")"
 
   say ""
   say "Host attach complete."
