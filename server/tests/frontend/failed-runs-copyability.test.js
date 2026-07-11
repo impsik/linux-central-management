@@ -7,10 +7,12 @@ describe('failed runs copyability UI', () => {
   const indexPath = path.join(root, 'server/app/templates/index.html');
   const appPath = path.join(root, 'server/app/templates/fleet-app.js');
   const jobsPath = path.join(root, 'server/app/templates/fleet-jobs-ui.js');
+  const failedRunsPath = path.join(root, 'server/app/templates/fleet-failed-runs-ui.js');
   const html = fs.readFileSync(indexPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
   const jobs = fs.readFileSync(jobsPath, 'utf8');
-  const src = `${html}\n${app}\n${jobs}`;
+  const failedRuns = fs.readFileSync(failedRunsPath, 'utf8');
+  const src = `${html}\n${app}\n${jobs}\n${failedRuns}`;
 
   it('includes failed runs copy affordances and detail modal', () => {
     expect(src).toContain('id="failed-runs-copy-visible"');
@@ -20,6 +22,9 @@ describe('failed runs copyability UI', () => {
     expect(src).toContain('retried ${retryCount}x');
     expect(src).toContain('cancelled before agent claim');
     expect(src).toContain('Cancelled: yes');
+    expect(src).toContain('window.fleetFailedRunsUi');
+    expect(src).toContain('/assets/fleet-failed-runs-ui.js');
+    expect(app).toContain('mod.loadFailedRuns(getFailedRunsCtx(), hours, showToastOnManual)');
   });
 
   it('uses failed run detail modal instead of alert for row details', () => {
@@ -34,19 +39,30 @@ describe('failed runs copyability UI', () => {
     expect(src).toContain('id="queue-health-type"');
     expect(src).toContain('id="queue-health-agent"');
     expect(src).toContain('id="queue-health-owner"');
+    expect(src).toContain('id="queue-health-attention"');
     expect(src).toContain('id="queue-health-limit"');
     expect(src).toContain('id="queue-health-prev"');
     expect(src).toContain('id="queue-health-next"');
     expect(src).toContain('id="queue-health-cancel-old"');
+    expect(src).toContain('id="queue-health-requeue-failed"');
+    expect(src).toContain('id="queue-agent-health-summary"');
     expect(src).toContain('id="job-detail-modal"');
     expect(src).toContain('data-job-detail');
     expect(src).toContain('data-job-cancel');
+    expect(src).toContain('data-job-requeue');
     expect(src).toContain('data-old-queued-job-id');
+    expect(src).toContain('data-failed-job-id');
     expect(src).toContain('async function cancelQueuedJob');
+    expect(src).toContain('async function requeueFailedJob');
     expect(src).toContain('async function cancelVisibleOldQueuedJobs');
+    expect(src).toContain('async function requeueVisibleFailedJobs');
     expect(src).toContain('/cancel`');
+    expect(src).toContain('/requeue`');
     expect(src).toContain("'X-CSRF-Token': (ctx.getCookie('fleet_csrf') || '')");
     expect(src).toContain('async function loadQueueHealth');
+    expect(src).toContain('async function loadAgentQueueHealth');
+    expect(src).toContain('/jobs/agent-health?limit=8');
+    expect(src).toContain('Agent pressure:');
     expect(src).toContain('resetQueueHealthPagination');
     expect(src).toContain('moveQueueHealthPage');
     expect(src).toContain('async function openJobDetailModal');
@@ -55,6 +71,7 @@ describe('failed runs copyability UI', () => {
     expect(src).toContain("new URLSearchParams({ limit: String(limit), offset: String(offset) })");
     expect(src).toContain("qs.set('agent_id', agentId)");
     expect(src).toContain("qs.set('created_by', owner)");
+    expect(src).toContain("qs.set('attention', attention)");
     expect(src).toContain('fetch(`/jobs/${encodeURIComponent(jobId)}`');
     expect(src).toContain('old queued');
     expect(src).toContain('is_old_queued');

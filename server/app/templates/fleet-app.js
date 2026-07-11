@@ -792,9 +792,9 @@
       setHostActionActive('terminal');
       // Stop metrics updates when leaving server info view
       stopMetricsPolling(metricsLifecycleState);
-      connect(currentAgentId);
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('terminal-tab').classList.add('active');
+      connect(currentAgentId);
       window.requestAnimationFrame(() => {
         fitTerminalViewport();
         setTimeout(fitTerminalViewport, 60);
@@ -1197,6 +1197,7 @@
         resetQueueHealthPagination,
         moveQueueHealthPage,
         cancelVisibleOldQueuedJobs,
+        requeueVisibleFailedJobs,
         loadHosts,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
         setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(v) ? v : []); return lastRenderedAgentIds; },
@@ -1226,122 +1227,19 @@
       }
     }
 
+    function getFailedRunsCtx() {
+      return {
+        setTableState,
+        escapeHtml,
+        formatShortTime,
+        showToast,
+      };
+    }
+
     async function loadFailedRuns(hours = 24, showToastOnManual = false) {
-      const tbody = document.getElementById('overview-failed-runs');
-      const card = document.getElementById('failed-runs-card');
-      if (!tbody) return;
-      try {
-        setTableState(tbody, 5, 'loading', 'Loading…');
-        const r = await fetch(`/dashboard/failed-runs?hours=${encodeURIComponent(hours)}&limit=200`, { credentials: 'include' });
-        if (!r.ok) throw new Error(`failed-runs fetch failed (${r.status})`);
-        const d = await r.json();
-        const items = d?.items || [];
-        if (!items.length) {
-          if (card) card.style.display = 'none';
-          setTableState(tbody, 5, 'empty', 'No failed runs 🎯');
-          return;
-        }
-        if (card) card.style.display = '';
-        tbody.innerHTML = '';
-        const detailsByRunId = {};
-        for (const it of items) {
-          const when = formatShortTime(it.finished_at);
-          const host = it.agent_id || '–';
-          const job = `${it.job_type || 'job'}${it.job_key ? ' • ' + it.job_key : ''}`.trim();
-          const exit = (it.exit_code === null || it.exit_code === undefined) ? '–' : String(it.exit_code);
-          const err = (it.error || (it.stderr || '').split('\n').slice(-1)[0] || '').trim();
-          const runId = String(it.run_id || it.id || `${host}|${job}|${it.finished_at || ''}`);
-          const retryCount = Number(it.retry_count || 0);
-          const retryNote = retryCount > 0 ? `retried ${retryCount}x` : '';
-          const staleNote = it.is_stale ? 'stale running before failure' : '';
-          const cancelledNote = it.is_cancelled ? 'cancelled before agent claim' : '';
-          const queueNotes = [retryNote, staleNote, cancelledNote].filter(Boolean).join(' • ');
-          const errClass = it.is_cancelled ? 'status-muted' : 'status-error';
-
-          const detail = [
-            `Host: ${host}`,
-            `Job: ${job}`,
-            it.finished_at ? `When: ${new Date(it.finished_at).toLocaleString()}` : '',
-            (it.exit_code === null || it.exit_code === undefined) ? '' : `Exit: ${it.exit_code}`,
-            it.is_cancelled ? 'Cancelled: yes' : '',
-            retryCount > 0 ? `Retries: ${retryCount}` : '',
-            it.stale_after_seconds ? `Stale threshold: ${it.stale_after_seconds}s` : '',
-            '',
-            '--- error ---',
-            (it.error || ''),
-            '',
-            '--- stderr ---',
-            (it.stderr || ''),
-            '',
-            '--- stdout ---',
-            (it.stdout || ''),
-          ].filter(Boolean).join('\n');
-          detailsByRunId[runId] = detail;
-
-          const tr = document.createElement('tr');
-          tr.style.cursor = 'pointer';
-          tr.setAttribute('data-failed-run-id', runId);
-          tr.setAttribute('data-failed-run-detail', detail);
-          tr.innerHTML = `
-            <td class="status-muted">${escapeHtml(when)}</td>
-            <td><b>${escapeHtml(host)}</b></td>
-            <td>${escapeHtml(job)}${queueNotes ? `<div class="status-muted" style="font-size:0.78rem;margin-top:0.15rem;">${escapeHtml(queueNotes)}</div>` : ''}</td>
-            <td style="text-align:right;">${escapeHtml(exit)}</td>
-            <td class="${errClass}">${escapeHtml(err || (it.is_cancelled ? 'cancelled' : 'failed'))} <button class="btn" data-copy-failed-run="${escapeHtml(runId)}" type="button" style="margin-left:0.4rem;padding:0.12rem 0.4rem;">Copy</button></td>
-          `;
-
-          tr.addEventListener('click', () => {
-            if (typeof window.openFailedRunDetailModal === 'function') {
-              window.openFailedRunDetailModal(detail, `${host} • ${job}`);
-            }
-          });
-
-          const copyBtn = tr.querySelector('button[data-copy-failed-run]');
-          copyBtn?.addEventListener('click', async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            try {
-              await navigator.clipboard.writeText(detail);
-              showToast('Failed run detail copied', 'success');
-            } catch {
-              if (typeof window.openFailedRunDetailModal === 'function') {
-                window.openFailedRunDetailModal(detail, `${host} • ${job}`);
-              }
-              showToast('Clipboard blocked. Opened detail view for manual copy.', 'error', 3800);
-            }
-          });
-
-          tbody.appendChild(tr);
-        }
-
-        const copyVisibleBtn = document.getElementById('failed-runs-copy-visible');
-        copyVisibleBtn?.replaceWith(copyVisibleBtn.cloneNode(true));
-        const copyVisibleBtn2 = document.getElementById('failed-runs-copy-visible');
-        copyVisibleBtn2?.addEventListener('click', async (e) => {
-          e.preventDefault();
-          const rows = Array.from(tbody.querySelectorAll('tr[data-failed-run-id]'));
-          const chunks = rows.map((row, idx) => {
-            const detail = row.getAttribute('data-failed-run-detail') || '';
-            return `#${idx + 1}\n${detail}`;
-          }).filter(Boolean);
-          const text = chunks.join('\n\n');
-          if (!text) return;
-          try {
-            await navigator.clipboard.writeText(text);
-            showToast('Visible failed runs copied', 'success');
-          } catch {
-            if (typeof window.openFailedRunDetailModal === 'function') {
-              window.openFailedRunDetailModal(text, `Visible failed runs (${rows.length})`);
-            }
-            showToast('Clipboard blocked. Opened detail view for manual copy.', 'error', 3800);
-          }
-        });
-
-        if (showToastOnManual) showToast('Failed runs refreshed', 'success');
-      } catch (e) {
-        if (card) card.style.display = '';
-        setTableState(tbody, 5, 'error', e.message || String(e));
-        if (showToastOnManual) showToast(e.message, 'error');
+      const mod = window.fleetFailedRunsUi;
+      if (mod && typeof mod.loadFailedRuns === 'function') {
+        return mod.loadFailedRuns(getFailedRunsCtx(), hours, showToastOnManual);
       }
     }
 
@@ -1416,6 +1314,13 @@
       }
     }
 
+    async function requeueVisibleFailedJobs() {
+      const mod = window.fleetJobsUi;
+      if (mod && typeof mod.requeueVisibleFailedJobs === 'function') {
+        return mod.requeueVisibleFailedJobs(getQueueHealthCtx());
+      }
+    }
+
     function formatShortTime(iso) {
       if (!iso) return '–';
       try {
@@ -1429,6 +1334,40 @@
       const mod = window.phase3Overview;
       if (mod && typeof mod.loadHostsTable === 'function') {
         return mod.loadHostsTable(getOverviewCtx());
+      }
+    }
+
+    // Shared by the Hosts bulk action and the extracted Cronjobs UI. Keep this
+    // in fleet-app scope; a copy nested inside initHostsTableControls is not
+    // visible while getCronjobsCtx is being constructed.
+    async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {
+      try {
+        const r = await fetch('/jobs/preflight', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: agentIds }),
+        });
+        if (!r.ok) throw new Error(`preflight failed (${r.status})`);
+        const pre = await r.json();
+        const targeted = Array.isArray(pre?.targeted_hosts) ? pre.targeted_hosts : [];
+        const excluded = Array.isArray(pre?.excluded_by_scope) ? pre.excluded_by_scope : [];
+        const offline = Array.isArray(pre?.offline_or_unreachable) ? pre.offline_or_unreachable : [];
+        const summary = `${actionLabel}\n\nTargeted: ${targeted.length}\nExcluded by scope: ${excluded.length}\nOffline/unreachable: ${offline.length}`;
+        if (!targeted.length) {
+          showToast('No targeted hosts after preflight', 'error');
+          return { ok: false, preflight: pre };
+        }
+        if (targeted.length > threshold) {
+          const typed = prompt(`${summary}\n\nType APPLY to continue:`);
+          if ((typed || '').trim().toUpperCase() !== 'APPLY') return { ok: false, preflight: pre };
+        } else if (!confirm(`${summary}\n\nProceed?`)) {
+          return { ok: false, preflight: pre };
+        }
+        return { ok: true, preflight: pre };
+      } catch (e) {
+        showToast(e.message || String(e), 'error');
+        return { ok: false, preflight: null };
       }
     }
 
@@ -1477,41 +1416,6 @@
         selectedAgentIds = selected;
         updateUpgradeControlsFn();
       });
-
-      async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {
-        try {
-          const r = await fetch('/jobs/preflight', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds }),
-          });
-          if (!r.ok) throw new Error(`preflight failed (${r.status})`);
-          const pre = await r.json();
-
-          const targeted = Array.isArray(pre?.targeted_hosts) ? pre.targeted_hosts : [];
-          const excluded = Array.isArray(pre?.excluded_by_scope) ? pre.excluded_by_scope : [];
-          const offline = Array.isArray(pre?.offline_or_unreachable) ? pre.offline_or_unreachable : [];
-
-          const summary = `${actionLabel}\n\nTargeted: ${targeted.length}\nExcluded by scope: ${excluded.length}\nOffline/unreachable: ${offline.length}`;
-          if (!targeted.length) {
-            showToast('No targeted hosts after preflight', 'error');
-            return { ok: false, preflight: pre };
-          }
-
-          if (targeted.length > threshold) {
-            const typed = prompt(`${summary}\n\nType APPLY to continue:`);
-            if ((typed || '').trim().toUpperCase() !== 'APPLY') return { ok: false, preflight: pre };
-          } else if (!confirm(`${summary}\n\nProceed?`)) {
-            return { ok: false, preflight: pre };
-          }
-
-          return { ok: true, preflight: pre };
-        } catch (e) {
-          showToast(e.message || String(e), 'error');
-          return { ok: false, preflight: null };
-        }
-      }
 
       async function bulkPost(url, payload, okMsg) {
         const statusEl = document.getElementById('hosts-bulk-status');

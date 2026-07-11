@@ -9,6 +9,15 @@ body {
   background: var(--app-surface);
 }
 
+html,
+body {
+  max-width: 100%;
+  /* Firefox can still expose xterm's far-offscreen measurement helpers when
+     overflow is clipped. Hidden consistently suppresses document scrolling
+     while table-level overflow containers remain scrollable. */
+  overflow-x: hidden;
+}
+
 .header {
   position: sticky;
   top: 0;

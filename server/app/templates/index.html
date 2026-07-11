@@ -360,6 +360,12 @@
                   </select>
                   <input id="queue-health-agent" class="host-search" placeholder="Host" style="width:9rem;padding:0.35rem 0.5rem;" />
                   <input id="queue-health-owner" class="host-search" placeholder="Owner" style="width:8rem;padding:0.35rem 0.5rem;" />
+                  <select id="queue-health-attention" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
+                    <option value="">Any signal</option>
+                    <option value="old_queued">Old queued</option>
+                    <option value="stale_running">Stale running</option>
+                    <option value="requeueable">Requeueable</option>
+                  </select>
                   <select id="queue-health-limit" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
                     <option value="25">25</option>
                     <option value="50" selected>50</option>
@@ -370,11 +376,13 @@
                   <span id="queue-health-page" class="status-muted" style="font-size:0.85rem;">Page 1</span>
                   <button class="btn" id="queue-health-next" type="button">Next</button>
                   <button class="btn" id="queue-health-cancel-old" type="button">Cancel old queued</button>
+                  <button class="btn" id="queue-health-requeue-failed" type="button">Requeue failed</button>
                   <button class="btn" id="queue-health-refresh" type="button">Reload</button>
                 </div>
               </div>
               <div class="admin-card-body">
                 <div id="queue-health-summary" class="status-muted" style="margin-bottom:0.5rem;">Loading…</div>
+                <div id="queue-agent-health-summary" class="status-muted" style="margin-bottom:0.75rem;">Loading agent pressure…</div>
                 <div style="overflow-x:auto;">
                   <table class="process-table" style="min-width:980px;">
                     <thead>
@@ -923,7 +931,7 @@
     <div class="tab-content-custom" id="cronjobs-tab">
       <div class="admin-content">
         <div class="section-title">Cronjobs</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">One-shot scheduled actions (safe mode). Runs as the agent job type (e.g. dist-upgrade uses sudo on the host).</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Scheduled actions run in the timezone shown below. Missed recurring runs are skipped instead of being started later.</div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">Create cronjob</div>
@@ -959,6 +967,7 @@
               <div style="min-width:220px;display:none;" id="cron-time-wrap">
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Time</label>
                 <input id="cron-time" class="host-search" type="time" />
+                <div id="cron-timezone-hint" class="status-muted" style="font-size:0.78rem;margin-top:0.25rem;"></div>
               </div>
 
               <div style="min-width:220px;">
@@ -1007,9 +1016,10 @@
               <table class="process-table" style="min-width:900px;">
                 <thead>
                   <tr>
-                    <th>Run at</th>
+                    <th>Next run</th>
                     <th>Name</th>
                     <th>Owner</th>
+                    <th>Created</th>
                     <th>Action</th>
                     <th>Targets</th>
                     <th>Status</th>
@@ -1017,7 +1027,7 @@
                   </tr>
                 </thead>
                 <tbody id="cronjobs-table">
-                  <tr><td colspan="6" style="text-align:center;" class="status-muted">Loading…</td></tr>
+                  <tr><td colspan="8" style="text-align:center;" class="status-muted">Loading…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -1768,6 +1778,7 @@
   <script src="/assets/fleet-firewall-management-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-reports-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-admin-ui.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-failed-runs-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-app.js?v=__ASSET_VERSION__"></script>
 </body>
 

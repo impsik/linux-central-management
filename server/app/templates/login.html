@@ -185,6 +185,8 @@
         const endpoint = useLocalLogin ? '/auth/login' : '/auth/ad/login';
         const resp = await fetch(endpoint, {
           method: 'POST',
+          cache: 'no-store',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: u.value || '', password: p.value || '' })
         });
@@ -204,8 +206,12 @@
         const nextUrl = (mfaPending && data && data.mfa_redirect) ? data.mfa_redirect : '/';
         setTimeout(() => { window.location.href = nextUrl; }, 400);
       } catch (e) {
-        const msg = e.message || String(e);
-        showToast(msg, 'error');
+        console.error('[login failed]', e);
+        const rawMsg = e?.message || String(e);
+        const msg = rawMsg === 'Failed to fetch'
+          ? `Cannot reach ${useLocalLogin ? '/auth/login' : '/auth/ad/login'}. Check that the API is reachable through this URL.`
+          : rawMsg;
+        showToast(msg, 'error', 5000);
       } finally {
         btn.disabled = false;
         if (localBtn) localBtn.disabled = false;

@@ -24,7 +24,7 @@ def _login(client: TestClient):
     assert r.status_code == 200, r.text
 
 
-def test_hourly_cve_report_and_patch_cronjob_created(app, monkeypatch):
+def test_hourly_cve_report_does_not_create_patch_cronjob(app, monkeypatch):
     from app.db import SessionLocal
     from app.models import CVEDefinition, CVEPackage, CronJob, Host, HostPackage, HostPackageUpdate
     from app.services import cve_reporting
@@ -44,6 +44,7 @@ def test_hourly_cve_report_and_patch_cronjob_created(app, monkeypatch):
         _login(client)
 
         with SessionLocal() as db:
+            cronjob_ids_before = set(db.execute(select(CronJob.id)).scalars().all())
             host = Host(
                 agent_id="agent-1",
                 hostname="srv1",
@@ -97,12 +98,9 @@ def test_hourly_cve_report_and_patch_cronjob_created(app, monkeypatch):
             ours = [it for it in findings if it.agent_id == "agent-1" and it.cve_id == "CVE-2026-0001"]
             assert len(ours) == 1
 
-            cron = db.execute(select(CronJob).where(CronJob.name == "Auto patch high severity CVEs at 03:00")).scalar_one()
-            assert cron.action == "security-campaign"
-            assert cron.status == "scheduled"
-            assert "agent-1" in (cron.selector or {}).get("agent_ids", [])
-            assert cron.payload["schedule"]["kind"] == "daily"
-            assert cron.payload["schedule"]["time_hhmm"] == "03:00"
+            cronjob_ids_after = set(db.execute(select(CronJob.id)).scalars().all())
+            assert cronjob_ids_after == cronjob_ids_before
+            assert "cronjob_id" not in result
 
     assert sent["recipient"] == "imre@localhost"
     assert "Affected packages:" in sent["body"]
@@ -148,8 +146,6 @@ def test_hourly_cve_report_tolerates_smtp_unavailable(monkeypatch):
     )
 
     monkeypatch.setattr(cve_reporting, "collect_high_severity_findings", lambda db, min_severity=7.0: [finding])
-    monkeypatch.setattr(cve_reporting, "ensure_patch_cronjob", lambda db, findings: "cron-1")
-
     def smtp_refused(*, recipient: str, subject: str, body: str):
         raise ConnectionRefusedError(111, "Connection refused")
 
@@ -159,7 +155,7 @@ def test_hourly_cve_report_tolerates_smtp_unavailable(monkeypatch):
 
     assert result["sent"] is False
     assert result["finding_count"] == 1
-    assert result["cronjob_id"] == "cron-1"
+    assert "cronjob_id" not in result
     assert "Connection refused" in result["email_error"]
 
 

@@ -121,6 +121,8 @@ def test_admin_sees_all_cronjobs_and_regular_user_sees_only_own(monkeypatch):
             json={"username": "admin", "password": "admin-password-123"},
         )
         assert relogin_admin.status_code == 200, relogin_admin.text
+        csrf_admin = admin_client.cookies.get("fleet_csrf")
+        admin_headers = {"X-CSRF-Token": csrf_admin} if csrf_admin else {}
 
         admin_list = admin_client.get("/cronjobs")
         assert admin_list.status_code == 200, admin_list.text
@@ -129,6 +131,25 @@ def test_admin_sees_all_cronjobs_and_regular_user_sees_only_own(monkeypatch):
         owners = {it["id"]: it.get("owner_username") for it in admin_items}
         assert owners[admin_cron_id] == "admin"
         assert owners[user_cron_id] == "op1"
+        admin_item = next(it for it in admin_items if it["id"] == admin_cron_id)
+        assert admin_item["schedule"] == {"kind": "once", "timezone": "UTC", "time_hhmm": None, "weekday": None, "day_of_month": None}
+        assert admin_item["created_at"]
+
+        audit = admin_client.get(f"/cronjobs/{admin_cron_id}/audit")
+        assert audit.status_code == 200, audit.text
+        create_event = audit.json()["items"][0]
+        assert create_event["action"] == "cronjob.create"
+        assert create_event["actor_username"] == "admin"
+        assert create_event["meta"]["timezone"] == "UTC"
+        assert create_event["meta"]["target_count"] == 1
+
+        canceled = admin_client.post(f"/cronjobs/{admin_cron_id}/cancel", headers=admin_headers)
+        assert canceled.status_code == 200, canceled.text
+        audit_after_cancel = admin_client.get(f"/cronjobs/{admin_cron_id}/audit")
+        assert [event["action"] for event in audit_after_cancel.json()["items"][:2]] == [
+            "cronjob.cancel",
+            "cronjob.create",
+        ]
 
 
 def test_security_campaign_cronjob_dispatch_creates_patch_campaign(monkeypatch):
@@ -182,3 +203,70 @@ def test_security_campaign_cronjob_dispatch_creates_patch_campaign(monkeypatch):
             run = db.query(models.CronJobRun).one()
             assert run.status == "success"
             assert run.job_key == f"patch-campaign:{campaign.campaign_key}"
+
+
+def test_recurring_cronjob_missed_window_is_skipped_not_caught_up(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
+    monkeypatch.setenv("BOOTSTRAP_PASSWORD", "admin-password-123")
+    monkeypatch.setenv("UI_COOKIE_SECURE", "false")
+    monkeypatch.setenv("ALLOW_INSECURE_NO_AGENT_TOKEN", "true")
+    monkeypatch.setenv("AGENT_SHARED_TOKEN", "")
+    monkeypatch.setenv("DB_AUTO_CREATE_TABLES", "true")
+    monkeypatch.setenv("DB_REQUIRE_MIGRATIONS_UP_TO_DATE", "false")
+    monkeypatch.setenv("MFA_REQUIRE_FOR_PRIVILEGED", "false")
+    _reload_app_modules()
+
+    app_factory = importlib.import_module("app.app_factory")
+    app = app_factory.create_app()
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app):
+        db_mod = importlib.import_module("app.db")
+        models = importlib.import_module("app.models")
+        cronjobs = importlib.import_module("app.services.cronjobs")
+
+        missed_run_at = datetime.now(timezone.utc).replace(hour=3, minute=0, second=0, microsecond=0)
+        if missed_run_at > datetime.now(timezone.utc) - timedelta(minutes=30):
+            missed_run_at -= timedelta(days=1)
+
+        with db_mod.SessionLocal() as db:
+            user = models.AppUser(username="cron-admin", password_hash="x", role="admin")
+            db.add(user)
+            db.flush()
+            db.add(models.Host(agent_id="srv-sec", hostname="srv-sec", labels={}))
+            db.add(
+                models.CronJob(
+                    user_id=user.id,
+                    name="missed security daily",
+                    run_at=missed_run_at,
+                    action="security-campaign",
+                    payload={
+                        "schedule": {
+                            "kind": "daily",
+                            "timezone": "UTC",
+                            "time_hhmm": "03:00",
+                        },
+                    },
+                    selector={"agent_ids": ["srv-sec"]},
+                    status="scheduled",
+                )
+            )
+            db.commit()
+
+        asyncio.run(cronjobs._run_tick())
+
+        with db_mod.SessionLocal() as db:
+            assert db.query(models.PatchCampaign).count() == 0
+            cron = db.query(models.CronJob).filter_by(name="missed security daily").one()
+            assert cron.status == "scheduled"
+            next_run_at = cron.run_at
+            if next_run_at.tzinfo is None:
+                next_run_at = next_run_at.replace(tzinfo=timezone.utc)
+            assert next_run_at > datetime.now(timezone.utc)
+            assert next_run_at.hour == 3
+            assert next_run_at.minute == 0
+            run = db.query(models.CronJobRun).one()
+            assert run.status == "skipped"
+            assert "missed scheduled time" in run.error

@@ -360,6 +360,10 @@
         if (typeof w.showToast === 'function') w.showToast('Invalid date/time', 'error');
         return;
       }
+      if (dt.getTime() < Date.now() + 60 * 1000) {
+        if (typeof w.showToast === 'function') w.showToast('Scheduled time must be at least 1 minute in the future', 'error');
+        return;
+      }
       run_at = dt.toISOString();
     }
 

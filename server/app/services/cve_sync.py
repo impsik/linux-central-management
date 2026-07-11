@@ -2,6 +2,8 @@ import bz2
 import gc
 import logging
 import asyncio
+import os
+import tempfile
 import xml.etree.ElementTree as ET
 import aiohttp
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +31,10 @@ def parse_ubuntu_severity(value) -> float | None:
         return float(value)
     except Exception:
         return UBUNTU_PRIORITY_SCORES.get(str(value).strip().lower())
+
+
+def _local_tag(tag: str) -> str:
+    return tag.split('}')[-1] if '}' in tag else tag
 
 
 # Official Ubuntu OVAL definitions
@@ -127,17 +133,19 @@ async def sync_cve_definitions(db: AsyncSession):
                     if resp.status != 200:
                         logger.error(f"Failed to fetch {url}: {resp.status}")
                         continue
-                    
-                    content = await resp.read()
+
+                    fd, tmp_path = tempfile.mkstemp(prefix=f"cve-{codename}-", suffix=".oval.xml.bz2")
                     try:
-                        xml_content = bz2.decompress(content)
-                    except OSError as e:
-                        logger.error(f"Failed to decompress {codename} OVAL: {e}")
-                        continue
-                    
-                    parse_oval_xml(xml_content, codename, release_cve_map)
-                    del content
-                    del xml_content
+                        with os.fdopen(fd, "wb") as tmp:
+                            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                                tmp.write(chunk)
+
+                        parse_oval_bz2_file(tmp_path, codename, release_cve_map)
+                    finally:
+                        try:
+                            os.unlink(tmp_path)
+                        except FileNotFoundError:
+                            pass
                     
             except Exception as e:
                 logger.error(f"Error processing {codename}: {e}")
@@ -162,13 +170,185 @@ async def sync_cve_definitions(db: AsyncSession):
 
     logger.info(f"CVE sync complete ({total_cves} release CVE rows processed).")
 
+
+def _collect_oval_indexes(path: str) -> tuple[dict, dict, dict, dict]:
+    objects = {}
+    states = {}
+    tests = {}
+    variables = {}
+
+    with bz2.open(path, "rb") as fh:
+        for _, elem in ET.iterparse(fh, events=("end",)):
+            tag = _local_tag(elem.tag)
+
+            if tag == "dpkginfo_object":
+                obj_id = elem.get("id")
+                for child in elem:
+                    if _local_tag(child.tag) == "name":
+                        if child.get("var_ref"):
+                            objects[obj_id] = {"type": "var", "ref": child.get("var_ref")}
+                        elif child.text:
+                            objects[obj_id] = {"type": "text", "value": child.text.strip()}
+                        break
+
+            elif tag == "constant_variable":
+                var_id = elem.get("id")
+                vals = []
+                for child in elem:
+                    if _local_tag(child.tag) == "value" and child.text:
+                        vals.append(child.text.strip())
+                variables[var_id] = vals
+
+            elif tag == "dpkginfo_state":
+                state_id = elem.get("id")
+                for child in elem:
+                    if _local_tag(child.tag) == "evr" and child.text:
+                        op = child.get("operation", "equals")
+                        states[state_id] = (child.text.strip(), op)
+
+            elif tag == "dpkginfo_test":
+                test_id = elem.get("id")
+                obj_ref = None
+                state_ref = None
+
+                for child in elem:
+                    ctag = _local_tag(child.tag)
+                    if ctag == "object":
+                        obj_ref = child.get("object_ref")
+                    elif ctag == "state":
+                        state_ref = child.get("state_ref")
+
+                if obj_ref and state_ref:
+                    tests[test_id] = (obj_ref, state_ref)
+
+            elem.clear()
+
+    return objects, states, tests, variables
+
+
+def _parse_definition(elem, codename: str, tests: dict, objects: dict, states: dict, variables: dict, master_cve_map: dict) -> bool:
+    if elem.get("class") != "vulnerability":
+        return False
+
+    title = ""
+    criteria_node = None
+    metadata_node = None
+
+    for child in elem:
+        ctag = _local_tag(child.tag)
+        if ctag == "metadata":
+            metadata_node = child
+            for m in child:
+                if _local_tag(m.tag) == "title":
+                    title = m.text
+        elif ctag == "criteria":
+            criteria_node = child
+
+    if not title:
+        return False
+
+    cve_id = title.strip().split(" ")[0]
+    if not cve_id.startswith("CVE-"):
+        return False
+
+    severity = None
+    if metadata_node is not None:
+        for meta_child in metadata_node.iter():
+            tag_name = _local_tag(meta_child.tag).lower()
+            text = (meta_child.text or "").strip()
+            if not text:
+                continue
+            if tag_name.endswith("severity") or ("cvss" in tag_name and "score" in tag_name):
+                parsed_severity = parse_ubuntu_severity(text)
+                if parsed_severity is not None:
+                    severity = parsed_severity
+                    break
+
+    pkgs_for_cve = {}
+    nodes_to_visit = [criteria_node]
+    while nodes_to_visit:
+        node = nodes_to_visit.pop(0)
+        if node is None:
+            continue
+
+        for child in node:
+            ctag = _local_tag(child.tag)
+            if ctag == "criterion":
+                t_ref = child.get("test_ref")
+                if t_ref in tests:
+                    oid, sid = tests[t_ref]
+                    pkg_names = []
+                    obj_info = objects.get(oid)
+                    if obj_info:
+                        if obj_info["type"] == "var":
+                            pkg_names = variables.get(obj_info["ref"], [])
+                        else:
+                            pkg_names = [obj_info["value"]]
+
+                    ver_info = states.get(sid)
+                    if pkg_names and ver_info:
+                        ver_str, op = ver_info
+                        if op == "less than":
+                            for pkg in pkg_names:
+                                pkgs_for_cve[pkg] = {
+                                    "status": "released",
+                                    "fixed_version": ver_str,
+                                }
+            elif ctag == "criteria":
+                nodes_to_visit.append(child)
+
+    if not pkgs_for_cve:
+        return False
+
+    if cve_id not in master_cve_map:
+        master_cve_map[cve_id] = {}
+    if codename not in master_cve_map[cve_id]:
+        master_cve_map[cve_id][codename] = {}
+    if severity is not None:
+        master_cve_map[cve_id]["severity"] = severity
+
+    if "packages" not in master_cve_map[cve_id][codename]:
+        master_cve_map[cve_id][codename]["packages"] = {}
+
+    master_cve_map[cve_id][codename]["packages"].update(pkgs_for_cve)
+    return True
+
+
+def parse_oval_bz2_file(path: str, codename: str, master_cve_map: dict):
+    try:
+        objects, states, tests, variables = _collect_oval_indexes(path)
+
+        count = 0
+        in_definition = 0
+        with bz2.open(path, "rb") as fh:
+            for event, elem in ET.iterparse(fh, events=("start", "end")):
+                tag = _local_tag(elem.tag)
+
+                if event == "start" and tag == "definition":
+                    in_definition += 1
+                    continue
+
+                if event != "end":
+                    continue
+
+                if tag == "definition":
+                    if _parse_definition(elem, codename, tests, objects, states, variables, master_cve_map):
+                        count += 1
+                    in_definition = max(0, in_definition - 1)
+                    elem.clear()
+                elif not in_definition:
+                    elem.clear()
+
+        logger.info(f"Parsed {count} CVE definitions for {codename}")
+
+    except Exception:
+        logger.exception(f"Error parsing OVAL for {codename}")
+
+
 def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
     try:
         root = ET.fromstring(xml_content)
         
-        def local_tag(tag):
-            return tag.split('}')[-1] if '}' in tag else tag
-
         objects = {}
         states = {}
         tests = {}
@@ -176,13 +356,13 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
 
         # Pass 1: Collect Objects, States, Tests, Variables
         for elem in root.iter():
-            tag = local_tag(elem.tag)
+            tag = _local_tag(elem.tag)
             
             if tag == "dpkginfo_object":
                 obj_id = elem.get("id")
                 # Look for name or reference
                 for child in elem:
-                    if local_tag(child.tag) == "name":
+                    if _local_tag(child.tag) == "name":
                         if child.get("var_ref"):
                             objects[obj_id] = { "type": "var", "ref": child.get("var_ref") }
                         elif child.text:
@@ -193,14 +373,14 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                 var_id = elem.get("id")
                 vals = []
                 for child in elem:
-                    if local_tag(child.tag) == "value" and child.text:
+                    if _local_tag(child.tag) == "value" and child.text:
                         vals.append(child.text.strip())
                 variables[var_id] = vals
 
             elif tag == "dpkginfo_state":
                 state_id = elem.get("id")
                 for child in elem:
-                    if local_tag(child.tag) == "evr" and child.text:
+                    if _local_tag(child.tag) == "evr" and child.text:
                         op = child.get("operation", "equals")
                         states[state_id] = (child.text.strip(), op)
 
@@ -210,7 +390,7 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
                 state_ref = None
                 
                 for child in elem:
-                    ctag = local_tag(child.tag)
+                    ctag = _local_tag(child.tag)
                     if ctag == "object":
                         obj_ref = child.get("object_ref")
                     elif ctag == "state":
@@ -222,98 +402,9 @@ def parse_oval_xml(xml_content: bytes, codename: str, master_cve_map: dict):
         # Pass 2: Process Definitions
         count = 0
         for elem in root.iter():
-            if local_tag(elem.tag) == "definition":
-                if elem.get("class") != "vulnerability":
-                    continue
-                
-                title = ""
-                criteria_node = None
-                
-                for child in elem:
-                    ctag = local_tag(child.tag)
-                    if ctag == "metadata":
-                        for m in child:
-                            if local_tag(m.tag) == "title":
-                                title = m.text
-                    elif ctag == "criteria":
-                        criteria_node = child
-                
-                if not title:
-                    continue
-                    
-                cve_id = title.strip().split(" ")[0]
-                if not cve_id.startswith("CVE-"):
-                    continue
-
-                severity = None
-                metadata_node = None
-                for child in elem:
-                    if local_tag(child.tag) == "metadata":
-                        metadata_node = child
-                        break
-                if metadata_node is not None:
-                    for meta_child in metadata_node.iter():
-                        tag_name = local_tag(meta_child.tag).lower()
-                        text = (meta_child.text or "").strip()
-                        if not text:
-                            continue
-                        if tag_name.endswith("severity") or ("cvss" in tag_name and "score" in tag_name):
-                            parsed_severity = parse_ubuntu_severity(text)
-                            if parsed_severity is not None:
-                                severity = parsed_severity
-                                break
-
-                pkgs_for_cve = {}
-                
-                # BFS/DFS traversal of criteria
-                nodes_to_visit = [criteria_node]
-                while nodes_to_visit:
-                    node = nodes_to_visit.pop(0)
-                    if node is None: 
-                        continue
-                        
-                    for child in node:
-                        ctag = local_tag(child.tag)
-                        if ctag == "criterion":
-                            t_ref = child.get("test_ref")
-                            if t_ref in tests:
-                                oid, sid = tests[t_ref]
-                                
-                                # Resolve object to package name(s)
-                                pkg_names = []
-                                obj_info = objects.get(oid)
-                                if obj_info:
-                                    if obj_info["type"] == "var":
-                                        pkg_names = variables.get(obj_info["ref"], [])
-                                    else:
-                                        pkg_names = [obj_info["value"]]
-                                
-                                ver_info = states.get(sid)
-                                
-                                if pkg_names and ver_info:
-                                    ver_str, op = ver_info
-                                    if op == "less than":
-                                        for pkg in pkg_names:
-                                            pkgs_for_cve[pkg] = {
-                                                "status": "released",
-                                                "fixed_version": ver_str
-                                            }
-                        elif ctag == "criteria":
-                            nodes_to_visit.append(child)
-                
-                if pkgs_for_cve:
+            if _local_tag(elem.tag) == "definition":
+                if _parse_definition(elem, codename, tests, objects, states, variables, master_cve_map):
                     count += 1
-                    if cve_id not in master_cve_map:
-                        master_cve_map[cve_id] = {}
-                    if codename not in master_cve_map[cve_id]:
-                        master_cve_map[cve_id][codename] = {}
-                    if severity is not None:
-                        master_cve_map[cve_id]["severity"] = severity
-                    
-                    if "packages" not in master_cve_map[cve_id][codename]:
-                         master_cve_map[cve_id][codename]["packages"] = {}
-                    
-                    master_cve_map[cve_id][codename]["packages"].update(pkgs_for_cve)
 
         logger.info(f"Parsed {count} CVE definitions for {codename}")
 

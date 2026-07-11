@@ -1,4 +1,5 @@
 import asyncio
+import base64
 
 from app import terminal_pipe
 
@@ -111,3 +112,22 @@ def test_terminal_websocket_origin_must_match_host():
     assert _websocket_origin_allowed({"host": "fleet.example.test", "origin": "https://fleet.example.test"})
     assert _websocket_origin_allowed({"host": "fleet.example.test"})
     assert not _websocket_origin_allowed({"host": "fleet.example.test", "origin": "https://evil.example.test"})
+
+
+def test_wss_agent_connection_uses_configured_ca(monkeypatch):
+    ca_pem = "-----BEGIN CERTIFICATE-----\ntest-ca\n-----END CERTIFICATE-----\n"
+    monkeypatch.setattr(terminal_pipe.settings, "agent_terminal_tls_ca_b64", base64.b64encode(ca_pem.encode()).decode())
+    seen = {}
+
+    def fake_create_default_context(*, cadata=None):
+        seen["cadata"] = cadata
+        return "verified-context"
+
+    monkeypatch.setattr(terminal_pipe.ssl, "create_default_context", fake_create_default_context)
+    assert terminal_pipe._agent_terminal_ssl_context("wss://192.0.2.10:18080/terminal/ws") == "verified-context"
+    assert seen["cadata"] == ca_pem
+
+
+def test_plain_ws_agent_connection_does_not_create_tls_context(monkeypatch):
+    monkeypatch.setattr(terminal_pipe.settings, "agent_terminal_tls_ca_b64", "not-needed-for-ws")
+    assert terminal_pipe._agent_terminal_ssl_context("ws://192.0.2.10:18080/terminal/ws") is None
