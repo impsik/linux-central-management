@@ -15,6 +15,42 @@
     return remHours ? `${days}d ${remHours}h` : `${days}d`;
   }
 
+  function renderAgentQueueHealth(ctx, items, total) {
+    const el = document.getElementById('queue-agent-health-summary');
+    if (!el) return;
+    const rows = Array.isArray(items) ? items : [];
+    if (!rows.length) {
+      el.textContent = 'Agent pressure: clear';
+      return;
+    }
+    const parts = rows.slice(0, 5).map((it) => {
+      const name = it.hostname || it.agent_id || 'unknown';
+      const notes = [
+        `${Number(it.queued || 0)} queued`,
+        `${Number(it.running || 0)} running`,
+        Number(it.stale_running || 0) ? `${Number(it.stale_running || 0)} stale` : '',
+        it.oldest_queued_age_seconds !== null && it.oldest_queued_age_seconds !== undefined ? `oldest ${formatSecondsShort(it.oldest_queued_age_seconds)}` : '',
+      ].filter(Boolean);
+      return `${name}: ${notes.join(', ')}`;
+    });
+    const more = Number(total || 0) > rows.length ? ` +${Number(total || 0) - rows.length} more` : '';
+    el.textContent = `Agent pressure: ${parts.join(' • ')}${more}`;
+  }
+
+  async function loadAgentQueueHealth(ctx) {
+    const el = document.getElementById('queue-agent-health-summary');
+    if (!el) return;
+    el.textContent = 'Loading agent pressure…';
+    try {
+      const r = await fetch('/jobs/agent-health?limit=8', { credentials: 'include' });
+      if (!r.ok) throw new Error(`agent queue health fetch failed (${r.status})`);
+      const d = await r.json();
+      renderAgentQueueHealth(ctx, d?.items || [], Number(d?.total || 0));
+    } catch (e) {
+      el.textContent = e.message || String(e);
+    }
+  }
+
   async function loadQueueHealth(ctx, showToastOnManual = false) {
     const tbody = document.getElementById('overview-queue-health');
     const summaryEl = document.getElementById('queue-health-summary');
@@ -69,6 +105,7 @@
       if (nextBtn) nextBtn.disabled = shownEnd >= total;
       if (!items.length) {
         ctx.setTableState(tbody, 6, 'empty', 'No jobs in selected view');
+        await loadAgentQueueHealth(ctx);
         return;
       }
 
@@ -103,8 +140,14 @@
         if (statusText === 'queued' && obs.is_old_queued && jobId) {
           tr.setAttribute('data-old-queued-job-id', String(jobId));
         }
+        if (statusText === 'failed' && jobId) {
+          tr.setAttribute('data-failed-job-id', String(jobId));
+        }
         const cancelAction = jobId && statusText === 'queued'
           ? `<button class="btn" data-job-cancel="${ctx.escapeHtml(String(jobId))}" type="button" style="padding:0.12rem 0.4rem;margin-right:0.35rem;">Cancel</button>`
+          : '';
+        const requeueAction = jobId && statusText === 'failed'
+          ? `<button class="btn" data-job-requeue="${ctx.escapeHtml(String(jobId))}" type="button" style="padding:0.12rem 0.4rem;margin-right:0.35rem;">Requeue</button>`
           : '';
         tr.innerHTML = `
           <td class="status-muted">${ctx.escapeHtml(ctx.formatShortTime(it.created_at))}${ageText ? `<div class="${obs.is_old_queued ? 'status-warn' : 'status-muted'}" style="font-size:0.78rem;margin-top:0.15rem;">age ${ctx.escapeHtml(ageText)}</div>` : ''}</td>
@@ -112,7 +155,7 @@
           <td><span class="${statusClass}">${ctx.escapeHtml(displayStatus)}</span></td>
           <td style="text-align:right;">${ctx.escapeHtml(String(runCount))}</td>
           <td>${ctx.escapeHtml(queueNotes.join(' • ') || 'waiting for agent')}</td>
-          <td>${jobId ? `<button class="btn" data-job-detail="${ctx.escapeHtml(String(jobId))}" type="button" style="padding:0.12rem 0.4rem;margin-right:0.35rem;">Details</button>${cancelAction}<a href="/jobs/${encodeURIComponent(jobId)}/logs.zip" target="_blank" rel="noopener">logs.zip</a>` : '<span class="status-muted">–</span>'}</td>
+          <td>${jobId ? `<button class="btn" data-job-detail="${ctx.escapeHtml(String(jobId))}" type="button" style="padding:0.12rem 0.4rem;margin-right:0.35rem;">Details</button>${cancelAction}${requeueAction}<a href="/jobs/${encodeURIComponent(jobId)}/logs.zip" target="_blank" rel="noopener">logs.zip</a>` : '<span class="status-muted">–</span>'}</td>
         `;
         const detailBtn = tr.querySelector('button[data-job-detail]');
         detailBtn?.addEventListener('click', (e) => {
@@ -126,12 +169,20 @@
           const id = cancelBtn.getAttribute('data-job-cancel') || '';
           if (id) void cancelQueuedJob(ctx, id);
         });
+        const requeueBtn = tr.querySelector('button[data-job-requeue]');
+        requeueBtn?.addEventListener('click', (e) => {
+          e.preventDefault();
+          const id = requeueBtn.getAttribute('data-job-requeue') || '';
+          if (id) void requeueFailedJob(ctx, id);
+        });
         tbody.appendChild(tr);
       }
+      await loadAgentQueueHealth(ctx);
       if (showToastOnManual) ctx.showToast('Queue health refreshed', 'success');
     } catch (e) {
       ctx.setTableState(tbody, 6, 'error', e.message || String(e));
       if (summaryEl) summaryEl.textContent = 'Queue health unavailable';
+      await loadAgentQueueHealth(ctx);
       if (showToastOnManual) ctx.showToast(e.message || String(e), 'error');
     }
   }
@@ -244,6 +295,25 @@
     }
   }
 
+  async function requeueFailedJob(ctx, jobId) {
+    if (!jobId) return;
+    const ok = window.confirm(`Requeue failed job ${jobId}? Only failed hosts will be queued again.`);
+    if (!ok) return;
+    try {
+      const r = await fetch(`/jobs/${encodeURIComponent(jobId)}/requeue`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': (ctx.getCookie('fleet_csrf') || '') },
+      });
+      if (!r.ok) throw new Error(`requeue failed (${r.status})`);
+      const d = await r.json();
+      ctx.showToast(`Requeued ${d?.requeued_runs || 0} failed run(s)`, 'success');
+      await loadQueueHealth(ctx, false);
+    } catch (e) {
+      ctx.showToast(e.message || String(e), 'error');
+    }
+  }
+
   async function cancelVisibleOldQueuedJobs(ctx) {
     const ids = Array.from(document.querySelectorAll('#overview-queue-health tr[data-old-queued-job-id]'))
       .map((row) => row.getAttribute('data-old-queued-job-id') || '')
@@ -273,6 +343,38 @@
       }
     }
     ctx.showToast(`Cancelled ${cancelled} queued run(s)${failed ? `, ${failed} job(s) failed` : ''}`, failed ? 'error' : 'success');
+    await loadQueueHealth(ctx, false);
+  }
+
+  async function requeueVisibleFailedJobs(ctx) {
+    const ids = Array.from(document.querySelectorAll('#overview-queue-health tr[data-failed-job-id]'))
+      .map((row) => row.getAttribute('data-failed-job-id') || '')
+      .filter(Boolean);
+    const uniqueIds = Array.from(new Set(ids));
+    if (!uniqueIds.length) {
+      ctx.showToast('No failed jobs visible on this page', 'info');
+      return;
+    }
+    const ok = window.confirm(`Requeue ${uniqueIds.length} visible failed job(s)? Only failed hosts will be queued again.`);
+    if (!ok) return;
+
+    let requeued = 0;
+    let failed = 0;
+    for (const id of uniqueIds) {
+      try {
+        const r = await fetch(`/jobs/${encodeURIComponent(id)}/requeue`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'X-CSRF-Token': (ctx.getCookie('fleet_csrf') || '') },
+        });
+        if (!r.ok) throw new Error(`requeue failed (${r.status})`);
+        const d = await r.json();
+        requeued += Number(d?.requeued_runs || 0);
+      } catch {
+        failed += 1;
+      }
+    }
+    ctx.showToast(`Requeued ${requeued} failed run(s)${failed ? `, ${failed} job(s) failed` : ''}`, failed ? 'error' : 'success');
     await loadQueueHealth(ctx, false);
   }
 
@@ -311,10 +413,14 @@
     resetQueueHealthPagination,
     moveQueueHealthPage,
     formatSecondsShort,
+    renderAgentQueueHealth,
+    loadAgentQueueHealth,
     formatJobDetailText,
     openJobDetailModal,
     cancelQueuedJob,
+    requeueFailedJob,
     cancelVisibleOldQueuedJobs,
+    requeueVisibleFailedJobs,
     initJobDetailModalControls,
   };
 })();

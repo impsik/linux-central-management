@@ -1410,6 +1410,7 @@
     const queueHealthPrevBtn = document.getElementById('queue-health-prev');
     const queueHealthNextBtn = document.getElementById('queue-health-next');
     const queueHealthCancelOldBtn = document.getElementById('queue-health-cancel-old');
+    const queueHealthRequeueFailedBtn = document.getElementById('queue-health-requeue-failed');
     const notificationsRefreshBtn = document.getElementById('notifications-refresh');
     const teamsTestBtn = document.getElementById('teams-test-alert');
     const teamsBriefBtn = document.getElementById('teams-send-brief');
@@ -1453,6 +1454,9 @@
     });
     w.wireBusyClick(queueHealthCancelOldBtn, 'Cancelling…', async () => {
       if (typeof ctx.cancelVisibleOldQueuedJobs === 'function') await ctx.cancelVisibleOldQueuedJobs();
+    });
+    w.wireBusyClick(queueHealthRequeueFailedBtn, 'Requeueing…', async () => {
+      if (typeof ctx.requeueVisibleFailedJobs === 'function') await ctx.requeueVisibleFailedJobs();
     });
     w.wireBusyClick(notificationsRefreshBtn, 'Refreshing…', async () => { await loadNotifications(ctx, true); });
     w.wireBusyClick(teamsTestBtn, 'Sending…', async () => {

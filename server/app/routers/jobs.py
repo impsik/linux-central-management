@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -14,7 +15,7 @@ from ..schemas import JobCreateCVECheck, JobCreateDistUpgrade, JobCreateInventor
 from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.high_risk_approval import is_approval_required
-from ..services.jobs import create_job_with_runs, job_run_observability, push_job_to_agents
+from ..services.jobs import build_agent_job_payload, create_job_with_runs, job_run_observability, push_job_to_agents
 from ..services.maintenance import assert_action_allowed_now
 from ..services.rbac import permissions_for
 from ..services.hosts import is_host_online
@@ -219,6 +220,82 @@ def list_jobs(
         )
 
     return {"items": items, "total": int(total or 0), "limit": limit, "offset": offset}
+
+
+@router.get("/agent-health")
+def agent_queue_health(limit: int = 10, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    if limit < 1:
+        limit = 1
+    if limit > 50:
+        limit = 50
+
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.execute(
+            select(JobRun, Job)
+            .join(Job, Job.id == JobRun.job_id)
+            .where(JobRun.status.in_(["queued", "running"]))
+            .order_by(Job.created_at.asc())
+        )
+        .all()
+    )
+    agent_ids = sorted({run.agent_id for run, _job in rows if getattr(run, "agent_id", None)})
+    visible_ids = _visible_agent_ids_for_user(db, user, agent_ids)
+    host_rows = db.execute(select(Host).where(Host.agent_id.in_(list(visible_ids)))).scalars().all() if visible_ids else []
+    hosts = {h.agent_id: h for h in host_rows}
+
+    by_agent: dict[str, dict] = {}
+    for run, job in rows:
+        if run.agent_id not in visible_ids:
+            continue
+        item = by_agent.setdefault(
+            run.agent_id,
+            {
+                "agent_id": run.agent_id,
+                "hostname": getattr(hosts.get(run.agent_id), "hostname", None),
+                "queued": 0,
+                "running": 0,
+                "stale_running": 0,
+                "oldest_queued_age_seconds": None,
+                "oldest_queued_job_id": None,
+                "oldest_queued_type": None,
+                "retry_count_max": 0,
+                "types": set(),
+            },
+        )
+        item["types"].add(job.job_type)
+        obs = job_run_observability(run, now=now)
+        item["retry_count_max"] = max(int(item["retry_count_max"] or 0), int(obs["retry_count"] or 0))
+        if run.status == "queued":
+            item["queued"] += 1
+            age = _age_seconds(job.created_at, now=now)
+            if age is not None and (
+                item["oldest_queued_age_seconds"] is None or age > item["oldest_queued_age_seconds"]
+            ):
+                item["oldest_queued_age_seconds"] = age
+                item["oldest_queued_job_id"] = job.job_key
+                item["oldest_queued_type"] = job.job_type
+        elif run.status == "running":
+            item["running"] += 1
+            if obs["is_stale"]:
+                item["stale_running"] += 1
+
+    items = []
+    for item in by_agent.values():
+        types = sorted([str(t) for t in item.pop("types") if t])
+        item["types"] = types[:8]
+        items.append(item)
+
+    items.sort(
+        key=lambda it: (
+            int(it["stale_running"] or 0),
+            int(it["queued"] or 0),
+            int(it["oldest_queued_age_seconds"] or 0),
+            int(it["running"] or 0),
+        ),
+        reverse=True,
+    )
+    return {"items": items[:limit], "total": len(items), "limit": limit}
 
 
 @router.post("/pkg-upgrade")
@@ -597,6 +674,60 @@ def cancel_queued_job(job_id: str, request: Request, db: Session = Depends(get_d
         "job_id": job.job_key,
         "status": "cancelled" if queued_runs else "unchanged",
         "cancelled_runs": len(queued_runs),
+        "visible_runs": len(visible_runs),
+    }
+
+
+@router.post("/{job_id}/requeue")
+async def requeue_failed_job(job_id: str, request: Request, db: Session = Depends(get_db), user=Depends(require_ui_user)):
+    _require_job_write_access(user)
+    job = db.execute(select(Job).where(Job.job_key == job_id)).scalar_one_or_none()
+    if not job:
+        raise HTTPException(404, "unknown job")
+
+    runs = db.execute(select(JobRun).where(JobRun.job_id == job.id)).scalars().all()
+    visible_ids = _visible_agent_ids_for_user(db, user, [r.agent_id for r in runs if getattr(r, "agent_id", None)])
+    visible_runs = [r for r in runs if r.agent_id in visible_ids]
+    if not visible_runs:
+        raise HTTPException(404, "unknown job")
+
+    requeue_runs = [r for r in visible_runs if r.status == "failed"]
+    requeued_agent_ids = [r.agent_id for r in requeue_runs]
+    with transaction(db):
+        for run in requeue_runs:
+            run.status = "queued"
+            run.started_at = None
+            run.finished_at = None
+            run.exit_code = None
+            run.stdout = None
+            run.stderr = None
+            run.error = "manual requeue requested"
+            run.retry_count = 0
+            run.job_nonce = secrets.token_urlsafe(32)
+        log_event(
+            db,
+            action="jobs.requeue_failed",
+            actor=user,
+            request=request,
+            target_type="job",
+            target_id=job.job_key,
+            target_name=job.job_type,
+            meta={
+                "requeued_runs": len(requeue_runs),
+                "visible_runs": len(visible_runs),
+            },
+        )
+
+    if requeued_agent_ids:
+        await push_job_to_agents(
+            agent_ids=requeued_agent_ids,
+            job_payload_builder=lambda aid: build_agent_job_payload(job, aid),
+        )
+
+    return {
+        "job_id": job.job_key,
+        "status": "requeued" if requeue_runs else "unchanged",
+        "requeued_runs": len(requeue_runs),
         "visible_runs": len(visible_runs),
     }
 

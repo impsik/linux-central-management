@@ -571,7 +571,7 @@ def test_agent_next_job_recovers_stale_running_job_once_then_fails(monkeypatch):
     app = app_factory.create_app()
 
     from app.db import SessionLocal
-    from app.models import Job, JobRun
+    from app.models import AuditEvent, Job, JobRun
     from app.services.jobs import create_job_with_runs, recover_stale_job_runs_for_agent
     from fastapi.testclient import TestClient
 
@@ -658,6 +658,17 @@ def test_agent_next_job_recovers_stale_running_job_once_then_fails(monkeypatch):
         assert old_detail.status_code == 200, old_detail.text
         assert old_detail.json()["observability"]["is_old_queued"] is True
 
+        agent_health = client.get("/jobs/agent-health", params={"limit": 10})
+        assert agent_health.status_code == 200, agent_health.text
+        agent_health_item = next(it for it in agent_health.json()["items"] if it["agent_id"] == "srv-stale")
+        assert agent_health_item["hostname"] == "srv-stale"
+        assert agent_health_item["queued"] == 1
+        assert agent_health_item["running"] == 1
+        assert agent_health_item["stale_running"] == 1
+        assert agent_health_item["oldest_queued_age_seconds"] >= 3600
+        assert agent_health_item["oldest_queued_job_id"] == old_queued.job_key
+        assert "inventory-now" in agent_health_item["types"]
+
         cancelled = client.post(f"/jobs/{old_queued.job_key}/cancel", headers=headers)
         assert cancelled.status_code == 200, cancelled.text
         assert cancelled.json()["cancelled_runs"] == 1
@@ -733,6 +744,42 @@ def test_agent_next_job_recovers_stale_running_job_once_then_fails(monkeypatch):
             assert failed_run.status == "failed"
             assert failed_run.finished_at is not None
             assert "stale running" in failed_run.error
+            failed_job_id = failed_job.job_key
+            failed_nonce = failed_run.job_nonce
+
+        requeued = client.post(f"/jobs/{failed_job_id}/requeue", headers=headers)
+        assert requeued.status_code == 200, requeued.text
+        assert requeued.json()["status"] == "requeued"
+        assert requeued.json()["requeued_runs"] == 1
+
+        with SessionLocal() as db:
+            requeued_run = (
+                db.execute(
+                    select(JobRun)
+                    .join(Job, Job.id == JobRun.job_id)
+                    .where(Job.job_key == failed_job_id, JobRun.agent_id == "srv-stale")
+                )
+                .scalar_one()
+            )
+            assert requeued_run.status == "queued"
+            assert requeued_run.started_at is None
+            assert requeued_run.finished_at is None
+            assert requeued_run.exit_code is None
+            assert requeued_run.error == "manual requeue requested"
+            assert requeued_run.retry_count == 0
+            assert requeued_run.job_nonce
+            assert requeued_run.job_nonce != failed_nonce
+
+            requeue_event = db.execute(
+                select(AuditEvent)
+                .where(AuditEvent.action == "jobs.requeue_failed", AuditEvent.target_id == failed_job_id)
+                .order_by(AuditEvent.created_at.desc())
+            ).scalar_one()
+            assert requeue_event.meta["requeued_runs"] == 1
+
+        requeued_list = client.get("/jobs", params={"agent_id": "srv-stale", "status": "queued", "limit": 20})
+        assert requeued_list.status_code == 200, requeued_list.text
+        assert any(it["job_id"] == failed_job_id for it in requeued_list.json()["items"])
 
 
 def test_package_inventory_invalidates_host_cve_cache(monkeypatch):

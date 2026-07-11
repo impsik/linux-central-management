@@ -1197,6 +1197,7 @@
         resetQueueHealthPagination,
         moveQueueHealthPage,
         cancelVisibleOldQueuedJobs,
+        requeueVisibleFailedJobs,
         loadHosts,
         getLastRenderedAgentIds: () => lastRenderedAgentIds,
         setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', Array.isArray(v) ? v : []); return lastRenderedAgentIds; },
@@ -1413,6 +1414,13 @@
       const mod = window.fleetJobsUi;
       if (mod && typeof mod.cancelVisibleOldQueuedJobs === 'function') {
         return mod.cancelVisibleOldQueuedJobs(getQueueHealthCtx());
+      }
+    }
+
+    async function requeueVisibleFailedJobs() {
+      const mod = window.fleetJobsUi;
+      if (mod && typeof mod.requeueVisibleFailedJobs === 'function') {
+        return mod.requeueVisibleFailedJobs(getQueueHealthCtx());
       }
     }
 
