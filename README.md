@@ -194,9 +194,33 @@ The helper asks for the new host addresses and SSH credentials, then:
 
 `add-host.sh` does not install nginx on managed hosts.
 
-## Rerun or Update
+## Update an Existing Installation
 
-It is safe to rerun the installer:
+Run the installed copy of the installer on the admin node:
+
+```bash
+cd ~/linux-central-management
+./install.sh
+```
+
+The update process is the same whether `install.sh` is started inside the
+repository or downloaded again with `curl`. For an existing checkout it:
+
+1. checks that tracked files have no local modifications;
+2. runs `git fetch origin --prune`;
+3. checks out the configured ref (`main` by default);
+4. runs `git pull --ff-only origin main`;
+5. when new commits were downloaded, restarts once using the updated
+   `install.sh`;
+6. preserves existing configuration and secrets unless rotation is explicitly
+   selected;
+7. rebuilds and restarts the Docker Compose services.
+
+If tracked files contain local changes, the installer stops before updating.
+Review and commit or stash those changes, then rerun it. It never performs a
+hard reset or silently overwrites local work.
+
+To update from another directory, the download command is also supported:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
