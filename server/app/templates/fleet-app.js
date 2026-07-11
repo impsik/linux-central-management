@@ -1337,6 +1337,40 @@
       }
     }
 
+    // Shared by the Hosts bulk action and the extracted Cronjobs UI. Keep this
+    // in fleet-app scope; a copy nested inside initHostsTableControls is not
+    // visible while getCronjobsCtx is being constructed.
+    async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {
+      try {
+        const r = await fetch('/jobs/preflight', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ agent_ids: agentIds }),
+        });
+        if (!r.ok) throw new Error(`preflight failed (${r.status})`);
+        const pre = await r.json();
+        const targeted = Array.isArray(pre?.targeted_hosts) ? pre.targeted_hosts : [];
+        const excluded = Array.isArray(pre?.excluded_by_scope) ? pre.excluded_by_scope : [];
+        const offline = Array.isArray(pre?.offline_or_unreachable) ? pre.offline_or_unreachable : [];
+        const summary = `${actionLabel}\n\nTargeted: ${targeted.length}\nExcluded by scope: ${excluded.length}\nOffline/unreachable: ${offline.length}`;
+        if (!targeted.length) {
+          showToast('No targeted hosts after preflight', 'error');
+          return { ok: false, preflight: pre };
+        }
+        if (targeted.length > threshold) {
+          const typed = prompt(`${summary}\n\nType APPLY to continue:`);
+          if ((typed || '').trim().toUpperCase() !== 'APPLY') return { ok: false, preflight: pre };
+        } else if (!confirm(`${summary}\n\nProceed?`)) {
+          return { ok: false, preflight: pre };
+        }
+        return { ok: true, preflight: pre };
+      } catch (e) {
+        showToast(e.message || String(e), 'error');
+        return { ok: false, preflight: null };
+      }
+    }
+
     function getSelectedHostAgentIds() {
       const ids = [];
       document.querySelectorAll('.hosts-row-select:checked').forEach(cb => {
@@ -1382,41 +1416,6 @@
         selectedAgentIds = selected;
         updateUpgradeControlsFn();
       });
-
-      async function confirmBlastRadius(agentIds, actionLabel, threshold = 5) {
-        try {
-          const r = await fetch('/jobs/preflight', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ agent_ids: agentIds }),
-          });
-          if (!r.ok) throw new Error(`preflight failed (${r.status})`);
-          const pre = await r.json();
-
-          const targeted = Array.isArray(pre?.targeted_hosts) ? pre.targeted_hosts : [];
-          const excluded = Array.isArray(pre?.excluded_by_scope) ? pre.excluded_by_scope : [];
-          const offline = Array.isArray(pre?.offline_or_unreachable) ? pre.offline_or_unreachable : [];
-
-          const summary = `${actionLabel}\n\nTargeted: ${targeted.length}\nExcluded by scope: ${excluded.length}\nOffline/unreachable: ${offline.length}`;
-          if (!targeted.length) {
-            showToast('No targeted hosts after preflight', 'error');
-            return { ok: false, preflight: pre };
-          }
-
-          if (targeted.length > threshold) {
-            const typed = prompt(`${summary}\n\nType APPLY to continue:`);
-            if ((typed || '').trim().toUpperCase() !== 'APPLY') return { ok: false, preflight: pre };
-          } else if (!confirm(`${summary}\n\nProceed?`)) {
-            return { ok: false, preflight: pre };
-          }
-
-          return { ok: true, preflight: pre };
-        } catch (e) {
-          showToast(e.message || String(e), 'error');
-          return { ok: false, preflight: null };
-        }
-      }
 
       async function bulkPost(url, payload, okMsg) {
         const statusEl = document.getElementById('hosts-bulk-status');

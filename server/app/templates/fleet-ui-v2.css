@@ -9,6 +9,12 @@ body {
   background: var(--app-surface);
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 .header {
   position: sticky;
   top: 0;

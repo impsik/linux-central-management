@@ -6,8 +6,10 @@ describe('automation cronjobs owner visibility UI', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
   const htmlPath = path.join(root, 'server/app/templates/index.html');
   const appPath = path.join(root, 'server/app/templates/fleet-cronjobs-ui.js');
+  const fleetAppPath = path.join(root, 'server/app/templates/fleet-app.js');
   const html = fs.readFileSync(htmlPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
+  const fleetApp = fs.readFileSync(fleetAppPath, 'utf8');
 
   it('shows an Owner column in the cronjobs table', () => {
     expect(html).toContain('<th>Owner</th>');
@@ -24,5 +26,12 @@ describe('automation cronjobs owner visibility UI', () => {
     expect(app).toContain('function setupCronHostPickerControlsLocal(ctx)');
     expect(app).toContain("document.getElementById('cron-hosts-open')?.addEventListener('click'");
     expect(app).not.toContain('setupCronHostPickerControls({');
+  });
+
+  it('provides blast-radius preflight in the scope used by cronjobs context', () => {
+    const helperIndex = fleetApp.indexOf('async function confirmBlastRadius(');
+    const contextIndex = fleetApp.indexOf('function getCronjobsCtx()');
+    expect(helperIndex).toBeGreaterThan(-1);
+    expect(contextIndex).toBeGreaterThan(helperIndex);
   });
 });
