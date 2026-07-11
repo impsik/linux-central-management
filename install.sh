@@ -160,16 +160,13 @@ install_packages() {
 ensure_repo() {
   if [ -f "server/app/main.py" ] && [ -f "deploy/docker/docker-compose.yml" ]; then
     APP_DIR="$(pwd)"
-    info "Using existing checkout: $APP_DIR"
+    update_existing_checkout
     return
   fi
 
   if [ -d "$INSTALL_DIR/.git" ]; then
     APP_DIR="$INSTALL_DIR"
-    info "Updating existing checkout: $APP_DIR"
-    git -C "$APP_DIR" fetch origin --prune
-    git -C "$APP_DIR" checkout "$INSTALL_REF"
-    git -C "$APP_DIR" pull --ff-only origin "$INSTALL_REF"
+    update_existing_checkout
     return
   fi
 
@@ -177,6 +174,30 @@ ensure_repo() {
   mkdir -p "$(dirname "$INSTALL_DIR")"
   git clone --branch "$INSTALL_REF" "$REPO_URL" "$INSTALL_DIR"
   APP_DIR="$INSTALL_DIR"
+}
+
+update_existing_checkout() {
+  info "Checking for updates in: $APP_DIR"
+  if ! git -C "$APP_DIR" diff --quiet || ! git -C "$APP_DIR" diff --cached --quiet; then
+    err "Tracked local changes found in $APP_DIR. Commit or stash them before updating."
+  fi
+
+  previous_head="$(git -C "$APP_DIR" rev-parse HEAD)"
+  git -C "$APP_DIR" fetch origin --prune
+  git -C "$APP_DIR" checkout "$INSTALL_REF"
+  git -C "$APP_DIR" pull --ff-only origin "$INSTALL_REF"
+  current_head="$(git -C "$APP_DIR" rev-parse HEAD)"
+
+  if [ "$previous_head" = "$current_head" ]; then
+    info "Application checkout is already up to date"
+    return
+  fi
+
+  info "Updated application checkout: $previous_head -> $current_head"
+  if [ "${FLEET_INSTALL_REEXEC:-0}" != "1" ]; then
+    info "Restarting with the updated installer"
+    FLEET_INSTALL_REEXEC=1 exec "$APP_DIR/install.sh" "$@"
+  fi
 }
 
 get_env_value() {

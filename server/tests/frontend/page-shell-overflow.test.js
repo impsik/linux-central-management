@@ -12,6 +12,6 @@ describe('page shell release details', () => {
   });
 
   it('shows the next application version', () => {
-    expect(version).toContain('APP_VERSION = "0.0.19-alpha"');
+    expect(version).toContain('APP_VERSION = "0.0.20-alpha"');
   });
 });

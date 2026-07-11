@@ -83,15 +83,99 @@ networks.
 
 ## Install the Admin Node
 
+### Red Hat-family preparation
+
+On Red Hat, Rocky Linux, AlmaLinux, and other `dnf`-based systems, install the
+required packages manually before running `install.sh`. The installer installs
+OS packages automatically only on `apt`-based systems.
+
+Remove Docker packages that conflict with Docker CE:
+
+```bash
+sudo dnf remove -y \
+  docker \
+  docker-client \
+  docker-client-latest \
+  docker-common \
+  docker-latest \
+  docker-latest-logrotate \
+  docker-logrotate \
+  docker-engine \
+  podman \
+  runc
+```
+
+Install the repository helper and add Docker's official repository:
+
+```bash
+sudo dnf install -y dnf-plugins-core
+
+sudo dnf config-manager --add-repo \
+  https://download.docker.com/linux/rhel/docker-ce.repo
+```
+
+Install the application prerequisites:
+
+```bash
+sudo dnf install -y \
+  git \
+  curl \
+  ca-certificates \
+  python3 \
+  openssl \
+  ansible-core \
+  golang \
+  docker-ce \
+  docker-ce-cli \
+  containerd.io \
+  docker-buildx-plugin \
+  docker-compose-plugin
+
+sudo systemctl enable --now docker
+sudo usermod -aG docker "$USER"
+```
+
+Log out and back in after adding the current user to the `docker` group, or
+start a new group-aware shell with `newgrp docker`. Confirm that Docker works
+before continuing:
+
+```bash
+docker version
+docker compose version
+```
+
+### Prepare SSH access to managed hosts
+
+The admin node must be able to SSH to every managed host with a user that has
+`sudo` rights. Password authentication can be used during attachment, but SSH
+keys are recommended.
+
+On the admin node, create a key if needed and copy it to each target host:
+
+```bash
+ssh-keygen
+ssh-copy-id sudo-user@<IP-or-FQDN>
+```
+
+Verify both SSH and sudo access before running the installer:
+
+```bash
+ssh sudo-user@<IP-or-FQDN>
+sudo -v
+```
+
+### Run the installer
+
 Run the installer on the server that will host the web UI:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
 ```
 
-The installer clones or updates the repository, installs required packages,
-creates configuration files, prepares TLS certificates, runs database
-migrations, and starts the application with Docker Compose.
+The installer clones or updates the repository, installs required packages on
+supported `apt`-based systems, creates configuration files, prepares TLS
+certificates, runs database migrations, and starts the application with Docker
+Compose.
 
 ### Installer questions
 
@@ -194,9 +278,33 @@ The helper asks for the new host addresses and SSH credentials, then:
 
 `add-host.sh` does not install nginx on managed hosts.
 
-## Rerun or Update
+## Update an Existing Installation
 
-It is safe to rerun the installer:
+Run the installed copy of the installer on the admin node:
+
+```bash
+cd ~/linux-central-management
+./install.sh
+```
+
+The update process is the same whether `install.sh` is started inside the
+repository or downloaded again with `curl`. For an existing checkout it:
+
+1. checks that tracked files have no local modifications;
+2. runs `git fetch origin --prune`;
+3. checks out the configured ref (`main` by default);
+4. runs `git pull --ff-only origin main`;
+5. when new commits were downloaded, restarts once using the updated
+   `install.sh`;
+6. preserves existing configuration and secrets unless rotation is explicitly
+   selected;
+7. rebuilds and restarts the Docker Compose services.
+
+If tracked files contain local changes, the installer stops before updating.
+Review and commit or stash those changes, then rerun it. It never performs a
+hard reset or silently overwrites local work.
+
+To update from another directory, the download command is also supported:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
