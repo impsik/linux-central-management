@@ -6,9 +6,23 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/linux-central-management}"
 INSTALL_REF="${INSTALL_REF:-main}"
 
 say() { printf '%s\n' "$*"; }
-info() { say "[INFO] $*"; }
-warn() { say "[WARN] $*" >&2; }
-err() { say "[ERROR] $*" >&2; exit 1; }
+if [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+  [ -t 1 ] && INFO_COLOR='\033[32m' || INFO_COLOR=''
+  [ -t 2 ] && WARN_COLOR='\033[33m' ERROR_COLOR='\033[31m' || {
+    WARN_COLOR=''
+    ERROR_COLOR=''
+  }
+else
+  INFO_COLOR=''
+  WARN_COLOR=''
+  ERROR_COLOR=''
+fi
+[ -n "$INFO_COLOR" ] && INFO_RESET='\033[0m' || INFO_RESET=''
+[ -n "$WARN_COLOR" ] && WARN_RESET='\033[0m' || WARN_RESET=''
+[ -n "$ERROR_COLOR" ] && ERROR_RESET='\033[0m' || ERROR_RESET=''
+info() { printf '%b[INFO]%b %s\n' "$INFO_COLOR" "$INFO_RESET" "$*"; }
+warn() { printf '%b[WARNING]%b %s\n' "$WARN_COLOR" "$WARN_RESET" "$*" >&2; }
+err() { printf '%b[ERROR]%b %s\n' "$ERROR_COLOR" "$ERROR_RESET" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 is_tty() { [ -r /dev/tty ] && [ -w /dev/tty ]; }
 
