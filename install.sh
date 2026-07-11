@@ -285,10 +285,16 @@ sync_postgres_password() {
 
 wait_for_health() {
   url="$1"
+  ca_cert="${2:-}"
   info "Waiting for $url/health"
   i=0
   while [ "$i" -lt 60 ]; do
-    if curl -fsS "$url/health" >/dev/null 2>&1; then
+    if [ -n "$ca_cert" ]; then
+      health_ok="$(curl -fsS --cacert "$ca_cert" "$url/health" 2>/dev/null || true)"
+    else
+      health_ok="$(curl -fsS "$url/health" 2>/dev/null || true)"
+    fi
+    if [ -n "$health_ok" ]; then
       info "Server health check passed"
       return 0
     fi
@@ -296,6 +302,13 @@ wait_for_health() {
     sleep 2
   done
   warn "Server did not answer $url/health yet. Check: cd $APP_DIR/deploy/docker && docker compose logs server"
+  warn "TLS/connectivity diagnostic:"
+  # Keep certificate verification enabled and expose the actual final error.
+  if [ -n "$ca_cert" ]; then
+    curl -sS --cacert "$ca_cert" --connect-timeout 10 "$url/health" >/dev/null || true
+  else
+    curl -sS --connect-timeout 10 "$url/health" >/dev/null || true
+  fi
   return 1
 }
 
@@ -621,7 +634,7 @@ main() {
   )
   prepare_https "$server_url" "$fleet_server_ip" "$fleet_ca_cert" "$install_nginx"
   server_ready="true"
-  if ! wait_for_health "$server_url"; then
+  if ! wait_for_health "$server_url" "$fleet_ca_cert"; then
     server_ready="false"
     warn "Agent deployment is deferred until $server_url is reachable with a trusted certificate."
   fi
