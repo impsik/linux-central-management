@@ -12,7 +12,10 @@ body {
 html,
 body {
   max-width: 100%;
-  overflow-x: clip;
+  /* Firefox can still expose xterm's far-offscreen measurement helpers when
+     overflow is clipped. Hidden consistently suppresses document scrolling
+     while table-level overflow containers remain scrollable. */
+  overflow-x: hidden;
 }
 
 .header {

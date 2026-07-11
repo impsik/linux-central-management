@@ -8,10 +8,10 @@ describe('page shell release details', () => {
   const version = fs.readFileSync(path.join(root, 'server/app/version.py'), 'utf8');
 
   it('clips accidental document-level horizontal overflow', () => {
-    expect(css).toMatch(/html,\s*\nbody\s*\{[^}]*overflow-x:\s*clip;/s);
+    expect(css).toMatch(/html,\s*\nbody\s*\{[^}]*overflow-x:\s*hidden;/s);
   });
 
   it('shows the next application version', () => {
-    expect(version).toContain('APP_VERSION = "0.0.4-alpha"');
+    expect(version).toContain('APP_VERSION = "0.0.5-alpha"');
   });
 });
