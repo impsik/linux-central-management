@@ -98,7 +98,8 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      # Keep the application private behind the host reverse proxy.
+      - "127.0.0.1:8000:8000"
     volumes:
       - ../../ansible:/ansible:ro
       - ../../ansible_logs:/ansible_logs
