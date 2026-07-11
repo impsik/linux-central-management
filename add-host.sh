@@ -86,10 +86,7 @@ deploy_agent() {
   server_host="${server_host#https://}"
   server_host="${server_host%%/*}"
   server_host="${server_host%%:*}"
-  case "$server_url" in
-    https://*) terminal_listen="127.0.0.1:18081" ;;
-    *) terminal_listen="auto:18080" ;;
-  esac
+  terminal_listen="auto:18080"
 
   info "Building fleet-agent"
   (cd "$ROOT_DIR/agent" && go build -o fleet-agent ./cmd/fleet-agent)
@@ -103,6 +100,8 @@ FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 FLEET_TERMINAL_TOKEN=$term_token
 FLEET_TERMINAL_LISTEN=$terminal_listen
 FLEET_TERMINAL_BACKEND=auto
+FLEET_TERMINAL_TLS_CERT=/etc/fleet-agent/terminal.crt
+FLEET_TERMINAL_TLS_KEY=/etc/fleet-agent/terminal.key
 EOF
   cat > "$tmp_dir/fleet-agent.service" <<EOF
 [Unit]
@@ -147,14 +146,17 @@ EOF
       ;;
   esac
 
-  run_ansible -m shell -a 'systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl restart fleet-agent && systemctl is-active fleet-agent'
+  if [ -n "$term_token" ]; then
+    configure_terminal_tls "$terminal_ca_cert" "$target_hosts" "$server_ip" "$tmp_dir"
+  fi
 
-  if [ -n "$term_token" ] && [ "$terminal_listen" = "127.0.0.1:18081" ]; then
-    configure_terminal_wss "$terminal_ca_cert" "$target_hosts" "$server_ip" "$tmp_dir"
+  run_ansible -m shell -a 'systemctl daemon-reload && systemctl enable --now fleet-agent && systemctl restart fleet-agent && systemctl is-active fleet-agent'
+  if [ -n "$term_token" ]; then
+    verify_terminal_tls "$terminal_ca_cert" "$target_hosts"
   fi
 }
 
-configure_terminal_wss() {
+configure_terminal_tls() {
   terminal_ca_cert="$1"
   target_hosts="$2"
   fleet_server_ip="$3"
@@ -187,48 +189,23 @@ EOF
     as_root chown "$(id -u):$(id -g)" "$target_dir/terminal.key" "$target_dir/terminal.crt" "$target_dir/terminal.csr"
     chmod 600 "$target_dir/terminal.key"
 
-    cat > "$target_dir/fleet-terminal.conf" <<EOF
-map \$http_upgrade \$fleet_terminal_connection_upgrade {
-    default upgrade;
-    '' close;
-}
-server {
-    listen $target_ip:18080 ssl;
-    server_name $target_ip;
-    ssl_certificate /etc/fleet-terminal/terminal.crt;
-    ssl_certificate_key /etc/fleet-terminal/terminal.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_session_tickets off;
-    location /terminal/ws {
-        proxy_pass http://127.0.0.1:18081;
-        proxy_http_version 1.1;
-        proxy_set_header Host \$host;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection \$fleet_terminal_connection_upgrade;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-    location / { return 404; }
-}
-EOF
-
     target_pattern="$terminal_target"
-    info "Installing WSS terminal proxy on $terminal_target ($target_ip)"
-    run_ansible -m package -a 'name=nginx state=present'
-    run_ansible -m file -a 'path=/etc/fleet-terminal state=directory mode=0755'
-    run_ansible -m copy -a "src=$target_dir/terminal.crt dest=/etc/fleet-terminal/terminal.crt mode=0644"
-    run_ansible -m copy -a "src=$target_dir/terminal.key dest=/etc/fleet-terminal/terminal.key mode=0600"
-    run_ansible -m copy -a "src=$terminal_ca_cert dest=/etc/fleet-terminal/terminal-ca.crt mode=0644"
-    run_ansible -m copy -a "src=$target_dir/fleet-terminal.conf dest=/etc/nginx/conf.d/fleet-terminal.conf mode=0644"
-    run_ansible -m shell -a "if [ -e /etc/nginx/sites-enabled/fleet-terminal ]; then mv /etc/nginx/sites-enabled/fleet-terminal /etc/nginx/fleet-terminal.legacy.\$(date +%Y%m%d%H%M%S); fi; nginx -t && systemctl enable --now nginx && systemctl restart nginx"
+    info "Installing the agent's native WSS certificate on $terminal_target ($target_ip)"
+    run_ansible -m file -a 'path=/etc/fleet-agent state=directory mode=0755'
+    run_ansible -m copy -a "src=$target_dir/terminal.crt dest=/etc/fleet-agent/terminal.crt mode=0644"
+    run_ansible -m copy -a "src=$target_dir/terminal.key dest=/etc/fleet-agent/terminal.key mode=0600"
     run_ansible -m shell -a "if command -v firewall-cmd >/dev/null 2>&1 && systemctl is-active --quiet firewalld; then firewall-cmd --add-port=18080/tcp --permanent && firewall-cmd --reload; elif command -v ufw >/dev/null 2>&1 && ufw status | grep -q '^Status: active'; then ufw allow from $fleet_server_ip to any port 18080 proto tcp; fi"
   done
   target_pattern="$all_targets"
+}
 
+verify_terminal_tls() {
+  terminal_ca_cert="$1"
+  target_hosts="$2"
   for terminal_target in $target_hosts; do
     target_ip="$(getent ahostsv4 "$terminal_target" 2>/dev/null | awk 'NR == 1 {print $1}')"
     status="$(curl -sS --cacert "$terminal_ca_cert" -o /dev/null -w '%{http_code}' --connect-timeout 10 "https://$target_ip:18080/terminal/ws" || true)"
-    [ "$status" = "401" ] || err "WSS terminal preflight failed for $terminal_target ($target_ip): expected HTTP 401 without token, got ${status:-connection error}"
+    [ "$status" = "401" ] || err "Native WSS terminal preflight failed for $terminal_target ($target_ip): expected HTTP 401 without token, got ${status:-connection error}"
   done
 }
 
