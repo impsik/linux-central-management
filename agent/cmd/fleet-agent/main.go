@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -79,21 +80,23 @@ type NextJobResponse struct {
 }
 
 type Job struct {
-	JobID          string   `json:"job_id"`
-	JobNonce       string   `json:"job_nonce,omitempty"`
-	Type           string   `json:"type"`
-	Packages       []string `json:"packages,omitempty"`
-	ServiceName    string   `json:"service_name,omitempty"`
-	Action         string   `json:"action,omitempty"`
-	PackageName    string   `json:"package_name,omitempty"`
-	Refresh        bool     `json:"refresh,omitempty"`
-	CVE            string   `json:"cve,omitempty"`
-	Port           int      `json:"port,omitempty"`
-	Protocol       string   `json:"protocol,omitempty"`
-	Source         string   `json:"source,omitempty"`
-	Service        string   `json:"service,omitempty"`
-	DryRun         bool     `json:"dry_run,omitempty"`
-	CleanupActions []string `json:"cleanup_actions,omitempty"`
+	JobID             string   `json:"job_id"`
+	JobNonce          string   `json:"job_nonce,omitempty"`
+	Type              string   `json:"type"`
+	Packages          []string `json:"packages,omitempty"`
+	ServiceName       string   `json:"service_name,omitempty"`
+	Action            string   `json:"action,omitempty"`
+	PackageName       string   `json:"package_name,omitempty"`
+	Refresh           bool     `json:"refresh,omitempty"`
+	CVE               string   `json:"cve,omitempty"`
+	Port              int      `json:"port,omitempty"`
+	Protocol          string   `json:"protocol,omitempty"`
+	Source            string   `json:"source,omitempty"`
+	Service           string   `json:"service,omitempty"`
+	DryRun            bool     `json:"dry_run,omitempty"`
+	CleanupActions    []string `json:"cleanup_actions,omitempty"`
+	MitigationID      string   `json:"mitigation_id,omitempty"`
+	MitigationVersion int      `json:"mitigation_version,omitempty"`
 }
 
 type JobEvent struct {
@@ -939,12 +942,116 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		ev.Error = errMsg
 		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
 		return
+
+	case "security-mitigation":
+		stdout, stderr, code, errMsg := runSecurityMitigation(ctx, job.MitigationID, job.MitigationVersion, job.Action)
+		if code == 0 && errMsg == "" {
+			ev.Status = "success"
+		} else {
+			ev.Status = "failed"
+		}
+		ev.ExitCode = &code
+		ev.Stdout = stdout
+		ev.Stderr = stderr
+		ev.Error = errMsg
+		mustPostJSON(client, serverURL+"/agent/job-event", ev, token)
+		return
 	}
 
 	code := 2
 	mustPostJSON(client, serverURL+"/agent/job-event", JobEvent{
 		AgentID: agentID, JobID: job.JobID, Status: "failed", ExitCode: &code, Error: "unknown job type",
 	}, token)
+}
+
+func runSecurityMitigation(ctx context.Context, mitigationID string, version int, action string) (string, string, int, string) {
+	if strings.TrimSpace(action) != "assess" {
+		return "", "", 2, "security mitigation action is not allowed by this agent version"
+	}
+	if mitigationID != "linux-rds-disable" || version != 1 {
+		return "", "", 2, "unknown security mitigation id or version"
+	}
+
+	result := map[string]any{
+		"mitigation_id": mitigationID,
+		"version":       version,
+		"action":        "assess",
+	}
+	if _, err := exec.LookPath("modprobe"); err != nil {
+		result["status"] = "not_applicable"
+		result["detail"] = "modprobe is not available"
+		encoded, _ := json.Marshal(result)
+		return string(encoded), "", 0, ""
+	}
+
+	moduleAvailable := false
+	if modinfo, err := exec.LookPath("modinfo"); err == nil {
+		checkCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		cmd := exec.CommandContext(checkCtx, modinfo, "rds")
+		moduleAvailable = cmd.Run() == nil
+		cancel()
+	}
+	loaded := false
+	if modules, err := os.ReadFile("/proc/modules"); err == nil {
+		for _, line := range strings.Split(string(modules), "\n") {
+			if strings.HasPrefix(line, "rds ") {
+				loaded = true
+				moduleAvailable = true
+				break
+			}
+		}
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	probe := exec.CommandContext(probeCtx, "modprobe", "-n", "-v", "rds")
+	probeOutput, probeErr := probe.CombinedOutput()
+	cancel()
+	probeText := strings.TrimSpace(string(probeOutput))
+	loadingDisabled := strings.Contains(probeText, "/bin/false") || strings.Contains(probeText, "/bin/true")
+
+	bootConfigured := false
+	for _, pattern := range []string{"/etc/modules-load.d/*.conf", "/usr/lib/modules-load.d/*.conf"} {
+		paths, _ := filepath.Glob(pattern)
+		for _, path := range paths {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			for _, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+				if line == "rds" {
+					bootConfigured = true
+				}
+			}
+		}
+	}
+
+	status := "vulnerable"
+	detail := "rds can be loaded"
+	if !moduleAvailable && probeErr != nil {
+		status = "not_applicable"
+		detail = "rds kernel module is not available"
+	} else if !loaded && loadingDisabled && !bootConfigured {
+		status = "mitigated"
+		detail = "rds is not loaded and automatic loading is disabled"
+	} else if loaded {
+		detail = "rds kernel module is currently loaded"
+	} else if bootConfigured {
+		detail = "rds is configured for boot-time loading"
+	}
+
+	result["status"] = status
+	result["detail"] = detail
+	result["module_available"] = moduleAvailable
+	result["module_loaded"] = loaded
+	result["loading_disabled"] = loadingDisabled
+	result["boot_loading_configured"] = bootConfigured
+	result["modprobe_dry_run"] = probeText
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return "", "", 1, err.Error()
+	}
+	return string(encoded), "", 0, ""
 }
 
 func queryDf(ctx context.Context) (string, string, int, string) {

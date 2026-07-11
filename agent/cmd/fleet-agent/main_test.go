@@ -323,3 +323,15 @@ func TestRunDiskCleanupRejectsUnsupportedAction(t *testing.T) {
 		t.Fatalf("error = %q, want unsupported cleanup action", errMsg)
 	}
 }
+
+func TestSecurityMitigationRejectsUnknownOrApply(t *testing.T) {
+	_, _, code, errMsg := runSecurityMitigation(context.Background(), "unknown", 1, "assess")
+	if code != 2 || errMsg == "" {
+		t.Fatalf("unknown mitigation = code %d error %q, want rejected", code, errMsg)
+	}
+
+	_, _, code, errMsg = runSecurityMitigation(context.Background(), "linux-rds-disable", 1, "apply")
+	if code != 2 || errMsg == "" {
+		t.Fatalf("apply mitigation = code %d error %q, want rejected", code, errMsg)
+	}
+}
