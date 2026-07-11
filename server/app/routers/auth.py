@@ -224,19 +224,23 @@ def auth_login(payload: LoginRequest, request: Request, db: Session = Depends(ge
     # an attacker from bypassing the guard by rotating usernames.
     from ..services.rate_limit import FixedWindowRateLimiter
 
-    global _LOGIN_LIMITER, _LOGIN_IP_LIMITER  # noqa: PLW0603
     account_limit = max(1, int(getattr(settings, "login_rate_limit_per_minute", 10) or 10))
     ip_limit = max(1, int(getattr(settings, "login_ip_rate_limit_per_minute", 30) or 30))
-    if "_LOGIN_LIMITER" not in globals() or getattr(_LOGIN_LIMITER, "limit", None) != account_limit:
-        _LOGIN_LIMITER = FixedWindowRateLimiter(limit=account_limit, window_seconds=60)
-    if "_LOGIN_IP_LIMITER" not in globals() or getattr(_LOGIN_IP_LIMITER, "limit", None) != ip_limit:
-        _LOGIN_IP_LIMITER = FixedWindowRateLimiter(limit=ip_limit, window_seconds=60)
+    app_state = request.app.state
+    account_limiter = getattr(app_state, "login_account_limiter", None)
+    ip_limiter = getattr(app_state, "login_ip_limiter", None)
+    if account_limiter is None or getattr(account_limiter, "limit", None) != account_limit:
+        account_limiter = FixedWindowRateLimiter(limit=account_limit, window_seconds=60)
+        app_state.login_account_limiter = account_limiter
+    if ip_limiter is None or getattr(ip_limiter, "limit", None) != ip_limit:
+        ip_limiter = FixedWindowRateLimiter(limit=ip_limit, window_seconds=60)
+        app_state.login_ip_limiter = ip_limiter
 
     ip = (getattr(request.client, "host", None) or "unknown").strip()
-    ip_rl = _LOGIN_IP_LIMITER.check(f"login-ip:{ip}")
-    rl = _LOGIN_LIMITER.check(f"login-account:{ip}:{username.lower()}")
-    _LOGIN_IP_LIMITER.cleanup()
-    _LOGIN_LIMITER.cleanup()
+    ip_rl = ip_limiter.check(f"login-ip:{ip}")
+    rl = account_limiter.check(f"login-account:{ip}:{username.lower()}")
+    ip_limiter.cleanup()
+    account_limiter.cleanup()
     if not ip_rl.allowed or not rl.allowed:
         retry_after = max(ip_rl.retry_after_seconds, rl.retry_after_seconds)
         raise HTTPException(429, f"Too many login attempts. Try again in {retry_after}s")

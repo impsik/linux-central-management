@@ -44,6 +44,7 @@ def test_hourly_cve_report_does_not_create_patch_cronjob(app, monkeypatch):
         _login(client)
 
         with SessionLocal() as db:
+            cronjob_ids_before = set(db.execute(select(CronJob.id)).scalars().all())
             host = Host(
                 agent_id="agent-1",
                 hostname="srv1",
@@ -97,7 +98,8 @@ def test_hourly_cve_report_does_not_create_patch_cronjob(app, monkeypatch):
             ours = [it for it in findings if it.agent_id == "agent-1" and it.cve_id == "CVE-2026-0001"]
             assert len(ours) == 1
 
-            assert db.execute(select(CronJob)).scalars().all() == []
+            cronjob_ids_after = set(db.execute(select(CronJob.id)).scalars().all())
+            assert cronjob_ids_after == cronjob_ids_before
             assert "cronjob_id" not in result
 
     assert sent["recipient"] == "imre@localhost"
