@@ -360,6 +360,12 @@
                   </select>
                   <input id="queue-health-agent" class="host-search" placeholder="Host" style="width:9rem;padding:0.35rem 0.5rem;" />
                   <input id="queue-health-owner" class="host-search" placeholder="Owner" style="width:8rem;padding:0.35rem 0.5rem;" />
+                  <select id="queue-health-attention" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
+                    <option value="">Any signal</option>
+                    <option value="old_queued">Old queued</option>
+                    <option value="stale_running">Stale running</option>
+                    <option value="requeueable">Requeueable</option>
+                  </select>
                   <select id="queue-health-limit" class="host-search" style="width:auto;padding:0.35rem 0.5rem;">
                     <option value="25">25</option>
                     <option value="50" selected>50</option>
@@ -1770,6 +1776,7 @@
   <script src="/assets/fleet-firewall-management-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-reports-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-admin-ui.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-failed-runs-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-app.js?v=__ASSET_VERSION__"></script>
 </body>
 

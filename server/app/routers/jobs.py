@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, false, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -114,6 +114,7 @@ def list_jobs(
     type: str | None = None,  # noqa: A002
     agent_id: str | None = None,
     created_by: str | None = None,
+    attention: str | None = None,
     limit: int = 50,
     offset: int = 0,
     db: Session = Depends(get_db),
@@ -134,16 +135,55 @@ def list_jobs(
     status_norm = (status or "").strip().lower() or None
     if status_norm and status_norm not in ("queued", "running", "success", "failed"):
         raise HTTPException(400, "invalid status")
+    attention_norm = (attention or "").strip().lower() or None
+    if attention_norm and attention_norm not in ("old_queued", "stale_running", "requeueable"):
+        raise HTTPException(400, "invalid attention")
 
     from ..services.jobs_list import build_jobs_list_query
+    queued_warn_after = int(getattr(settings, "job_queued_warn_after_seconds", 1800) or 0)
+    stale_after = int(getattr(settings, "job_run_stale_after_seconds", 1800) or 0)
+    now = datetime.now(timezone.utc)
+
+    if attention_norm == "old_queued":
+        if status_norm and status_norm != "queued":
+            status_norm = "__empty__"
+        else:
+            status_norm = "queued"
 
     q = build_jobs_list_query(
         db=db,
-        status=status_norm,  # type: ignore[arg-type]
+        status=None if status_norm == "__empty__" else status_norm,  # type: ignore[arg-type]
         job_type=type,
         agent_id=agent_id,
         created_by=created_by,
     )
+    if status_norm == "__empty__":
+        q = q.where(false())
+
+    if attention_norm == "old_queued":
+        if queued_warn_after <= 0:
+            q = q.where(false())
+        else:
+            q = q.where(Job.created_at <= (now - timedelta(seconds=queued_warn_after)))
+    elif attention_norm == "stale_running":
+        if stale_after <= 0:
+            q = q.where(false())
+        else:
+            stale_cutoff = now - timedelta(seconds=stale_after)
+            q = q.where(
+                exists(
+                    select(1).select_from(JobRun).where(
+                        JobRun.job_id == Job.id,
+                        JobRun.status == "running",
+                        JobRun.started_at.is_not(None),
+                        JobRun.started_at <= stale_cutoff,
+                    )
+                )
+            )
+    elif attention_norm == "requeueable":
+        q = q.where(
+            exists(select(1).select_from(JobRun).where(JobRun.job_id == Job.id, JobRun.status == "failed"))
+        )
 
     perms = permissions_for(user)
     if (perms.get("role") or "").lower() != "admin":
@@ -161,7 +201,6 @@ def list_jobs(
     rows = db.execute(q.limit(limit).offset(offset)).all()
     job_ids = [job.id for job, *_ in rows]
     run_summary: dict = {}
-    now = datetime.now(timezone.utc)
     if job_ids:
         run_rows = db.execute(select(JobRun).where(JobRun.job_id.in_(job_ids))).scalars().all()
         for run in run_rows:
@@ -181,7 +220,6 @@ def list_jobs(
                 summary["cancelled"] += 1
 
     items = []
-    queued_warn_after = int(getattr(settings, "job_queued_warn_after_seconds", 1800) or 0)
     for job, computed_status, runs_total, runs_failed, runs_running, runs_success in rows:
         done = bool(runs_total) and computed_status in ("success", "failed")
         obs_summary = run_summary.get(job.id, {"retry_count_max": 0, "stale_running": 0, "cancelled": 0})

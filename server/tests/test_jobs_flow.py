@@ -669,6 +669,14 @@ def test_agent_next_job_recovers_stale_running_job_once_then_fails(monkeypatch):
         assert agent_health_item["oldest_queued_job_id"] == old_queued.job_key
         assert "inventory-now" in agent_health_item["types"]
 
+        old_queued_attention = client.get("/jobs", params={"attention": "old_queued", "limit": 10})
+        assert old_queued_attention.status_code == 200, old_queued_attention.text
+        assert any(it["job_id"] == old_queued.job_key for it in old_queued_attention.json()["items"])
+
+        stale_attention = client.get("/jobs", params={"attention": "stale_running", "limit": 10})
+        assert stale_attention.status_code == 200, stale_attention.text
+        assert any(it["job_id"] == job_id for it in stale_attention.json()["items"])
+
         cancelled = client.post(f"/jobs/{old_queued.job_key}/cancel", headers=headers)
         assert cancelled.status_code == 200, cancelled.text
         assert cancelled.json()["cancelled_runs"] == 1
@@ -689,6 +697,9 @@ def test_agent_next_job_recovers_stale_running_job_once_then_fails(monkeypatch):
         assert cancelled_job_list.status_code == 200, cancelled_job_list.text
         cancelled_job_item = next(it for it in cancelled_job_list.json()["items"] if it["job_id"] == old_queued.job_key)
         assert cancelled_job_item["runs"]["cancelled"] == 1
+        requeueable_attention = client.get("/jobs", params={"attention": "requeueable", "limit": 20})
+        assert requeueable_attention.status_code == 200, requeueable_attention.text
+        assert any(it["job_id"] == old_queued.job_key for it in requeueable_attention.json()["items"])
 
         r = client.get("/agent/next-job", params={"agent_id": "srv-stale"})
         assert r.status_code == 200, r.text

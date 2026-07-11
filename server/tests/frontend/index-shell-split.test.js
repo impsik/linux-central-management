@@ -14,6 +14,7 @@ describe('index shell split', () => {
   const firewallManagementPath = path.join(root, 'server/app/templates/fleet-firewall-management-ui.js');
   const reportsPath = path.join(root, 'server/app/templates/fleet-reports-ui.js');
   const adminPath = path.join(root, 'server/app/templates/fleet-admin-ui.js');
+  const failedRunsPath = path.join(root, 'server/app/templates/fleet-failed-runs-ui.js');
   const html = fs.readFileSync(indexPath, 'utf8');
   const app = fs.readFileSync(appPath, 'utf8');
   const terminal = fs.readFileSync(terminalPath, 'utf8');
@@ -24,6 +25,7 @@ describe('index shell split', () => {
   const firewallManagement = fs.readFileSync(firewallManagementPath, 'utf8');
   const reports = fs.readFileSync(reportsPath, 'utf8');
   const admin = fs.readFileSync(adminPath, 'utf8');
+  const failedRuns = fs.readFileSync(failedRunsPath, 'utf8');
 
   it('loads the main dashboard behavior from a separate cacheable asset', () => {
     expect(html).toContain('<script src="/assets/fleet-app.js?v=__ASSET_VERSION__"></script>');
@@ -35,6 +37,7 @@ describe('index shell split', () => {
     expect(html).toContain('<script src="/assets/fleet-firewall-management-ui.js?v=__ASSET_VERSION__"></script>');
     expect(html).toContain('<script src="/assets/fleet-reports-ui.js?v=__ASSET_VERSION__"></script>');
     expect(html).toContain('<script src="/assets/fleet-admin-ui.js?v=__ASSET_VERSION__"></script>');
+    expect(html).toContain('<script src="/assets/fleet-failed-runs-ui.js?v=__ASSET_VERSION__"></script>');
     expect(app).toContain('bootUi().catch');
     expect(terminal).toContain('window.fleetTerminalUi');
     expect(jobs).toContain('window.fleetJobsUi');
@@ -44,6 +47,7 @@ describe('index shell split', () => {
     expect(firewallManagement).toContain('window.fleetFirewallManagementUi');
     expect(reports).toContain('window.fleetReportsUi');
     expect(admin).toContain('window.fleetAdminUi');
+    expect(failedRuns).toContain('window.fleetFailedRunsUi');
   });
 
   it('keeps index.html as a lighter shell instead of a large inline script bundle', () => {

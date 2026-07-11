@@ -1406,6 +1406,7 @@
     const queueHealthTypeEl = document.getElementById('queue-health-type');
     const queueHealthAgentEl = document.getElementById('queue-health-agent');
     const queueHealthOwnerEl = document.getElementById('queue-health-owner');
+    const queueHealthAttentionEl = document.getElementById('queue-health-attention');
     const queueHealthLimitEl = document.getElementById('queue-health-limit');
     const queueHealthPrevBtn = document.getElementById('queue-health-prev');
     const queueHealthNextBtn = document.getElementById('queue-health-next');
@@ -1432,7 +1433,7 @@
       if (typeof ctx.resetQueueHealthPagination === 'function') ctx.resetQueueHealthPagination();
       ctx.loadQueueHealth(false);
     };
-    [queueHealthStatusEl, queueHealthTypeEl, queueHealthLimitEl].forEach((el) => {
+    [queueHealthStatusEl, queueHealthTypeEl, queueHealthAttentionEl, queueHealthLimitEl].forEach((el) => {
       el?.addEventListener('change', reloadQueueHealthFromFirstPage);
     });
     [queueHealthAgentEl, queueHealthOwnerEl].forEach((el) => {

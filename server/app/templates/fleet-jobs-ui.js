@@ -58,6 +58,7 @@
     const typeEl = document.getElementById('queue-health-type');
     const agentEl = document.getElementById('queue-health-agent');
     const ownerEl = document.getElementById('queue-health-owner');
+    const attentionEl = document.getElementById('queue-health-attention');
     const limitEl = document.getElementById('queue-health-limit');
     const pageEl = document.getElementById('queue-health-page');
     const prevBtn = document.getElementById('queue-health-prev');
@@ -67,6 +68,7 @@
     const type = String(typeEl?.value || '').trim();
     const agentId = String(agentEl?.value || '').trim();
     const owner = String(ownerEl?.value || '').trim();
+    const attention = String(attentionEl?.value || '').trim();
     const limit = Math.max(1, Math.min(200, Number(limitEl?.value || 50) || 50));
     const offset = Math.max(0, Number(ctx.getOffset?.() || 0));
     const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) });
@@ -74,6 +76,7 @@
     if (type) qs.set('type', type);
     if (agentId) qs.set('agent_id', agentId);
     if (owner) qs.set('created_by', owner);
+    if (attention) qs.set('attention', attention);
 
     try {
       ctx.setTableState(tbody, 6, 'loading', 'Loading…');
