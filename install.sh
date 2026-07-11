@@ -433,7 +433,18 @@ server {
 EOF
   sudo_cmd install -m 0644 "$work_dir/nginx-fleet" /etc/nginx/sites-available/fleet
   [ ! -L /etc/nginx/sites-enabled/default ] || sudo_cmd unlink /etc/nginx/sites-enabled/default
-  [ -e /etc/nginx/sites-enabled/fleet ] || sudo_cmd ln -s /etc/nginx/sites-available/fleet /etc/nginx/sites-enabled/fleet
+  if [ -e /etc/nginx/sites-enabled/fleet ] || [ -L /etc/nginx/sites-enabled/fleet ]; then
+    active_target="$(readlink /etc/nginx/sites-enabled/fleet 2>/dev/null || true)"
+    if [ "$active_target" != "/etc/nginx/sites-available/fleet" ]; then
+      backup_path="/etc/nginx/sites-available/fleet.previous.$(date +%Y%m%d%H%M%S)"
+      info "Backing up existing active nginx site to $backup_path"
+      sudo_cmd cp -a /etc/nginx/sites-enabled/fleet "$backup_path"
+      sudo_cmd unlink /etc/nginx/sites-enabled/fleet
+      sudo_cmd ln -s /etc/nginx/sites-available/fleet /etc/nginx/sites-enabled/fleet
+    fi
+  else
+    sudo_cmd ln -s /etc/nginx/sites-available/fleet /etc/nginx/sites-enabled/fleet
+  fi
   sudo_cmd nginx -t
   sudo_cmd systemctl enable --now nginx
   sudo_cmd systemctl reload nginx
