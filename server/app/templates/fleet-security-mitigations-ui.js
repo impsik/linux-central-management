@@ -5,6 +5,8 @@
   let selectedMitigation = '';
   let hosts = [];
   const selectedHosts = new Set();
+  let lastAssessmentJobId = '';
+  const vulnerableHosts = new Set();
 
   const esc = (value) => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -66,14 +68,18 @@
   function renderResults(job) {
     const wrap = document.getElementById('mitigation-results');
     if (!wrap) return;
+    vulnerableHosts.clear();
     const rows = (job.runs || []).map((run) => {
       let result = {};
       try { result = JSON.parse(run.stdout_tail || run.stdout || '{}'); } catch (_) { result = {}; }
       const state = result.status || run.status;
-      const cls = state === 'mitigated' || state === 'not_applicable' ? 'status-ok' : (state === 'vulnerable' ? 'status-error' : 'status-muted');
+      if (state === 'vulnerable') vulnerableHosts.add(String(run.agent_id));
+      const cls = state === 'mitigated' || state === 'not_applicable' ? 'status-ok' : (state === 'vulnerable' ? 'status-error' : (state === 'reboot_required' ? 'status-warn' : 'status-muted'));
       return `<tr><td><code>${esc(run.agent_id)}</code></td><td class="${cls}">${esc(state)}</td><td>${esc(result.detail || run.error || '')}</td></tr>`;
     }).join('');
     wrap.innerHTML = `<table class="process-table"><thead><tr><th>Host</th><th>Assessment</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const applyButton = document.getElementById('mitigation-apply');
+    if (applyButton) applyButton.disabled = !lastAssessmentJobId || vulnerableHosts.size === 0;
   }
 
   async function pollJob(jobId) {
@@ -107,12 +113,37 @@
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || `assessment failed (${response.status})`);
+      lastAssessmentJobId = body.job_id;
       await pollJob(body.job_id);
     } catch (error) {
       if (status) status.textContent = error.message || String(error);
       window.showToast?.(`Assessment failed: ${error.message || error}`, 'error');
     } finally {
       if (button) button.disabled = false;
+    }
+  }
+
+  async function requestApply() {
+    const status = document.getElementById('mitigation-status');
+    if (!lastAssessmentJobId || !vulnerableHosts.size) return;
+    if (!window.confirm(`Request approval to apply this mitigation to ${vulnerableHosts.size} vulnerable host(s)?`)) return;
+    const button = document.getElementById('mitigation-apply');
+    if (button) button.disabled = true;
+    try {
+      if (status) status.textContent = 'Creating approval request…';
+      const response = await fetch(`/security/mitigations/${encodeURIComponent(selectedMitigation)}/apply`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_ids: Array.from(vulnerableHosts), assessment_job_id: lastAssessmentJobId }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || `apply request failed (${response.status})`);
+      if (status) status.textContent = `Approval request ${body.request_id} is pending.`;
+      window.showToast?.('Mitigation apply request sent for two-person approval', 'success');
+    } catch (error) {
+      if (status) status.textContent = error.message || String(error);
+      window.showToast?.(`Apply request failed: ${error.message || error}`, 'error');
+    } finally {
+      if (button) button.disabled = vulnerableHosts.size === 0;
     }
   }
 
@@ -143,5 +174,6 @@
     selectedHosts.clear(); renderHosts();
   });
   document.getElementById('mitigation-assess')?.addEventListener('click', assess);
+  document.getElementById('mitigation-apply')?.addEventListener('click', requestApply);
   window.fleetSecurityMitigationsUi = { load };
 })();

@@ -16,8 +16,9 @@ MITIGATIONS: dict[str, dict] = {
                 "Whether rds is configured for boot-time loading",
             ]
         },
-        "apply_available": False,
-        "reboot_required": False,
+        "apply_available": True,
+        "approval_required": True,
+        "reboot_required": "when_loaded",
         "references": [],
     }
 }

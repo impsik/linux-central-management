@@ -324,14 +324,27 @@ func TestRunDiskCleanupRejectsUnsupportedAction(t *testing.T) {
 	}
 }
 
-func TestSecurityMitigationRejectsUnknownOrApply(t *testing.T) {
+func TestSecurityMitigationRejectsUnknown(t *testing.T) {
 	_, _, code, errMsg := runSecurityMitigation(context.Background(), "unknown", 1, "assess")
 	if code != 2 || errMsg == "" {
 		t.Fatalf("unknown mitigation = code %d error %q, want rejected", code, errMsg)
 	}
+}
 
-	_, _, code, errMsg = runSecurityMitigation(context.Background(), "linux-rds-disable", 1, "apply")
-	if code != 2 || errMsg == "" {
-		t.Fatalf("apply mitigation = code %d error %q, want rejected", code, errMsg)
+func TestSecurityMitigationApplyWritesManagedConfig(t *testing.T) {
+	oldDir := securityMitigationModprobeDir
+	securityMitigationModprobeDir = t.TempDir()
+	t.Cleanup(func() { securityMitigationModprobeDir = oldDir })
+
+	stdout, _, code, errMsg := runSecurityMitigation(context.Background(), "linux-rds-disable", 1, "apply")
+	if code != 0 || errMsg != "" {
+		t.Fatalf("apply mitigation = code %d error %q", code, errMsg)
+	}
+	config, err := os.ReadFile(filepath.Join(securityMitigationModprobeDir, "fleet-disable-rds.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(config), "install rds /bin/false") || !strings.Contains(stdout, `"applied":true`) {
+		t.Fatalf("unexpected mitigation result: config=%q stdout=%q", config, stdout)
 	}
 }

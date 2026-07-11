@@ -964,8 +964,11 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 	}, token)
 }
 
+var securityMitigationModprobeDir = "/etc/modprobe.d"
+
 func runSecurityMitigation(ctx context.Context, mitigationID string, version int, action string) (string, string, int, string) {
-	if strings.TrimSpace(action) != "assess" {
+	action = strings.TrimSpace(action)
+	if action != "assess" && action != "apply" {
 		return "", "", 2, "security mitigation action is not allowed by this agent version"
 	}
 	if mitigationID != "linux-rds-disable" || version != 1 {
@@ -975,7 +978,37 @@ func runSecurityMitigation(ctx context.Context, mitigationID string, version int
 	result := map[string]any{
 		"mitigation_id": mitigationID,
 		"version":       version,
-		"action":        "assess",
+		"action":        action,
+	}
+	if action == "apply" {
+		configPath := filepath.Join(securityMitigationModprobeDir, "fleet-disable-rds.conf")
+		config := []byte("# Managed by fleet security mitigation linux-rds-disable v1\ninstall rds /bin/false\nblacklist rds\n")
+		tmp, err := os.CreateTemp(securityMitigationModprobeDir, ".fleet-disable-rds-*")
+		if err != nil {
+			return "", "", 1, fmt.Sprintf("create mitigation config: %v", err)
+		}
+		tmpPath := tmp.Name()
+		defer os.Remove(tmpPath)
+		if err := tmp.Chmod(0644); err != nil {
+			tmp.Close()
+			return "", "", 1, fmt.Sprintf("set mitigation config permissions: %v", err)
+		}
+		if _, err := tmp.Write(config); err != nil {
+			tmp.Close()
+			return "", "", 1, fmt.Sprintf("write mitigation config: %v", err)
+		}
+		if err := tmp.Sync(); err != nil {
+			tmp.Close()
+			return "", "", 1, fmt.Sprintf("sync mitigation config: %v", err)
+		}
+		if err := tmp.Close(); err != nil {
+			return "", "", 1, fmt.Sprintf("close mitigation config: %v", err)
+		}
+		if err := os.Rename(tmpPath, configPath); err != nil {
+			return "", "", 1, fmt.Sprintf("activate mitigation config: %v", err)
+		}
+		result["config_path"] = configPath
+		result["applied"] = true
 	}
 	if _, err := exec.LookPath("modprobe"); err != nil {
 		result["status"] = "not_applicable"
@@ -1031,11 +1064,19 @@ func runSecurityMitigation(ctx context.Context, mitigationID string, version int
 	if !moduleAvailable && probeErr != nil {
 		status = "not_applicable"
 		detail = "rds kernel module is not available"
-	} else if !loaded && loadingDisabled && !bootConfigured {
+	} else if !loaded && loadingDisabled {
 		status = "mitigated"
 		detail = "rds is not loaded and automatic loading is disabled"
+		if bootConfigured {
+			detail = "rds boot-time declaration is overridden by the modprobe install rule"
+		}
 	} else if loaded {
-		detail = "rds kernel module is currently loaded"
+		if loadingDisabled {
+			status = "reboot_required"
+			detail = "automatic loading is disabled, but rds remains loaded until services release it or the host is rebooted"
+		} else {
+			detail = "rds kernel module is currently loaded"
+		}
 	} else if bootConfigured {
 		detail = "rds is configured for boot-time loading"
 	}
