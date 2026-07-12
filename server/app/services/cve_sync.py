@@ -177,49 +177,60 @@ def _collect_oval_indexes(path: str) -> tuple[dict, dict, dict, dict]:
     tests = {}
     variables = {}
 
+    current_object = None
+    current_state = None
+    current_test = None
+    current_variable = None
+
     with bz2.open(path, "rb") as fh:
-        for _, elem in ET.iterparse(fh, events=("end",)):
+        for event, elem in ET.iterparse(fh, events=("start", "end")):
             tag = _local_tag(elem.tag)
 
-            if tag == "dpkginfo_object":
-                obj_id = elem.get("id")
-                for child in elem:
-                    if _local_tag(child.tag) == "name":
-                        if child.get("var_ref"):
-                            objects[obj_id] = {"type": "var", "ref": child.get("var_ref")}
-                        elif child.text:
-                            objects[obj_id] = {"type": "text", "value": child.text.strip()}
-                        break
+            if event == "start":
+                if tag == "dpkginfo_object":
+                    current_object = {"id": elem.get("id"), "value": None}
+                elif tag == "dpkginfo_state":
+                    current_state = {"id": elem.get("id"), "value": None}
+                elif tag == "dpkginfo_test":
+                    current_test = {"id": elem.get("id"), "object_ref": None, "state_ref": None}
+                elif tag == "constant_variable":
+                    current_variable = {"id": elem.get("id"), "values": []}
+                continue
 
-            elif tag == "constant_variable":
-                var_id = elem.get("id")
-                vals = []
-                for child in elem:
-                    if _local_tag(child.tag) == "value" and child.text:
-                        vals.append(child.text.strip())
-                variables[var_id] = vals
-
+            if tag == "name" and current_object is not None:
+                if elem.get("var_ref"):
+                    current_object["value"] = {"type": "var", "ref": elem.get("var_ref")}
+                elif elem.text:
+                    current_object["value"] = {"type": "text", "value": elem.text.strip()}
+            elif tag == "evr" and current_state is not None and elem.text:
+                current_state["value"] = (elem.text.strip(), elem.get("operation", "equals"))
+            elif tag == "object" and current_test is not None:
+                current_test["object_ref"] = elem.get("object_ref")
+            elif tag == "state" and current_test is not None:
+                current_test["state_ref"] = elem.get("state_ref")
+            elif tag == "value" and current_variable is not None and elem.text:
+                current_variable["values"].append(elem.text.strip())
+            elif tag == "dpkginfo_object":
+                if current_object and current_object["id"] and current_object["value"]:
+                    objects[current_object["id"]] = current_object["value"]
+                current_object = None
             elif tag == "dpkginfo_state":
-                state_id = elem.get("id")
-                for child in elem:
-                    if _local_tag(child.tag) == "evr" and child.text:
-                        op = child.get("operation", "equals")
-                        states[state_id] = (child.text.strip(), op)
-
+                if current_state and current_state["id"] and current_state["value"]:
+                    states[current_state["id"]] = current_state["value"]
+                current_state = None
             elif tag == "dpkginfo_test":
-                test_id = elem.get("id")
-                obj_ref = None
-                state_ref = None
-
-                for child in elem:
-                    ctag = _local_tag(child.tag)
-                    if ctag == "object":
-                        obj_ref = child.get("object_ref")
-                    elif ctag == "state":
-                        state_ref = child.get("state_ref")
-
-                if obj_ref and state_ref:
-                    tests[test_id] = (obj_ref, state_ref)
+                if (
+                    current_test
+                    and current_test["id"]
+                    and current_test["object_ref"]
+                    and current_test["state_ref"]
+                ):
+                    tests[current_test["id"]] = (current_test["object_ref"], current_test["state_ref"])
+                current_test = None
+            elif tag == "constant_variable":
+                if current_variable and current_variable["id"]:
+                    variables[current_variable["id"]] = current_variable["values"]
+                current_variable = None
 
             elem.clear()
 
