@@ -116,11 +116,6 @@ def build_agent_job_payload(job: Job, agent_id: str) -> dict:
         out["action"] = payload.get("sudo_profile") or payload.get("action") or "B"
         out["package_name"] = payload.get("public_key") or payload.get("package_name") or ""
 
-    if job_type == "security-mitigation":
-        out["mitigation_id"] = payload.get("mitigation_id") or ""
-        out["mitigation_version"] = int(payload.get("mitigation_version") or 0)
-        out["action"] = payload.get("action") or "assess"
-
     return out
 
 
