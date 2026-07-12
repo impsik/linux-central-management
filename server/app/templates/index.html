@@ -1038,6 +1038,28 @@
 
     <div class="tab-content-custom" id="sshkeys-tab">
       <div class="admin-content">
+        <div class="section-title">Security mitigations</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Assess versioned, predefined security mitigations across selected hosts. Apply requires approval by a different administrator and is verified automatically on every host.</div>
+
+        <div class="admin-card" style="margin-bottom:1rem;">
+          <div class="admin-card-title">Mitigation catalog</div>
+          <div class="admin-card-body">
+            <div id="security-mitigations-list"><div class="status-muted">Loading…</div></div>
+            <div style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+              <button class="btn" id="mitigation-hosts-select-all" type="button">Select all hosts</button>
+              <button class="btn" id="mitigation-hosts-select-none" type="button">Select none</button>
+              <span class="status-muted">Selected: <span id="mitigation-hosts-count">0</span></span>
+            </div>
+            <div id="mitigation-hosts-list" style="margin-top:0.75rem;max-height:240px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);padding:0.5rem;"></div>
+            <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+              <button class="btn btn-primary" id="mitigation-assess" type="button">Assess selected hosts</button>
+              <button class="btn" id="mitigation-apply" type="button" disabled>Request apply to vulnerable hosts</button>
+              <span id="mitigation-status" class="status-muted"></span>
+            </div>
+            <div id="mitigation-results" style="margin-top:0.75rem;"></div>
+          </div>
+        </div>
+
         <div class="section-title">SSH Keys</div>
         <div class="admin-note" style="margin-bottom:0.75rem;">Upload your public key and request deployment to hosts. An admin must approve. You can choose sudo mode: none, restricted, or full (admin-like).</div>
 
@@ -1779,6 +1801,7 @@
   <script src="/assets/fleet-reports-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-admin-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-failed-runs-ui.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-security-mitigations-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-app.js?v=__ASSET_VERSION__"></script>
 </body>
 

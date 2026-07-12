@@ -15,6 +15,7 @@ from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.patching import create_patch_campaign
+from ..services.security_mitigations import get_mitigation
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -251,6 +252,48 @@ async def approve_request(request_id: str, request: Request, db: Session = Depen
                     "campaign_kind": "security-updates",
                     "target_count": target_count,
                 },
+            }
+
+        if action == "security-mitigation-apply":
+            agent_ids = [str(x) for x in (p.get("agent_ids") or []) if str(x).strip()]
+            mitigation = get_mitigation(str(p.get("mitigation_id") or ""))
+            version = int(p.get("mitigation_version") or 0)
+            if not agent_ids:
+                raise HTTPException(400, "request has no targets")
+            if not mitigation or not mitigation.get("apply_available") or int(mitigation["version"]) != version:
+                raise HTTPException(400, "mitigation definition is unavailable or changed")
+
+            job_payload = {"mitigation_id": mitigation["id"], "mitigation_version": version, "action": "apply"}
+            with transaction(db):
+                created = create_job_with_runs(
+                    db=db,
+                    job_type="security-mitigation",
+                    payload=job_payload,
+                    agent_ids=agent_ids,
+                    created_by=getattr(admin, "username", None) or "admin",
+                    commit=False,
+                )
+                req.status = "executed"
+                req.execution_ref = created.job_key
+                req.finished_at = datetime.now(timezone.utc)
+                log_event(
+                    db,
+                    action="security.mitigation.apply.queued",
+                    actor=admin,
+                    request=request,
+                    target_type="security_mitigation",
+                    target_id=mitigation["id"],
+                    target_name=mitigation["name"],
+                    meta={"request_id": str(req.id), "execution_ref": created.job_key, "target_count": len(agent_ids)},
+                )
+
+            await push_job_to_agents(
+                agent_ids=agent_ids,
+                job_payload_builder=lambda aid: {"job_id": created.job_key, "type": "security-mitigation", **job_payload},
+            )
+            return {
+                "id": str(req.id), "action": req.action, "status": req.status, "execution_ref": created.job_key,
+                "summary": {"message": f"mitigation queued for {len(agent_ids)} host(s); each agent applies and verifies it", "target_count": len(agent_ids)},
             }
 
         raise HTTPException(400, "unsupported action")

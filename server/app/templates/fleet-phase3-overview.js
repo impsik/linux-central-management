@@ -1370,6 +1370,7 @@
       ctx.loadSshKeyRequests();
       ctx.maybeLoadSshKeyAdminQueue();
       ctx.loadAdminSshKeys();
+      window.fleetSecurityMitigationsUi?.load();
     }
 
     function showReportsTab() {
