@@ -6,7 +6,7 @@ MITIGATIONS: dict[str, dict] = {
         "id": "linux-rds-disable",
         "version": 1,
         "name": "Disable the Linux RDS kernel module",
-        "summary": "Assess exposure to RDS kernel module vulnerabilities such as PinTheft.",
+        "summary": "Reduce the Linux kernel attack surface by disabling the RDS module when it is not required.",
         "severity": "high",
         "supported_os": ["debian", "ubuntu", "rhel", "rocky", "almalinux"],
         "assessment": {
