@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .types import JSONDict
 from ..config import settings
 from ..models import Host
 

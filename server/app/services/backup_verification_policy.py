@@ -8,7 +8,6 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..db import SessionLocal
 from ..models import AuditEvent, BackupVerificationPolicy, BackupVerificationRun
 from .backup_verification import run_and_persist_backup_verification
 from .db_utils import transaction
@@ -151,8 +150,3 @@ def run_policy_tick_once(db: Session) -> None:
                     p3.last_alert_at = now
             except Exception:
                 logger.exception("backup verification Teams alert failed")
-
-
-def run_policy_tick_once_fresh_session() -> None:
-    with SessionLocal() as db:
-        run_policy_tick_once(db)

@@ -21,7 +21,7 @@ from ..db import get_db
 from ..deps import CSRF_COOKIE, SESSION_COOKIE, get_current_session_from_request, get_current_user_from_request, require_admin_user, require_ui_user, sha256_hex
 from ..models import AppAuthSettings, AppSavedView, AppSession, AppUser, AppUserScope, Host, OIDCAuthEvent
 from ..services.ad_auth import authenticate_ad, encrypt_password
-from ..services.user_scopes import get_user_scope_selectors, is_host_visible_to_user, selector_matches_labels, user_has_scope_limits
+from ..services.user_scopes import get_user_scope_selectors, selector_matches_labels, user_has_scope_limits
 from ..services.audit import log_event
 from ..services.db_utils import transaction
 from ..services.rbac import permissions_for

@@ -12,7 +12,6 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
-from ..dispatcher import dispatcher
 from ..models import (
     AuditLog,
     Host,

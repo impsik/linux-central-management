@@ -16,7 +16,6 @@ from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, Packages
 from ..services.agents import get_client_ip
 from ..services.agent_auth import hash_agent_token, require_agent_token_dep
 from ..services.audit import log_event
-from ..services.db_utils import transaction
 from ..services.jobs import claim_queued_job_for_agent, create_job_with_runs
 
 router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_token_dep)])
