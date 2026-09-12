@@ -30,6 +30,7 @@ on the host distribution and installed tools.
 
 - [Features](#features)
 - [Architecture](#architecture)
+- [Linux distribution support](#linux-distribution-support)
 - [Requirements](#requirements)
 - [Install the admin node](#install-the-admin-node)
 - [Add more hosts](#add-more-hosts-later)
@@ -53,7 +54,7 @@ on the host distribution and installed tools.
 ### Host administration
 
 - package inventory, package updates, security campaigns, and controlled
-  distribution upgrades;
+  full package upgrades;
 - service status and start, stop, restart, enable, and disable operations;
 - user-account, SSH-key, and sudo-access management;
 - firewall inspection and management;
@@ -89,11 +90,37 @@ on the host distribution and installed tools.
 - **Agent:** connects to the admin API over HTTPS. The admin node connects to
   the selected agent's terminal endpoint over verified WSS.
 
+## Linux Distribution Support
+
+Linux Central Management includes package-management support for Ubuntu/Debian
+and Red Hat-family Linux hosts. Installation requirements and security-data
+sources differ between these families.
+
+The **admin node** runs the web application and database. **Managed hosts** run
+the `fleet-agent` service. Choose the installation instructions for the admin
+node's operating system; managed hosts use their own package manager.
+
+| Capability | Ubuntu / Debian family | Red Hat family |
+|---|---|---|
+| Package inventory | dpkg | RPM |
+| Package installation and updates | APT | DNF, with YUM fallback |
+| Admin-node prerequisites | Installed automatically by `install.sh` on APT-based systems | Must be installed manually before running `install.sh` |
+| CVE data | Central synchronization uses Ubuntu OVAL data for focal, jammy, and noble; this does not provide equivalent Debian coverage | Agent CVE checks include a DNF/YUM `updateinfo` fallback, dependent on repository advisory metadata |
+| Full package upgrade | `apt-get dist-upgrade` | `dnf upgrade` or `yum upgrade` |
+
+Full package upgrades use the host's configured repositories. They do not
+perform an operating-system release migration, such as Ubuntu 22.04 to 24.04
+or RHEL 8 to 9.
+
+Available operations depend on the distribution, configured repositories, and
+installed tools.
+
 ## Requirements
 
 Admin node:
 
-- a supported Ubuntu, Debian, or Red Hat-family Linux server;
+- an Ubuntu, Debian, or Red Hat-family Linux server with the prerequisites
+  described below;
 - root or `sudo` access;
 - outbound access to the Git repository and operating-system package sources;
 - Docker Engine with Compose support. The installer installs Docker and other
@@ -116,7 +143,20 @@ networks.
 
 ## Install the Admin Node
 
-### Red Hat-family preparation
+Complete the preparation for your admin node's operating system, then follow
+[Common Setup: SSH, Installer and First Login](#common-setup-ssh-installer-and-first-login).
+
+### Ubuntu / Debian
+
+On APT-based admin nodes, `install.sh` installs the required packages, including
+Docker, an available Docker Compose package, Python, OpenSSL, Ansible, and Go.
+Package availability depends on the operating-system version and configured
+repositories. The installer also installs nginx when that option is selected.
+
+Continue to [common setup](#common-setup-ssh-installer-and-first-login).
+The DNF preparation below is for Red Hat-family admin nodes.
+
+### Red Hat / Rocky Linux / AlmaLinux
 
 On Red Hat, Rocky Linux, AlmaLinux, and other `dnf`-based systems, install the
 required packages manually before running `install.sh`. The installer installs
@@ -177,7 +217,20 @@ docker version
 docker compose version
 ```
 
-### Prepare SSH access to managed hosts
+If you want the installer to configure nginx, install nginx on the admin node
+before running `install.sh`: the installer cannot install it automatically on
+systems without APT. Alternatively, choose `no` when asked to install and
+configure nginx, then configure your existing reverse proxy using the
+[reverse proxy instructions](#reverse-proxy-choices).
+
+Continue to the common setup below.
+
+### Common Setup: SSH, Installer and First Login
+
+These steps apply after preparing either an Ubuntu/Debian or a Red Hat-family
+admin node.
+
+#### Prepare SSH access to managed hosts
 
 The admin node must be able to SSH to every managed host with a user that has
 `sudo` rights. Password authentication can be used during attachment, but SSH
@@ -197,7 +250,7 @@ ssh sudo-user@<IP-or-FQDN>
 sudo -v
 ```
 
-### Run the installer
+#### Run the installer
 
 Run the installer on the server that will host the web UI:
 
@@ -210,7 +263,7 @@ supported `apt`-based systems, creates configuration files, prepares TLS
 certificates, runs database migrations, and starts the application with Docker
 Compose.
 
-### Installer questions
+#### Installer questions
 
 On a new installation, `install.sh` asks for:
 
@@ -247,7 +300,7 @@ requires redeploying affected agents. Rotating the MFA key can invalidate
 existing MFA enrollments. PostgreSQL password rotation may require a database
 credential migration.
 
-### Reverse proxy choices
+#### Reverse proxy choices
 
 If nginx installation is accepted, the installer configures HTTPS and proxies
 the application to:
@@ -270,7 +323,7 @@ Upstream:           http://127.0.0.1:18000
 Configure HTTPS in the chosen reverse proxy, then run `./add-host.sh` after the
 health endpoint is reachable with a valid certificate.
 
-### Open the application
+#### Open the application
 
 After installation, open the hostname selected during setup:
 
@@ -447,7 +500,7 @@ backed up securely and must not be copied to managed hosts.
   migrations in non-development deployments.
 - MFA is required for privileged users by default.
 - Two-person approval is enabled by default for configured high-risk actions,
-  including distribution upgrades and security campaigns.
+  including full package upgrades and security campaigns.
 - Browser terminal access is powerful and disabled by default. Enable it only
   when required and restrict TCP port `18080` on managed hosts to the admin
   node.
