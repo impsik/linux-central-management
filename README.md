@@ -230,26 +230,6 @@ Continue to the common setup below.
 These steps apply after preparing either an Ubuntu/Debian or a Red Hat-family
 admin node.
 
-#### Prepare SSH access to managed hosts
-
-The admin node must be able to SSH to every managed host with a user that has
-`sudo` rights. Password authentication can be used during attachment, but SSH
-keys are recommended.
-
-On the admin node, create a key if needed and copy it to each target host:
-
-```bash
-ssh-keygen
-ssh-copy-id sudo-user@<IP-or-FQDN>
-```
-
-Verify both SSH and sudo access before running the installer:
-
-```bash
-ssh sudo-user@<IP-or-FQDN>
-sudo -v
-```
-
 #### Run the installer
 
 Run the installer on the server that will host the web UI:
@@ -258,47 +238,88 @@ Run the installer on the server that will host the web UI:
 curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh
 ```
 
-The installer clones or updates the repository, installs required packages on
-supported `apt`-based systems, creates configuration files, prepares TLS
-certificates, runs database migrations, and starts the application with Docker
-Compose.
+The installer first checks the admin node before installing packages, updating
+the checkout, or writing configuration. It checks Linux/systemd, root or sudo
+access, required tools, conflicting ports, hostname resolution, the Git
+repository/ref, and Docker Hub connectivity. On APT-based systems, missing
+application prerequisites are installed after these checks pass; other systems
+must be prepared manually. Package-source access is checked during dependency
+installation.
+
+To run only the preflight checks from a checkout:
+
+```bash
+./install.sh --check
+```
+
+For a downloaded installer, pass the option to `sh`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/main/install.sh | sh -s -- --check
+```
+
+A failed preflight explains how to resolve each problem. Rerun the same command
+after fixing it. Missing DNS produces a warning because the installer supports
+a local hosts-file fallback; a hostname resolving to a different IP blocks
+installation. Configure DNS or a hosts entry on the browser machine as well.
+
+After preflight passes, the installer prepares TLS, applies database migrations
+and starts the application with Docker Compose.
 
 #### Installer questions
 
-On a new installation, `install.sh` asks for:
+The standard installation asks for three groups of settings:
 
-1. **Application hostname** — hostname only, without `https://` or a path. The
-   default is `fleet.local`.
-2. **Fleet server IPv4 address** — the address to which the application
-   hostname resolves.
-3. **Internal CA certificate path** — defaults to
-   `/etc/fleet-pki/fleet-ca.crt`. If the CA does not exist, the installer
-   creates it and keeps its private key protected.
-4. **Install and configure nginx** — choose `yes` for an installer-managed
-   HTTPS reverse proxy or `no` when Apache, Caddy, an existing nginx instance,
-   or another proxy will be configured manually.
-5. **Bootstrap admin username and password** — leaving a new password blank
-   generates a secure password and displays it once in the installation
-   summary.
-6. **Browser terminal access** — optional and disabled by default. Enabling it
-   creates the shared terminal token used by the admin node and agents.
-7. **Managed hosts to attach now** — optional, space- or comma-separated.
-8. **SSH username** for the managed hosts selected above.
-9. **Final confirmation** before building and deploying `fleet-agent` to those
-   hosts.
+1. **Application hostname** — without `https://` or a path; default `fleet.local`.
+2. **HTTPS setup** — let the installer configure nginx (the default for new
+   installations), or choose `no` to use an existing reverse proxy.
+3. **Admin account** — username and password. A blank password generates a
+   secure password, displayed once in the installation summary.
 
-On a rerun, the installer may additionally ask whether to rotate existing:
+The server IPv4 address is detected automatically and the internal CA defaults
+to `/etc/fleet-pki/fleet-ca.crt`. Use `FLEET_SERVER_IP` or `FLEET_CA_CERT` to
+override these values. Review the endpoint summary before proceeding.
 
-- bootstrap admin password;
-- agent shared token;
-- MFA encryption key;
-- browser terminal token;
-- PostgreSQL password.
+On an existing installation, the standard flow preserves configured passwords,
+tokens and the MFA key. It does not prompt to rotate them. Browser terminal
+access stays disabled on new installations, and agents can be added after
+signing in. MFA enrollment for privileged accounts remains required by default.
 
-Answer `no` unless rotation is intentional. Rotating agent or terminal tokens
-requires redeploying affected agents. Rotating the MFA key can invalidate
-existing MFA enrollments. PostgreSQL password rotation may require a database
-credential migration.
+For additional options:
+
+```bash
+./install.sh --advanced
+```
+
+Advanced mode includes server IP and CA-path questions, explicit secret-rotation
+choices, browser terminal enablement, and optional initial agent deployment.
+`ATTACH_HOSTS` and `ANSIBLE_USER` remain available for scripted deployments in
+either mode. Rotating agent or terminal tokens requires redeploying affected
+agents; rotating the MFA key can invalidate enrollments.
+
+#### Connect your first host
+
+After signing in and completing MFA enrollment, an empty fleet opens
+**Connect your first Linux host** instead of an empty operations dashboard.
+
+1. Enter the managed host's IPv4 address or hostname and its SSH username.
+2. Select **Prepare install command**.
+3. On the admin node, change to the installation directory and run the generated
+   command. The default directory is `~/linux-central-management`.
+4. Supply the SSH password in that shell if needed, or use an existing SSH key.
+   The account needs sudo access on the managed host.
+5. Watch registration, connection, OS information and package inventory arrive,
+   then select **View packages and updates**.
+
+The command runs the existing `add-host.sh` helper; the browser does not collect
+SSH passwords or execute the installation. The progress view offers service,
+DNS and certificate troubleshooting. Use the host's reported hostname/FQDN or
+IP address when tracking a particular host.
+
+**Open dashboard** leaves setup, and **Add a host** reopens it from the dashboard.
+Existing fleets open the normal dashboard. Setup is available to administrators;
+other users keep their usual views. Terminal access, AD/OIDC and automation
+remain optional later configuration.
 
 #### Reverse proxy choices
 
@@ -382,8 +403,8 @@ repository or downloaded again with `curl`. For an existing checkout it:
 4. runs `git pull --ff-only origin main`;
 5. when new commits were downloaded, restarts once using the updated
    `install.sh`;
-6. preserves existing configuration and secrets unless rotation is explicitly
-   selected;
+6. preserves existing configuration and secrets; rotation is offered only in
+   advanced mode;
 7. rebuilds and restarts the Docker Compose services.
 
 If tracked files contain local changes, the installer stops before updating.
@@ -411,6 +432,8 @@ also be supplied through environment variables.
 - `FLEET_SERVER_IP` — admin node IPv4 address;
 - `FLEET_CA_CERT` — internal CA certificate path;
 - `INSTALL_NGINX` — `yes` or `no`;
+- `INSTALL_CHECK_ONLY` — `true` for preflight only (equivalent to `--check`);
+- `INSTALL_ADVANCED` — `true` to include advanced questions;
 - `ATTACH_HOSTS` — one or more initial managed-host IP addresses or hostnames,
   separated by spaces or commas;
 - `ANSIBLE_USER` — SSH user used to install the agent on initial hosts;
@@ -462,7 +485,7 @@ curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/mai
 
 The bootstrap admin password is still generated securely when no existing
 password is configured. The installer displays a newly generated password in
-its final summary. Browser terminal access remains an explicit interactive
+its final summary. Browser terminal access remains an explicit advanced-mode
 opt-in and is not enabled merely by using non-interactive defaults.
 
 Review `install.sh` before unattended production use. Secret rotation and host

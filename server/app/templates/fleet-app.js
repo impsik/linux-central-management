@@ -2474,6 +2474,9 @@
       }
     }, 10000);
 
+    safeInit('initOnboarding', () => {
+      window.fleetOnboarding?.init({ selectHost, showPackages });
+    });
     void loadFleetOverview();
     void refreshApprovalsIndicator();
     startHostRefresh();

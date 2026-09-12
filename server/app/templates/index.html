@@ -22,6 +22,7 @@
   <script src="/assets/fleet-phase3-host-workflows.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-ssh-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-metrics.js?v=__ASSET_VERSION__"></script>
+  <script src="/assets/fleet-onboarding.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-overview.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-packages.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-phase3-host-actions.js?v=__ASSET_VERSION__"></script>
@@ -242,12 +243,71 @@
           </div>
 
           <div id="server-info-placeholder" class="empty-state" style="text-align:left;max-width:none;">
+            <section id="fleet-onboarding" class="onboarding-card" aria-labelledby="onboarding-title" hidden>
+              <div class="onboarding-heading">
+                <div>
+                  <span class="onboarding-eyebrow">GET STARTED</span>
+                  <h2 id="onboarding-title">Connect your first Linux host</h2>
+                  <p>See its operating system, installed packages and available updates in one place.</p>
+                </div>
+                <button class="btn" id="onboarding-skip" type="button">Open dashboard</button>
+              </div>
+              <div class="onboarding-columns">
+                <div>
+                  <h3>1. Prepare your connection</h3>
+                  <p>Use an SSH account with sudo access on the Linux machine you want to manage.</p>
+                  <form id="onboarding-form">
+                    <label for="onboarding-host">Managed host IPv4 address or hostname</label>
+                    <input class="host-search" id="onboarding-host" placeholder="192.0.2.21 or server.example.internal" required maxlength="253" />
+                    <label for="onboarding-username">SSH username</label>
+                    <input class="host-search" id="onboarding-username" placeholder="fleet-admin" required maxlength="64" autocomplete="off" />
+                    <button class="btn btn-primary" type="submit">Prepare install command</button>
+                    <p id="onboarding-form-error" class="status-error" role="alert"></p>
+                  </form>
+                  <div id="onboarding-command-box" hidden>
+                    <h3>2. Run on the admin node</h3>
+                    <p>Open a shell on the server hosting this application. Change to its installation directory (default: <code>~/linux-central-management</code>), then run:</p>
+                    <pre id="onboarding-command" class="onboarding-command" tabindex="0"></pre>
+                    <button class="btn" id="onboarding-copy" type="button">Copy command</button>
+                    <span id="onboarding-copy-status" role="status"></span>
+                    <p>The helper installs the agent over SSH. Enter a password there if requested, or leave it blank to use your SSH key. Keep this page open to follow progress.</p>
+                  </div>
+                </div>
+                <div class="onboarding-progress-card">
+                  <h3>3. Check the connection</h3>
+                  <p id="onboarding-status" role="status" aria-live="polite">Checking setup status…</p>
+                  <ol id="onboarding-progress" class="onboarding-progress" hidden>
+                    <li id="onboarding-registered"><span aria-hidden="true">…</span> Agent registered</li>
+                    <li id="onboarding-online"><span aria-hidden="true">…</span> Agent connected</li>
+                    <li id="onboarding-system"><span aria-hidden="true">…</span> Operating-system information received</li>
+                    <li id="onboarding-inventory"><span aria-hidden="true">…</span> Package inventory received</li>
+                  </ol>
+                  <p id="onboarding-host-summary"></p>
+                  <p id="onboarding-last-seen" class="status-muted"></p>
+                  <div class="onboarding-actions">
+                    <button class="btn" id="onboarding-refresh" type="button">Refresh</button>
+                    <button class="btn btn-primary" id="onboarding-view" type="button" hidden>View packages and updates</button>
+                  </div>
+                  <details id="onboarding-connection-help" hidden>
+                    <summary>Host not connecting?</summary>
+                    <ul>
+                      <li>Check the helper's output for SSH or sudo errors.</li>
+                      <li>On the managed host, check <code>sudo systemctl status fleet-agent</code> and <code>sudo journalctl -u fleet-agent -n 50 --no-pager</code>.</li>
+                      <li>Verify that the application hostname resolves to the admin node and HTTPS is reachable from the managed host.</li>
+                      <li>For certificate errors, rerun the helper with the correct internal CA. Keep certificate verification enabled.</li>
+                    </ul>
+                  </details>
+                </div>
+              </div>
+              <p class="status-muted">Terminal access, identity providers and automation can be configured later in the usual views.</p>
+            </section>
             <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
               <div>
                 <h2 style="margin:0 0 0.25rem 0;">Operations Dashboard</h2>
                 <div style="color:var(--muted-2);font-size:0.95rem;">Last updated: <span id="guardian-last-updated">—</span> · environment: production</div>
               </div>
               <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+                <button class="btn" id="onboarding-open" type="button" hidden>Add a host</button>
                 <button class="btn" id="overview-refresh" type="button">Refresh</button>
               </div>
             </div>
