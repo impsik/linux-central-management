@@ -164,6 +164,8 @@ def recover_stale_job_runs_for_agent(db: Session, agent_id: str, *, now: datetim
         retry_count = int(getattr(run, "retry_count", 0) or 0)
         if retry_count < max_retries:
             run.retry_count = retry_count + 1
+            # A late event from the abandoned attempt must not finish its retry.
+            run.job_nonce = secrets.token_urlsafe(32)
             run.status = "queued"
             run.started_at = None
             run.error = f"requeued after stale running state older than {stale_after}s"

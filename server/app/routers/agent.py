@@ -370,34 +370,32 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
     # Persist CVE check results (best-effort)
     if payload.status in ("success", "failed") and job.job_type == "cve-check" and payload.stdout:
         try:
-            import json
+            with db.begin_nested():
+                import json
 
-            host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
-            if host:
-                data = json.loads(payload.stdout or "{}")
-                cve = str(data.get("cve") or job.payload.get("cve") or "").strip().upper()
-                if cve:
-                    affected = bool(data.get("affected") or False)
-                    summary = (str(data.get("summary") or "") or "").strip() or None
-                    raw = (str(data.get("raw") or "") or "").strip() or None
+                host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
+                if host:
+                    data = json.loads(payload.stdout or "{}")
+                    cve = str(data.get("cve") or job.payload.get("cve") or "").strip().upper()
+                    if cve:
+                        affected = bool(data.get("affected") or False)
+                        summary = (str(data.get("summary") or "") or "").strip() or None
+                        raw = (str(data.get("raw") or "") or "").strip() or None
 
-                    row = db.execute(
-                        select(HostCVEStatus).where(HostCVEStatus.host_id == host.id, HostCVEStatus.cve == cve)
-                    ).scalar_one_or_none()
-                    if not row:
-                        row = HostCVEStatus(host_id=host.id, cve=cve)
-                        db.add(row)
+                        row = db.execute(
+                            select(HostCVEStatus).where(HostCVEStatus.host_id == host.id, HostCVEStatus.cve == cve)
+                        ).scalar_one_or_none()
+                        if not row:
+                            row = HostCVEStatus(host_id=host.id, cve=cve)
+                            db.add(row)
 
-                    row.affected = affected
-                    row.summary = summary
-                    row.raw = raw
-                    row.checked_at = now
+                        row.affected = affected
+                        row.summary = summary
+                        row.raw = raw
+                        row.checked_at = now
         except Exception:
-            # best-effort
-            try:
-                db.rollback()
-            except Exception:
-                pass
+            # The savepoint preserves the job result and the previous cache on failure.
+            pass
 
     # Package upgrades change installed versions and may resolve CVEs. Invalidate stale
     # host CVE results immediately and queue inventory so package snapshots catch up.
@@ -438,104 +436,100 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
     # Persist package update availability cache when an update-check job completes
     if payload.status == "success" and job.job_type == "query-pkg-updates" and payload.stdout:
         try:
-            import json
+            with db.begin_nested():
+                import json
 
-            host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
-            if host:
-                data = json.loads(payload.stdout or "{}")
-                checked_at_str = data.get("checked_at")
-                try:
-                    checked_at = (
-                        datetime.fromisoformat(checked_at_str.replace("Z", "+00:00"))
-                        if checked_at_str
-                        else now
-                    )
-                except Exception:
-                    checked_at = now
-
-                # host-level reboot flag
-                if hasattr(host, "reboot_required"):
-                    host.reboot_required = bool(data.get("reboot_required") or False)
-
-                updates = data.get("updates", []) or []
-                db.execute(delete(HostPackageUpdate).where(HostPackageUpdate.host_id == host.id))
-                for u in updates:
-                    if not isinstance(u, dict):
-                        continue
-                    name = str(u.get("name") or "").strip()
-                    if not name:
-                        continue
-                    db.add(
-                        HostPackageUpdate(
-                            host_id=host.id,
-                            name=name,
-                            installed_version=u.get("installed_version"),
-                            candidate_version=u.get("candidate_version"),
-                            is_security=bool(u.get("is_security") or False),
-                            update_available=True,
-                            checked_at=checked_at,
+                host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
+                if host:
+                    data = json.loads(payload.stdout or "{}")
+                    checked_at_str = data.get("checked_at")
+                    try:
+                        checked_at = (
+                            datetime.fromisoformat(checked_at_str.replace("Z", "+00:00"))
+                            if checked_at_str
+                            else now
                         )
-                    )
+                    except Exception:
+                        checked_at = now
+
+                    # host-level reboot flag
+                    if hasattr(host, "reboot_required"):
+                        host.reboot_required = bool(data.get("reboot_required") or False)
+
+                    updates = data.get("updates", []) or []
+                    db.execute(delete(HostPackageUpdate).where(HostPackageUpdate.host_id == host.id))
+                    for u in updates:
+                        if not isinstance(u, dict):
+                            continue
+                        name = str(u.get("name") or "").strip()
+                        if not name:
+                            continue
+                        db.add(
+                            HostPackageUpdate(
+                                host_id=host.id,
+                                name=name,
+                                installed_version=u.get("installed_version"),
+                                candidate_version=u.get("candidate_version"),
+                                is_security=bool(u.get("is_security") or False),
+                                update_available=True,
+                                checked_at=checked_at,
+                            )
+                        )
         except Exception:
-            # Best-effort caching
+            # The savepoint preserves the job result and the previous cache on failure.
             pass
 
     # Persist a lightweight metrics snapshot when a metrics job completes
     if payload.status == "success" and job.job_type == "query-metrics" and payload.stdout:
         try:
-            import json
+            with db.begin_nested():
+                import json
 
-            host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
-            if host:
-                data = json.loads(payload.stdout or "{}")
-                metrics = data.get("metrics") if isinstance(data, dict) else None
-                if isinstance(metrics, dict):
-                    cpu = metrics.get("cpu") if isinstance(metrics.get("cpu"), dict) else {}
-                    disk = metrics.get("disk_usage") if isinstance(metrics.get("disk_usage"), dict) else {}
-                    mem = metrics.get("memory") if isinstance(metrics.get("memory"), dict) else {}
+                host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
+                if host:
+                    data = json.loads(payload.stdout or "{}")
+                    metrics = data.get("metrics") if isinstance(data, dict) else None
+                    if isinstance(metrics, dict):
+                        cpu = metrics.get("cpu") if isinstance(metrics.get("cpu"), dict) else {}
+                        disk = metrics.get("disk_usage") if isinstance(metrics.get("disk_usage"), dict) else {}
+                        mem = metrics.get("memory") if isinstance(metrics.get("memory"), dict) else {}
 
-                    snap = HostMetricsSnapshot(
-                        agent_id=payload.agent_id,
-                        disk_percent_used=str(disk.get("percent_used")) if disk.get("percent_used") is not None else None,
-                        mem_percent_used=str(mem.get("percent_used")) if mem.get("percent_used") is not None else None,
-                        load_1min=str(cpu.get("load_1min")) if cpu.get("load_1min") is not None else None,
-                        vcpus=int(cpu.get("vcpus")) if cpu.get("vcpus") is not None else None,
-                    )
-                    db.add(snap)
+                        snap = HostMetricsSnapshot(
+                            agent_id=payload.agent_id,
+                            disk_percent_used=str(disk.get("percent_used")) if disk.get("percent_used") is not None else None,
+                            mem_percent_used=str(mem.get("percent_used")) if mem.get("percent_used") is not None else None,
+                            load_1min=str(cpu.get("load_1min")) if cpu.get("load_1min") is not None else None,
+                            vcpus=int(cpu.get("vcpus")) if cpu.get("vcpus") is not None else None,
+                        )
+                        db.add(snap)
 
-                    if cpu.get("load_1min") is not None:
-                        db.add(
-                            HostLoadMetric(
-                                agent_id=payload.agent_id,
-                                load_1min=str(cpu.get("load_1min")),
-                                load_5min=str(cpu.get("load_5min")),
-                                load_15min=str(cpu.get("load_15min")),
+                        if cpu.get("load_1min") is not None:
+                            db.add(
+                                HostLoadMetric(
+                                    agent_id=payload.agent_id,
+                                    load_1min=str(cpu.get("load_1min")),
+                                    load_5min=str(cpu.get("load_5min")),
+                                    load_15min=str(cpu.get("load_15min")),
+                                )
+                            )
+
+                        # Retention: keep last 7 days
+                        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+                        db.execute(
+                            delete(HostLoadMetric).where(
+                                HostLoadMetric.agent_id == payload.agent_id,
+                                HostLoadMetric.recorded_at < cutoff,
                             )
                         )
-
-                    db.commit()
-
-                    # Retention: keep last 7 days
-                    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-                    db.execute(
-                        delete(HostLoadMetric).where(
-                            HostLoadMetric.agent_id == payload.agent_id,
-                            HostLoadMetric.recorded_at < cutoff,
+                        db.execute(
+                            delete(HostMetricsSnapshot).where(
+                                HostMetricsSnapshot.agent_id == payload.agent_id,
+                                HostMetricsSnapshot.recorded_at < cutoff,
+                            )
                         )
-                    )
-                    db.execute(
-                        delete(HostMetricsSnapshot).where(
-                            HostMetricsSnapshot.agent_id == payload.agent_id,
-                            HostMetricsSnapshot.recorded_at < cutoff,
-                        )
-                    )
-                    db.commit()
         except Exception:
-            # Best-effort caching
-            try:
-                db.rollback()
-            except Exception:
-                pass
+            # The savepoint preserves the job result and the previous cache on failure.
+            pass
 
     db.commit()
     return {"ok": True}

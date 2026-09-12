@@ -1,10 +1,43 @@
-# Linux Central Management
+# Linux Central Management — Self-Hosted Linux Server and Patch Management
 
-Linux Central Management is a web-based control plane for administering Linux
-servers from one place. It runs the web application and PostgreSQL database on
-an admin node and installs a small `fleet-agent` service on every managed host.
+Linux Central Management is self-hosted, web-based Linux server management
+software for system administrators managing multiple machines. Manage host
+inventory, Linux patching, package updates, CVE vulnerability reports, systemd
+services, user accounts, SSH keys, and Ansible automation from one dashboard.
 
-![Screenshot](docs/screenshots/2.png)
+Run the Python/FastAPI web application and PostgreSQL database on your own
+admin node with Docker Compose. A Go `fleet-agent` systemd service runs on each
+managed Linux host. The project includes Debian/Ubuntu (APT/dpkg) and
+Red Hat-family (DNF/RPM) package-management paths; individual operations depend
+on the host distribution and installed tools.
+
+![Linux Central Management web dashboard for managing Linux servers](docs/screenshots/2.png)
+
+## Common Use Cases
+
+- **Linux fleet inventory:** find hosts by owner, label, operating system, or
+  health status and inspect their installed packages and available updates.
+- **Centralized patch management:** plan security-update campaigns with
+  maintenance windows, rollout controls, and approvals for high-risk actions.
+- **CVE vulnerability reporting:** review package and host vulnerability
+  information alongside update availability.
+- **Day-to-day server administration:** manage services, users, SSH access,
+  firewall rules, and remote terminal sessions through the web interface.
+- **Linux automation:** run Ansible playbooks and scheduled jobs across selected
+  hosts, then inspect execution logs and audit history.
+
+## Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Requirements](#requirements)
+- [Install the admin node](#install-the-admin-node)
+- [Add more hosts](#add-more-hosts-later)
+- [Update an existing installation](#update-an-existing-installation)
+- [Non-interactive defaults](#non-interactive-defaults)
+- [Important files](#important-files)
+- [Security notes](#security-notes)
+- [Documentation and development](#documentation-and-development)
 
 ## Features
 
@@ -423,3 +456,34 @@ backed up securely and must not be copied to managed hosts.
 
 Additional deployment guidance is available in
 [`docs/security-baseline.md`](docs/security-baseline.md).
+
+## Documentation and Development
+
+- [Security baseline and deployment hardening](docs/security-baseline.md)
+- [Load testing the agent API](docs/load-testing.md)
+- [Frontend testing notes](docs/frontend-testing-notes.md)
+- [Agent protocol](proto/README.md)
+- [Changelog](CHANGELOG.md)
+- [Release security checklist](RELEASE_SECURITY_CHECKLIST.md)
+
+The backend lives in `server/`, the Go agent in `agent/`, deployment files in
+`deploy/`, and Ansible playbooks in `ansible/`. The web UI uses HTML, CSS, and
+JavaScript templates in `server/app/templates/`.
+
+To run the tests from a development checkout, use Python 3.12 (the backend CI
+version), Node.js 22, and a Go toolchain compatible with `agent/go.mod`:
+
+```bash
+python3.12 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r server/requirements.txt
+python -m pytest server/tests -q
+
+npm ci
+npm run test:frontend
+
+(cd agent && go test ./...)
+```
+
+Use a separate development checkout for testing. Deployment and host-attachment
+scripts are intended for actual administration and require elevated privileges.

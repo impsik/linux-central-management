@@ -1,5 +1,6 @@
 import importlib
 import sys
+from types import SimpleNamespace
 
 
 def _create_app(monkeypatch, *, account_limit=10, ip_limit=30):
@@ -54,6 +55,9 @@ def test_ip_limit_blocks_username_spraying(monkeypatch):
     from fastapi.testclient import TestClient
 
     app = _create_app(monkeypatch, account_limit=10, ip_limit=2)
+    # Keep all attempts in one window, even on slow CI runners or at a minute boundary.
+    rate_limit = importlib.import_module("app.services.rate_limit")
+    monkeypatch.setattr(rate_limit, "time", SimpleNamespace(time=lambda: 120.0))
     with TestClient(app) as client:
         first = client.post("/auth/login", json={"username": "guess-one", "password": "wrong"})
         second = client.post("/auth/login", json={"username": "guess-two", "password": "wrong"})
