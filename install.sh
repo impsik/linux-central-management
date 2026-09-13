@@ -24,7 +24,7 @@ info() { printf '%b[INFO]%b %s\n' "$INFO_COLOR" "$INFO_RESET" "$*"; }
 warn() { printf '%b[WARNING]%b %s\n' "$WARN_COLOR" "$WARN_RESET" "$*" >&2; }
 err() { printf '%b[ERROR]%b %s\n' "$ERROR_COLOR" "$ERROR_RESET" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
-is_tty() { [ -r /dev/tty ] && [ -w /dev/tty ]; }
+is_tty() { ( : < /dev/tty ) 2>/dev/null; }
 
 prompt() {
   question="$1"
@@ -63,7 +63,7 @@ confirm() {
   default="${2:-n}"
   answer="$(prompt "$question" "$default")"
   case "$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')" in
-    y|yes) return 0 ;;
+    y|yes|true|1) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -97,7 +97,7 @@ fernet_key() {
 
 primary_ip() {
   if have hostname; then
-    ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    ip="$(hostname -I 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {print $i; exit}}')"
     [ -n "$ip" ] && { printf '%s' "$ip"; return; }
   fi
   printf '127.0.0.1'
@@ -124,6 +124,138 @@ validate_ipv4() {
     NF != 4 {exit 1}
     {for (i=1; i<=4; i++) if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) exit 1}
   ' || err "Invalid Fleet server IPv4 address: $value"
+}
+
+advanced_confirm() {
+  [ "$advanced" = "true" ] && confirm "$@"
+}
+
+preflight_fail() {
+  warn "$*"
+  preflight_errors=$((preflight_errors + 1))
+}
+
+port_in_use() {
+  ss -H -ltn | awk -v port=":$1" '$4 ~ (port "$") {found=1} END {exit !found}'
+}
+
+port_owned_by_nginx() {
+  sudo_cmd ss -H -ltnp | awk -v port=":$1" '
+    $4 ~ (port "$") {found=1; if ($0 !~ /"nginx"/) other=1}
+    END {exit !(found && !other)}'
+}
+
+systemd_running() {
+  case "$(systemctl show --property=SystemState --value 2>/dev/null)" in
+    running|degraded|starting) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+preflight() {
+  info "Preflight: checking this admin node before making changes"
+  preflight_errors=0
+  [ "$(uname -s)" = "Linux" ] || preflight_fail "Linux is required. Run the installer on a Linux admin node."
+  if [ -r /etc/os-release ]; then
+    info "Operating system: $(. /etc/os-release; printf '%s' "${PRETTY_NAME:-Linux}")"
+  fi
+  if [ "$(id -u)" -ne 0 ]; then
+    if ! have sudo; then
+      preflight_fail "sudo is missing. Install sudo or run the installer as root."
+    elif ! sudo -v; then
+      preflight_fail "Cannot obtain sudo privileges. Ask your administrator for sudo access, then rerun."
+    fi
+  fi
+  if ! have systemctl || ! systemd_running; then
+    preflight_fail "A running systemd host is required. Use a Linux server or VM, not a container without systemd."
+  fi
+  for tool in curl timeout getent ss; do
+    have "$tool" || preflight_fail "Missing $tool. Install curl, coreutils, libc utilities and iproute2 (iproute on RPM systems), then rerun."
+  done
+  if ! have apt-get; then
+    for tool in git python3 openssl docker ansible go; do
+      have "$tool" || preflight_fail "Missing $tool. Follow README > Red Hat / Rocky Linux / AlmaLinux preparation, then rerun."
+    done
+    if have docker; then
+      if ! sudo_cmd docker compose version >/dev/null 2>&1 && ! have docker-compose; then
+        preflight_fail "Docker Compose is missing. Install the Docker Compose plugin, then rerun."
+      fi
+      sudo_cmd docker info >/dev/null 2>&1 || preflight_fail "Docker is not available. Start it with sudo systemctl enable --now docker, then rerun."
+    fi
+    if [ "$install_nginx" = "true" ] && ! have nginx; then
+      preflight_fail "nginx is missing. Install nginx first or choose the existing reverse proxy option (INSTALL_NGINX=no)."
+    fi
+    if [ "$install_nginx" = "true" ] && have nginx; then
+      default_servers="$(sudo_cmd nginx -T 2>/dev/null | awk '/^# configuration file / {source=$0} /listen.*default_server/ {if (source !~ /\/fleet[.:]/) print source}')"
+      if [ -n "$default_servers" ]; then
+        preflight_fail "nginx already has a non-Fleet default server. Use INSTALL_NGINX=no and configure the existing proxy, or remove its conflicting default listener before rerunning."
+      fi
+    fi
+    have update-ca-trust || preflight_fail "update-ca-trust is missing. Install ca-certificates before continuing."
+  else
+    info "APT prerequisites will be installed after preflight passes"
+  fi
+  case "$fleet_server_ip" in
+    127.*|0.0.0.0) preflight_fail "No reachable admin-node IPv4 address detected. Rerun with FLEET_SERVER_IP set to the address agents will use." ;;
+  esac
+  case "$fleet_ca_cert" in
+    /*.crt) ;;
+    *) preflight_fail "FLEET_CA_CERT must be an absolute path ending in .crt." ;;
+  esac
+  if [ -f "$fleet_ca_cert" ] && ! sudo_cmd test -f "${fleet_ca_cert%.crt}.key"; then
+    preflight_fail "The existing CA has no matching private key (${fleet_ca_cert%.crt}.key). Restore the key before rerunning."
+  fi
+  if [ -d "$APP_DIR/.git" ] && have git; then
+    if ! git -C "$APP_DIR" diff --quiet || ! git -C "$APP_DIR" diff --cached --quiet; then
+      preflight_fail "Tracked changes exist in $APP_DIR. Commit or stash them before installation; preflight has not changed them."
+    fi
+  fi
+  if have ss; then
+    if [ "$install_nginx" = "true" ]; then
+      for port in 80 443; do
+        if port_in_use "$port" && { ! systemctl is-active --quiet nginx || ! port_owned_by_nginx "$port"; }; then
+          preflight_fail "Port $port is already occupied. Stop the conflicting service or use INSTALL_NGINX=no for your existing proxy."
+        fi
+      done
+    fi
+    # An existing installation owns its upstream port; fresh installs must not take it over.
+    if [ "$docker_env_existing" != "true" ] && port_in_use 18000; then
+      preflight_fail "Port 18000 is already occupied. Free the application upstream port before installing."
+    fi
+  fi
+  if have getent && have timeout; then
+    resolved_ips="$(timeout 10 getent ahostsv4 "$application_host" | awk '{print $1}' | sort -u)" || resolved_ips=""
+    if [ -z "$resolved_ips" ]; then
+      warn "DNS: $application_host does not resolve yet. Setup will add a local hosts-file fallback; configure DNS or a hosts entry on your browser machine too."
+    elif ! printf '%s\n' "$resolved_ips" | grep -Fxq "$fleet_server_ip"; then
+      preflight_fail "DNS: $application_host resolves to $resolved_ips, not $fleet_server_ip. Correct DNS or FLEET_SERVER_IP, then rerun."
+    else
+      info "DNS: $application_host resolves to $fleet_server_ip"
+    fi
+  fi
+  if have timeout && have git; then
+    if ! GIT_TERMINAL_PROMPT=0 timeout 20 git ls-remote --exit-code "$REPO_URL" "$INSTALL_REF" >/dev/null 2>&1; then
+      preflight_fail "Cannot reach repository/ref $INSTALL_REF. Check REPO_URL, network access and Git credentials, then rerun."
+    else
+      info "Git repository and installation ref are reachable"
+    fi
+  elif have curl; then
+    case "$REPO_URL" in
+      https://*)
+        curl -fsSL --connect-timeout 5 --max-time 20 "$REPO_URL/info/refs?service=git-upload-pack" >/dev/null 2>&1 \
+          || preflight_fail "Cannot reach the Git repository. Check network access and REPO_URL, then rerun." ;;
+      *) preflight_fail "Install git to verify this repository before continuing." ;;
+    esac
+  fi
+  if have curl; then
+    registry_status="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 15 https://registry-1.docker.io/v2/ 2>/dev/null)" || registry_status=""
+    case "$registry_status" in
+      200|401) info "Docker Hub registry is reachable" ;;
+      *) preflight_fail "Cannot reach Docker Hub over HTTPS. Check DNS, proxy and firewall settings before rerunning." ;;
+    esac
+  fi
+  [ "$preflight_errors" -eq 0 ] || err "Preflight found $preflight_errors problem(s). Resolve the messages above and rerun the same command. No installation changes were made."
+  info "Preflight passed. Package-repository access will be checked when installing dependencies."
 }
 
 install_packages() {
@@ -322,12 +454,13 @@ wait_for_health() {
   url="$1"
   ca_cert="${2:-}"
   info "Waiting for $url/health"
+  attempts="${3:-60}"
   i=0
-  while [ "$i" -lt 60 ]; do
+  while [ "$i" -lt "$attempts" ]; do
     if [ -n "$ca_cert" ]; then
-      health_ok="$(curl -fsS --cacert "$ca_cert" "$url/health" 2>/dev/null || true)"
+      health_ok="$(curl --connect-timeout 5 --max-time 10 -fsS --cacert "$ca_cert" "$url/health" 2>/dev/null || true)"
     else
-      health_ok="$(curl -fsS "$url/health" 2>/dev/null || true)"
+      health_ok="$(curl --connect-timeout 5 --max-time 10 -fsS "$url/health" 2>/dev/null || true)"
     fi
     if [ -n "$health_ok" ]; then
       info "Server health check passed"
@@ -379,8 +512,13 @@ prepare_https() {
   fi
   sudo_cmd test -f "$ca_key" || err "CA private key is required to issue the server certificate: $ca_key"
 
-  sudo_cmd install -m 0644 "$ca_cert" /usr/local/share/ca-certificates/fleet-internal-ca.crt
-  sudo_cmd update-ca-certificates
+  if have update-ca-certificates; then
+    sudo_cmd install -m 0644 "$ca_cert" /usr/local/share/ca-certificates/fleet-internal-ca.crt
+    sudo_cmd update-ca-certificates
+  else
+    sudo_cmd install -m 0644 "$ca_cert" /etc/pki/ca-trust/source/anchors/fleet-internal-ca.crt
+    sudo_cmd update-ca-trust extract
+  fi
   if ! getent hosts "$server_host" 2>/dev/null | awk -v ip="$server_ip" '$1 == ip {found=1} END {exit !found}'; then
     info "Adding local fallback resolution for $server_host"
     printf '%s %s\n' "$server_ip" "$server_host" | sudo_cmd tee -a /etc/hosts >/dev/null
@@ -424,7 +562,11 @@ EOF
   elif ! have nginx; then
     err "nginx is not installed and apt-get is unavailable"
   fi
-  sudo_cmd mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+  if have apt-get; then
+    sudo_cmd mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+  else
+    sudo_cmd mkdir -p /etc/nginx/conf.d
+  fi
 
   cat > "$work_dir/nginx-fleet" <<EOF
 map \$http_upgrade \$connection_upgrade {
@@ -466,19 +608,23 @@ server {
     }
 }
 EOF
-  sudo_cmd install -m 0644 "$work_dir/nginx-fleet" /etc/nginx/sites-available/fleet
-  [ ! -L /etc/nginx/sites-enabled/default ] || sudo_cmd unlink /etc/nginx/sites-enabled/default
-  if [ -e /etc/nginx/sites-enabled/fleet ] || [ -L /etc/nginx/sites-enabled/fleet ]; then
-    active_target="$(readlink /etc/nginx/sites-enabled/fleet 2>/dev/null || true)"
-    if [ "$active_target" != "/etc/nginx/sites-available/fleet" ]; then
-      backup_path="/etc/nginx/sites-available/fleet.previous.$(date +%Y%m%d%H%M%S)"
-      info "Backing up existing active nginx site to $backup_path"
-      sudo_cmd cp -a /etc/nginx/sites-enabled/fleet "$backup_path"
-      sudo_cmd unlink /etc/nginx/sites-enabled/fleet
+  if have apt-get; then
+    sudo_cmd install -m 0644 "$work_dir/nginx-fleet" /etc/nginx/sites-available/fleet
+    [ ! -L /etc/nginx/sites-enabled/default ] || sudo_cmd unlink /etc/nginx/sites-enabled/default
+    if [ -e /etc/nginx/sites-enabled/fleet ] || [ -L /etc/nginx/sites-enabled/fleet ]; then
+      active_target="$(readlink /etc/nginx/sites-enabled/fleet 2>/dev/null || true)"
+      if [ "$active_target" != "/etc/nginx/sites-available/fleet" ]; then
+        backup_path="/etc/nginx/sites-available/fleet.previous.$(date +%Y%m%d%H%M%S)"
+        info "Backing up existing active nginx site to $backup_path"
+        sudo_cmd cp -a /etc/nginx/sites-enabled/fleet "$backup_path"
+        sudo_cmd unlink /etc/nginx/sites-enabled/fleet
+        sudo_cmd ln -s /etc/nginx/sites-available/fleet /etc/nginx/sites-enabled/fleet
+      fi
+    else
       sudo_cmd ln -s /etc/nginx/sites-available/fleet /etc/nginx/sites-enabled/fleet
     fi
   else
-    sudo_cmd ln -s /etc/nginx/sites-available/fleet /etc/nginx/sites-enabled/fleet
+    sudo_cmd install -m 0644 "$work_dir/nginx-fleet" /etc/nginx/conf.d/fleet.conf
   fi
   sudo_cmd nginx -t
   sudo_cmd systemctl enable --now nginx
@@ -489,16 +635,33 @@ main() {
   say "Linux Central Management installer"
   say "----------------------------------"
 
-  install_packages
-  ensure_repo
-  cd "$APP_DIR"
-
+  advanced="${INSTALL_ADVANCED:-false}"
+  check_only="${INSTALL_CHECK_ONLY:-false}"
+  for option in "$@"; do
+    case "$option" in
+      --advanced) advanced="true" ;;
+      --check) check_only="true" ;;
+      --help|-h)
+        say "Usage: sh install.sh [--check] [--advanced]"
+        say "  --check     Run preflight only; do not install or write configuration"
+        say "  --advanced  Include CA/IP, token rotation, terminal and initial agent options"
+        return 0 ;;
+      *) err "Unknown option: $option. Run sh install.sh --help." ;;
+    esac
+  done
+  export INSTALL_ADVANCED="$advanced" INSTALL_CHECK_ONLY="$check_only"
+  case "$INSTALL_DIR" in
+    /*) ;;
+    *) INSTALL_DIR="$(pwd)/$INSTALL_DIR" ;;
+  esac
+  APP_DIR="$INSTALL_DIR"
+  if [ -f "server/app/main.py" ] && [ -f "deploy/docker/docker-compose.yml" ]; then
+    APP_DIR="$(pwd)"
+  fi
   docker_env="$APP_DIR/deploy/docker/.env"
   root_env="$APP_DIR/.env"
   docker_env_existing="false"
   [ -f "$docker_env" ] && docker_env_existing="true"
-  [ -f "$docker_env" ] || cp "$APP_DIR/deploy/docker/env.example" "$docker_env"
-  [ -f "$root_env" ] || cp "$APP_DIR/env.example" "$root_env"
 
   existing_url="$(get_env_value "$root_env" "SERVER_URL")"
   default_host="$(url_host "$existing_url")"
@@ -509,19 +672,35 @@ main() {
 
   fleet_server_ip="$(get_env_value "$root_env" "FLEET_SERVER_IP")"
   [ -n "$fleet_server_ip" ] || fleet_server_ip="$(primary_ip)"
-  fleet_server_ip="${FLEET_SERVER_IP:-$(prompt "Fleet server IPv4 address" "$fleet_server_ip")}"
+  if [ "$advanced" = "true" ]; then
+    fleet_server_ip="${FLEET_SERVER_IP:-$(prompt "Fleet server IPv4 address" "$fleet_server_ip")}"
+  else
+    fleet_server_ip="${FLEET_SERVER_IP:-$fleet_server_ip}"
+  fi
   validate_ipv4 "$fleet_server_ip"
 
   fleet_ca_cert="$(get_env_value "$root_env" "FLEET_CA_CERT")"
   [ -n "$fleet_ca_cert" ] || fleet_ca_cert="/etc/fleet-pki/fleet-ca.crt"
-  fleet_ca_cert="${FLEET_CA_CERT:-$(prompt "Internal CA certificate path" "$fleet_ca_cert")}"
+  if [ "$advanced" = "true" ]; then
+    fleet_ca_cert="${FLEET_CA_CERT:-$(prompt "Internal CA certificate path" "$fleet_ca_cert")}"
+  else
+    fleet_ca_cert="${FLEET_CA_CERT:-$fleet_ca_cert}"
+  fi
 
   terminal_ca_cert="$(get_env_value "$root_env" "FLEET_TERMINAL_CA_CERT")"
-  if [ -z "$terminal_ca_cert" ] && sudo_cmd test -f /etc/fleet-pki/terminal-ca.crt; then
+  if [ -z "$terminal_ca_cert" ] && test -f /etc/fleet-pki/terminal-ca.crt; then
     terminal_ca_cert="/etc/fleet-pki/terminal-ca.crt"
   fi
   [ -n "$terminal_ca_cert" ] || terminal_ca_cert="$fleet_ca_cert"
 
+  proxy_default="yes"
+  if [ "$docker_env_existing" = "true" ]; then
+    proxy_default="$(get_env_value "$root_env" "INSTALL_NGINX")"
+    if [ -z "$proxy_default" ]; then
+      proxy_default="no"
+      if have systemctl && systemctl is-active --quiet nginx; then proxy_default="yes"; fi
+    fi
+  fi
   install_nginx="false"
   if [ -n "${INSTALL_NGINX:-}" ]; then
     case "$(printf '%s' "$INSTALL_NGINX" | tr '[:upper:]' '[:lower:]')" in
@@ -529,7 +708,7 @@ main() {
       n|no|false|0) install_nginx="false" ;;
       *) err "INSTALL_NGINX must be yes/no, true/false, or 1/0" ;;
     esac
-  elif confirm "Install and configure nginx as the HTTPS reverse proxy?" "n"; then
+  elif confirm "Let the installer configure HTTPS with nginx? (no = existing reverse proxy)" "$proxy_default"; then
     install_nginx="true"
   else
     warn "nginx setup skipped; you must configure a reverse proxy before attaching agents."
@@ -547,16 +726,34 @@ main() {
   fi
   say ""
 
+  preflight
+  if [ "$check_only" = "true" ]; then
+    info "Check complete. Rerun without --check to install."
+    return 0
+  fi
+
+  install_packages
+  ensure_repo
+  cd "$APP_DIR"
+  docker_env="$APP_DIR/deploy/docker/.env"
+  root_env="$APP_DIR/.env"
+  umask 077
+  [ -f "$docker_env" ] || cp "$APP_DIR/deploy/docker/env.example" "$docker_env"
+  [ -f "$root_env" ] || cp "$APP_DIR/env.example" "$root_env"
+
   current_bootstrap_user="$(get_env_value "$docker_env" "BOOTSTRAP_USERNAME")"
   [ -n "$current_bootstrap_user" ] || current_bootstrap_user="admin"
-  bootstrap_user="$(prompt "Bootstrap admin username" "$current_bootstrap_user")"
+  bootstrap_user="$current_bootstrap_user"
+  if [ "$docker_env_existing" != "true" ] || [ "$advanced" = "true" ]; then
+    bootstrap_user="$(prompt "Admin username" "$current_bootstrap_user")"
+  fi
 
   current_bootstrap_password="$(get_env_value "$docker_env" "BOOTSTRAP_PASSWORD")"
   bootstrap_password_display=""
   if is_placeholder_value "$current_bootstrap_password"; then
     bootstrap_password="$(prompt_secret_or_generate "Bootstrap admin password" "$(random_password)")"
     bootstrap_password_display="$bootstrap_password"
-  elif confirm "Bootstrap admin password already exists. Rotate it now?" "n"; then
+  elif advanced_confirm "Bootstrap admin password already exists. Rotate it now?" "n"; then
     bootstrap_password="$(prompt_secret_or_generate "New bootstrap admin password" "$(random_password)")"
     bootstrap_password_display="$bootstrap_password"
   else
@@ -568,7 +765,7 @@ main() {
   current_agent_token="$(get_env_value "$docker_env" "AGENT_SHARED_TOKEN")"
   if is_placeholder_value "$current_agent_token"; then
     agent_token="$(random_hex 32)"
-  elif confirm "Agent shared token already exists. Rotate it now? Existing agents must be redeployed if rotated." "n"; then
+  elif advanced_confirm "Agent shared token already exists. Rotate it now? Existing agents must be redeployed if rotated." "n"; then
     agent_token="$(random_hex 32)"
   else
     agent_token="$current_agent_token"
@@ -578,7 +775,7 @@ main() {
   current_mfa_key="$(get_env_value "$docker_env" "MFA_ENCRYPTION_KEY")"
   if is_placeholder_value "$current_mfa_key"; then
     mfa_key="$(fernet_key)"
-  elif confirm "MFA encryption key already exists. Rotate it now? Existing MFA enrollments may need to be reset." "n"; then
+  elif advanced_confirm "MFA encryption key already exists. Rotate it now? Existing MFA enrollments may need to be reset." "n"; then
     mfa_key="$(fernet_key)"
   else
     mfa_key="$current_mfa_key"
@@ -588,10 +785,10 @@ main() {
   current_terminal_token="$(get_env_value "$docker_env" "AGENT_TERMINAL_TOKEN")"
   terminal_token=""
   if is_placeholder_value "$current_terminal_token"; then
-    if confirm "Enable browser terminal proxy token now? (higher risk)" "n"; then
+    if advanced_confirm "Enable browser terminal proxy token now? (higher risk)" "n"; then
       terminal_token="$(random_hex 32)"
     fi
-  elif confirm "Browser terminal proxy token already exists. Rotate it now? Existing agents must be redeployed if rotated." "n"; then
+  elif advanced_confirm "Browser terminal proxy token already exists. Rotate it now? Existing agents must be redeployed if rotated." "n"; then
     terminal_token="$(random_hex 32)"
   else
     terminal_token="$current_terminal_token"
@@ -605,7 +802,7 @@ main() {
     warn "Existing Docker env has no POSTGRES_PASSWORD; preserving legacy database password. Rotate it before production/non-local use."
   elif is_placeholder_value "$current_postgres_password"; then
     postgres_password="$(random_hex 24)"
-  elif confirm "Postgres password already exists. Rotate it now? Existing database volume may need manual migration if rotated." "n"; then
+  elif advanced_confirm "Postgres password already exists. Rotate it now? Existing database volume may need manual migration if rotated." "n"; then
     postgres_password="$(random_hex 24)"
   else
     postgres_password="$current_postgres_password"
@@ -622,7 +819,10 @@ main() {
       ;;
   esac
 
-  deploy_hosts="${ATTACH_HOSTS:-$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")}"
+  deploy_hosts="${ATTACH_HOSTS:-}"
+  if [ "$advanced" = "true" ] && [ -z "$deploy_hosts" ]; then
+    deploy_hosts="$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")"
+  fi
   ansible_user=""
   if [ -n "$deploy_hosts" ]; then
     ansible_user="${ANSIBLE_USER:-$(prompt "SSH username for managed hosts" "$(id -un 2>/dev/null || printf ubuntu)")}"
@@ -665,6 +865,7 @@ main() {
 
   final_agent_token="$(get_env_value "$docker_env" "AGENT_SHARED_TOKEN")"
   final_terminal_token="$(get_env_value "$docker_env" "AGENT_TERMINAL_TOKEN")"
+  set_env_value "$root_env" "INSTALL_NGINX" "$install_nginx"
   set_env_value "$root_env" "SERVER_URL" "$server_url"
   set_env_value "$root_env" "FLEET_HOSTNAME" "$application_host"
   set_env_value "$root_env" "FLEET_SERVER_IP" "$fleet_server_ip"
@@ -690,7 +891,10 @@ main() {
     docker_compose up -d --build --remove-orphans
   )
   server_ready="true"
-  if ! wait_for_health "$server_url" "$fleet_ca_cert"; then
+  health_attempts=60
+  # An external proxy may still need configuration; return the setup instructions promptly.
+  [ "$install_nginx" = "true" ] || health_attempts=1
+  if ! wait_for_health "$server_url" "$fleet_ca_cert" "$health_attempts"; then
     server_ready="false"
     warn "Agent deployment is deferred until $server_url is reachable with a trusted certificate."
   fi
@@ -698,7 +902,7 @@ main() {
   if [ -n "$deploy_hosts" ]; then
     if [ "$server_ready" != "true" ]; then
       warn "Skipped agent deployment. Finish the reverse proxy setup, then run: cd $APP_DIR && ./add-host.sh"
-    elif confirm "Build and deploy fleet-agent to listed hosts now?" "y"; then
+    elif advanced_confirm "Build and deploy fleet-agent to listed hosts now?" "y"; then
       info "Deploying agents with add-host.sh"
       (cd "$APP_DIR" && ATTACH_HOSTS="$deploy_hosts" ANSIBLE_USER="$ansible_user" FLEET_SERVER_IP="$fleet_server_ip" FLEET_CA_CERT="$fleet_ca_cert" ./add-host.sh)
     else
@@ -717,6 +921,10 @@ main() {
     say "Expected URL: $server_url/"
     say "Proxy upstream: http://127.0.0.1:18000"
   fi
+  say "Next: sign in, complete MFA setup, then follow Connect your first Linux host."
+  say "Trust this CA on your browser machine: $fleet_ca_cert"
+  say "To add a host later: cd $APP_DIR && ./add-host.sh"
+  say "Advanced setup remains available with: ./install.sh --advanced"
   say "Login: $bootstrap_user"
   say "Password: $bootstrap_password_display"
   say ""
@@ -727,6 +935,7 @@ main() {
   say "  Server certificate: $(dirname "$fleet_ca_cert")/fleet-server.crt"
   say "  Server private key: $(dirname "$fleet_ca_cert")/fleet-server.key"
   [ -n "$deploy_hosts" ] && say "  $APP_DIR/hosts"
+  return 0
 }
 
 main "$@"

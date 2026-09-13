@@ -2026,3 +2026,29 @@ body.fleet-report {
     overflow-x: auto;
   }
 }
+
+/* First-host setup stays inside the dashboard; normal views remain accessible. */
+#fleet-onboarding[hidden], #fleet-onboarding [hidden], #onboarding-open[hidden] { display: none !important; }
+#server-info-placeholder.onboarding-active > :not(#fleet-onboarding) { display: none !important; }
+.onboarding-card { border: 1px solid var(--border); border-radius: 12px; padding: clamp(1rem, 3vw, 2rem); background: var(--panel); }
+.onboarding-heading { display: flex; justify-content: space-between; align-items: start; gap: 1rem; flex-wrap: wrap; }
+.onboarding-heading h2 { margin: .4rem 0; }
+.onboarding-card p { line-height: 1.6; }
+.onboarding-eyebrow { color: var(--muted); font-size: .75rem; letter-spacing: .14em; }
+.onboarding-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem; margin: 1rem 0; }
+#onboarding-form { display: grid; gap: .6rem; }
+#onboarding-form .host-search { width: 100%; min-width: 0; box-sizing: border-box; }
+#onboarding-form button { justify-self: start; margin-top: .5rem; }
+.onboarding-progress-card { padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: 10px; min-width: 0; }
+.onboarding-progress { list-style: none; padding: 0; }
+.onboarding-progress li { display: flex; gap: .6rem; padding: .6rem 0; }
+.onboarding-progress li[data-state="done"] { color: var(--success, var(--text)); }
+.onboarding-progress li[data-state="waiting"] { color: var(--muted); }
+.onboarding-command { white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; border: 1px solid var(--border); border-radius: 8px; font-size: .85rem; }
+.onboarding-actions { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; }
+#onboarding-connection-help { line-height: 1.6; }
+#onboarding-connection-help summary { cursor: pointer; }
+#onboarding-connection-help code { overflow-wrap: anywhere; }
+@media (max-width: 800px) { .onboarding-columns { grid-template-columns: 1fr; gap: 1rem; } }
+
+.onboarding-card h3 { color: var(--text); font-size: 1.05rem; font-weight: 600; margin: 0 0 .65rem; }

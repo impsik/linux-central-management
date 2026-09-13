@@ -947,6 +947,7 @@
         terminal: 'host-action-terminal',
         users: 'host-action-users',
         services: 'host-action-services',
+        firewall: 'host-action-firewall',
         packages: 'host-action-packages'
       };
       const id = map[action];
@@ -2474,6 +2475,9 @@
       }
     }, 10000);
 
+    safeInit('initOnboarding', () => {
+      window.fleetOnboarding?.init({ selectHost, showPackages });
+    });
     void loadFleetOverview();
     void refreshApprovalsIndicator();
     startHostRefresh();
