@@ -210,3 +210,50 @@ port_owned_by_nginx 443
 '''
     result = subprocess.run(['sh', '-c', harness, 'sh', str(installer), owner], capture_output=True, text=True)
     assert (result.returncode == 0) is allowed
+
+
+@pytest.mark.parametrize('advanced', ['false', 'true'])
+@pytest.mark.parametrize('nginx', ['true', 'false'])
+def test_update_restart_preserves_endpoint_answers(installer, tmp_path, advanced, nginx):
+    app = tmp_path / 'app'
+    app.mkdir()
+    child = app / 'install.sh'
+    child.write_text('''#!/bin/sh
+printf 'resumed:%s|%s|%s|%s|%s|%s\\n' "$FLEET_HOSTNAME" "$FLEET_SERVER_IP" "$FLEET_CA_CERT" "$INSTALL_NGINX" "$INSTALL_ADVANCED" "$FLEET_INSTALL_REEXEC"
+''')
+    child.chmod(0o755)
+    harness = r'''
+. "$1"
+INSTALL_DIR="$2/app"
+INSTALL_ADVANCED="$3"
+nginx_answer="$4"
+unset FLEET_HOSTNAME FLEET_SERVER_IP FLEET_CA_CERT INSTALL_NGINX FLEET_INSTALL_REEXEC
+primary_ip() { printf 192.0.2.10; }
+prompt() {
+  case "$1" in
+    Application*) printf chosen.example.test ;;
+    'Fleet server IPv4'*) printf 192.0.2.20 ;;
+    'Internal CA'*) printf '/etc/custom pki/ca.crt' ;;
+    *) exit 91 ;;
+  esac
+}
+confirm() { [ "$nginx_answer" = true ]; }
+preflight() { :; }
+install_packages() { :; }
+ensure_repo() { update_existing_checkout; }
+git() {
+  case "$*" in
+    *'rev-parse HEAD')
+      if [ -f "$INSTALL_DIR/fetched" ]; then printf new; else printf old; fi ;;
+    *'fetch origin --prune') touch "$INSTALL_DIR/fetched" ;;
+  esac
+}
+main
+'''
+    result = subprocess.run(['sh', '-c', harness, 'sh', str(installer),
+                             str(tmp_path), advanced, nginx],
+                            cwd=tmp_path, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    ip = '192.0.2.20' if advanced == 'true' else '192.0.2.10'
+    ca = '/etc/custom pki/ca.crt' if advanced == 'true' else '/etc/fleet-pki/fleet-ca.crt'
+    assert f'resumed:chosen.example.test|{ip}|{ca}|{nginx}|{advanced}|1' in result.stdout

@@ -733,6 +733,10 @@ main() {
   fi
 
   install_packages
+  # Preserve validated endpoint answers if ensure_repo restarts the updated
+  # installer. Environment overrides skip only these already answered prompts.
+  export FLEET_HOSTNAME="$application_host" FLEET_SERVER_IP="$fleet_server_ip"
+  export FLEET_CA_CERT="$fleet_ca_cert" INSTALL_NGINX="$install_nginx"
   ensure_repo
   cd "$APP_DIR"
   docker_env="$APP_DIR/deploy/docker/.env"
