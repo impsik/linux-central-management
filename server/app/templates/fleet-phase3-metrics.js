@@ -1,4 +1,5 @@
 (function (w) {
+  const loadGraphPointers = new WeakMap();
   function cssVar(name, fallback) {
     const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
     return raw || fallback;
@@ -80,6 +81,24 @@
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    let pointer = loadGraphPointers.get(canvas);
+    if (!pointer) {
+      pointer = { fraction: null, stateCtx };
+      loadGraphPointers.set(canvas, pointer);
+      canvas.addEventListener('pointermove', event => {
+        const rect = canvas.getBoundingClientRect();
+        pointer.fraction = rect.width > 0 ? (event.clientX - rect.left) / rect.width : null;
+        redrawLoadGraph(pointer.stateCtx);
+      });
+      const clearPointer = () => {
+        pointer.fraction = null;
+        redrawLoadGraph(pointer.stateCtx);
+      };
+      canvas.addEventListener('pointerleave', clearPointer);
+      canvas.addEventListener('pointercancel', clearPointer);
+    }
+    pointer.stateCtx = stateCtx;
+
     const paddingTop = 26, paddingBottom = 22, paddingLeft = 6, paddingRight = 6;
     const plotW = canvas.width - paddingLeft - paddingRight;
     const plotH = canvas.height - paddingTop - paddingBottom;
@@ -133,6 +152,33 @@
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(`Load: ${Number(last.load || 0).toFixed(2)} @ ${w.formatTimeLabel(last.time, loadTimeframeSeconds)}`, 10, 20);
+
+    if (pointer.fraction !== null) {
+      const cursorX = pointer.fraction * canvas.width;
+      const targetTime = minT + Math.max(0, Math.min(1, (cursorX - paddingLeft) / plotW)) * rangeT;
+      const selected = data.reduce((nearest, point) =>
+        Math.abs(point.time.getTime() - targetTime) < Math.abs(nearest.time.getTime() - targetTime) ? point : nearest);
+      const x = paddingLeft + ((selected.time.getTime() - minT) / rangeT) * plotW;
+      const y = paddingTop + plotH - (Number(selected.load || 0) / maxLoad) * plotH;
+      ctx.strokeStyle = cssVar('--chart-point', '#667eea');
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, paddingTop);
+      ctx.lineTo(x, paddingTop + plotH);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      const label = `Load: ${Number(selected.load || 0).toFixed(2)} @ ${w.formatTimeLabel(selected.time, loadTimeframeSeconds)}`;
+      const boxWidth = ctx.measureText(label).width + 16;
+      const boxX = Math.max(0, Math.min(x + 12, canvas.width - boxWidth));
+      const boxY = Math.max(paddingTop, y - 32);
+      ctx.fillStyle = cssVar('--panel', '#1e293b');
+      ctx.fillRect(boxX, boxY, boxWidth, 26);
+      ctx.fillStyle = cssVar('--text', '#f8fafc');
+      ctx.fillText(label, boxX + 8, boxY + 17);
+    }
   }
 
   function updateLoadGraph(ctx, loadValue) {
