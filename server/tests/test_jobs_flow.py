@@ -483,6 +483,23 @@ def test_pkg_upgrade_success_invalidates_cve_cache_and_queues_inventory(monkeypa
             assert refresh[1].payload["reason"] == "post-pkg-upgrade"
 
 
+def _complete_registration_inventory(client, agent_id):
+    response = client.get("/agent/next-job", params={"agent_id": agent_id})
+    assert response.status_code == 200, response.text
+    job = response.json()["job"]
+    assert job["type"] == "query-users"
+    assert job["job_nonce"]
+    result = client.post("/agent/job-event", json={
+        "agent_id": agent_id,
+        "job_id": job["job_id"],
+        "job_nonce": job["job_nonce"],
+        "status": "success",
+        "exit_code": 0,
+        "stdout": '{"users":[]}',
+    })
+    assert result.status_code == 200, result.text
+
+
 def test_agent_next_job_claims_durable_db_queue_without_dispatcher(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
     monkeypatch.setenv("BOOTSTRAP_USERNAME", "admin")
@@ -516,6 +533,7 @@ def test_agent_next_job_claims_durable_db_queue_without_dispatcher(monkeypatch):
             },
         )
         assert r.status_code == 200, r.text
+        _complete_registration_inventory(client, "srv-durable")
 
         with SessionLocal() as db:
             created = create_job_with_runs(
@@ -591,6 +609,7 @@ def test_agent_next_job_recovers_stale_running_job_once_then_fails(monkeypatch):
             },
         )
         assert r.status_code == 200, r.text
+        _complete_registration_inventory(client, "srv-stale")
         login = client.post("/auth/login", json={"username": "admin", "password": "admin-password-123"})
         assert login.status_code == 200, login.text
         csrf = client.cookies.get("fleet_csrf")
