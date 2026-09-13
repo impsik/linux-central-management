@@ -87,3 +87,56 @@ def test_stale_retry_rejects_previous_attempt_event(job_db, monkeypatch):
         Request({'type': 'http', 'headers': []}), job_db)
     job_db.expire_all()
     assert job_db.execute(select(JobRun.status)).scalar_one() == 'success'
+
+
+def test_registration_discovers_users_without_live_refresh(job_db):
+    from app.models import HostUser, Job, JobRun
+    from app.routers.agent import agent_register, agent_job_event
+    from app.schemas import AgentRegister, JobEvent
+    from app.services.jobs import claim_queued_job_for_agent
+
+    request = Request({'type': 'http', 'headers': []})
+    registration = AgentRegister(agent_id='new-host', hostname='new-host')
+    agent_register(registration, request, job_db)
+    request.state.agent_auth_kind = "per-agent"
+    agent_register(registration, request, job_db)
+    assert len(job_db.execute(select(JobRun)).scalars().all()) == 1
+    assert job_db.execute(select(Job.job_type)).scalar_one() == 'query-users'
+    job = claim_queued_job_for_agent(job_db, 'new-host')
+    agent_job_event(JobEvent(agent_id='new-host', job_id=job['job_id'],
+        job_nonce=job['job_nonce'], status='success', exit_code=0,
+        stdout=json.dumps({'users': [
+            {'username': 'root', 'uid': '0', 'gid': '0'},
+            {'username': 'imre', 'uid': '1000', 'gid': '1000', 'has_sudo': True},
+        ]})), request, job_db)
+    job_db.expire_all()
+    users = job_db.execute(select(HostUser).order_by(HostUser.uid)).scalars().all()
+    assert [(u.username, u.uid) for u in users] == [('root', 0), ('imre', 1000)]
+    assert users[1].has_sudo is True
+
+
+@pytest.mark.parametrize('stdout,status,expected', [
+    ('{"users":[]}', 'success', []),
+    ('{"users":[{"username":"new","uid":"1001"}]}', 'success', ['new']),
+    ('{"users":42}', 'success', ['old']),
+    ('not json', 'success', ['old']),
+    ('{"users":[{"username":"same"},{"username":"same"}]}', 'success', ['old']),
+    ('{"users":[]}', 'failed', ['old']),
+])
+def test_user_snapshot_replacement_is_atomic(job_db, stdout, status, expected):
+    from app.models import Host, HostUser, JobRun
+    from app.routers.agent import agent_job_event
+    from app.schemas import JobEvent
+    from app.services.jobs import create_job_with_runs
+
+    host = job_db.execute(select(Host)).scalar_one()
+    job_db.add(HostUser(host_id=host.id, username='old'))
+    created = create_job_with_runs(db=job_db, job_type='query-users', payload={},
+                                   agent_ids=[host.agent_id])
+    run = job_db.execute(select(JobRun)).scalar_one()
+    agent_job_event(JobEvent(agent_id=host.agent_id, job_id=created.job_key,
+        job_nonce=run.job_nonce, status=status, stdout=stdout),
+        Request({'type': 'http', 'headers': []}), job_db)
+    job_db.expire_all()
+    assert job_db.execute(select(HostUser.username)).scalars().all() == expected
+    assert job_db.execute(select(JobRun.status)).scalar_one() == status
