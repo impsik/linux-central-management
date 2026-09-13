@@ -34,6 +34,42 @@ describe('phase3 metrics rendering', () => {
   const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
   const metricsPath = path.join(root, 'server/app/templates/fleet-phase3-metrics.js');
 
+  it('shows the nearest measured load on a scaled canvas and clears it on leave', () => {
+    const listeners = {};
+    const draw = {
+      clearRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {},
+      arc() {}, fill() {}, fillRect() {},
+      fillText: vi.fn(), measureText: () => ({ width: 150 }),
+    };
+    const canvas = {
+      width: 600, height: 200,
+      getContext: () => draw,
+      getBoundingClientRect: () => ({ left: 100, width: 300 }),
+      addEventListener: vi.fn((name, callback) => { listeners[name] = callback; }),
+    };
+    const now = Date.now();
+    let data = [
+      { time: new Date(now - 60000), load: 0.25 },
+      { time: new Date(now - 45000), load: 2.75 },
+      { time: new Date(now), load: 0.1 },
+    ];
+    const win = loadBrowserScript(metricsPath, {
+      document: { documentElement: {}, getElementById: () => canvas },
+      getComputedStyle: () => ({ getPropertyValue: () => '' }),
+      formatTimeLabel: date => date.toISOString(),
+    });
+    const state = { getLoadGraphData: () => data, getLoadTimeframeSeconds: () => 3600 };
+    win.phase3Metrics.redrawLoadGraph(state);
+    listeners.pointermove({ clientX: 176.5 });
+    expect(draw.fillText).toHaveBeenLastCalledWith(`Load: 2.75 @ ${data[1].time.toISOString()}`, expect.any(Number), expect.any(Number));
+    data = data.map(point => ({ ...point, load: 0.5 }));
+    win.phase3Metrics.redrawLoadGraph(state);
+    expect(draw.fillText.mock.calls.at(-1)[0]).toContain('Load: 0.50');
+    expect(canvas.addEventListener).toHaveBeenCalledTimes(3);
+    listeners.pointerleave();
+    expect(draw.fillText).toHaveBeenLastCalledWith(`Load: 0.50 @ ${data[2].time.toISOString()}`, 10, 20);
+  });
+
   it('coerces numeric strings and avoids sticky Error values on transient failures', async () => {
     const elements = {
       'disk-usage': makeEl(),
