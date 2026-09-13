@@ -321,6 +321,23 @@ Existing fleets open the normal dashboard. Setup is available to administrators;
 other users keep their usual views. Terminal access, AD/OIDC and automation
 remain optional later configuration.
 
+#### Console authentication
+
+Console prompts for the managed machine's username and password using its local
+`login`/PAM service on both Ubuntu/Debian and Red Hat family hosts. The account
+must be permitted by that machine's PAM policy; signing into the management UI
+does not sign you into the operating system.
+
+This is independent of admin-node communication: deployment can continue to use
+SSH keys, and agent communication continues to use its configured tokens and TLS.
+SSH password authentication does not need to be enabled for Console.
+
+New deployments set `FLEET_TERMINAL_BACKEND=login`. Existing `auto` settings also
+use local login after updating the agent binary and restarting `fleet-agent`.
+An explicit `FLEET_TERMINAL_BACKEND=ssh` remains an optional SSH backend and obeys
+the target's SSH authentication policy; change it to `login` for local Console
+authentication.
+
 #### Reverse proxy choices
 
 If nginx installation is accepted, the installer configures HTTPS and proxies

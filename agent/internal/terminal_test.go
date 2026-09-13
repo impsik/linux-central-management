@@ -43,6 +43,22 @@ func TestPrefersSSHConsoleBackendHonorsExplicitBackend(t *testing.T) {
 	}
 }
 
+func TestConsoleDefaultsToLocalLogin(t *testing.T) {
+	for _, backend := range []string{"", "auto", "login"} {
+		t.Run("backend="+backend, func(t *testing.T) {
+			t.Setenv("FLEET_TERMINAL_BACKEND", backend)
+			if prefersSSHConsoleBackend() {
+				t.Fatal("console must use local login independently of SSH availability")
+			}
+			cmd := loginCommand()
+			args := strings.Join(cmd.Args, " ")
+			if strings.Contains(args, "terminal-ssh-login") || strings.Contains(args, " -f ") {
+				t.Fatalf("console must authenticate through local login: %s", args)
+			}
+		})
+	}
+}
+
 func TestRunTerminalSSHLoginFromArgsIgnoresNormalAgentStart(t *testing.T) {
 	if RunTerminalSSHLoginFromArgs([]string{os.Args[0]}) {
 		t.Fatal("RunTerminalSSHLoginFromArgs() = true for normal agent args")

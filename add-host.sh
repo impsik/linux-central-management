@@ -99,7 +99,7 @@ FLEET_AGENT_TOKEN=$agent_token
 FLEET_AGENT_TOKEN_FILE=/var/lib/fleet-agent/agent-token
 FLEET_TERMINAL_TOKEN=$term_token
 FLEET_TERMINAL_LISTEN=$terminal_listen
-FLEET_TERMINAL_BACKEND=auto
+FLEET_TERMINAL_BACKEND=login
 FLEET_TERMINAL_TLS_CERT=/etc/fleet-agent/terminal.crt
 FLEET_TERMINAL_TLS_KEY=/etc/fleet-agent/terminal.key
 EOF

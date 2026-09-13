@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
@@ -105,50 +104,10 @@ func commandPath(candidates ...string) string {
 	return ""
 }
 
-func osReleaseID() string {
-	b, err := os.ReadFile("/etc/os-release")
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "ID=") {
-			return strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "ID=")), "\"")
-		}
-	}
-	return ""
-}
-
+// Console authentication is separate from agent transport and deployment SSH.
+// Legacy "auto" settings also use local login, regardless of distro or SSH policy.
 func prefersSSHConsoleBackend() bool {
-	backend := strings.ToLower(strings.TrimSpace(getenv("FLEET_TERMINAL_BACKEND", "auto")))
-	if backend == "ssh" {
-		return true
-	}
-	if backend == "login" {
-		return false
-	}
-	switch strings.ToLower(osReleaseID()) {
-	case "rhel", "redhat", "rocky", "almalinux", "centos", "fedora":
-		return true
-	default:
-		return sshConsoleAvailable()
-	}
-}
-
-func sshConsoleAvailable() bool {
-	if commandPath("/usr/bin/ssh", "/bin/ssh", "ssh") == "" {
-		return false
-	}
-	target := terminalSSHTarget()
-	if target == "" {
-		return false
-	}
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(target, "22"), 500*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	conn.Close()
-	return true
+	return strings.EqualFold(strings.TrimSpace(getenv("FLEET_TERMINAL_BACKEND", "login")), "ssh")
 }
 
 func loginCommand() *exec.Cmd {
