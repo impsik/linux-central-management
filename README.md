@@ -321,6 +321,95 @@ Existing fleets open the normal dashboard. Setup is available to administrators;
 other users keep their usual views. Terminal access, AD/OIDC and automation
 remain optional later configuration.
 
+#### Final node readiness check
+
+After starting agents and checking Console TLS, the attachment helper waits up to
+180 seconds for each target to appear in the Master's database with a recent
+heartbeat and fresh package and user inventories from this deployment attempt.
+It reports which item is still missing. An ambiguous host identity is not treated
+as success. Keep Master and node clocks synchronized for inventory timestamps.
+
+This read-only check runs inside the local Docker Compose server container and
+requires the updated server image. It uses the Master's existing database
+connection; no browser login or new API credential is required. If readiness
+times out, attachment fails and the installer's retry/change/defer menu applies.
+A started systemd service alone is no longer reported as a completed attachment.
+
+#### Recover from a node attachment error
+
+During interactive installation, a failed node attachment offers three choices:
+retry after correcting the problem, change the node address/SSH username, or add
+nodes later. Retrying runs only the host attachment helper, not the Master build.
+Changed targets are saved for `--resume`; connection and sudo checks run again.
+
+Choosing to add nodes later leaves the Master available and reports node
+attachment as pending. Unattended runs exit with the deployment error instead of
+silently skipping a failed host. Interrupting deployment stops the installer.
+
+#### Installation output and logs
+
+The installer shows a short start/result line for package, repository, TLS
+certificate and Docker commands. Detailed stdout and stderr go to a private log
+under `~/linux-central-management.install-logs/` (next to the selected checkout).
+The log path is printed when installation starts and in the final summary.
+
+If a command fails, the installer displays its exit code and the last 25 lines
+from that command, followed by the full log path. Installation stops on failure;
+use the resume instructions after correcting the problem. The same log is kept
+when the installer restarts itself after a code update. A later invocation
+creates a new log. Interactive SSH and sudo steps remain visible.
+
+#### Resume an interrupted installation
+
+If installation fails, fix the reported problem and run:
+
+```bash
+./install.sh --resume
+```
+
+Resume restores the saved hostname, IP, CA path, proxy choice and any selected
+node addresses/SSH username. Existing account credentials and tokens are kept;
+SSH/sudo passwords must be provided again when needed. `--advanced` cannot be
+combined with `--resume`, so resuming never prompts to rotate credentials.
+
+Preflight, dependency installation and access checks run again. An unchanged
+Master that passes the HTTPS health check skips the Docker rebuild. Changes to
+application sources or saved configuration, or a failed health check, cause the
+server stage to run again. Node deployment is retried through the same host
+attachment helper; it is not skipped based solely on an old success marker.
+
+The last stage and non-secret answers are stored in a private sidecar file next
+to the checkout, for example `~/linux-central-management.install-progress`.
+The file is read as data, never executed. `./install.sh --resume --check` checks
+the saved endpoint without changing progress or installing anything. Run without
+`--resume` for the normal installation/update workflow.
+
+#### Guided SSH and sudo checks
+
+A fresh installation offers to attach the first managed host; leave the answer
+blank to add it later. The installer and `./add-host.sh` use the same checks:
+
+- Check that the admin node can reach SSH on the host (port 22).
+- Verify SSH access. OpenSSH asks you to verify a new host's fingerprint;
+  changed host keys are never accepted automatically.
+- If needed, offer to run `ssh-copy-id` and create a dedicated Ed25519 key.
+  Encrypted keys should be loaded into an SSH agent with `ssh-add`.
+- Test sudo before deploying the agent. Password-protected sudo is supported;
+  the sudo password may differ from the SSH password. The selected hosts must
+  accept the supplied sudo credential; add hosts separately if passwords differ.
+- Configure the internal CA and Master name mapping, then verify the host can
+  reach the Master's `/health` endpoint with certificate validation enabled.
+  Ubuntu/Debian and Red Hat family CA trust stores are supported.
+- Start the agent and, when Console is enabled, check its TLS endpoint from the
+  admin node. OS login in Console still uses the managed user's own credentials.
+
+For scripted runs, prepare trusted SSH host keys in advance. Optional
+`FLEET_SSH_IDENTITY` selects a private key; `ANSIBLE_BECOME_PASS` supplies a sudo
+password, and `ANSIBLE_PASS` remains available for SSH password authentication.
+Passwords are passed to Ansible through a private temporary JSON file that is
+removed on exit, rather than command-line arguments or saved configuration.
+Missing access in an unattended run stops with an actionable error.
+
 #### Console authentication
 
 Console prompts for the managed machine's username and password using its local

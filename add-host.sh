@@ -12,7 +12,7 @@ info() { say "[INFO] $*"; }
 warn() { say "[WARN] $*" >&2; }
 err() { say "[ERROR] $*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
-is_tty() { [ -r /dev/tty ] && [ -w /dev/tty ]; }
+is_tty() { ( : < /dev/tty ) 2>/dev/null; }
 
 as_root() {
   if [ "$(id -u)" -eq 0 ]; then
@@ -43,8 +43,11 @@ prompt() {
 prompt_secret() {
   question="$1"
   if is_tty; then
-    printf '%s [blank for SSH key auth]: ' "$question" > /dev/tty
+    printf '%s: ' "$question" > /dev/tty
     old_stty="$(stty -g < /dev/tty 2>/dev/null || true)"
+    trap '[ -z "$old_stty" ] || stty "$old_stty" < /dev/tty 2>/dev/null' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' HUP TERM
     stty -echo < /dev/tty 2>/dev/null || true
     IFS= read -r answer < /dev/tty || answer=""
     [ -n "$old_stty" ] && stty "$old_stty" < /dev/tty 2>/dev/null || true
@@ -56,15 +59,15 @@ prompt_secret() {
 }
 
 run_ansible() {
-  if [ -n "${ansible_pass:-}" ]; then
-    ansible "$target_pattern" -i "$HOSTS_FILE" -b -u "$ansible_user" \
-      --extra-vars "ansible_ssh_pass=$ansible_pass ansible_become_pass=$ansible_pass" \
-      --ssh-common-args='-o StrictHostKeyChecking=accept-new' "$@"
-  else
-    ansible "$target_pattern" -i "$HOSTS_FILE" -b -u "$ansible_user" \
-      --ssh-common-args='-o StrictHostKeyChecking=accept-new' "$@"
+  if [ -n "${ssh_identity:-}" ]; then
+    set -- --private-key "$ssh_identity" "$@"
   fi
+  ansible "$target_pattern" -i "$HOSTS_FILE" -b -u "$ansible_user" \
+    --extra-vars "@$credentials_file" --extra-vars "ansible_user=$ansible_user" \
+    --ssh-common-args='-o StrictHostKeyChecking=yes -o ConnectTimeout=10' "$@"
 }
+
+. "$ROOT_DIR/scripts/host-access.sh"
 
 deploy_agent() {
   server_url="$1"
@@ -88,11 +91,10 @@ deploy_agent() {
   server_host="${server_host%%:*}"
   terminal_listen="auto:18080"
 
+  deployment_started="$(date +%s)"
   info "Building fleet-agent"
   (cd "$ROOT_DIR/agent" && go build -o fleet-agent ./cmd/fleet-agent)
 
-  tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "$tmp_dir"' EXIT HUP INT TERM
   cat > "$tmp_dir/fleet-agent.env" <<EOF
 FLEET_SERVER_URL=$server_url
 FLEET_AGENT_TOKEN=$agent_token
@@ -122,16 +124,11 @@ WantedBy=multi-user.target
 EOF
   chmod 600 "$tmp_dir/fleet-agent.env"
 
-  run_ansible -m file -a 'path=/opt/fleet-agent state=directory mode=0755'
-  run_ansible -m file -a 'path=/var/lib/fleet-agent state=directory mode=0700'
-  run_ansible -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755"
-  run_ansible -m copy -a "src=$tmp_dir/fleet-agent.env dest=/etc/fleet-agent.env mode=0600"
-  run_ansible -m copy -a "src=$tmp_dir/fleet-agent.service dest=/etc/systemd/system/fleet-agent.service mode=0644"
-
   if [ -n "$ca_cert" ]; then
     info "Installing the fleet internal CA on managed hosts"
-    run_ansible -m copy -a "src=$ca_cert dest=/usr/local/share/ca-certificates/fleet-internal-ca.crt mode=0644"
-    run_ansible -m command -a update-ca-certificates
+    run_ansible -m file -a 'path=/etc/fleet-agent state=directory mode=0755'
+    run_ansible -m copy -a "src=$ca_cert dest=/etc/fleet-agent/master-ca.crt mode=0644"
+    run_ansible -m shell -a 'set -eu; if command -v update-ca-trust >/dev/null 2>&1; then install -m 0644 /etc/fleet-agent/master-ca.crt /etc/pki/ca-trust/source/anchors/fleet-internal-ca.crt; update-ca-trust extract; elif command -v update-ca-certificates >/dev/null 2>&1; then install -m 0644 /etc/fleet-agent/master-ca.crt /usr/local/share/ca-certificates/fleet-internal-ca.crt; update-ca-certificates; else echo "Install ca-certificates on the node first" >&2; exit 1; fi'
   fi
 
   if [ -n "$server_ip" ] && [ "$server_host" != "$server_ip" ]; then
@@ -139,12 +136,15 @@ EOF
     run_ansible -m blockinfile -a "path=/etc/hosts marker='# {mark} FLEET SERVER' block='$server_ip $server_host'"
   fi
 
-  case "$server_url" in
-    https://*)
-      info "Verifying HTTPS trust and hostname before starting agents"
-      run_ansible -m uri -a "url=$server_url/health method=GET status_code=200 validate_certs=true return_content=false"
-      ;;
-  esac
+  info "Checking node-to-Master connectivity and certificate trust"
+  run_ansible -m uri -a "url=$server_url/health method=GET status_code=200 validate_certs=true return_content=false timeout=15" || \
+    err "Node-to-Master check failed. Check the Master address, node DNS, firewall and CA trust. Agent installation has not started."
+
+  run_ansible -m file -a 'path=/opt/fleet-agent state=directory mode=0755'
+  run_ansible -m file -a 'path=/var/lib/fleet-agent state=directory mode=0700'
+  run_ansible -m copy -a "src=$ROOT_DIR/agent/fleet-agent dest=/opt/fleet-agent/fleet-agent mode=0755"
+  run_ansible -m copy -a "src=$tmp_dir/fleet-agent.env dest=/etc/fleet-agent.env mode=0600"
+  run_ansible -m copy -a "src=$tmp_dir/fleet-agent.service dest=/etc/systemd/system/fleet-agent.service mode=0644"
 
   if [ -n "$term_token" ]; then
     configure_terminal_tls "$terminal_ca_cert" "$target_hosts" "$server_ip" "$tmp_dir"
@@ -154,6 +154,7 @@ EOF
   if [ -n "$term_token" ]; then
     verify_terminal_tls "$terminal_ca_cert" "$target_hosts"
   fi
+  verify_host_inventory
 }
 
 configure_terminal_tls() {
@@ -207,6 +208,25 @@ verify_terminal_tls() {
     status="$(curl -sS --cacert "$terminal_ca_cert" -o /dev/null -w '%{http_code}' --connect-timeout 10 "https://$target_ip:18080/terminal/ws" || true)"
     [ "$status" = "401" ] || err "Native WSS terminal preflight failed for $terminal_target ($target_ip): expected HTTP 401 without token, got ${status:-connection error}"
   done
+}
+
+verify_host_inventory() {
+  info "Waiting for registration and fresh package/user inventory (up to 180 seconds)"
+  set --
+  for readiness_target in $target_hosts; do
+    readiness_ip="$(getent ahostsv4 "$readiness_target" 2>/dev/null | awk 'NR == 1 {print $1}')"
+    set -- "$@" --host "$readiness_target=$readiness_ip"
+  done
+  (
+    cd "$ROOT_DIR/deploy/docker"
+    if docker ps >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+      docker compose exec -T server python -m app.services.installation_readiness --since "$deployment_started" "$@"
+    elif as_root docker compose version >/dev/null 2>&1; then
+      as_root docker compose exec -T server python -m app.services.installation_readiness --since "$deployment_started" "$@"
+    else
+      as_root docker-compose exec -T server python -m app.services.installation_readiness --since "$deployment_started" "$@"
+    fi
+  ) || err "Agent inventory is not ready. Check fleet-agent logs on the listed node, HTTPS access and clock synchronization. Retry to complete attachment."
 }
 
 get_env_value() {
@@ -271,6 +291,8 @@ main() {
 
   require_file "$ROOT_ENV_FILE" "Run install.sh first."
   require_file "$DOCKER_ENV_FILE" "Run install.sh first."
+  have ssh || err "OpenSSH client is required"
+  have python3 || err "python3 is required"
   have ansible || err "ansible is required. Install it or rerun install.sh on the admin node."
   have go || err "go is required to build the fleet-agent. Install it or rerun install.sh on the admin node."
 
@@ -289,7 +311,18 @@ main() {
   [ -n "$hosts_input" ] || err "No hosts provided"
 
   ansible_user="${ANSIBLE_USER:-$(prompt "SSH username for new host(s)" "$(id -un 2>/dev/null || printf ubuntu)")}"
-  ansible_pass="${ANSIBLE_PASS:-$(prompt_secret "SSH password")}"
+  ansible_pass="${ANSIBLE_PASS:-}"
+  become_pass="${ANSIBLE_BECOME_PASS:-}"
+  ssh_identity="${FLEET_SSH_IDENTITY:-}"
+  umask 077
+  tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' HUP TERM
+  credentials_file="$tmp_dir/ansible-credentials.json"
+  for host in $(normalize_hosts "$hosts_input"); do
+    prepare_host_access "$host"
+  done
 
   target_pattern=""
   for host in $(normalize_hosts "$hosts_input"); do
@@ -302,6 +335,8 @@ main() {
     fi
   done
   [ -n "$target_pattern" ] || err "No valid hosts provided"
+
+  check_host_sudo
 
   chmod 600 "$ROOT_ENV_FILE" "$DOCKER_ENV_FILE"
 

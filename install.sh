@@ -162,7 +162,7 @@ preflight() {
   if [ "$(id -u)" -ne 0 ]; then
     if ! have sudo; then
       preflight_fail "sudo is missing. Install sudo or run the installer as root."
-    elif ! sudo -v; then
+    elif ! { sudo -n true 2>/dev/null || sudo -v; }; then
       preflight_fail "Cannot obtain sudo privileges. Ask your administrator for sudo access, then rerun."
     fi
   fi
@@ -265,7 +265,7 @@ install_packages() {
   fi
 
   info "Installing OS packages"
-  sudo_cmd apt-get update
+  run_logged "Updating package indexes" sudo_cmd apt-get update
 
   compose_pkg=""
   if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
@@ -282,7 +282,7 @@ install_packages() {
   fi
 
   # ansible-core and golang-go are used by optional agent deployment.
-  sudo_cmd apt-get install -y git curl ca-certificates openssl python3 docker.io "$ansible_pkg" golang-go $compose_pkg
+  run_logged "Installing required packages" sudo_cmd apt-get install -y git curl openssh-client ca-certificates openssl python3 docker.io "$ansible_pkg" golang-go $compose_pkg
 
   if have systemctl; then
     sudo_cmd systemctl enable --now docker >/dev/null 2>&1 || true
@@ -304,7 +304,7 @@ ensure_repo() {
 
   info "Cloning $REPO_URL to $INSTALL_DIR"
   mkdir -p "$(dirname "$INSTALL_DIR")"
-  git clone --branch "$INSTALL_REF" "$REPO_URL" "$INSTALL_DIR"
+  run_logged "Downloading application code" git clone --branch "$INSTALL_REF" "$REPO_URL" "$INSTALL_DIR"
   APP_DIR="$INSTALL_DIR"
 }
 
@@ -315,9 +315,9 @@ update_existing_checkout() {
   fi
 
   previous_head="$(git -C "$APP_DIR" rev-parse HEAD)"
-  git -C "$APP_DIR" fetch origin --prune
-  git -C "$APP_DIR" checkout "$INSTALL_REF"
-  git -C "$APP_DIR" pull --ff-only origin "$INSTALL_REF"
+  run_logged "Checking repository updates" git -C "$APP_DIR" fetch origin --prune
+  run_logged "Selecting installation branch" git -C "$APP_DIR" checkout "$INSTALL_REF"
+  run_logged "Updating application code" git -C "$APP_DIR" pull --ff-only origin "$INSTALL_REF"
   current_head="$(git -C "$APP_DIR" rev-parse HEAD)"
 
   if [ "$previous_head" = "$current_head" ]; then
@@ -373,37 +373,36 @@ set_env_if_blank_or_placeholder() {
 
 write_inventory() {
   hosts_input="$1"
-  ansible_user="$2"
-
-  [ -n "$hosts_input" ] || return 0
-
+  inventory_user="$2"
   hosts_file="$APP_DIR/hosts"
   inventory_file="$APP_DIR/ansible/inventory.yml"
-  tmp_hosts="${hosts_file}.tmp.$$"
-  tmp_inv="${inventory_file}.tmp.$$"
-
-  : > "$tmp_hosts"
-  {
-    printf 'all:\n'
-    printf '  hosts:\n'
-  } > "$tmp_inv"
-
-  # shellcheck disable=SC2086
-  for host in $(printf '%s' "$hosts_input" | tr ',;' '  '); do
-    [ -n "$host" ] || continue
-    if [ -n "$ansible_user" ]; then
-      printf '%s ansible_user=%s\n' "$host" "$ansible_user" >> "$tmp_hosts"
-      printf '    %s:\n      ansible_user: %s\n' "$host" "$ansible_user" >> "$tmp_inv"
-    else
-      printf '%s\n' "$host" >> "$tmp_hosts"
-      printf '    %s: {}\n' "$host" >> "$tmp_inv"
+  mkdir -p "$APP_DIR/ansible"
+  touch "$hosts_file"
+  if [ ! -f "$inventory_file" ]; then
+    printf 'all:\n  hosts:\n' > "$inventory_file"
+  fi
+  for inventory_host in $(printf '%s' "$hosts_input" | tr ',;' '  '); do
+    case "$inventory_host" in [!A-Za-z0-9]*|*[!A-Za-z0-9._-]*) err "Invalid managed host: $inventory_host" ;; esac
+    case "$inventory_user" in -*|*[!A-Za-z0-9_.-]*) err "Invalid SSH username" ;; esac
+    if ! awk -v host="$inventory_host" '$1 == host {found=1} END {exit !found}' "$hosts_file"; then
+      if [ -n "$inventory_user" ]; then
+        printf '%s ansible_user=%s\n' "$inventory_host" "$inventory_user" >> "$hosts_file"
+      else
+        printf '%s\n' "$inventory_host" >> "$hosts_file"
+      fi
+    fi
+    if ! awk -v host="$inventory_host:" '$1 == host {found=1} END {exit !found}' "$inventory_file"; then
+      if [ -n "$inventory_user" ]; then
+        printf '    %s:\n      ansible_user: %s\n' "$inventory_host" "$inventory_user" >> "$inventory_file"
+      else
+        printf '    %s: {}\n' "$inventory_host" >> "$inventory_file"
+      fi
     fi
   done
+}
 
-  mv "$tmp_hosts" "$hosts_file"
-  mv "$tmp_inv" "$inventory_file"
-  info "Wrote $hosts_file"
-  info "Wrote $inventory_file"
+should_deploy_agents() {
+  [ "$advanced" != "true" ] || confirm "Build and deploy fleet-agent to listed hosts now?" "y"
 }
 
 docker_compose() {
@@ -480,7 +479,7 @@ wait_for_health() {
   return 1
 }
 
-prepare_https() {
+prepare_https() (
   server_url="$1"
   server_ip="$2"
   ca_cert="$3"
@@ -497,13 +496,15 @@ prepare_https() {
   ca_key="${ca_cert%.crt}.key"
   pki_dir="$(dirname "$ca_cert")"
   work_dir="$(mktemp -d)"
-  trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
+  trap 'rm -rf "$work_dir"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' HUP TERM
 
   sudo_cmd mkdir -p "$pki_dir"
   sudo_cmd chmod 755 "$pki_dir"
   if ! sudo_cmd test -f "$ca_cert"; then
     info "Creating the fleet internal CA"
-    sudo_cmd openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
+    run_logged "Creating internal CA" sudo_cmd openssl req -x509 -newkey rsa:4096 -nodes -sha256 -days 3650 \
       -keyout "$ca_key" -out "$ca_cert" -subj '/CN=Fleet Internal CA' \
       -addext 'basicConstraints=critical,CA:TRUE' \
       -addext 'keyUsage=critical,keyCertSign,cRLSign'
@@ -531,10 +532,10 @@ extendedKeyUsage=serverAuth
 subjectAltName=DNS:$server_host,IP:$server_ip
 EOF
   info "Issuing an HTTPS certificate for $server_host"
-  sudo_cmd openssl req -new -newkey rsa:3072 -nodes \
+  run_logged "Creating server certificate request" sudo_cmd openssl req -new -newkey rsa:3072 -nodes \
     -keyout "$pki_dir/fleet-server.key" -out "$work_dir/fleet-server.csr" \
     -subj "/CN=$server_host"
-  sudo_cmd openssl x509 -req -sha256 -days 397 \
+  run_logged "Signing server certificate" sudo_cmd openssl x509 -req -sha256 -days 397 \
     -in "$work_dir/fleet-server.csr" -CA "$ca_cert" -CAkey "$ca_key" -CAcreateserial \
     -out "$pki_dir/fleet-server.crt" -extfile "$work_dir/server-ext.cnf"
   sudo_cmd chmod 600 "$pki_dir/fleet-server.key"
@@ -558,7 +559,7 @@ EOF
     fi
   fi
   if have apt-get; then
-    sudo_cmd apt-get install -y nginx
+    run_logged "Installing nginx" sudo_cmd apt-get install -y nginx
   elif ! have nginx; then
     err "nginx is not installed and apt-get is unavailable"
   fi
@@ -629,6 +630,128 @@ EOF
   sudo_cmd nginx -t
   sudo_cmd systemctl enable --now nginx
   sudo_cmd systemctl reload nginx
+)
+
+init_install_log() {
+  if [ -z "${FLEET_INSTALL_LOG:-}" ]; then
+    log_dir="$APP_DIR.install-logs"
+    (umask 077; mkdir -p "$log_dir")
+    FLEET_INSTALL_LOG="$(mktemp "$log_dir/install-XXXXXXXX.log")"
+  fi
+  chmod 600 "$FLEET_INSTALL_LOG"
+  export FLEET_INSTALL_LOG
+  info "Detailed installation log: $FLEET_INSTALL_LOG"
+}
+
+run_logged() (
+  # A subshell keeps log bookkeeping out of callers' shell variables. Calling
+  # commands directly preserves errexit, including inside shell functions.
+  log_label="$1"
+  shift
+  if [ -z "${FLEET_INSTALL_LOG:-}" ]; then
+    "$@"
+    exit
+  fi
+  info "$log_label..."
+  printf '\n--- %s ---\n' "$log_label" >> "$FLEET_INSTALL_LOG"
+  log_first_line=$(( $(wc -l < "$FLEET_INSTALL_LOG") + 1 ))
+  trap '
+    log_status=$?
+    if [ "$log_status" -eq 0 ]; then
+      info "$log_label: done"
+    else
+      warn "$log_label: failed (exit $log_status)"
+      sed -n "${log_first_line},\$p" "$FLEET_INSTALL_LOG" | tail -n 25 >&2
+      warn "Full log: $FLEET_INSTALL_LOG"
+    fi
+    exit "$log_status"
+  ' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' HUP TERM
+  "$@" >> "$FLEET_INSTALL_LOG" 2>&1
+)
+
+record_install_stage() {
+  set_env_value "$resume_file" "STAGE" "$1"
+  info "Installation stage: $1"
+}
+
+installation_fingerprint() (
+  # Include local changes and saved configuration, without saving their contents.
+  cd "$APP_DIR"
+  fingerprint_work="$(mktemp -d)"
+  trap 'rm -rf "$fingerprint_work"' EXIT
+  git ls-files --cached --others --exclude-standard -z -- install.sh server deploy scripts > "$fingerprint_work/files" || exit 1
+  xargs -0 sha256sum < "$fingerprint_work/files" > "$fingerprint_work/hashes" || exit 1
+  sha256sum "$root_env" "$docker_env" >> "$fingerprint_work/hashes" || exit 1
+  sha256sum "$fingerprint_work/hashes" | awk '{print $1}'
+)
+
+start_server_stack() {
+  stack_fingerprint="$(installation_fingerprint)"
+  if [ "$resume" = "true" ] &&
+     [ "$(get_env_value "$resume_file" STACK_FINGERPRINT)" = "$stack_fingerprint" ] &&
+     wait_for_health "$server_url" "$fleet_ca_cert" 1; then
+    info "Resuming: unchanged Master is healthy; skipping Docker rebuild"
+    return
+  fi
+  record_install_stage "server-start"
+  info "Starting server with Docker Compose"
+  (
+    cd "$APP_DIR/deploy/docker"
+    run_logged "Starting database" docker_compose up -d db
+    sync_postgres_password "$postgres_password"
+    run_logged "Building and starting application" docker_compose up -d --build --remove-orphans
+  )
+  set_env_value "$resume_file" "STACK_FINGERPRINT" "$stack_fingerprint"
+}
+
+install_exit_hint() {
+  install_exit_status=$?
+  if [ "$install_exit_status" -ne 0 ] && [ -f "$resume_file" ]; then
+    warn "Installation stopped during: $(get_env_value "$resume_file" STAGE)"
+    warn "After correcting the problem, continue with: $APP_DIR/install.sh --resume"
+  fi
+}
+
+attach_hosts_with_recovery() {
+  node_attach_deferred="false"
+  while :; do
+    record_install_stage "node-attach"
+    info "Deploying agents with add-host.sh"
+    # Run a separate script: testing its exit status must not disable errexit
+    # inside the deployment workflow.
+    if (cd "$APP_DIR" && ATTACH_HOSTS="$deploy_hosts" ANSIBLE_USER="$ansible_user" FLEET_SERVER_IP="$fleet_server_ip" FLEET_CA_CERT="$fleet_ca_cert" ./add-host.sh); then
+      info "Node attachment completed"
+      return 0
+    else
+      attach_status=$?
+    fi
+    case "$attach_status" in 130|143) return "$attach_status" ;; esac
+    warn "Node attachment failed (exit $attach_status). The Master remains installed."
+    is_tty || return "$attach_status"
+    while :; do
+      say "  1) Retry after correcting the problem"
+      say "  2) Change node address or SSH username"
+      say "  3) Add nodes later"
+      recovery_choice="$(prompt 'Next action' '3')"
+      case "$recovery_choice" in
+        1) break ;;
+        2)
+          deploy_hosts="$(prompt 'Managed host(s), space/comma separated' "$deploy_hosts")"
+          ansible_user="$(prompt 'SSH username' "$ansible_user")"
+          set_env_value "$resume_file" ATTACH_HOSTS "$deploy_hosts"
+          set_env_value "$resume_file" ANSIBLE_USER "$ansible_user"
+          break ;;
+        3)
+          node_attach_deferred="true"
+          record_install_stage "node-attach-deferred"
+          warn "Node attachment deferred. Continue later with: $APP_DIR/install.sh --resume"
+          return 0 ;;
+        *) warn "Choose 1, 2 or 3." ;;
+      esac
+    done
+  done
 }
 
 main() {
@@ -637,19 +760,25 @@ main() {
 
   advanced="${INSTALL_ADVANCED:-false}"
   check_only="${INSTALL_CHECK_ONLY:-false}"
+  resume="${INSTALL_RESUME:-false}"
   for option in "$@"; do
     case "$option" in
       --advanced) advanced="true" ;;
       --check) check_only="true" ;;
+      --resume) resume="true" ;;
       --help|-h)
-        say "Usage: sh install.sh [--check] [--advanced]"
+        say "Usage: sh install.sh [--check] [--advanced] [--resume]"
         say "  --check     Run preflight only; do not install or write configuration"
         say "  --advanced  Include CA/IP, token rotation, terminal and initial agent options"
+        say "  --resume    Reuse saved answers and skip rebuilding an unchanged healthy Master"
         return 0 ;;
       *) err "Unknown option: $option. Run sh install.sh --help." ;;
     esac
   done
-  export INSTALL_ADVANCED="$advanced" INSTALL_CHECK_ONLY="$check_only"
+  if [ "$resume" = "true" ]; then
+    [ "$advanced" != "true" ] || err "Use --resume or --advanced separately; resume preserves existing credentials."
+  fi
+  export INSTALL_ADVANCED="$advanced" INSTALL_CHECK_ONLY="$check_only" INSTALL_RESUME="$resume"
   case "$INSTALL_DIR" in
     /*) ;;
     *) INSTALL_DIR="$(pwd)/$INSTALL_DIR" ;;
@@ -660,6 +789,17 @@ main() {
   fi
   docker_env="$APP_DIR/deploy/docker/.env"
   root_env="$APP_DIR/.env"
+  resume_file="$APP_DIR.install-progress"
+  if [ "$resume" = "true" ]; then
+    [ -f "$resume_file" ] || err "No saved installation progress. Run ./install.sh normally first."
+    info "Resuming installation from: $(get_env_value "$resume_file" STAGE)"
+    FLEET_HOSTNAME="${FLEET_HOSTNAME:-$(get_env_value "$resume_file" FLEET_HOSTNAME)}"
+    FLEET_SERVER_IP="${FLEET_SERVER_IP:-$(get_env_value "$resume_file" FLEET_SERVER_IP)}"
+    FLEET_CA_CERT="${FLEET_CA_CERT:-$(get_env_value "$resume_file" FLEET_CA_CERT)}"
+    INSTALL_NGINX="${INSTALL_NGINX:-$(get_env_value "$resume_file" INSTALL_NGINX)}"
+    ATTACH_HOSTS="${ATTACH_HOSTS-$(get_env_value "$resume_file" ATTACH_HOSTS)}"
+    ANSIBLE_USER="${ANSIBLE_USER:-$(get_env_value "$resume_file" ANSIBLE_USER)}"
+  fi
   docker_env_existing="false"
   [ -f "$docker_env" ] && docker_env_existing="true"
 
@@ -732,13 +872,27 @@ main() {
     return 0
   fi
 
+  mkdir -p "$(dirname "$resume_file")"
+  (umask 077; touch "$resume_file")
+  chmod 600 "$resume_file"
+  set_env_value "$resume_file" FLEET_HOSTNAME "$application_host"
+  set_env_value "$resume_file" FLEET_SERVER_IP "$fleet_server_ip"
+  set_env_value "$resume_file" FLEET_CA_CERT "$fleet_ca_cert"
+  set_env_value "$resume_file" INSTALL_NGINX "$install_nginx"
+  trap install_exit_hint EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' HUP TERM
+  init_install_log
+  record_install_stage "OS-packages"
   install_packages
   # Preserve validated endpoint answers if ensure_repo restarts the updated
   # installer. Environment overrides skip only these already answered prompts.
   export FLEET_HOSTNAME="$application_host" FLEET_SERVER_IP="$fleet_server_ip"
   export FLEET_CA_CERT="$fleet_ca_cert" INSTALL_NGINX="$install_nginx"
+  record_install_stage "checkout-update"
   ensure_repo
   cd "$APP_DIR"
+  record_install_stage "configuration"
   docker_env="$APP_DIR/deploy/docker/.env"
   root_env="$APP_DIR/.env"
   umask 077
@@ -824,13 +978,16 @@ main() {
   esac
 
   deploy_hosts="${ATTACH_HOSTS:-}"
-  if [ "$advanced" = "true" ] && [ -z "$deploy_hosts" ]; then
-    deploy_hosts="$(prompt "Managed hosts to deploy agent to now (space/comma separated, blank to skip)" "")"
+  if [ -z "$deploy_hosts" ] && { [ "$advanced" = "true" ] || [ "$docker_env_existing" = "false" ]; }; then
+    deploy_hosts="$(prompt "First managed host(s) (space/comma separated, blank to add later)" "")"
   fi
   ansible_user=""
   if [ -n "$deploy_hosts" ]; then
     ansible_user="${ANSIBLE_USER:-$(prompt "SSH username for managed hosts" "$(id -un 2>/dev/null || printf ubuntu)")}"
   fi
+
+  set_env_value "$resume_file" ATTACH_HOSTS "$deploy_hosts"
+  set_env_value "$resume_file" ANSIBLE_USER "$ansible_user"
 
   case "$server_url" in
     https://*)
@@ -887,13 +1044,7 @@ main() {
 
   write_inventory "$deploy_hosts" "$ansible_user"
 
-  info "Starting server with Docker Compose"
-  (
-    cd "$APP_DIR/deploy/docker"
-    docker_compose up -d db
-    sync_postgres_password "$postgres_password"
-    docker_compose up -d --build --remove-orphans
-  )
+  start_server_stack
   server_ready="true"
   health_attempts=60
   # An external proxy may still need configuration; return the setup instructions promptly.
@@ -903,22 +1054,34 @@ main() {
     warn "Agent deployment is deferred until $server_url is reachable with a trusted certificate."
   fi
 
+  node_attach_deferred="false"
   if [ -n "$deploy_hosts" ]; then
     if [ "$server_ready" != "true" ]; then
       warn "Skipped agent deployment. Finish the reverse proxy setup, then run: cd $APP_DIR && ./add-host.sh"
-    elif advanced_confirm "Build and deploy fleet-agent to listed hosts now?" "y"; then
-      info "Deploying agents with add-host.sh"
-      (cd "$APP_DIR" && ATTACH_HOSTS="$deploy_hosts" ANSIBLE_USER="$ansible_user" FLEET_SERVER_IP="$fleet_server_ip" FLEET_CA_CERT="$fleet_ca_cert" ./add-host.sh)
+    elif should_deploy_agents; then
+      attach_hosts_with_recovery
     else
+      node_attach_deferred="true"
       warn "Skipped agent deploy. You can run it later:"
       say "  cd $APP_DIR && ./add-host.sh"
     fi
   fi
 
   say ""
+  if [ "$server_ready" = "true" ] && [ "$node_attach_deferred" = "true" ]; then
+    record_install_stage "node-attach-deferred"
+  elif [ "$server_ready" = "true" ]; then
+    record_install_stage "complete"
+  else
+    record_install_stage "waiting-for-proxy"
+  fi
   say "Install complete."
   if [ "$server_ready" = "true" ]; then
-    say "Status: ready"
+    if [ "$node_attach_deferred" = "true" ]; then
+      say "Status: Master ready; node attachment pending"
+    else
+      say "Status: ready"
+    fi
     say "Open: $server_url/"
   else
     say "Status: waiting for reverse proxy configuration"
@@ -932,6 +1095,7 @@ main() {
   say "Login: $bootstrap_user"
   say "Password: $bootstrap_password_display"
   say ""
+  say "Installation log: ${FLEET_INSTALL_LOG:-not enabled}"
   say "Config files:"
   say "  $docker_env"
   say "  $root_env"

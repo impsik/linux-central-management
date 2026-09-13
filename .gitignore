@@ -40,3 +40,7 @@ node_modules/
 
 # ansible inventory file
 ansible/inventory.yml
+
+# Installer resume metadata (no credentials)
+*.install-progress
+*.install-logs/
