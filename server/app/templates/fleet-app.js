@@ -947,6 +947,7 @@
         terminal: 'host-action-terminal',
         users: 'host-action-users',
         services: 'host-action-services',
+        firewall: 'host-action-firewall',
         packages: 'host-action-packages'
       };
       const id = map[action];

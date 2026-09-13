@@ -165,7 +165,7 @@ body {
 
 #host-actions .host-action-btn {
   height: 30px;
-  border-radius: 8px;
+  border-radius: 3px;
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   padding: .2rem .6rem;
@@ -906,6 +906,10 @@ table {
   border: 1px solid var(--border);
   background: var(--panel-2);
   font-weight: 500;
+}
+
+.label-badge {
+  border-radius: 3px;
 }
 
 .service-status.active,
