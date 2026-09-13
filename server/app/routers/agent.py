@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import ipaddress
+import json
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..db import get_db
 from ..dispatcher import dispatcher
-from ..models import Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
+from ..models import HostUser, Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
 from ..services.agent_auth import hash_agent_token, require_agent_token_dep
@@ -162,6 +163,20 @@ def agent_register(payload: AgentRegister, request: Request, db: Session = Depen
     agent_token = None
     if getattr(request.state, "agent_auth_kind", "shared") == "shared":
         agent_token = _issue_agent_token(host)
+
+    # Use the durable queue so discovery also works without an active UI request.
+    pending_users = db.execute(
+        select(JobRun.id).join(Job, Job.id == JobRun.job_id).where(
+            JobRun.agent_id == payload.agent_id,
+            Job.job_type == "query-users",
+            JobRun.status.in_(("queued", "running")),
+        ).limit(1)
+    ).scalar_one_or_none()
+    if pending_users is None:
+        create_job_with_runs(
+            db=db, job_type="query-users", payload={"source": "agent-registration"},
+            agent_ids=[payload.agent_id], created_by="system", commit=False,
+        )
 
     db.commit()
     body = {"ok": True}
@@ -367,11 +382,39 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
     if host:
         host.last_seen = now
 
+    # Persist successful user discovery even when no browser is waiting for it.
+    # A malformed result must preserve the previous snapshot and job completion.
+    if host and payload.status == "success" and job.job_type == "query-users" and payload.stdout:
+        try:
+            with db.begin_nested():
+                users = json.loads(payload.stdout)["users"]
+                if not isinstance(users, list):
+                    raise ValueError("users must be a list")
+                rows = []
+                for item in users:
+                    username = item["username"]
+                    if not isinstance(username, str) or not username.strip():
+                        raise ValueError("invalid username")
+                    rows.append(HostUser(
+                        host_id=host.id, username=username.strip(),
+                        uid=int(item["uid"]) if item.get("uid") is not None else None,
+                        gid=int(item["gid"]) if item.get("gid") is not None else None,
+                        home=(item.get("home") or "")[:512],
+                        shell=(item.get("shell") or "")[:128],
+                        has_sudo=bool(item.get("has_sudo", False)),
+                        is_locked=bool(item.get("is_locked", False)),
+                    ))
+                db.execute(delete(HostUser).where(HostUser.host_id == host.id))
+                db.add_all(rows)
+                db.flush()
+        except Exception:
+            # Roll back only the optional snapshot savepoint.
+            pass
+
     # Persist CVE check results (best-effort)
     if payload.status in ("success", "failed") and job.job_type == "cve-check" and payload.stdout:
         try:
             with db.begin_nested():
-                import json
 
                 host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
                 if host:
@@ -437,7 +480,6 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
     if payload.status == "success" and job.job_type == "query-pkg-updates" and payload.stdout:
         try:
             with db.begin_nested():
-                import json
 
                 host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
                 if host:
@@ -483,7 +525,6 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
     if payload.status == "success" and job.job_type == "query-metrics" and payload.stdout:
         try:
             with db.begin_nested():
-                import json
 
                 host = db.execute(select(Host).where(Host.agent_id == payload.agent_id)).scalar_one_or_none()
                 if host:
