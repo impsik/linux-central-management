@@ -384,6 +384,54 @@ The file is read as data, never executed. `./install.sh --resume --check` checks
 the saved endpoint without changing progress or installing anything. Run without
 `--resume` for the normal installation/update workflow.
 
+#### Join from the managed host without SSH access from the Master
+
+In **Connect a Linux host**, select **Create join command**. Paste the command into
+a shell on the new node. It requires `curl`, Python 3 and sudo, and supports
+systemd hosts on amd64/x86_64 or arm64/aarch64. SSH password authentication and a
+Master SSH key are not required. The previous SSH-based method remains available
+under **Alternatively: install from the Master using SSH**.
+
+The command expires after 15 minutes and can enroll exactly one host. Keep it
+private; use **Revoke unused command** to cancel it. Creating another command in
+the same view revokes the previous unused command. Tokens are stored as hashes,
+consumed atomically and exchanged for a new per-agent credential. Enrollment
+cannot replace an existing host identity or overwrite an installed agent.
+
+The initial public bootstrap download permits an untrusted TLS certificate only
+because the command checks its SHA-256 digest from the authenticated UI before
+executing it with sudo. No enrollment token is sent during that download. The
+verified bootstrap embeds the Master's CA and agent binary hashes; subsequent
+health, binary and enrollment requests validate HTTPS certificates and do not
+follow redirects. A checksum mismatch stops execution; generate a new command
+if the Master was upgraded since the command was created.
+
+The node installs a prebuilt agent, its systemd service and private credentials,
+then sends inventories. If Console is enabled on the Master, enrollment also
+issues a server certificate and an individual Console token. The node's firewall
+permits Console from the resolved Master IPv4 address; routing/NAT must still
+allow Master-to-node port 18080. Console continues to prompt for the local user's
+credentials. It is not an outbound reverse tunnel.
+
+Update the Master using `install.sh` before using enrollment. The Docker build
+now uses the repository root and produces both agent architectures. The installer
+mounts the required Master CA certificate and terminal signing CA into the server
+container under `/run/fleet-enrollment`; it also supplies the Master IPv4 address.
+Enrollment commands can use that address to bootstrap DNS and add a managed
+`/etc/hosts` entry on the node when needed. The terminal signing key remains on
+the Master. No shared agent or shared Console token is distributed to new nodes.
+
+After a local installation error, retry the same command to finish a saved
+incomplete enrollment. If the initial enrollment response was lost before local
+credentials could be saved, generate a new command. Enrollment only installs new
+agents; it does not update a completed installation. Preserve the node's generated
+identity and credentials when updating its binary. Certificate renewal and an
+enrolled-agent update command are not yet part of this workflow.
+
+An existing reverse proxy must overwrite `X-Real-IP` with the connecting node's
+address. The supplied nginx and Caddy configurations already do this; enrollment
+does not use a client-supplied `X-Forwarded-For` prefix for certificate identities.
+
 #### Guided SSH and sudo checks
 
 A fresh installation offers to attach the first managed host; leave the answer

@@ -1,0 +1,11 @@
+**/.env
+**/*.key
+**/agent-token
+.git
+**/node_modules
+**/.venv*
+**/__pycache__
+**/*.log
+**/*.install-progress
+**/*.install-logs
+agent/fleet-agent

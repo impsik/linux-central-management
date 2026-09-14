@@ -681,7 +681,7 @@ installation_fingerprint() (
   cd "$APP_DIR"
   fingerprint_work="$(mktemp -d)"
   trap 'rm -rf "$fingerprint_work"' EXIT
-  git ls-files --cached --others --exclude-standard -z -- install.sh server deploy scripts > "$fingerprint_work/files" || exit 1
+  git ls-files --cached --others --exclude-standard -z -- .dockerignore install.sh agent server deploy scripts > "$fingerprint_work/files" || exit 1
   xargs -0 sha256sum < "$fingerprint_work/files" > "$fingerprint_work/hashes" || exit 1
   sha256sum "$root_env" "$docker_env" >> "$fingerprint_work/hashes" || exit 1
   sha256sum "$fingerprint_work/hashes" | awk '{print $1}'
@@ -1037,6 +1037,14 @@ main() {
   set_env_value "$root_env" "TERM_LISTEN" "auto:18080"
 
   prepare_https "$server_url" "$fleet_server_ip" "$fleet_ca_cert" "$install_nginx"
+  enrollment_pki_dir="$(dirname "$fleet_ca_cert")/enrollment"
+  sudo_cmd mkdir -p "$enrollment_pki_dir"
+  sudo_cmd chmod 700 "$enrollment_pki_dir"
+  sudo_cmd install -m 0644 "$fleet_ca_cert" "$enrollment_pki_dir/master-ca.crt"
+  sudo_cmd install -m 0644 "$terminal_ca_cert" "$enrollment_pki_dir/terminal-ca.crt"
+  sudo_cmd install -m 0600 "${terminal_ca_cert%.crt}.key" "$enrollment_pki_dir/terminal-ca.key"
+  set_env_value "$docker_env" FLEET_ENROLLMENT_PKI_DIR "$enrollment_pki_dir"
+  set_env_value "$docker_env" FLEET_ENROLLMENT_MASTER_IP "$fleet_server_ip"
   terminal_ca_b64="$(sudo_cmd base64 "$terminal_ca_cert" | tr -d '\r\n')"
   set_env_value "$docker_env" "AGENT_TERMINAL_TLS_CA_B64" "$terminal_ca_b64"
 

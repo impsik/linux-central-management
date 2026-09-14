@@ -35,6 +35,10 @@
     let selectedHost = null;
     let pending = false;
     let tracking = false;
+    let enrollmentId = null;
+    let runLocation = 'the admin node';
+    let joining = false;
+    const csrfHeaders = () => ({ 'X-CSRF-Token': w.getCookie?.('fleet_csrf') || '' });
 
     function show(value) {
       active = value;
@@ -54,11 +58,11 @@
       el('view').hidden = !state.ready;
       el('host-summary').textContent = host
         ? `${host.hostname} · ${host.os_id || 'OS pending'} ${host.os_version || ''} · ${host.package_count} installed packages · ${host.updates_count} cached updates`
-        : tracking ? 'Waiting for the agent. Run the command on your admin node to begin.'
+        : tracking ? `Waiting for the agent. Run the command on ${runLocation} to begin.`
         : 'Connection checks will appear after you prepare the command.';
       el('last-seen').textContent = host?.last_seen ? `Last contact: ${new Date(host.last_seen).toLocaleString()}` : '';
       el('connection-help').hidden = !tracking || state.ready;
-      el('status').textContent = !tracking ? 'Use the connection form to prepare an install command.' : state.ready
+      el('status').textContent = !tracking ? 'Create a join command to get started.' : state.ready
         ? 'Your host is connected and its package inventory is available.'
         : host && !state.online ? 'The agent registered, but is not currently connected. Check its service and network access.'
         : host && !state.inventory ? 'Connected. Waiting for package inventory; this may take a few minutes.'
@@ -104,16 +108,64 @@
       el('command-box').hidden = true;
       render(null);
       show(true);
-      el('host').focus();
+      el('join').focus();
       void refresh();
     });
     el('skip').addEventListener('click', () => show(false));
     el('refresh').addEventListener('click', () => { void refresh(); });
+    el('join').addEventListener('click', async () => {
+      if (joining) return;
+      joining = true;
+      el('join').disabled = true;
+      try {
+        if (enrollmentId) {
+          const revoke = await fetch(`/onboarding/enrollments/${enrollmentId}`, { method: 'DELETE', headers: csrfHeaders(), credentials: 'include' });
+          if (!revoke.ok) throw new Error('Could not revoke the previous command. Retry.');
+        }
+        const response = await fetch('/onboarding/enrollments', { method: 'POST', headers: csrfHeaders(), credentials: 'include' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || 'Could not create join command.');
+        enrollmentId = data.id;
+        target = data.agent_id;
+        runLocation = 'the managed Linux host';
+        tracking = true;
+        el('command').textContent = data.command;
+        el('command-box').hidden = false;
+        el('run-title').textContent = '2. Run on the managed Linux host';
+        el('run-help').textContent = 'Open a shell on the new host and paste this command. It asks for sudo when needed. The command is single-use; keep it private.';
+        el('join-status').textContent = `Command expires at ${new Date(data.expires_at).toLocaleString()}.`;
+        el('revoke').hidden = false;
+        render(null);
+        void refresh();
+      } catch (error) {
+        el('join-status').textContent = error.message;
+      } finally {
+        joining = false;
+        el('join').disabled = false;
+      }
+    });
+    el('revoke').addEventListener('click', async () => {
+      if (!enrollmentId || joining) return;
+      try {
+        const response = await fetch(`/onboarding/enrollments/${enrollmentId}`, { method: 'DELETE', headers: csrfHeaders(), credentials: 'include' });
+        if (!response.ok) throw new Error('Could not revoke command. Retry.');
+        enrollmentId = null;
+        el('command').textContent = '';
+        el('command-box').hidden = true;
+        el('revoke').hidden = true;
+        el('join-status').textContent = 'Unused command revoked. An already enrolled host remains connected.';
+      } catch (error) {
+        el('join-status').textContent = error.message;
+      }
+    });
     el('form').addEventListener('submit', event => {
       event.preventDefault();
       try {
         const result = attachmentCommand(el('host').value, el('username').value);
         target = result.host;
+        runLocation = 'the admin node';
+        el('run-title').textContent = '2. Run on the admin node';
+        el('run-help').textContent = 'Open a shell on the Master, change to ~/linux-central-management, then run:';
         tracking = true;
         el('command').textContent = result.command;
         el('command-box').hidden = false;

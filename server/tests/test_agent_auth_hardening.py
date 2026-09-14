@@ -493,6 +493,12 @@ def test_all_agent_routes_have_router_level_auth_dependency(monkeypatch):
     ]
     assert agent_routes, 'expected at least one /agent route'
 
+    enrollment_routes = {'/agent/enroll/bootstrap.py', '/agent/enroll/binary/{arch}', '/agent/enroll/redeem'}
+    assert enrollment_routes.issubset({route.path for route in agent_routes})
     for route in agent_routes:
+        # Bootstrap artifacts are public; redemption has its own one-time token.
+        # Their authentication and replay protection are covered by test_host_enrollment.
+        if route.path in enrollment_routes:
+            continue
         dep_calls = [getattr(dep, 'call', None) for dep in route.dependant.dependencies]
         assert agent_auth.require_agent_token_dep in dep_calls, f'missing agent auth dependency on {route.path}'

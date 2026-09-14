@@ -283,7 +283,8 @@ async def ws_terminal(ws: WebSocket, agent_id: str) -> None:
         port = int(getattr(settings, "agent_terminal_port", 18080))
         agent_url = f"{scheme}://{connect_to}:{port}/terminal/ws"
 
-        term_token = getattr(settings, "agent_terminal_token", None)
+        from ..services.enrollment import terminal_token_for_host
+        term_token = terminal_token_for_host(db, host)
         if not term_token:
             _audit_terminal_event(
                 db,

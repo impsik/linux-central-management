@@ -583,3 +583,13 @@ class BackupVerificationPolicy(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class HostEnrollment(Base):
+    __tablename__ = 'host_enrollments'
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    token_hash = Column(String(64), unique=True, nullable=False)
+    agent_id = Column(String, unique=True, nullable=False)
+    created_by = Column(String, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    used_at = Column(DateTime(timezone=True))
