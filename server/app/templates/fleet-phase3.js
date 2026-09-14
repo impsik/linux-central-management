@@ -8,6 +8,47 @@
       .replaceAll("'", '&#039;');
   }
 
+  function describeServiceAutostart(service) {
+    const info = service || {};
+    const state = String(info.unit_file_state || '').trim().toLowerCase();
+    const socketState = String(info.socket_unit_file_state || '').trim().toLowerCase();
+    const enabled = !!info.enabled;
+    const descriptions = {
+      enabled: 'Enabled', 'enabled-runtime': 'Enabled until reboot', disabled: 'Disabled',
+      static: 'Static', indirect: 'Indirect', generated: 'Generated', transient: 'Transient',
+      masked: 'Masked', 'masked-runtime': 'Masked until reboot', alias: 'Alias',
+      linked: 'Linked', 'linked-runtime': 'Linked until reboot',
+    };
+    const reasons = {
+      static: 'Activated by dependencies or a socket; the service has no direct enable/disable configuration.',
+      indirect: 'Activation is managed through another unit.',
+      generated: 'Created by a systemd generator; change its source configuration to control activation.',
+      transient: 'Created at runtime; activation is managed by its creator.',
+      masked: 'The service is masked. Unmask it before enabling it.',
+      'masked-runtime': 'The service is masked until reboot. Unmask it before enabling it.',
+      alias: 'Manage activation through the original unit.',
+    };
+    let label = state ? (descriptions[state] || state) : (enabled ? 'Enabled' : 'Disabled');
+    let reason = reasons[state] || '';
+    const hasSocket = socketState && !['unknown', 'not-found', 'missing'].includes(socketState);
+    if (hasSocket) {
+      const socketEnabled = ['enabled', 'enabled-runtime'].includes(socketState);
+      const serviceEnabled = ['enabled', 'enabled-runtime'].includes(state);
+      if (socketEnabled && !serviceEnabled) {
+        const temporary = socketState === 'enabled-runtime' ? ' (until reboot)' : '';
+        label = `Via socket${temporary} · service ${state || 'unknown'}`;
+      } else {
+        label += ` · socket ${socketState}`;
+      }
+      reason = `${reason ? reason + ' ' : ''}Service state: ${state || 'unknown'}. Matching socket state: ${socketState}.`;
+    }
+    const legacyToggle = !state || ['enabled', 'enabled-runtime', 'disabled'].includes(state);
+    const canEnable = typeof info.can_enable === 'boolean' ? info.can_enable : legacyToggle;
+    const canDisable = typeof info.can_disable === 'boolean' ? info.can_disable : legacyToggle;
+    if (!reason && !canEnable && !canDisable) reason = 'This unit does not support direct enable/disable changes.';
+    return { state, socketState, enabled, label, reason, canEnable, canDisable };
+  }
+
   function formatRelativeTime(d) {
     if (!(d instanceof Date) || isNaN(d.getTime())) return 'unknown';
     const sec = Math.floor((Date.now() - d.getTime()) / 1000);
@@ -879,6 +920,7 @@
   w.pollJob = w.pollJob || pollJob;
   w.getLoadHistoryLimitForRange = w.getLoadHistoryLimitForRange || getLoadHistoryLimitForRange;
   w.formatTimeLabel = w.formatTimeLabel || formatTimeLabel;
+  w.describeServiceAutostart = describeServiceAutostart;
   w.setButtonBusy = setButtonBusy;
   w.setTableState = setTableState;
   w.bindSortableHeader = bindSortableHeader;

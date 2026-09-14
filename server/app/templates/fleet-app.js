@@ -13,6 +13,9 @@
     function getTerminalCtx() {
       return {
         getTerm: () => term,
+        getTerminalAccess: (agentId) => window.phase3HostActions.terminalAccessState(
+          (allHosts || []).find(host => host.agent_id === agentId), currentPermissions
+        ),
         setTerm: (next) => { term = next; return term; },
         getTermFitAddon: () => termFitAddon,
         setTermFitAddon: (next) => { termFitAddon = next; return termFitAddon; },
@@ -767,6 +770,11 @@
 
     function showTerminal() {
       if (!currentAgentId) return;
+      const access = window.phase3HostActions.updateTerminalAccessIndicator((allHosts || []).find(host => host.agent_id === currentAgentId), currentPermissions);
+      if (access?.blocked) {
+        showToast(access.reason, 'error');
+        return;
+      }
       setHostActionActive('terminal');
       // Stop metrics updates when leaving server info view
       stopMetricsPolling(metricsLifecycleState);
@@ -906,8 +914,8 @@
       }
     }
 
-    window.loadAdminUsers = (...args) => loadAdminUsers(...args);
-    window.loadAdminAudit = (...args) => loadAdminAudit(...args);
+    window.loadAdminUsers = loadAdminUsers;
+    window.loadAdminAudit = loadAdminAudit;
 
     function showAdminPage() {
       // Stop metrics updates when leaving server info view
@@ -940,12 +948,21 @@
       }
     }
 
-    async function loadHosts() {
+    let hostsLoadPromise = null;
+    async function loadHosts(backgroundRefresh = false) {
+      if (hostsLoadPromise) return hostsLoadPromise;
+      if (backgroundRefresh && document.hidden) return;
       const mod = window.phase3HostList;
-      if (mod && typeof mod.loadHosts === 'function') {
-        return mod.loadHosts(getHostListCtx());
+      if (!mod || typeof mod.loadHosts !== 'function') {
+        console.error('[loadHosts] phase3HostList module missing');
+        return;
       }
-      console.error('[loadHosts] phase3HostList module missing');
+      hostsLoadPromise = Promise.resolve().then(() => mod.loadHosts(getHostListCtx()));
+      try {
+        return await hostsLoadPromise;
+      } finally {
+        hostsLoadPromise = null;
+      }
     }
 
     function initHostFilters() {
@@ -2404,17 +2421,16 @@
 
     function startHostRefresh() {
       if (hostsRefreshTimer) return;
-      hostsRefreshTimer = setInterval(loadHosts, HOSTS_REFRESH_MS);
+      hostsRefreshTimer = setInterval(() => { void loadHosts(true); }, HOSTS_REFRESH_MS);
     }
 
-    void loadHosts().catch((e) => {
+    void loadHosts(true).catch((e) => {
       console.error('[loadHosts failed]', e);
     });
 
     safeInit('initOnboarding', () => {
       window.fleetOnboarding?.init({ selectHost, showPackages });
     });
-    void loadFleetOverview();
     void refreshApprovalsIndicator();
     startHostRefresh();
     setInterval(() => { void loadFleetOverview(false, true); }, 15000);

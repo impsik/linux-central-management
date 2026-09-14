@@ -3,6 +3,7 @@ import secrets
 import sys
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 
@@ -69,6 +70,22 @@ def _audit_events(action: str):
     models = importlib.import_module("app.models")
     with db_mod.SessionLocal() as db:
         return db.query(models.AuditEvent).filter_by(action=action).order_by(models.AuditEvent.created_at.asc()).all()
+
+
+@pytest.mark.parametrize('terminal_token', [None, 'configured-test-terminal-secret'])
+def test_auth_me_distinguishes_console_readiness_from_role_without_exposing_token(monkeypatch, terminal_token):
+    app = _boot_app(monkeypatch)
+    config = importlib.import_module('app.config')
+    monkeypatch.setattr(config.settings, 'agent_terminal_token', terminal_token)
+    with TestClient(app) as client:
+        client.cookies.set('fleet_session', _create_session('console-user', 'operator'))
+        response = client.get('/auth/me')
+        assert response.status_code == 200
+        permissions = response.json()['permissions']
+        assert permissions['can_use_terminal'] is True
+        assert permissions['terminal_configured'] is bool(terminal_token)
+        if terminal_token:
+            assert terminal_token not in response.text
 
 
 def test_terminal_session_open_and_close_are_audited(monkeypatch):

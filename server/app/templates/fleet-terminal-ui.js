@@ -102,6 +102,11 @@
   }
 
   function connect(ctx, agentId) {
+    const access = ctx.getTerminalAccess?.(agentId);
+    if (access?.blocked) {
+      ctx.showToast(access.reason, 'error');
+      return;
+    }
     initTerminalOnce(ctx);
     const term = ctx.getTerm();
     if (!term) return;

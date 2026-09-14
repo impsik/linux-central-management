@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     cve_sync_enabled: bool = True
     cve_sync_initial_delay_seconds: int = 0
     cve_sync_interval_seconds: int = 43200
+    cve_reporting_enabled: bool = True
 
     # Teams notifications
     teams_webhook_url: str | None = None

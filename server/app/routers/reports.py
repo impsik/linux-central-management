@@ -445,11 +445,10 @@ def cve_high_severity_report(
 
     findings = collect_high_severity_findings(db, min_severity=float(min_severity))
     package_findings = merge_findings_by_package(findings)
-    visible = []
-    for item in package_findings:
-        host = db.execute(select(Host).where(Host.id == item.host_id)).scalar_one_or_none()
-        if host and is_host_visible_to_user(db, user, host):
-            visible.append(item)
+    host_ids = {item.host_id for item in package_findings}
+    hosts = db.execute(select(Host).where(Host.id.in_(host_ids))).scalars().all() if host_ids else []
+    visible_host_ids = {host.id for host in hosts if is_host_visible_to_user(db, user, host)}
+    visible = [item for item in package_findings if item.host_id in visible_host_ids]
 
     reverse = order == "desc"
     key_map = {
@@ -610,6 +609,10 @@ async def service_presence_report(
                     "service_name": name,
                     "status": str(svc.get("status") or ""),
                     "enabled": bool(svc.get("enabled", False)),
+                    "unit_file_state": str(svc.get("unit_file_state") or ""),
+                    "socket_unit_file_state": str(svc.get("socket_unit_file_state") or ""),
+                    "can_enable": svc.get("can_enable") if isinstance(svc.get("can_enable"), bool) else None,
+                    "can_disable": svc.get("can_disable") if isinstance(svc.get("can_disable"), bool) else None,
                     "description": str(svc.get("description") or ""),
                 }
             )

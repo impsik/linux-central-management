@@ -106,7 +106,10 @@
 
       servicesList.innerHTML = data.services.map(service => {
         const statusClass = service.status === 'active' ? 'active' : service.status === 'failed' ? 'failed' : 'inactive';
-        const enabledBadge = service.enabled ? '<span class="sudo-badge yes" style="margin-left: 0.5rem;">✓ Autostart</span>' : '<span class="sudo-badge no" style="margin-left: 0.5rem;">✗ Manual start</span>';
+        const autostart = w.describeServiceAutostart(service);
+        const toggleAction = autostart.enabled ? 'disable' : 'enable';
+        const canToggle = autostart.enabled ? autostart.canDisable : autostart.canEnable;
+        const enabledBadge = `<span class="sudo-badge ${autostart.enabled ? 'yes' : 'no'}" style="margin-left: 0.5rem;" title="${w.escapeHtml(autostart.reason)}">Autostart: ${w.escapeHtml(autostart.label)}</span>`;
         return `
             <div class="service-card" data-service-name="${w.escapeHtml(service.name)}">
               <div class="service-info">
@@ -123,8 +126,8 @@
                 <button class="btn btn-warning" data-service-action="restart" data-service-name="${w.escapeHtml(service.name)}">Restart</button>
                 <button class="btn btn-danger" data-service-action="stop" data-service-name="${w.escapeHtml(service.name)}"
                   ${service.status !== 'active' ? 'disabled' : ''}>Stop</button>
-                <button class="btn ${service.enabled ? 'btn-danger' : 'btn-success'}" data-service-action="${service.enabled ? 'disable' : 'enable'}" data-service-name="${w.escapeHtml(service.name)}">
-                  ${service.enabled ? 'Disable' : 'Enable'}
+                <button class="btn ${autostart.enabled ? 'btn-danger' : 'btn-success'}" data-service-action="${toggleAction}" data-service-name="${w.escapeHtml(service.name)}" ${canToggle ? '' : 'disabled'} title="${w.escapeHtml(autostart.reason)}">
+                  ${autostart.enabled ? 'Disable' : 'Enable'}
                 </button>
               </div>
             </div>
@@ -145,7 +148,7 @@
           e.preventDefault();
           const action = btn.getAttribute('data-service-action') || '';
           const serviceName = btn.getAttribute('data-service-name') || '';
-          if (!action || !serviceName) return;
+          if (btn.disabled || !action || !serviceName) return;
           controlService(ctx, agentId, serviceName, action);
         });
       });
@@ -341,6 +344,7 @@
     if (targetCard) {
       const buttons = targetCard.querySelectorAll('.btn');
       buttons.forEach(btn => {
+        btn.dataset.previouslyDisabled = String(btn.disabled);
         btn.disabled = true;
         btn.style.opacity = '0.6';
         btn.style.cursor = 'wait';
@@ -385,7 +389,7 @@
       if (targetCard) {
         const buttons = targetCard.querySelectorAll('.btn');
         buttons.forEach(btn => {
-          btn.disabled = false;
+          btn.disabled = btn.dataset.previouslyDisabled === 'true';
           btn.style.opacity = '1';
           btn.style.cursor = 'pointer';
         });

@@ -175,7 +175,21 @@
     renderAttentionRows(ctx);
   }
 
+  let overviewLoadPromise = null;
+
   async function loadFleetOverview(ctx, forceLive, backgroundRefresh) {
+    if (overviewLoadPromise) return overviewLoadPromise;
+    if (backgroundRefresh && (document.hidden || ctx.getCurrentAgentId?.()
+      || !document.getElementById('server-info-tab')?.classList.contains('active'))) return;
+    overviewLoadPromise = Promise.resolve().then(() => refreshFleetOverview(ctx, forceLive, backgroundRefresh));
+    try {
+      return await overviewLoadPromise;
+    } finally {
+      overviewLoadPromise = null;
+    }
+  }
+
+  async function refreshFleetOverview(ctx, forceLive, backgroundRefresh) {
     const isBackgroundRefresh = !!backgroundRefresh;
     const onlineEl = document.getElementById('kpi-online');
     const onlineDetailsEl = document.getElementById('kpi-online-details');
@@ -189,19 +203,6 @@
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
     try {
-      // First hydrate update KPIs from hosts report (more resilient than summary-only path).
-      try {
-        const rr0 = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include', cache: 'no-store' });
-        if (rr0.ok) {
-          const report0 = await rr0.json();
-          const items0 = Array.isArray(report0?.items) ? report0.items : [];
-          const secHosts0 = items0.filter((it) => Number(it.security_updates || 0) > 0).length;
-          const secPkgs0 = items0.reduce((n, it) => n + Number(it.security_updates || 0), 0);
-          if (secEl) secEl.textContent = `${secHosts0} hosts`;
-          if (secDetailsEl) secDetailsEl.textContent = `${secPkgs0} packages`;
-        }
-      } catch (_) { }
-
       const r = await fetch('/dashboard/summary', { credentials: 'include', cache: 'no-store' });
       if (!r.ok) {
         if (r.status === 403) {
@@ -359,23 +360,21 @@
           const hostsOffline = Math.max(0, hostsTotal - hostsOnline);
           const secHosts = items.filter((it) => Number(it.security_updates || 0) > 0).length;
           const secPkgs = items.reduce((n, it) => n + Number(it.security_updates || 0), 0);
-          const updHosts = items.filter((it) => Number(it.updates || 0) > 0).length;
-          const updPkgs = items.reduce((n, it) => n + Number(it.updates || 0), 0);
 
           if (onlineEl) onlineEl.textContent = `${hostsOnline} / ${hostsTotal}`;
           if (onlineDetailsEl) onlineDetailsEl.textContent = `${hostsOffline} offline`;
           if (secEl) secEl.textContent = `${secHosts} hosts`;
           if (secDetailsEl) secDetailsEl.textContent = `${secPkgs} packages`;
-          if (updEl) updEl.textContent = `${updHosts} hosts`;
-          if (updDetailsEl) updDetailsEl.textContent = `${updPkgs} packages`;
         }
       } catch (_) { }
 
       if (attentionEl && !isBackgroundRefresh) attentionEl.textContent = `Overview error: ${e.message}`;
     }
 
-    ctx.loadPendingUpdatesReport(false, isBackgroundRefresh);
-    loadUrgentUpdates(ctx, isBackgroundRefresh, !!forceLive);
+    await Promise.allSettled([
+      ctx.loadPendingUpdatesReport(false, isBackgroundRefresh),
+      loadUrgentUpdates(ctx, isBackgroundRefresh, !!forceLive),
+    ]);
   }
 
   let hostsTableItemsCache = [];
@@ -1342,7 +1341,6 @@
     nextCronjobsOpenBtn?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
 
     showOverviewTab();
-    refreshMaintenanceGuardButtons();
 
     const refreshBtn = document.getElementById('overview-refresh');
     const kpiTimeframeEl = document.getElementById('kpi-timeframe');
@@ -1600,11 +1598,11 @@
     try {
       if (window.__fleetNotifInterval) clearInterval(window.__fleetNotifInterval);
       window.__fleetNotifInterval = setInterval(() => {
-        const isOverview = document.getElementById('server-info-tab')?.classList.contains('active');
-        if (isOverview) {
-          loadNotifications(ctx, false);
-          refreshMaintenanceGuardButtons();
-        }
+        if (document.hidden) return;
+        // Alert badges remain current across views; only Dashboard controls need its policy refresh.
+        loadNotifications(ctx, false);
+        const isOverview = document.getElementById('server-info-tab')?.classList.contains('active') && !ctx.getCurrentAgentId?.();
+        if (isOverview) refreshMaintenanceGuardButtons();
       }, 60000);
     } catch (_) { }
   }

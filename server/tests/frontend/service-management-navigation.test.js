@@ -39,9 +39,9 @@ describe('service management navigation', () => {
   it('labels service enablement as autostart instead of current access', () => {
     expect(indexSrc).toContain('<th>Autostart</th>');
     expect(indexSrc).not.toContain('<th>Enabled</th>');
-    expect(serviceManagementSrc).toContain("${it.enabled ? 'yes' : 'manual'}");
-    expect(hostWorkflowsSrc).toContain('✓ Autostart');
-    expect(hostWorkflowsSrc).toContain('✗ Manual start');
+    expect(serviceManagementSrc).toContain('window.describeServiceAutostart(it)');
+    expect(hostWorkflowsSrc).toContain('w.describeServiceAutostart(service)');
+    expect(hostWorkflowsSrc).toContain('Autostart: ${w.escapeHtml(autostart.label)}');
   });
 
   it('supports bulk enabling selected service matches', () => {

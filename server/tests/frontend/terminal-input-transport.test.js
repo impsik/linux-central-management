@@ -49,7 +49,7 @@ describe('terminal input transport', () => {
     const src = fs.readFileSync(appPath, 'utf8');
     const start = src.indexOf('function showTerminal()');
     expect(start).toBeGreaterThanOrEqual(0);
-    const section = src.slice(start, start + 520);
+    const section = src.slice(start, src.indexOf("    function showUsers()", start));
 
     const activateIdx = section.indexOf("document.getElementById('terminal-tab').classList.add('active');");
     const connectIdx = section.indexOf('connect(currentAgentId);');

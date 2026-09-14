@@ -2703,60 +2703,45 @@ func parsePasswdStatusAll(output string) map[string]string {
 	return m
 }
 
-func parseGroupMembers(output string) map[string]bool {
-	members := make(map[string]bool)
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		parts := strings.Split(strings.TrimSpace(line), ":")
-		if len(parts) < 4 {
+// sudoListingAllowsCommands reads sudo's long listing format. A successful
+// listing can still say that the user has no sudo rights, so exit 0 alone is
+// insufficient. Query the actual policy rather than guessing from group names
+// or the existence of a sudoers include.
+func sudoListingAllowsCommands(output string) bool {
+	allowed := make(map[string]bool)
+	inCommands := false
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "Commands:" {
+			inCommands = true
 			continue
 		}
-		for _, member := range strings.Split(parts[3], ",") {
-			member = strings.TrimSpace(member)
-			if member != "" {
-				members[member] = true
-			}
+		if !inCommands {
+			continue
+		}
+		if !strings.HasPrefix(line, "\t") {
+			inCommands = false
+			continue
+		}
+		if trimmed == "!ALL" {
+			clear(allowed)
+		} else if strings.HasPrefix(trimmed, "!") {
+			delete(allowed, strings.TrimSpace(strings.TrimPrefix(trimmed, "!")))
+		} else if trimmed != "" {
+			allowed[trimmed] = true
 		}
 	}
-	return members
+	return len(allowed) > 0
 }
 
-func parseUserGroups(output string) map[string]bool {
-	groups := make(map[string]bool)
-	for _, group := range strings.Fields(output) {
-		groups[group] = true
-	}
-	return groups
-}
-
-func hasAnyNamedGroup(groups map[string]bool, names ...string) bool {
-	for _, name := range names {
-		if groups[name] {
-			return true
-		}
-	}
-	return false
-}
-
-func userHasSudoAccess(ctx context.Context, username string, sudoGroupUsers map[string]bool) bool {
-	if sudoGroupUsers[username] {
+func userHasSudoAccess(ctx context.Context, username string) bool {
+	if username == "root" {
 		return true
 	}
-	if _, statErr := os.Stat(fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)); statErr == nil {
-		return true
-	}
-
-	idCmd := exec.CommandContext(ctx, "id", "-nG", username)
-	if out, err := idCmd.Output(); err == nil {
-		if hasAnyNamedGroup(parseUserGroups(string(out)), "sudo", "wheel", "admin") {
-			return true
-		}
-	}
-
-	sudoCmd := exec.CommandContext(ctx, "sudo", "-n", "-l", "-U", username)
-	if _, err := sudoCmd.CombinedOutput(); err == nil {
-		return true
-	}
-	return false
+	sudoCmd := exec.CommandContext(ctx, "sudo", "-n", "-ll", "-U", username)
+	sudoCmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := sudoCmd.Output()
+	return err == nil && sudoListingAllowsCommands(string(out))
 }
 
 func queryUsers(ctx context.Context) (string, string, int, string) {
@@ -2781,15 +2766,6 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		IsLocked bool   `json:"is_locked"`
 	}
 
-	// Get list of users in sudo group once (more efficient)
-	sudoGroupUsers := make(map[string]bool)
-	sudoGroupCmd := exec.CommandContext(queryCtx, "getent", "group", "sudo")
-	if sudoGroupOut, err := sudoGroupCmd.Output(); err == nil {
-		for member := range parseGroupMembers(string(sudoGroupOut)) {
-			sudoGroupUsers[member] = true
-		}
-	}
-
 	// Determine lock status semantics:
 	// We only treat accounts as "locked" if they are explicitly locked via passwd/usermod.
 	// Use `passwd -S -a` (single call) when available, because shadow heuristics can confuse
@@ -2800,16 +2776,6 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 	if outAll, err := passwdAllCmd.CombinedOutput(); err == nil {
 		passwdStatusMap = parsePasswdStatusAll(string(outAll))
 		passwdStatusOK = true
-	}
-
-	// Also check wheel and admin groups
-	for _, groupName := range []string{"wheel", "admin"} {
-		groupCmd := exec.CommandContext(queryCtx, "getent", "group", groupName)
-		if groupOut, err := groupCmd.Output(); err == nil {
-			for member := range parseGroupMembers(string(groupOut)) {
-				sudoGroupUsers[member] = true
-			}
-		}
 	}
 
 	var users []UserInfo
@@ -2825,7 +2791,12 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		home := parts[5]
 		shell := parts[6]
 
-		hasSudo := userHasSudoAccess(queryCtx, username, sudoGroupUsers)
+		// Skip service accounts before querying sudo policy individually.
+		uidInt, parseErr := strconv.Atoi(uid)
+		if parseErr != nil || (uidInt < 1000 && uidInt != 0) {
+			continue
+		}
+		hasSudo := userHasSudoAccess(queryCtx, username)
 
 		// "Locked" should reflect practical login-blocking state for SSH/user presence.
 		// Password lock alone (status=L) is not sufficient because SSH key auth can still work.
@@ -2850,20 +2821,15 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		}
 		isLocked := passwordLocked && shellBlocked
 
-		// Only include regular users (UID >= 1000) or root
-		uidInt := 0
-		fmt.Sscanf(uid, "%d", &uidInt)
-		if uidInt >= 1000 || uidInt == 0 {
-			users = append(users, UserInfo{
-				Username: username,
-				UID:      uid,
-				GID:      gid,
-				Home:     home,
-				Shell:    shell,
-				HasSudo:  hasSudo,
-				IsLocked: isLocked,
-			})
-		}
+		users = append(users, UserInfo{
+			Username: username,
+			UID:      uid,
+			GID:      gid,
+			Home:     home,
+			Shell:    shell,
+			HasSudo:  hasSudo,
+			IsLocked: isLocked,
+		})
 	}
 
 	result := map[string]interface{}{
@@ -2886,7 +2852,7 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 		Name        string `json:"name"`
 		Status      string `json:"status"`
 		Description string `json:"description"`
-		Enabled     bool   `json:"enabled"`
+		ServiceActivation
 	}
 
 	// Map to track services we've seen (by name)
@@ -2939,7 +2905,6 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 					Name:        name,
 					Status:      status,
 					Description: description,
-					Enabled:     false, // Will be checked later
 				}
 			}
 		}
@@ -2975,7 +2940,6 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 					Name:        name,
 					Status:      "failed",
 					Description: description,
-					Enabled:     false, // Will be checked later
 				}
 			} else {
 				// Update existing entry to ensure status is "failed"
@@ -2984,11 +2948,14 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 		}
 	}
 
-	// Check enabled state for each service
+	// Preserve the real unit state as well as socket activation. Static units
+	// have no install links to enable/disable, even when dependencies start them.
 	for name, svc := range serviceMap {
-		svc.Enabled = serviceInventoryEnabled(name, func(unitName string) bool {
-			return isSystemdUnitEnabled(queryCtx, unitName)
-		})
+		serviceUnit := normalizeServiceUnit(name)
+		svc.ServiceActivation = serviceActivation(
+			systemdUnitFileState(queryCtx, serviceUnit),
+			systemdUnitFileState(queryCtx, serviceSocketUnit(serviceUnit)),
+		)
 	}
 
 	// Convert map to slice
@@ -3008,28 +2975,47 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 	return string(jsonOut), "", 0, ""
 }
 
+type ServiceActivation struct {
+	Enabled             bool   `json:"enabled"`
+	UnitFileState       string `json:"unit_file_state"`
+	SocketUnitFileState string `json:"socket_unit_file_state"`
+	CanEnable           bool   `json:"can_enable"`
+	CanDisable          bool   `json:"can_disable"`
+}
+
 func isEnabledState(state string) bool {
 	switch strings.TrimSpace(state) {
-	case "enabled", "enabled-runtime", "alias", "static", "indirect", "linked", "linked-runtime", "generated", "transient":
+	case "enabled", "enabled-runtime":
 		return true
 	default:
 		return false
 	}
 }
 
-func isSystemdUnitEnabled(ctx context.Context, unitName string) bool {
-	enabledCmd := exec.CommandContext(ctx, "systemctl", "is-enabled", unitName)
-	enabledOut, err := enabledCmd.Output()
-	if err != nil {
-		return false
-	}
-	return isEnabledState(strings.TrimSpace(string(enabledOut)))
+func unitFileStateToggleable(state string) bool {
+	return isEnabledState(state) || state == "disabled"
 }
 
-func serviceInventoryEnabled(serviceName string, checkUnitEnabled func(string) bool) bool {
-	serviceUnit := normalizeServiceUnit(serviceName)
-	socketUnit := serviceSocketUnit(serviceUnit)
-	return checkUnitEnabled(serviceUnit) || checkUnitEnabled(socketUnit)
+func serviceActivation(serviceState, socketState string) ServiceActivation {
+	serviceToggle := unitFileStateToggleable(serviceState)
+	socketToggle := unitFileStateToggleable(socketState)
+	return ServiceActivation{
+		Enabled:             isEnabledState(serviceState) || isEnabledState(socketState),
+		UnitFileState:       serviceState,
+		SocketUnitFileState: socketState,
+		CanEnable:           serviceToggle || (socketToggle && serviceState != "masked" && serviceState != "masked-runtime"),
+		CanDisable:          serviceToggle || socketToggle,
+	}
+}
+
+func systemdUnitFileState(ctx context.Context, unitName string) string {
+	cmd := exec.CommandContext(ctx, "systemctl", "show", "--property=UnitFileState", "--value", unitName)
+	out, err := cmd.Output()
+	state := strings.TrimSpace(string(out))
+	if err != nil || state == "" {
+		return "unknown"
+	}
+	return state
 }
 
 func querySystemMetrics(ctx context.Context) (string, string, int, string) {
@@ -3307,13 +3293,18 @@ func controlService(ctx context.Context, serviceName, action string) (string, st
 	defer cancel()
 
 	serviceUnit := normalizeServiceUnit(serviceName)
-	socketExists := false
-	if action == "stop" || action == "disable" {
-		socketExists = systemdUnitFileExists(controlCtx, serviceSocketUnit(serviceUnit), "socket")
+	var commands [][]string
+	var err error
+	if action == "enable" || action == "disable" {
+		commands, err = serviceAutostartCommands(serviceUnit, action,
+			systemdUnitFileState(controlCtx, serviceUnit),
+			systemdUnitFileState(controlCtx, serviceSocketUnit(serviceUnit)))
+	} else {
+		socketExists := action == "stop" && systemdUnitFileExists(controlCtx, serviceSocketUnit(serviceUnit), "socket")
+		commands, err = serviceControlCommands(serviceUnit, action, socketExists)
 	}
-	commands, err := serviceControlCommands(serviceUnit, action, socketExists)
 	if err != nil {
-		return "", "", 1, fmt.Sprintf("invalid action: %s (must be start, stop, restart, enable, or disable)", action)
+		return "", "", 1, err.Error()
 	}
 
 	var stdout strings.Builder
@@ -3363,18 +3354,31 @@ func serviceControlCommands(serviceUnit, action string, socketExists bool) ([][]
 		return commands, nil
 	case "restart":
 		return [][]string{{"restart", serviceUnit}}, nil
-	case "enable":
-		return [][]string{{"enable", serviceUnit}}, nil
-	case "disable":
-		commands := make([][]string, 0, 2)
-		if socketExists {
-			commands = append(commands, []string{"disable", "--now", socketUnit})
-		}
-		commands = append(commands, []string{"disable", serviceUnit})
-		return commands, nil
 	default:
 		return nil, fmt.Errorf("invalid action: %s", action)
 	}
+}
+
+func serviceAutostartCommands(serviceUnit, action, serviceState, socketState string) ([][]string, error) {
+	activation := serviceActivation(serviceState, socketState)
+	socketUnit := serviceSocketUnit(serviceUnit)
+	if action == "enable" && activation.CanEnable {
+		if unitFileStateToggleable(serviceState) {
+			return [][]string{{"enable", serviceUnit}}, nil
+		}
+		return [][]string{{"enable", socketUnit}}, nil
+	}
+	if action == "disable" && activation.CanDisable {
+		commands := make([][]string, 0, 2)
+		if unitFileStateToggleable(socketState) {
+			commands = append(commands, []string{"disable", "--now", socketUnit})
+		}
+		if unitFileStateToggleable(serviceState) {
+			commands = append(commands, []string{"disable", serviceUnit})
+		}
+		return commands, nil
+	}
+	return nil, fmt.Errorf("cannot %s autostart for %s (service: %s, socket: %s)", action, serviceUnit, serviceState, socketState)
 }
 
 func systemdUnitFileExists(ctx context.Context, unitName, unitType string) bool {

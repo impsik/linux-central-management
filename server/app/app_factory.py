@@ -380,12 +380,16 @@ async def lifespan(app: FastAPI):
         task4 = None
 
     # Background hourly CVE report loop
-    try:
-        from .services.cve_reporting import cve_reporting_loop
-        task5 = asyncio.create_task(cve_reporting_loop(stop_event))
-        logger.info('Started CVE reporting loop')
-    except Exception:
-        logger.exception('Failed to start CVE reporting loop')
+    if settings.cve_reporting_enabled:
+        try:
+            from .services.cve_reporting import cve_reporting_loop
+            task5 = asyncio.create_task(cve_reporting_loop(stop_event))
+            logger.info('Started CVE reporting loop')
+        except Exception:
+            logger.exception('Failed to start CVE reporting loop')
+            task5 = None
+    else:
+        logger.info('CVE reporting loop disabled by configuration')
         task5 = None
 
     try:

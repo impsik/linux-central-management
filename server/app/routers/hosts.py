@@ -865,14 +865,14 @@ def list_host_packages(
             )
         ).scalars().all()
         
+        # Match each CVE against the installed package without scanning the
+        # entire package page for every CVE row. Preserve first-match semantics.
+        installed_versions = {}
+        for r in rows:
+            installed_versions.setdefault(r.name, r.version)
+
         for c in cve_rows:
-            # Check version vulnerability locally
-            pkg_ver = None
-            # Find installed version
-            for r in rows:
-                if r.name == c.package_name:
-                    pkg_ver = r.version
-                    break
+            pkg_ver = installed_versions.get(c.package_name)
             
             if pkg_ver and is_vulnerable(pkg_ver, c.fixed_version):
                 if c.package_name not in pkg_cves:
