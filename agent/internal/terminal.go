@@ -248,7 +248,7 @@ func StartTerminalServer() {
 	// Back-compat env var names:
 	// - preferred: FLEET_TERMINAL_TOKEN (agent-side)
 	// - legacy:   AGENT_TERMINAL_TOKEN (server-side name; some deploys reused it)
-	// - legacy:   TERM_TOKEN (used by script.sh)
+	// - legacy:   TERM_TOKEN (older helper environments)
 	token := terminalSharedToken()
 	if token == "" {
 		log.Println("Terminal server disabled (set FLEET_TERMINAL_TOKEN)")

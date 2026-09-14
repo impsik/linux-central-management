@@ -650,13 +650,6 @@
     if (target) target.classList.add('active');
   }
 
-  function updateActiveHostSidebar(agentId) {
-    document.querySelectorAll('.host-item').forEach(function (item) {
-      item.classList.remove('active');
-      if (item.dataset.agentId === agentId) item.classList.add('active');
-    });
-  }
-
   function connectTerminalSession(opts) {
     const api = opts || {};
     const agentId = api.agentId;
@@ -668,7 +661,6 @@
     if (!agentId || !term) return;
 
     setCurrentAgentId(agentId);
-    updateActiveHostSidebar(agentId);
 
     const existing = getWs();
     if (existing) {
@@ -907,7 +899,6 @@
   w.renderSshHostsListView = renderSshHostsListView;
   w.renderTopProcessesTable = renderTopProcessesTable;
   w.setHostActionActive = setHostActionActive;
-  w.updateActiveHostSidebar = updateActiveHostSidebar;
   w.connectTerminalSession = connectTerminalSession;
   w.createUiStateAccess = createUiStateAccess;
   w.stopMetricsPollingLifecycle = stopMetricsPollingLifecycle;

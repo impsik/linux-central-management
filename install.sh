@@ -359,18 +359,6 @@ set_env_value() {
   fi
 }
 
-set_env_if_blank_or_placeholder() {
-  file="$1"
-  key="$2"
-  value="$3"
-  current="$(get_env_value "$file" "$key")"
-  if is_placeholder_value "$current"; then
-    set_env_value "$file" "$key" "$value"
-  else
-    info "Preserved existing $key"
-  fi
-}
-
 write_inventory() {
   hosts_input="$1"
   inventory_user="$2"
@@ -1034,7 +1022,6 @@ main() {
   set_env_value "$root_env" "FLEET_TERMINAL_CA_CERT" "$terminal_ca_cert"
   set_env_value "$root_env" "AGENT_TOKEN" "$final_agent_token"
   set_env_value "$root_env" "TERM_TOKEN" "$final_terminal_token"
-  set_env_value "$root_env" "TERM_LISTEN" "auto:18080"
 
   prepare_https "$server_url" "$fleet_server_ip" "$fleet_ca_cert" "$install_nginx"
   enrollment_pki_dir="$(dirname "$fleet_ca_cert")/enrollment"

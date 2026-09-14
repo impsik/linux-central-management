@@ -692,13 +692,14 @@ Additional deployment guidance is available in
 - [Security baseline and deployment hardening](docs/security-baseline.md)
 - [Load testing the agent API](docs/load-testing.md)
 - [Frontend testing notes](docs/frontend-testing-notes.md)
-- [Agent protocol](proto/README.md)
 - [Changelog](CHANGELOG.md)
 - [Release security checklist](RELEASE_SECURITY_CHECKLIST.md)
 
 The backend lives in `server/`, the Go agent in `agent/`, deployment files in
 `deploy/`, and Ansible playbooks in `ansible/`. The web UI uses HTML, CSS, and
 JavaScript templates in `server/app/templates/`.
+Agents use HTTPS requests and long polling; this repository does not use gRPC
+or generated Protocol Buffer sources.
 
 To run the tests from a development checkout, use Python 3.12 (the backend CI
 version), Node.js 22, and a Go toolchain compatible with `agent/go.mod`:

@@ -35,15 +35,6 @@ body {
   line-height: 1.1;
 }
 
-.guardian-top-search .host-search {
-  border-radius: 9px;
-  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
-  background: color-mix(in srgb, var(--panel-2) 78%, var(--panel));
-  font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
-  padding-left: .65rem;
-}
-
 .container {
   display: block;
   padding: 0;
@@ -362,12 +353,6 @@ body {
 :root[data-theme="light"] #fleet-actions .btn:hover {
   background: color-mix(in srgb, var(--app-sidebar-active) 78%, transparent);
   border-color: transparent;
-}
-
-:root[data-theme="light"] .guardian-top-search .host-search {
-  border-color: color-mix(in srgb, var(--primary) 22%, var(--border));
-  background: color-mix(in srgb, var(--panel-2) 88%, var(--panel));
-  color: var(--text);
 }
 
 :root[data-theme="light"] .fleet-main-shell {
@@ -897,7 +882,6 @@ table {
 }
 
 .service-status,
-.pkg-badge,
 .status-pill,
 .detail-pill,
 .host-context-bar,
@@ -912,15 +896,13 @@ table {
   border-radius: 3px;
 }
 
-.service-status.active,
-.pkg-badge.good {
+.service-status.active {
   border-color: color-mix(in srgb, var(--success) 40%, var(--border));
   background: color-mix(in srgb, var(--success) 10%, var(--panel));
   color: var(--success);
 }
 
-.service-status.inactive,
-.pkg-badge.bad {
+.service-status.inactive {
   border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
   background: color-mix(in srgb, var(--danger) 10%, var(--panel));
   color: var(--danger);

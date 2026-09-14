@@ -5,7 +5,7 @@
   become: true
 
   # Prefer non-interactive usage (CI / automation):
-  #   ansible-playbook -i inventory.yml user_access.yml -e target_hosts=... -e username=... -e sudo=true -e generate_password=true
+  #   ansible-playbook -i inventory.yml user_access.yml --limit <host-or-group> -e username=... -e sudo=true -e generate_password=true
   # Prompts are only used if variables are not provided.
   vars_prompt:
     - name: username

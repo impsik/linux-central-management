@@ -9,7 +9,7 @@ describe('regular-user owner visibility guards', () => {
   const hostListSrc = fs.readFileSync(hostListPath, 'utf8');
   const overviewSrc = fs.readFileSync(overviewPath, 'utf8');
 
-  it('clears stale current host selection when the sidebar host list no longer contains it', () => {
+  it('clears stale current host selection when the refreshed host inventory no longer contains it', () => {
     expect(hostListSrc).toContain("if (currentAgentId && !list.some((h) => String(h?.agent_id || '') === String(currentAgentId))) {");
     expect(hostListSrc).toContain("if (typeof ctx.clearCurrentHostSelection === 'function') ctx.clearCurrentHostSelection();");
   });

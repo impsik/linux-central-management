@@ -873,45 +873,6 @@
       applyHostsTableFilters(ctx);
       updateHostsUpdatesHint();
 
-      // Legacy hidden list fallback kept for compatibility.
-      const hostsEl = document.getElementById('hosts');
-      const hostText = (hostsEl?.textContent || '').toLowerCase();
-      if (hostsEl && hostText.includes('loading hosts')) {
-        hostsEl.innerHTML = hostsTableItemsCache.map((it) => {
-          const ip = it.ip_address || '';
-          const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
-          const labels = (it.labels && typeof it.labels === 'object') ? it.labels : {};
-          const env = labels.env || '';
-          const role = labels.role || '';
-          return `
-          <div class="host-item" data-agent-id="${w.escapeHtml(it.agent_id || '')}">
-            <div class="host-meta">
-              <div class="host-row-top">
-                <div class="host-name">${w.escapeHtml(it.hostname || it.agent_id || '')}</div>
-                <span class="status-dot ${it.is_online ? 'online' : 'offline'}"></span>
-              </div>
-              <div class="host-subline">
-                <span class="host-subitem">${w.escapeHtml(ip || it.agent_id || '')}</span>
-                <span class="host-subsep">•</span>
-                <span class="host-subitem">seen ${w.escapeHtml(lastSeen)}</span>
-              </div>
-              <div class="host-tags">
-                ${env ? `<span class="tag">env: <code>${w.escapeHtml(env)}</code></span>` : ''}
-                ${role ? `<span class="tag">role: <code>${w.escapeHtml(role)}</code></span>` : ''}
-              </div>
-            </div>
-          </div>
-        `;
-        }).join('');
-        hostsEl.querySelectorAll('.host-item').forEach((el) => {
-          el.addEventListener('click', () => {
-            const aid = el.getAttribute('data-agent-id') || '';
-            if (!aid) return;
-            const row = hostsTableItemsCache.find((x) => (x.agent_id || '') === aid) || {};
-            ctx.selectHost(aid, row.hostname || aid);
-          });
-        });
-      }
     } catch (e) {
       w.setTableState(tbody, 10, 'error', `Hosts table error: ${e.message || String(e)}`);
     }
@@ -1226,7 +1187,6 @@
     const navSshKeys = document.getElementById('nav-sshkeys');
     const navReports = document.getElementById('nav-reports');
     const nextCronjobsOpenBtn = document.getElementById('overview-next-cronjobs-open');
-    const containerEl = document.querySelector('.container');
 
   function setGuardedButtonState(btn, blocked, message) {
     if (!btn) return;
@@ -1312,7 +1272,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('server-info-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadFleetOverview();
       ctx.loadFailedRuns(24, false);
       ctx.loadQueueHealth(false);
@@ -1325,7 +1284,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('hosts-table-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.remove('sidebar-collapsed');
       ctx.loadHostsTable();
     }
 
@@ -1333,7 +1291,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('cronjobs-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadCronjobs();
     }
 
@@ -1342,7 +1299,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('user-management-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     function showServiceManagementTab() {
@@ -1350,7 +1306,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('service-management-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     function showFirewallManagementTab() {
@@ -1358,14 +1313,12 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('firewall-management-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     function showSshKeysTab() {
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('sshkeys-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadSshKeys();
       ctx.loadSshKeyRequests();
       ctx.maybeLoadSshKeyAdminQueue();
@@ -1376,7 +1329,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('reports-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     navOverview?.addEventListener('click', (e) => { e.preventDefault(); showOverviewTab(); });
