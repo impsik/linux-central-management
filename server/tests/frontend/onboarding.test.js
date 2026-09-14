@@ -97,6 +97,28 @@ describe('first-host setup', () => {
     expect(el('fleet-onboarding').hidden).toBe(false);
   });
 
+  it('creates a node-side command and follows its unique agent identity', async () => {
+    const { w, el, ctx, tick } = setup();
+    w.getCookie = () => 'csrf-value';
+    w.fleetOnboarding.init(ctx);
+    await tick();
+    w.fetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({
+      id: 'enrollment-1', agent_id: 'node-unique', command: 'verified join command',
+      expires_at: '2026-09-14T19:00:00Z',
+    }) });
+    await el('onboarding-join').listeners.click();
+    await tick();
+    expect(w.fetch).toHaveBeenCalledWith('/onboarding/enrollments', expect.objectContaining({
+      method: 'POST', headers: { 'X-CSRF-Token': 'csrf-value' },
+    }));
+    expect(el('onboarding-command').textContent).toBe('verified join command');
+    expect(el('onboarding-run-title').textContent).toContain('managed Linux host');
+    expect(w.fetch.mock.calls.at(-1)[0]).toContain('target=node-unique');
+    await el('onboarding-revoke').listeners.click();
+    expect(el('onboarding-command-box').hidden).toBe(true);
+    expect(el('onboarding-command').textContent).toBe('');
+  });
+
   it('keeps API errors distinct from an unregistered host', async () => {
     const { w, el, ctx, tick } = setup();
     w.fleetOnboarding.init(ctx);

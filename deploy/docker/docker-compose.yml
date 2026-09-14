@@ -18,7 +18,8 @@ services:
       retries: 20
   server:
     build:
-      context: ../../server
+      context: ../..
+      dockerfile: server/Dockerfile
     env_file:
       - .env
     environment:
@@ -102,6 +103,7 @@ services:
       # Keep the application private behind the host reverse proxy.
       - "127.0.0.1:18000:8000"
     volumes:
+      - ${FLEET_ENROLLMENT_PKI_DIR:-/etc/fleet-pki/enrollment}:/run/fleet-enrollment:ro
       - ../../ansible:/ansible:ro
       - ../../ansible_logs:/ansible_logs
       # Optional: mount SSH keys for in-container Ansible.
