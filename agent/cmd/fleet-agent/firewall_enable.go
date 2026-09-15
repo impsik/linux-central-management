@@ -54,16 +54,35 @@ type firewallState struct {
 	active  bool
 }
 
-func inspectFirewall(ctx context.Context, ops firewallOps) (firewallState, error) {
+func inspectFirewallManagers(ctx context.Context, ops firewallOps) ([]string, []string, error) {
 	var installed, active []string
 	if _, err := ops.lookPath("firewall-cmd"); err == nil {
 		installed = append(installed, "firewalld")
-		out, err := ops.run(ctx, "firewall-cmd", "--state")
-		state := strings.TrimSpace(strings.ToLower(string(out)))
-		if err == nil && state == "running" {
+		// A firewall-cmd D-Bus connection can activate a stopped daemon on some
+		// distributions. Inspect systemd first so scanning or verifying disable
+		// cannot itself start firewalld again.
+		out, err := ops.run(ctx, "systemctl", "show", "firewalld", "--property=LoadState,ActiveState")
+		properties := map[string]string{}
+		for _, line := range strings.Split(string(out), "\n") {
+			if key, value, ok := strings.Cut(line, "="); ok {
+				properties[key] = strings.TrimSpace(value)
+			}
+		}
+		loadState, serviceState := properties["LoadState"], properties["ActiveState"]
+		if err != nil || (loadState != "loaded" && loadState != "masked") {
+			return nil, nil, fmt.Errorf("cannot determine firewalld systemd state: %s", strings.TrimSpace(string(out)))
+		}
+		switch serviceState {
+		case "inactive", "failed":
+			// No D-Bus requests for a stopped service.
+		case "active":
+			out, err := ops.run(ctx, "firewall-cmd", "--state")
+			if err != nil || strings.TrimSpace(strings.ToLower(string(out))) != "running" {
+				return nil, nil, fmt.Errorf("cannot verify active firewalld state: %s", strings.TrimSpace(string(out)))
+			}
 			active = append(active, "firewalld")
-		} else if !strings.Contains(state, "not running") && state != "not-running" {
-			return firewallState{}, fmt.Errorf("cannot determine firewalld state: %s", strings.TrimSpace(string(out)))
+		default:
+			return nil, nil, fmt.Errorf("cannot determine stable firewalld state (systemd state %q); retry when the service has settled", serviceState)
 		}
 	}
 	if _, err := ops.lookPath("ufw"); err == nil {
@@ -71,13 +90,21 @@ func inspectFirewall(ctx context.Context, ops firewallOps) (firewallState, error
 		out, err := ops.privileged(ctx, "ufw", "status")
 		state := strings.ToLower(string(out))
 		if err != nil {
-			return firewallState{}, fmt.Errorf("cannot determine UFW state: %s", strings.TrimSpace(string(out)))
+			return nil, nil, fmt.Errorf("cannot determine UFW state: %s", strings.TrimSpace(string(out)))
 		}
 		if strings.Contains(state, "status: active") {
 			active = append(active, "ufw")
 		} else if !strings.Contains(state, "status: inactive") {
-			return firewallState{}, fmt.Errorf("cannot determine UFW state")
+			return nil, nil, fmt.Errorf("cannot determine UFW state")
 		}
+	}
+	return installed, active, nil
+}
+
+func inspectFirewall(ctx context.Context, ops firewallOps) (firewallState, error) {
+	installed, active, err := inspectFirewallManagers(ctx, ops)
+	if err != nil {
+		return firewallState{}, err
 	}
 	if len(active) > 1 {
 		return firewallState{}, fmt.Errorf("both UFW and firewalld are active; resolve the conflicting managers before continuing")

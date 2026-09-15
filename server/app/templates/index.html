@@ -867,7 +867,7 @@
     <div class="tab-content-custom" id="firewall-management-tab">
       <div class="admin-content">
         <div class="section-title">Firewall management</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">Review and enable firewalls on selected online servers, or manage their allow and deny rules.</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Review, enable or disable firewalls on selected online servers, or manage their allow and deny rules.</div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">Fleet firewall rules</div>
@@ -876,6 +876,7 @@
               <button class="btn btn-primary" id="firewall-management-refresh" type="button">Scan hosts</button>
               <button class="btn" id="firewall-management-select-all" type="button">Select all</button>
               <button class="btn btn-primary" id="firewall-management-enable" type="button" disabled>Enable selected</button>
+              <button class="btn btn-danger" id="firewall-management-disable" type="button" disabled>Disable selected</button>
               <div style="min-width:110px;">
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
                 <input id="firewall-management-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />

@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- Firewall management can disable active UFW or firewalld on selected hosts,
+  preserving saved rules and verifying the resulting state.
 - Live name/description search in Hosts → Services, with matching counts and
   a clear button; the filter survives refreshes of the same host.
 - Firewall management can enable installed UFW or firewalld across selected
@@ -15,6 +17,8 @@ All notable changes to this project are documented in this file.
   heartbeat/inventory/job polling, and concurrent authenticated UI API probes.
 
 ### Fixed
+- Firewalld status checks inspect systemd before using D-Bus, so scanning a
+  stopped firewall does not reactivate it through service activation.
 - Inactive firewalld is recognized during firewall scans. Firewall actions
   retain command diagnostics after rescanning and recover from stalled requests.
 - Agent authentication and job polling release database connections before

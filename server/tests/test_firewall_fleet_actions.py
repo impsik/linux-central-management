@@ -90,33 +90,34 @@ def assert_no_jobs(api):
             assert db.execute(select(func.count()).select_from(model)).scalar_one() == 0
 
 
-def test_enable_uses_only_selected_visible_online_hosts_and_records_activation(firewall_api):
+@pytest.mark.parametrize("action", ["enable", "disable"])
+def test_firewall_state_uses_selected_visible_online_hosts_and_records_action(firewall_api, action):
     api = firewall_api
-    response = api.client.post("/reports/firewall-rules/enable", json={
+    response = api.client.post(f"/reports/firewall-rules/{action}", json={
         "agent_ids": [" owned ", "scoped", "owned", "offline", "foreign", "missing"],
     })
     assert response.status_code == 200, response.text
     result = response.json()
-    assert result["action"] == "enable"
-    assert result["rule"] == {"action": "enable"}
+    assert result["action"] == action
+    assert result["rule"] == {"action": action}
     assert result["targets"] == ["owned", "scoped"]
     assert result["skipped_offline"] == ["offline"]
     assert result["unknown_or_unavailable"] == ["foreign", "missing"]
-    wire = {"job_id": result["job_id"], "type": "firewall-control", "action": "enable"}
+    wire = {"job_id": result["job_id"], "type": "firewall-control", "action": action}
     assert api.dispatched == [("owned", wire), ("scoped", wire)]
     with api.sessions() as db:
         job = db.execute(select(api.models.Job)).scalar_one()
         assert job.job_key == result["job_id"]
         assert job.job_type == "firewall-control"
-        assert job.payload == {"action": "enable", "source_context": "firewall-rules"}
+        assert job.payload == {"action": action, "source_context": "firewall-rules"}
         assert job.selector == {"agent_ids": ["owned", "scoped"]}
         assert api.build_payload(job, "owned") == wire
         runs = db.execute(select(api.models.JobRun).order_by(api.models.JobRun.agent_id)).scalars().all()
         assert [(run.agent_id, run.status) for run in runs] == [("owned", "queued"), ("scoped", "queued")]
         assert all(run.job_nonce for run in runs)
         event = db.execute(select(api.models.AuditEvent)).scalar_one()
-        assert event.action == "reports.firewall_rules.enable"
-        assert (event.target_type, event.target_name) == ("firewall", "enable")
+        assert event.action == f"reports.firewall_rules.{action}"
+        assert (event.target_type, event.target_name) == ("firewall", action)
         assert event.actor_username == "imre"
         assert event.meta == {
             "job_id": result["job_id"], "target_count": 2,
@@ -125,34 +126,38 @@ def test_enable_uses_only_selected_visible_online_hosts_and_records_activation(f
         }
 
 
-def test_admin_enable_still_requires_explicit_selection(firewall_api):
+@pytest.mark.parametrize("action", ["enable", "disable"])
+def test_admin_firewall_state_action_still_requires_explicit_selection(firewall_api, action):
     api = firewall_api
     api.actor.role = "admin"
-    response = api.client.post("/reports/firewall-rules/enable", json={"agent_ids": ["foreign"]})
+    response = api.client.post(f"/reports/firewall-rules/{action}", json={"agent_ids": ["foreign"]})
     assert response.status_code == 200, response.text
     assert response.json()["targets"] == ["foreign"]
     assert [agent_id for agent_id, _ in api.dispatched] == ["foreign"]
 
 
-def test_readonly_cannot_enable_firewall(firewall_api):
+@pytest.mark.parametrize("action", ["enable", "disable"])
+def test_readonly_cannot_change_firewall_state(firewall_api, action):
     api = firewall_api
     api.actor.role = "readonly"
-    response = api.client.post("/reports/firewall-rules/enable", json={"agent_ids": ["owned"]})
+    response = api.client.post(f"/reports/firewall-rules/{action}", json={"agent_ids": ["owned"]})
     assert response.status_code == 403
     assert_no_jobs(api)
 
 
 @pytest.mark.parametrize("body", [{}, {"agent_ids": None}, {"agent_ids": []}, {"agent_ids": ["", " \t"]}])
-def test_enable_rejects_empty_selection_instead_of_targeting_fleet(firewall_api, body):
-    response = firewall_api.client.post("/reports/firewall-rules/enable", json=body)
+@pytest.mark.parametrize("action", ["enable", "disable"])
+def test_firewall_state_action_rejects_empty_selection_instead_of_targeting_fleet(firewall_api, body, action):
+    response = firewall_api.client.post(f"/reports/firewall-rules/{action}", json=body)
     assert response.status_code == 400
     assert response.json()["detail"] == "agent_ids is required"
     assert_no_jobs(firewall_api)
 
 
 @pytest.mark.parametrize("agent_id", ["foreign", "missing", "offline"])
-def test_enable_rejects_selection_without_visible_online_hosts(firewall_api, agent_id):
-    response = firewall_api.client.post("/reports/firewall-rules/enable", json={"agent_ids": [agent_id]})
+@pytest.mark.parametrize("action", ["enable", "disable"])
+def test_firewall_state_action_rejects_selection_without_visible_online_hosts(firewall_api, agent_id, action):
+    response = firewall_api.client.post(f"/reports/firewall-rules/{action}", json={"agent_ids": [agent_id]})
     assert response.status_code == 400
     assert "No online matching hosts" in response.json()["detail"]
     assert_no_jobs(firewall_api)
@@ -165,7 +170,7 @@ def test_enable_rejects_selection_without_visible_online_hosts(firewall_api, age
     ("allow", {"port": 0}, "port must be between"),
     ("deny", {"port": 65536}, "port must be between"),
     ("delete", {"port": 22, "protocol": "icmp"}, "protocol must be tcp or udp"),
-    ("disable", {"port": 22}, "Invalid action"),
+    ("restart", {"port": 22}, "Invalid action"),
 ])
 def test_existing_firewall_rule_validation_is_preserved(firewall_api, action, rule, error):
     response = firewall_api.client.post(f"/reports/firewall-rules/{action}", json={"agent_ids": ["owned"], **rule})

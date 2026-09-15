@@ -12,7 +12,7 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
   const node = () => ({ value: '', textContent: '', disabled: false, checked: false, events: {},
     addEventListener(type, listener) { this.events[type] = listener; },
   });
-  const elements = Object.fromEntries(['refresh', 'select-all', 'check-all', 'enable', 'allow', 'deny', 'delete',
+  const elements = Object.fromEntries(['refresh', 'select-all', 'check-all', 'enable', 'disable', 'allow', 'deny', 'delete',
     'status', 'result', 'table-body', 'port', 'service', 'protocol', 'source'].map(name => [name, node()]));
   let markup = '';
   let checks = [];
@@ -32,7 +32,9 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
   const fetch = vi.fn(async url => {
     if (url.startsWith('/reports/firewall-rules?')) return response({ items });
     if (url === '/reports/firewall-rules/enable') return response({ job_id: 'job-1', targets: ['node-1'] });
+    if (url === '/reports/firewall-rules/disable') return response({ job_id: 'job-2', targets: ['node-2'] });
     if (url === '/jobs/job-1') return response({ done: true, runs: [{ agent_id: 'node-1', status: 'success' }] });
+    if (url === '/jobs/job-2') return response({ done: true, runs: [{ agent_id: 'node-2', status: 'success' }] });
     throw new Error(`Unexpected URL: ${url}`);
   });
   const browser = { document: { getElementById: id => elements[id.replace('firewall-management-', '')] || null },
@@ -60,9 +62,10 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
 
 afterEach(() => vi.useRealTimers());
 
-describe('fleet firewall activation', () => {
-  it('provides an accessible enable action and durable result area in the real template', () => {
+describe('fleet firewall state changes', () => {
+  it('provides enable/disable actions and a durable result area in the real template', () => {
     expect(html).toMatch(/id="firewall-management-enable"[^>]*disabled>Enable selected/);
+    expect(html).toMatch(/id="firewall-management-disable"[^>]*disabled>Disable selected/);
     expect(html).toMatch(/id="firewall-management-result"[^>]*role="status"[^>]*aria-live="polite"/);
   });
 
@@ -93,18 +96,18 @@ describe('fleet firewall activation', () => {
     expect(s.showToast).toHaveBeenCalledWith('Enable: 1 succeeded, 0 failed.', 'success');
   });
 
-  it('blocks readonly users and cancelled confirmations', async () => {
+  it.each([['enable', 'node-1'], ['disable', 'node-2']])('blocks readonly users and cancelled %s confirmations', async (action, agentId) => {
     const readonly = setup({ canManage: false });
     await readonly.scan();
-    readonly.select('node-1');
-    readonly.click('enable');
-    expect(readonly.elements.enable.disabled).toBe(true);
+    readonly.select(agentId);
+    readonly.click(action);
+    expect(readonly.elements[action].disabled).toBe(true);
     expect(readonly.fetch).toHaveBeenCalledTimes(1);
     const cancelled = setup();
     await cancelled.scan();
-    cancelled.select('node-1');
+    cancelled.select(agentId);
     cancelled.browser.confirm.mockReturnValue(false);
-    cancelled.click('enable');
+    cancelled.click(action);
     expect(cancelled.fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -117,12 +120,55 @@ describe('fleet firewall activation', () => {
     s.fetch.mockImplementation((url, options) => url.endsWith('/enable') ? new Promise(resolve => { finish = resolve; }) : original(url, options));
     s.click('enable');
     s.select('node-2');
-    for (const name of ['enable', 'allow', 'deny', 'delete', 'refresh', 'select-all', 'check-all']) expect(s.elements[name].disabled).toBe(true);
+    for (const name of ['enable', 'disable', 'allow', 'deny', 'delete', 'refresh', 'select-all', 'check-all']) expect(s.elements[name].disabled).toBe(true);
     s.click('enable');
+    s.click('disable');
     s.click('refresh');
     expect(s.fetch.mock.calls.filter(([url]) => url.endsWith('/enable'))).toHaveLength(1);
+    expect(s.fetch.mock.calls.some(([url]) => url.endsWith('/disable'))).toBe(false);
     finish(response({ job_id: 'job-1', targets: ['node-1'] }));
     await vi.waitFor(() => expect(s.elements.refresh.disabled).toBe(false));
+  });
+
+  it('disables only selected active hosts without rule fields and refreshes their state', async () => {
+    const s = setup();
+    expect(s.elements.disable.disabled).toBe(true);
+    await s.scan();
+    s.select('node-1');
+    expect(s.elements.disable.disabled).toBe(true);
+    s.select('node-2');
+    expect(s.elements.disable.disabled).toBe(false);
+    const original = s.fetch.getMockImplementation();
+    s.fetch.mockImplementation((url, options) => url.startsWith('/reports/firewall-rules?')
+      ? response({ items: [inactive, { ...active, status: 'inactive' }] }) : original(url, options));
+    s.elements.port.value = 'invalid';
+    s.elements.service.value = 'irrelevant';
+    s.click('disable');
+    await vi.waitFor(() => expect(s.elements.result.textContent).toContain('Disable: 1 succeeded, 0 failed.'));
+    const confirmation = s.browser.confirm.mock.calls[0][0];
+    expect(confirmation).toContain('slave2');
+    expect(confirmation).not.toContain('slave1');
+    expect(confirmation).toContain('Host firewall protection will stop');
+    expect(confirmation).toContain('Saved rules will be kept.');
+    const post = s.fetch.mock.calls.find(([url]) => url === '/reports/firewall-rules/disable');
+    expect(JSON.parse(post[1].body)).toEqual({ agent_ids: ['node-2'] });
+    expect(s.showToast).toHaveBeenCalledWith('Disable: 1 succeeded, 0 failed.', 'success');
+    s.select('node-2');
+    expect(s.elements.disable.disabled).toBe(true);
+    expect(s.elements.enable.disabled).toBe(false);
+  });
+
+  it('keeps a disable failure visible after the rescan', async () => {
+    const s = setup();
+    await s.scan();
+    s.select('node-2');
+    const original = s.fetch.getMockImplementation();
+    s.fetch.mockImplementation((url, options) => url === '/jobs/job-2'
+      ? response({ done: true, runs: [{ agent_id: 'node-2', status: 'failed', error: 'firewalld remains active', stderr_tail: 'stop failed' }] }) : original(url, options));
+    s.click('disable');
+    await vi.waitFor(() => expect(s.elements.result.textContent).toContain('slave2: firewalld remains active: stop failed'));
+    expect(s.showToast).toHaveBeenCalledWith('Disable: 0 succeeded, 1 failed.', 'error');
+    expect(s.elements.refresh.disabled).toBe(false);
   });
 
   it('retains host-specific failures after the status rescan and never toasts them as success', async () => {

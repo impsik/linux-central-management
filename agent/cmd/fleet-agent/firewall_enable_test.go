@@ -72,6 +72,11 @@ func (f *fakeFirewall) run(_ context.Context, name string, args ...string) ([]by
 		return []byte(reply.text), reply.err
 	}
 	switch key {
+	case "systemctl show firewalld --property=LoadState,ActiveState":
+		if f.active["firewalld"] {
+			return []byte("LoadState=loaded\nActiveState=active\n"), nil
+		}
+		return []byte("LoadState=loaded\nActiveState=inactive\n"), nil
 	case "firewall-cmd --state":
 		if f.active["firewalld"] {
 			return []byte("running\n"), nil
@@ -93,8 +98,14 @@ func (f *fakeFirewall) run(_ context.Context, name string, args ...string) ([]by
 	case "ufw --force enable":
 		f.active["ufw"] = true
 		return nil, nil
+	case "ufw --force disable":
+		f.active["ufw"] = false
+		return nil, nil
 	case "systemctl enable --now firewalld":
 		f.active["firewalld"] = true
+		return nil, nil
+	case "systemctl disable --now firewalld":
+		f.active["firewalld"] = false
 		return nil, nil
 	case "systemctl enable firewalld":
 		return nil, nil
@@ -230,7 +241,7 @@ func TestEnableKeepsActiveManagerWithoutChangingRules(t *testing.T) {
 				t.Fatalf("%s: %s", stdout, message)
 			}
 			for _, call := range f.calls {
-				if call != "ufw status" && call != "firewall-cmd --state" && !(backend == "firewalld" && call == "systemctl enable firewalld") {
+				if call != "ufw status" && call != "firewall-cmd --state" && call != "systemctl show firewalld --property=LoadState,ActiveState" && !(backend == "firewalld" && call == "systemctl enable firewalld") {
 					t.Fatalf("active ruleset was changed: %v", f.calls)
 				}
 			}
@@ -379,5 +390,52 @@ func TestFirewalldManagementRulesAreReportedAsAllows(t *testing.T) {
 	}
 	if rule := firewalldRichRule(`rule source address="198.51.100.9" drop`); rule.Action != "deny" {
 		t.Fatalf("incorrect deny rule: %+v", rule)
+	}
+}
+
+func TestFirewalldInspectionDoesNotActivateStoppedDaemon(t *testing.T) {
+	for _, serviceState := range []string{"inactive", "failed"} {
+		f := newFakeFirewall("firewalld")
+		f.replies["systemctl show firewalld --property=LoadState,ActiveState"] = firewallReply{text: "LoadState=loaded\nActiveState=" + serviceState}
+		state, err := inspectFirewall(context.Background(), f.ops)
+		if err != nil || state.active || state.backend != "firewalld" {
+			t.Fatalf("service=%s state=%+v err=%v", serviceState, state, err)
+		}
+		for _, call := range f.calls {
+			if call == "firewall-cmd --state" {
+				t.Fatalf("%s service inspected through potentially activating D-Bus call", serviceState)
+			}
+		}
+	}
+}
+
+func TestFirewalldInspectionFailsSafelyOnUnstableOrUnreadableService(t *testing.T) {
+	for _, reply := range []firewallReply{
+		{text: "LoadState=loaded\nActiveState=activating"},
+		{text: "LoadState=loaded\nActiveState=deactivating"},
+		{text: "LoadState=loaded\nActiveState=unknown"},
+		{text: "LoadState=not-found\nActiveState=inactive"},
+		{text: "LoadState=loaded"},
+		{text: "LoadState=loaded\nActiveState=inactive", err: fmt.Errorf("systemd unavailable")},
+	} {
+		f := newFakeFirewall("firewalld")
+		f.replies["systemctl show firewalld --property=LoadState,ActiveState"] = reply
+		if _, err := inspectFirewall(context.Background(), f.ops); err == nil {
+			t.Fatalf("accepted uncertain systemd state: %q", reply.text)
+		}
+		for _, call := range f.calls {
+			if call == "firewall-cmd --state" {
+				t.Fatal("uncertain state must not fall back to D-Bus activation")
+			}
+		}
+	}
+}
+
+func TestFirewalldInspectionVerifiesActiveDaemon(t *testing.T) {
+	f := newFakeFirewall("firewalld")
+	f.active["firewalld"] = true
+	f.replies["firewall-cmd --state"] = firewallReply{text: "not running", err: fmt.Errorf("exit 252")}
+	if _, err := inspectFirewall(context.Background(), f.ops); err == nil {
+		t.Fatal("systemd active alone must not prove a functioning firewalld daemon")
 	}
 }

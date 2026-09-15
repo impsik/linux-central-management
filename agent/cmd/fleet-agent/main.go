@@ -1605,8 +1605,11 @@ func controlFirewall(ctx context.Context, action string, port int, protocol, sou
 	if action == "enable" {
 		return enableFirewall(ctx, serverURL, systemFirewallOps())
 	}
+	if action == "disable" {
+		return disableFirewall(ctx, systemFirewallOps())
+	}
 	if action != "allow" && action != "deny" && action != "delete" {
-		return "", "", 1, "action must be allow, deny, delete, or enable"
+		return "", "", 1, "action must be allow, deny, delete, enable, or disable"
 	}
 	protocol = strings.ToLower(strings.TrimSpace(protocol))
 	if protocol == "" {

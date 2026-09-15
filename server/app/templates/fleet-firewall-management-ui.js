@@ -62,6 +62,7 @@
     const denyBtn = document.getElementById('firewall-management-deny');
     const deleteBtn = document.getElementById('firewall-management-delete');
     const enableBtn = document.getElementById('firewall-management-enable');
+    const disableBtn = document.getElementById('firewall-management-disable');
     const statusEl = document.getElementById('firewall-management-status');
     const resultEl = document.getElementById('firewall-management-result');
     const bodyEl = document.getElementById('firewall-management-table-body');
@@ -85,6 +86,12 @@
         && ['inactive', 'stopped', 'not running', 'disabled'].includes(String(item.status).toLowerCase());
     }
 
+    function canDisable(agentId) {
+      const item = firewallItems.get(agentId);
+      return item && ['ufw', 'firewalld'].includes(String(item.backend).toLowerCase())
+        && ['active', 'running', 'enabled'].includes(String(item.status).toLowerCase());
+    }
+
     function updateFirewallActionState() {
       const currentPermissions = ctx.getCurrentPermissions();
       const canManage = !!currentPermissions?.can_manage_services;
@@ -98,6 +105,10 @@
       if (enableBtn) {
         enableBtn.disabled = busy || !canManage || !selected.some(canEnable);
         enableBtn.title = !canManage ? 'Service management permission required' : 'Enable inactive firewalls on selected hosts';
+      }
+      if (disableBtn) {
+        disableBtn.disabled = busy || !canManage || !selected.some(canDisable);
+        disableBtn.title = !canManage ? 'Service management permission required' : 'Disable active firewalls on selected hosts; keep saved rules';
       }
       [refreshBtn, selectAllBtn, checkAllEl].forEach((el) => { if (el) el.disabled = busy; });
       bodyEl.querySelectorAll('input[data-firewall-agent-id]').forEach((cb) => { cb.disabled = busy || !canManage; });
@@ -181,23 +192,25 @@
     async function runFirewallOperation(action) {
       if (busy || !ctx.getCurrentPermissions()?.can_manage_services) return;
       const enabling = action === 'enable';
-      const agentIds = selectedFirewallAgentIds().filter((id) => !enabling || canEnable(id));
+      const disabling = action === 'disable';
+      const changingState = enabling || disabling;
+      const agentIds = selectedFirewallAgentIds().filter((id) => enabling ? canEnable(id) : disabling ? canDisable(id) : true);
       const port = Number(portEl?.value || '0');
       const service = String(serviceEl?.value || '').trim();
       const protocol = protoEl?.value || 'tcp';
       const source = String(sourceEl?.value || '').trim();
       if (!agentIds.length) {
-        if (typeof ctx.showToast === 'function') ctx.showToast(enabling ? 'Select a host with an inactive firewall' : 'Select at least one host', 'error');
+        if (typeof ctx.showToast === 'function') ctx.showToast(enabling ? 'Select a host with an inactive firewall' : disabling ? 'Select a host with an active firewall' : 'Select at least one host', 'error');
         return;
       }
-      if (!enabling && !service && (!port || port < 1 || port > 65535)) {
+      if (!changingState && !service && (!port || port < 1 || port > 65535)) {
         if (typeof ctx.showToast === 'function') ctx.showToast('Enter a valid port or service', 'error');
         return;
       }
-      const label = enabling ? 'Enable' : action === 'delete' ? 'Remove allow' : action === 'allow' ? 'Allow' : 'Deny';
+      const label = enabling ? 'Enable' : disabling ? 'Disable' : action === 'delete' ? 'Remove allow' : action === 'allow' ? 'Allow' : 'Deny';
       const target = service ? `service ${service}` : `${port}/${protocol}`;
-      const confirmation = enabling
-        ? `Enable firewalls on ${agentIds.length} selected host(s)?\n\n${agentIds.map((id) => firewallItems.get(id)?.hostname || id).join('\n')}\n\nExisting firewall rules will take effect.`
+      const confirmation = changingState
+        ? `${label} firewalls on ${agentIds.length} selected host(s)?\n\n${agentIds.map((id) => firewallItems.get(id)?.hostname || id).join('\n')}\n\n${enabling ? 'Existing firewall rules will take effect.' : 'Host firewall protection will stop and automatic startup will be disabled. Saved rules will be kept.'}`
         : `${label} ${target} on ${agentIds.length} selected host(s)?`;
       if (!confirm(confirmation)) return;
 
@@ -210,7 +223,7 @@
         const data = await boundedJsonFetch(`/reports/firewall-rules/${encodeURIComponent(action)}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(enabling ? { agent_ids: agentIds } : { agent_ids: agentIds, port, protocol, source, service }),
+          body: JSON.stringify(changingState ? { agent_ids: agentIds } : { agent_ids: agentIds, port, protocol, source, service }),
         });
         if (!data.job_id) throw new Error('Server did not return a firewall job');
         queuedJobId = data.job_id;
@@ -275,6 +288,7 @@
     denyBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('deny'); });
     deleteBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('delete'); });
     enableBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('enable'); });
+    disableBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('disable'); });
     updateFirewallActionState();
   }
 

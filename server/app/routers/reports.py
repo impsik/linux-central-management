@@ -63,11 +63,11 @@ class FirewallFleetActionRequest(BaseModel):
 
 def _normalize_firewall_action(action: str, payload: FirewallFleetActionRequest) -> dict:
     action_norm = (action or "").strip().lower()
-    if action_norm not in ("allow", "deny", "delete", "enable"):
-        raise HTTPException(400, "Invalid action. Must be allow, deny, delete, or enable.")
-    if action_norm == "enable":
-        # Activation is host-wide; it does not create or modify a specific rule.
-        return {"action": "enable"}
+    if action_norm not in ("allow", "deny", "delete", "enable", "disable"):
+        raise HTTPException(400, "Invalid action. Must be allow, deny, delete, enable, or disable.")
+    if action_norm in ("enable", "disable"):
+        # Changing firewall state does not create or modify a specific rule.
+        return {"action": action_norm}
     protocol = (payload.protocol or "tcp").strip().lower()
     if protocol not in ("tcp", "udp"):
         raise HTTPException(400, "protocol must be tcp or udp")
@@ -827,8 +827,8 @@ async def firewall_rules_action(
             action=f"reports.firewall_rules.{rule['action']}",
             actor=user,
             request=request,
-            target_type="firewall" if rule["action"] == "enable" else "firewall_rule",
-            target_name="enable" if rule["action"] == "enable" else rule.get("service") or f"{rule.get('port')}/{rule.get('protocol')}",
+            target_type="firewall" if rule["action"] in ("enable", "disable") else "firewall_rule",
+            target_name=rule["action"] if rule["action"] in ("enable", "disable") else rule.get("service") or f"{rule.get('port')}/{rule.get('protocol')}",
             meta={
                 "job_id": created.job_key,
                 "target_count": len(targets),

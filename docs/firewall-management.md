@@ -1,9 +1,10 @@
 # Firewall management
 
 Update both the Master and the managed node agents from the checkout containing
-this feature. Older agents can report firewall status but do not support the
-new activation action. Keep each node's existing identity and credentials when
-updating its agent.
+these features. Older agents can report firewall status but may not support
+enabling or disabling it. Updating the Master alone does not replace existing
+node binaries. Keep each node's existing identity and credentials when updating
+its agent; the displayed release number can be the same for different builds.
 
 ## Enable firewalls across hosts
 
@@ -20,6 +21,20 @@ firewall rules take effect; application ports need appropriate allow rules.
 Results show success and failure counts, host-specific errors, and hosts skipped
 because they became unavailable. The table refreshes after the job. If a job is
 still running or its result could not be confirmed, scan again before retrying.
+
+## Disable firewalls across hosts
+
+Scan the hosts, select those with an active firewall, and click **Disable
+selected**. The confirmation lists only the hosts whose firewalls will stop.
+Inactive hosts are skipped by this action. No port or service input is needed.
+
+The agent runs UFW's disable command, or stops and disables the firewalld service.
+It verifies that the selected firewall is inactive before reporting success.
+Saved rules remain available for **Enable selected**. Disabling stops host
+firewall protection and turns off its configured automatic startup; it does not
+mask firewalld or prevent an administrator or another service from starting it.
+The same service-management permissions, host scope, job results and audit trail
+apply as for enabling.
 
 ## Keep Master access available
 

@@ -62,7 +62,7 @@ for the beta changes.
 - service status, live search by name or description, and start, stop, restart,
   enable, and disable operations;
 - user-account, SSH-key, and sudo-access management;
-- firewall inspection, rule management, and activation across selected hosts
+- firewall inspection, rule management, and enabling/disabling across selected hosts
   ([usage and management-access checks](docs/firewall-management.md));
 - browser terminal access to managed hosts;
 - Ansible-backed actions across one or more selected hosts.
