@@ -908,7 +908,7 @@
               <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove rules…</button>
               <span id="firewall-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
             </div>
-            <div id="firewall-management-rule-help" class="admin-note">Port mode opens the specified port. Profile mode uses an existing UFW application profile or firewalld service on every selected host; it is not a rule name or a system service name.</div>
+            <div id="firewall-management-rule-help" class="admin-note">Port mode adds a rule for the specified port. It does not replace existing rules or start a service. Inactive firewalls save rules without enforcing them. Profile mode uses an existing UFW application profile or firewalld service on every selected host; it is not a rule name or a system service name.</div>
             <div id="firewall-management-result" class="admin-note" role="status" aria-live="polite" style="white-space:pre-wrap;"></div>
             <div style="overflow:auto;">
               <table class="process-table hosts-table">
@@ -1601,15 +1601,19 @@
         </div>
         <div class="section-title">Firewall</div>
         <div class="admin-card" style="margin-bottom:1rem;">
-          <div class="admin-card-title">Rule action</div>
+          <div class="admin-card-title">Add a rule (existing rules are kept)</div>
           <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="min-width:150px;">
+              <label for="host-firewall-rule-type">Rule type</label>
+              <select id="host-firewall-rule-type" class="host-search"><option value="port">Port</option><option value="service">Firewall profile / service</option></select>
+            </div>
             <div style="min-width:110px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
               <input id="host-firewall-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
             </div>
             <div style="min-width:150px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Service</label>
-              <input id="host-firewall-service" class="host-search" type="text" placeholder="cockpit" />
+              <input id="host-firewall-service" class="host-search" type="text" placeholder="Existing profile name" disabled />
             </div>
             <div style="min-width:110px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
@@ -1624,7 +1628,6 @@
             </div>
             <button class="btn btn-success" id="host-firewall-allow" type="button">Allow</button>
             <button class="btn btn-warning" id="host-firewall-deny" type="button">Deny</button>
-            <button class="btn btn-danger" id="host-firewall-delete" type="button">Remove allow</button>
             <button class="btn" id="host-firewall-refresh" type="button">Refresh</button>
             <span id="host-firewall-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
           </div>
@@ -1865,7 +1868,7 @@
 
 <dialog id="firewall-remove-dialog" class="firewall-remove-dialog" aria-labelledby="firewall-remove-title">
   <h3 id="firewall-remove-title">Remove firewall rules</h3>
-  <p>Select only the rules to remove. Unchecked rules will be kept. IPv4 and IPv6 rules are separate selections.</p>
+  <p>Select only the rules to remove. Unchecked rules will be kept. Active UFW entries distinguish IPv4/IPv6; a saved rule on an inactive UFW firewall may cover both.</p>
   <p class="status-warn">Removing SSH or Console access rules can disconnect this host from the management server.</p>
   <div id="firewall-remove-rules" style="max-height:50vh;overflow:auto;"></div>
   <p id="firewall-remove-count" role="status" aria-live="polite"></p>

@@ -122,45 +122,7 @@ func inspectFirewall(ctx context.Context, ops firewallOps) (firewallState, error
 }
 
 func queryInactiveFirewalld(ctx context.Context, ops firewallOps) (string, string, int, string) {
-	payload := map[string]any{"backend": "firewalld", "status": "inactive", "rules": []FirewallRule{}}
-	if _, err := ops.lookPath("firewall-offline-cmd"); err == nil {
-		out, err := ops.privileged(ctx, "firewall-offline-cmd", "--get-default-zone")
-		if err != nil {
-			return "", string(out), 1, "cannot read inactive firewalld configuration"
-		}
-		zone := strings.TrimSpace(string(out))
-		if !safeZone(zone) {
-			return "", "", 1, "cannot determine inactive firewalld default zone"
-		}
-		payload["zone"] = zone
-		rules := []FirewallRule{}
-		for _, kind := range []string{"ports", "services", "rich-rules"} {
-			out, err := ops.privileged(ctx, "firewall-offline-cmd", "--zone="+zone, "--list-"+kind)
-			if err != nil {
-				return "", string(out), 1, "cannot read inactive firewalld " + kind
-			}
-			if kind == "rich-rules" {
-				for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-					if strings.TrimSpace(line) != "" {
-						rules = append(rules, firewalldRichRule(line))
-					}
-				}
-			} else {
-				for _, value := range strings.Fields(string(out)) {
-					rule := FirewallRule{Backend: "firewalld", Action: "allow", Raw: value}
-					if kind == "services" {
-						rule.Service = value
-					} else if parts := strings.SplitN(value, "/", 2); len(parts) == 2 {
-						rule.Port, rule.Protocol = parts[0], parts[1]
-					}
-					rules = append(rules, rule)
-				}
-			}
-		}
-		payload["rules"] = rules
-	}
-	b, _ := json.Marshal(payload)
-	return string(b), "", 0, ""
+	return queryFirewalldWithOps(ctx, false, ops)
 }
 
 // Preserve the raw rich rule; do not label source-scoped management accepts as

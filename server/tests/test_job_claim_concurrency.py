@@ -141,3 +141,54 @@ def test_overlapping_stale_claim_does_not_retry_or_rotate_nonce_twice(postgres_j
         assert run.status == "running"
         assert run.retry_count == 1
         assert run.job_nonce == claimed["job_nonce"]
+
+
+def test_scheduler_workers_dispatch_a_due_cronjob_only_once(postgres_jobs, monkeypatch):
+    import asyncio
+    from app.services import cronjobs
+    stack = postgres_jobs
+    models = stack.models
+    user_id, cron_id = uuid.uuid4(), uuid.uuid4()
+    created_keys = []
+    original_create = cronjobs.create_job_with_runs
+
+    def record_create(**kwargs):
+        created = original_create(**kwargs)
+        created_keys.append(created.job_key)
+        return created
+
+    async def no_push(**kwargs):
+        return None
+
+    monkeypatch.setattr(cronjobs, 'create_job_with_runs', record_create)
+    monkeypatch.setattr(cronjobs, 'push_job_to_agents', no_push)
+    with stack.sessions.begin() as db:
+        db.add(models.AppUser(id=user_id, username=f'cron-concurrency-{user_id}', password_hash='unused', role='admin'))
+        db.flush()
+        db.add(models.CronJob(id=cron_id, user_id=user_id, action='dist-upgrade', status='scheduled',
+                              run_at=datetime.now(timezone.utc) - timedelta(minutes=1), selector={'agent_ids': ['concurrency-node']}))
+    loaded = threading.Barrier(2)
+
+    def dispatch():
+        with stack.sessions() as db:
+            db.execute(text("SET LOCAL statement_timeout = '5s'"))
+            stale = db.get(models.CronJob, cron_id)
+            loaded.wait(timeout=3)
+            asyncio.run(cronjobs._dispatch_one(db, stale))
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as workers:
+            futures = [workers.submit(dispatch) for _ in range(2)]
+            for future in futures:
+                future.result(timeout=10)
+        with stack.sessions() as db:
+            runs = db.scalars(select(models.CronJobRun).where(models.CronJobRun.cron_job_id == cron_id)).all()
+            assert len(runs) == 1
+            assert runs[0].status == 'success'
+            assert len(created_keys) == 1
+    finally:
+        with stack.sessions.begin() as db:
+            db.execute(delete(models.CronJob).where(models.CronJob.id == cron_id))
+            db.execute(delete(models.AppUser).where(models.AppUser.id == user_id))
+            if created_keys:
+                db.execute(delete(models.Job).where(models.Job.job_key.in_(created_keys)))

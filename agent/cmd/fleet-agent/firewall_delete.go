@@ -38,6 +38,9 @@ func deleteSelectedFirewallRules(ctx context.Context, rules []FirewallRule, ops 
 		seen[key] = true
 	}
 	if state.backend == "ufw" {
+		if !state.active {
+			return deleteSavedUfwRules(ctx, rules, ops)
+		}
 		snapshot, err := ufwRuleSnapshot(ctx, ops)
 		if err != nil {
 			return fail(err)

@@ -347,7 +347,7 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
         raise HTTPException(404, "unknown job")
 
     run = db.execute(
-        select(JobRun).where(JobRun.job_id == job.id, JobRun.agent_id == payload.agent_id)
+        select(JobRun).where(JobRun.job_id == job.id, JobRun.agent_id == payload.agent_id).with_for_update()
     ).scalar_one_or_none()
     if not run:
         _audit_unknown_agent(db, request, payload.agent_id, "job_event_unknown_run")
@@ -372,6 +372,13 @@ def agent_job_event(payload: JobEvent, request: Request, db: Session = Depends(g
             except Exception:
                 pass
         raise HTTPException(403, "invalid job nonce")
+
+    if payload.status not in ("running", "success", "failed"):
+        raise HTTPException(400, "invalid status")
+    # A retry gets a fresh nonce. Delayed/duplicate messages from this completed
+    # attempt must not reopen it or overwrite its result and cached inventory.
+    if run.status in ("success", "failed"):
+        return {"ok": True}
 
     now = datetime.now(timezone.utc)
     if payload.status == "running":

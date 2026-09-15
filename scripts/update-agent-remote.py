@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path
 import platform
-import shutil
 import signal
 import subprocess
 import sys
@@ -62,15 +61,20 @@ def configuration_hashes():
     return {str(path): sha256(path.read_bytes()) for path in paths if path.is_file()}
 
 
-def replace_binary(data):
-    fd, name = tempfile.mkstemp(prefix='.fleet-agent-update-', dir=BINARY.parent)
+def running_binary(pid):
+    return Path('/proc', pid, 'exe').read_bytes()
+
+
+def replace_binary(data, destination=None):
+    destination = destination or BINARY
+    fd, name = tempfile.mkstemp(prefix='.fleet-agent-update-', dir=destination.parent)
     try:
         with os.fdopen(fd, 'wb') as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
         os.chmod(name, 0o755)
-        os.replace(name, BINARY)
+        os.replace(name, destination)
     finally:
         if os.path.exists(name):
             os.unlink(name)
@@ -96,16 +100,18 @@ def verify_running(expected_hash):
 
 
 def update(expected_id, data, expected_hash):
-    verify_identity(expected_id)
+    pid = verify_identity(expected_id)
     if not data or sha256(data) != expected_hash:
         raise RuntimeError('Agent artifact checksum mismatch')
-    old = BINARY.read_bytes()
+    # The file on disk may already be a failed replacement while /proc still
+    # refers to the last working executable. Roll back to the running image.
+    old = running_binary(pid)
     before = configuration_hashes()
     backup = BINARY.with_name('fleet-agent.previous')
     # Keep one previous binary, avoiding unbounded accumulation across releases.
     if backup.is_symlink():
         raise RuntimeError('Unexpected backup symlink; left unchanged')
-    shutil.copy2(BINARY, backup)
+    replace_binary(old, backup)
     try:
         replace_binary(data)
         subprocess.run(['systemctl', 'restart', SERVICE], check=True, timeout=30)

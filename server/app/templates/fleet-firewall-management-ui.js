@@ -35,6 +35,11 @@
       done,
       success: runs.filter((run) => run.status === 'success').map((run) => run.agent_id).filter(Boolean),
       failed: runs.filter((run) => run.status === 'failed').map((run) => run.agent_id).filter(Boolean),
+      successDetails: runs.filter((run) => run.status === 'success').map((run) => {
+        const stdout = run.stdout_tail || run.stdout || '';
+        try { return { agentId: run.agent_id, message: JSON.parse(stdout).message || '' }; }
+        catch { return { agentId: run.agent_id, message: stdout.slice(0, 600) }; }
+      }).filter((detail) => detail.message),
       failureDetails: runs.filter((run) => run.status === 'failed').map((run) => ({
         agentId: run.agent_id,
         message: [...new Set([run.error, run.stderr_tail || run.stderr || run.stdout_tail || run.stdout].filter(Boolean))]
@@ -140,10 +145,10 @@
       return esc(parts.length ? parts.join(' ') : (rule.raw || '-'));
     }
 
-    function renderFirewallItems(items) {
+    function renderFirewallItems(items, selected = []) {
       const rows = Array.isArray(items) ? items : [];
       firewallItems = new Map(rows.map((item) => [String(item.agent_id || ''), item]));
-      if (checkAllEl) checkAllEl.checked = false;
+      if (checkAllEl) checkAllEl.checked = rows.length > 0 && rows.every((item) => selected.includes(String(item.agent_id)));
       if (!rows.length) {
         bodyEl.innerHTML = '<tr><td colspan="6" class="status-muted" style="text-align:center;">No firewall data from visible online hosts.</td></tr>';
         updateFirewallActionState();
@@ -155,14 +160,14 @@
         const agentId = String(it.agent_id || '');
         const osName = `${it.os_id || ''} ${it.os_version || ''}`.trim();
         const rules = Array.isArray(it.rules) ? it.rules : [];
-        const ruleText = rules.length ? rules.map(formatRule).join('<br>') : '<span class="status-muted">No rules reported</span>';
+        const ruleText = rules.length ? rules.map((rule) => formatRule(rule) + (rule.scope ? ` [${esc(rule.scope)}]` : '')).join('<br>') : '<span class="status-muted">No user rules saved/reported</span>';
         const disabled = canManage ? '' : 'disabled';
         return `<tr>
-          <td><input type="checkbox" data-firewall-agent-id="${esc(agentId)}" aria-label="Select firewall on ${esc(it.hostname || agentId)}" ${disabled} /></td>
+          <td><input type="checkbox" data-firewall-agent-id="${esc(agentId)}" aria-label="Select firewall on ${esc(it.hostname || agentId)}" ${disabled} ${selected.includes(agentId) ? 'checked' : ''} /></td>
           <td><b>${esc(it.hostname || agentId)}</b><div class="status-muted">${esc(agentId)}${it.ip_address ? ` • ${esc(it.ip_address)}` : ''}${osName ? ` • ${esc(osName)}` : ''}</div></td>
           <td>${esc(it.backend || '-')}</td>
           <td>${esc(it.status || '-')}${it.zone ? `<div class="status-muted">zone ${esc(it.zone)}</div>` : ''}</td>
-          <td>${ruleText}</td>
+          <td>${ruleText}${it.notice ? `<div class="status-muted">${esc(it.notice)}</div>` : ''}</td>
           <td class="status-muted">${esc(it.last_seen || '')}</td>
         </tr>`;
       }).join('');
@@ -173,11 +178,12 @@
     }
 
     async function loadFirewalls() {
+      const selection = selectedFirewallAgentIds();
       bodyEl.innerHTML = '<tr><td colspan="6" class="status-muted" style="text-align:center;">Scanning online hosts…</td></tr>';
       updateFirewallActionState();
       if (statusEl) statusEl.textContent = 'Scanning online hosts…';
       const data = await boundedJsonFetch('/reports/firewall-rules?max_hosts=300', {}, 45000);
-      renderFirewallItems(data.items || []);
+      renderFirewallItems(data.items || [], selection);
       const failed = Array.isArray(data.failed_hosts) && data.failed_hosts.length ? `; failed scan: ${data.failed_hosts.length}` : '';
       const skipped = Array.isArray(data.skipped_offline) && data.skipped_offline.length ? `; offline skipped: ${data.skipped_offline.length}` : '';
       if (statusEl) statusEl.textContent = `${(data.items || []).length} host(s) scanned${failed}${skipped}`;
@@ -278,8 +284,8 @@
       const label = selections ? 'Remove rules' : enabling ? 'Enable' : disabling ? 'Disable' : action === 'delete' ? 'Remove allow' : action === 'allow' ? 'Allow' : 'Deny';
       const target = service ? `service ${service}` : `${port}/${protocol}`;
       const confirmation = changingState
-        ? `${label} firewalls on ${agentIds.length} selected host(s)?\n\n${agentIds.map((id) => firewallItems.get(id)?.hostname || id).join('\n')}\n\n${enabling ? 'Existing firewall rules will take effect.' : 'Host firewall protection will stop and automatic startup will be disabled. Saved rules will be kept.'}`
-        : `${label} ${target} on ${agentIds.length} selected host(s)?`;
+        ? `${label} firewalls on ${agentIds.length} selected host(s)?\n\n${agentIds.map((id) => firewallItems.get(id)?.hostname || id).join('\n')}\n\n${enabling ? 'Saved rules will take effect. Master SSH/Console access rules are prepared before activation.' : 'Host firewall protection will stop and automatic startup will be disabled. Saved rules will be kept. Runtime-only firewalld rules may be lost.'}`
+        : `${label} ${target} on ${agentIds.length} selected host(s)?\n\nThis adds a rule without replacing conflicting rules. Existing rule order and policy still apply. Inactive firewalls save rules for later activation.`;
       if (!selections && !confirm(confirmation)) return;
 
       busy = true;
@@ -300,6 +306,7 @@
         const lines = [summary.done
           ? `${label}: ${summary.success.length} succeeded, ${summary.failed.length} failed.`
           : `${label} still running: ${summary.success.length} succeeded, ${summary.failed.length} failed so far. Job: ${data.job_id}`];
+        summary.successDetails.forEach((detail) => lines.push(`${firewallItems.get(detail.agentId)?.hostname || detail.agentId}: ${detail.message}`));
         summary.failureDetails.forEach((failure) => {
           lines.push(`${firewallItems.get(failure.agentId)?.hostname || failure.agentId}: ${failure.message}`);
         });

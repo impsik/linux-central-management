@@ -25,6 +25,7 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
       removalChecks = Array.from(value.matchAll(/<input[^>]*data-remove-rule="([^"]+)"[^>]*>/g), match => {
         const check = node();
         check.disabled = match[0].includes('disabled');
+        check.checked = /\schecked(?:\s|>)/.test(match[0]);
         check.getAttribute = () => match[1];
         return check;
       });
@@ -41,6 +42,7 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
       checks = Array.from(value.matchAll(/<input[^>]*data-firewall-agent-id="([^"]+)"[^>]*>/g), match => {
         const check = node();
         check.disabled = match[0].includes('disabled');
+        check.checked = /\schecked(?:\s|>)/.test(match[0]);
         check.getAttribute = key => key === 'data-firewall-agent-id' ? match[1] : null;
         return check;
       });
@@ -352,5 +354,19 @@ describe('explicit firewall rule type', () => {
     s.click('allow');
     expect(s.fetch).toHaveBeenCalledTimes(1);
     expect(s.showToast).toHaveBeenCalledWith('Enter an existing firewall profile or service name', 'error');
+  });
+});
+
+describe('firewall refresh continuity', () => {
+  it('keeps host selections and displays saved rules while inactive', async () => {
+    const s = setup({ items: [{ ...inactive, notice: 'Firewall is OFF; saved rules are not enforced.', rules: [{ id: 'saved:abc', raw: 'ufw allow 1122/tcp', action: 'allow' }] }] });
+    await s.scan();
+    s.select('node-1');
+    await s.scan();
+    expect(s.elements['table-body'].querySelectorAll('input:checked')).toHaveLength(1);
+    expect(s.elements['table-body'].innerHTML).toContain('1122/tcp');
+    expect(s.elements['table-body'].innerHTML).toContain('saved rules are not enforced');
+    expect(s.elements.enable.disabled).toBe(false);
+    expect(s.elements.delete.disabled).toBe(false);
   });
 });

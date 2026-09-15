@@ -18,6 +18,7 @@ from ..services.cve_reporting import collect_high_severity_findings, merge_findi
 from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.hosts import is_host_online
+from ..services.background import run_blocking
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.json_utils import loads_or
 from ..services.rbac import permissions_for
@@ -85,7 +86,7 @@ def _normalize_firewall_action(action: str, payload: FirewallFleetActionRequest)
             for rule in rules:
                 if (
                     rule.backend not in ("ufw", "firewalld") or not rule.raw.strip()
-                    or len(rule.raw) > 4096 or len(rule.id) > 16 or len(rule.zone) > 64
+                    or len(rule.raw) > 4096 or len(rule.id) > 80 or len(rule.zone) > 64
                 ):
                     raise HTTPException(400, "Invalid firewall rule selection")
         return {
@@ -125,32 +126,22 @@ async def _wait_for_job_runs(
     poll_interval_s: float = 0.5,
 ) -> list[JobRun]:
     wanted = sorted({str(a) for a in agent_ids if str(a).strip()})
-    start = time.time()
-    while time.time() - start < timeout_s:
-        db = SessionLocal()
-        try:
+    def read_runs():
+        with SessionLocal() as db:
             rows = db.execute(
                 select(JobRun).where(JobRun.job_id == job_id, JobRun.agent_id.in_(wanted))
             ).scalars().all()
-            done = [r for r in rows if r.status in ("success", "failed")]
-            if len(done) >= len(wanted):
-                for r in done:
-                    db.expunge(r)
-                return done
-        finally:
-            db.close()
-        await asyncio.sleep(poll_interval_s)
+            for row in rows:
+                db.expunge(row)
+            return rows
 
-    db = SessionLocal()
-    try:
-        rows = db.execute(
-            select(JobRun).where(JobRun.job_id == job_id, JobRun.agent_id.in_(wanted))
-        ).scalars().all()
-        for r in rows:
-            db.expunge(r)
-        return rows
-    finally:
-        db.close()
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_s:
+        rows = await run_blocking(read_runs)
+        if len([row for row in rows if row.status in ("success", "failed")]) >= len(wanted):
+            return rows
+        await asyncio.sleep(poll_interval_s)
+    return await run_blocking(read_runs)
 
 
 def _visible_online_hosts(
@@ -795,6 +786,8 @@ async def firewall_rules_report(
                 "backend": str(data.get("backend") or ""),
                 "status": str(data.get("status") or ""),
                 "zone": str(data.get("zone") or ""),
+                "rules_scope": str(data.get("rules_scope") or "running"),
+                "notice": str(data.get("notice") or ""),
                 "rules": rules if isinstance(rules, list) else [],
             }
         )

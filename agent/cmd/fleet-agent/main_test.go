@@ -398,7 +398,7 @@ func TestBuildUfwArgsServiceAllowFromSource(t *testing.T) {
 }
 
 func TestBuildFirewalldRejectRule(t *testing.T) {
-	got := buildFirewalldRejectRule(443, "tcp", "10.0.0.0/8")
+	_, got := firewalldRuleSpec("deny", 443, "tcp", "10.0.0.0/8", "")
 	want := `rule family="ipv4" source address="10.0.0.0/8" port port="443" protocol="tcp" reject`
 	if got != want {
 		t.Fatalf("rich rule = %q, want %q", got, want)

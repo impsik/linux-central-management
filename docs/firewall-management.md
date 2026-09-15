@@ -1,10 +1,12 @@
 # Firewall management
 
-Update both the Master and the managed node agents from the checkout containing
-these features. Older agents can report firewall status but may not support
-enabling, disabling, or deleting selected rules. Updating the Master alone does not replace existing
-node binaries. Keep each node's existing identity and credentials when updating
-its agent; the displayed release number can be the same for different builds.
+Update both the Master and managed agents from the checkout containing these
+features. Running `INSTALL_REF=cleanup ./install.sh` updates the Master and then
+attempts to update registered agents using the Master's existing SSH access and
+passwordless sudo. Check its per-host update report: unreachable nodes or nodes
+without SSH/sudo access still need attention. Older agents may not support the
+saved-rule and exact-removal workflow. A release number can be the same for
+different builds; the updater compares binary hashes.
 
 ## Choose a port or a firewall profile
 
@@ -34,7 +36,7 @@ permission, host visibility and online state again before creating a job.
 The agent enables UFW, or starts firewalld and enables it at boot. Existing
 firewall rules take effect; application ports need appropriate allow rules.
 Results show success and failure counts, host-specific errors, and hosts skipped
-because they became unavailable. The table refreshes after the job. If a job is
+because they became unavailable. The table refreshes after the job and keeps host selections. If a job is
 still running or its result could not be confirmed, scan again before retrying.
 
 ## Disable firewalls across hosts
@@ -45,7 +47,8 @@ Inactive hosts are skipped by this action. No port or service input is needed.
 
 The agent runs UFW's disable command, or stops and disables the firewalld service.
 It verifies that the selected firewall is inactive before reporting success.
-Saved rules remain available for **Enable selected**. Disabling stops host
+Saved rules remain visible and available for **Enable selected**. Runtime-only
+firewalld rules are not saved by disabling and may disappear when it stops. Disabling stops host
 firewall protection and turns off its configured automatic startup; it does not
 mask firewalld or prevent an administrator or another service from starting it.
 The same service-management permissions, host scope, job results and audit trail
@@ -66,9 +69,11 @@ SSH or Console allows may interrupt Master access; keep those rules unless that
 is intentional. There is a limit of 100 rules per host and 500 per operation.
 
 Agents re-read the rules before deleting and verify the result afterwards. UFW
-rules are removed by exact numbered identity in descending order; a stale list
-or unexpected post-deletion state fails with instructions to scan again. UFW
-must be active to expose numbered rules. Firewalld removes the exact port,
+active rules are removed by exact numbered identity in descending order; a stale
+list or unexpected post-deletion state fails with instructions to scan again.
+When UFW is inactive, the agent lists saved user rules and removes the exact
+saved command. A generic saved rule can represent both IPv4 and IPv6; active
+numbered rows represent each separately. Removing saved rules leaves UFW off. Firewalld removes the exact port,
 service or rich rule in the displayed zone from runtime and permanent
 configuration where present, without a reload affecting unrelated runtime rules.
 For inactive firewalld, only permanent configuration is changed.
@@ -77,6 +82,24 @@ A failure can leave earlier removals applied. Inspect the per-host error and
 rescan before retrying; a successful command that did not remove the selected
 rule is not reported as success. Rules edited independently on the node during
 an operation can cause it to stop with a verification error.
+
+## Understand saved rules and effective access
+
+Adding Allow or Deny appends a rule; it does not replace opposite rules, reorder
+existing UFW rules, start an application, or turn on the firewall. Existing rule
+order and policy still determine access. Remove conflicting rules explicitly.
+A repeated add reports that the rule is already present. A deletion that cannot
+be verified fails rather than claiming that the rule was removed.
+
+Rules can be added or removed while the firewall is off. They are saved for the
+next activation and are not enforced until then. Firewalld changes update both
+runtime and permanent configuration when active, without a reload that would
+discard unrelated runtime rules. The view labels runtime-only and saved entries.
+It covers the default firewalld zone's ports, services and rich rules; other
+zones and custom policies are not represented as a complete effective ruleset.
+
+The host's individual Firewall view uses the same job/result handling as fleet
+management and removes the exact displayed rule, including its source and zone.
 
 ## Keep Master access available
 

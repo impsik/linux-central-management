@@ -1,4 +1,5 @@
 (function (w) {
+  const pendingFirewallHosts = new Set();
   async function loadUsers(ctx, agentId) {
     const usersList = document.getElementById('users-list');
     usersList.innerHTML = '<div class="loading">Loading users...</div>';
@@ -77,7 +78,7 @@
       });
     } catch (error) {
       console.error('Error loading users:', error);
-      usersList.innerHTML = `<div class="error">Error loading users: ${error.message}</div>`;
+      usersList.innerHTML = `<div class="error">Error loading users: ${w.escapeHtml(error.message)}</div>`;
     }
   }
 
@@ -279,17 +280,14 @@
       const status = data.status || 'unknown';
       const zone = data.zone ? ` • zone ${w.escapeHtml(data.zone)}` : '';
       const canManage = !!ctx.getCurrentPermissions()?.can_manage_services;
-      const summary = `<div class="admin-note" style="margin-bottom:0.75rem;">Backend: <b>${w.escapeHtml(backend)}</b> • Status: <b>${w.escapeHtml(status)}</b>${zone}</div>`;
+      const summary = `<div class="admin-note" style="margin-bottom:0.75rem;">Backend: <b>${w.escapeHtml(backend)}</b> • Status: <b>${w.escapeHtml(status)}</b>${zone}${data.notice ? `<br>${w.escapeHtml(data.notice)}` : ''}</div>`;
       if (!rules.length) {
         list.innerHTML = summary + '<div class="empty-state">No firewall rules reported</div>';
         return;
       }
 
-      list.innerHTML = summary + rules.map((rule) => {
+      list.innerHTML = summary + rules.map((rule, ruleIndex) => {
         const text = formatFirewallRule(rule);
-        const port = rule.port || '';
-        const protocol = rule.protocol || 'tcp';
-        const service = rule.service || '';
         return `
           <div class="service-card">
             <div class="service-info">
@@ -297,7 +295,7 @@
               <div class="service-details">${w.escapeHtml(rule.raw || '')}</div>
             </div>
             <div class="service-actions">
-              <button class="btn btn-danger" data-firewall-delete="1" data-port="${w.escapeHtml(port)}" data-protocol="${w.escapeHtml(protocol)}" data-service="${w.escapeHtml(service)}" ${((!port && !service) || !canManage) ? 'disabled' : ''}>Remove allow</button>
+              <button class="btn btn-danger" data-firewall-delete="${ruleIndex}" ${(!rule.raw || !canManage) ? 'disabled' : ''}>Remove rule</button>
             </div>
           </div>
         `;
@@ -306,11 +304,9 @@
       list.querySelectorAll('button[data-firewall-delete]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.preventDefault();
-          const port = Number(btn.getAttribute('data-port') || '0');
-          const protocol = btn.getAttribute('data-protocol') || 'tcp';
-          const service = btn.getAttribute('data-service') || '';
-          if (!port && !service) return;
-          controlFirewall(ctx, agentId, { action: 'delete', port, protocol, service });
+          const rule = rules[Number(btn.getAttribute('data-firewall-delete'))];
+          if (!rule?.raw || !confirm(`Remove this rule from ${agentId}?\n\n${rule.raw}\n\nOther rules will be kept.`)) return;
+          void controlFirewall(ctx, agentId, { action: 'delete-rules', rules: [{ backend, id: rule.id || '', raw: rule.raw, zone: rule.zone || data.zone || '' }] });
         });
       });
     } catch (error) {
@@ -320,10 +316,11 @@
   }
 
   function readHostFirewallPayload(action) {
-    const port = Number(document.getElementById('host-firewall-port')?.value || '0');
+    const profileMode = document.getElementById('host-firewall-rule-type')?.value === 'service';
+    const port = profileMode ? 0 : Number(document.getElementById('host-firewall-port')?.value || '0');
     const protocol = document.getElementById('host-firewall-protocol')?.value || 'tcp';
     const source = (document.getElementById('host-firewall-source')?.value || '').trim();
-    const service = (document.getElementById('host-firewall-service')?.value || '').trim();
+    const service = profileMode ? (document.getElementById('host-firewall-service')?.value || '').trim() : '';
     return { action, port, protocol, source, service };
   }
 
@@ -332,17 +329,19 @@
       w.showToast('Service management permission required to manage firewall rules.', 'error');
       return;
     }
+    if (pendingFirewallHosts.has(agentId)) return;
     const statusEl = document.getElementById('host-firewall-status');
-    if (!payload.service && (!payload.port || payload.port < 1 || payload.port > 65535)) {
+    if (!payload.rules && !payload.service && (!Number.isInteger(payload.port) || payload.port < 1 || payload.port > 65535)) {
       w.showToast('Enter a valid port or service', 'error');
       return;
     }
+    pendingFirewallHosts.add(agentId);
     try {
       if (statusEl) statusEl.textContent = `${payload.action} rule queued…`;
-      const response = await fetch(`/hosts/${agentId}/firewall/rules`, {
+      const response = await fetch(`/reports/firewall-rules/${payload.action}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload.rules ? { agent_ids: [agentId], rules_by_agent: { [agentId]: payload.rules } } : { ...payload, agent_ids: [agentId] }),
       });
       if (!response.ok) {
         let errorMsg = `Failed to ${payload.action} firewall rule`;
@@ -354,25 +353,41 @@
         }
         throw new Error(errorMsg);
       }
-      await response.json();
-      if (statusEl) statusEl.textContent = 'Firewall updated. Refreshing…';
-      w.showToast('Firewall rule updated', 'success');
+      const queued = await response.json();
+      const summary = await w.fleetFirewallManagementUi.waitForJobDone(queued.job_id);
+      if (!summary.done) throw new Error(`Job ${queued.job_id} still running; check its result before retrying`);
+      if (summary.failed.length) throw new Error(summary.failureDetails.map((item) => item.message).join('; '));
+      if (!summary.success.includes(agentId)) throw new Error('The agent has not confirmed this change; scan again before retrying');
+      const message = summary.successDetails?.find((item) => item.agentId === agentId)?.message || 'Firewall rule updated';
+      if (statusEl) statusEl.textContent = message;
+      w.showToast(message, 'success');
       await loadFirewall(ctx, agentId);
-      if (statusEl) statusEl.textContent = '';
     } catch (error) {
       console.error('Error controlling firewall:', error);
       if (statusEl) statusEl.textContent = error.message || 'Firewall action failed';
       w.showToast(error.message || 'Firewall action failed', 'error');
+    } finally {
+      pendingFirewallHosts.delete(agentId);
     }
   }
 
   function initHostFirewallControls(ctx) {
+    const ruleType = document.getElementById('host-firewall-rule-type');
+    const setRuleType = () => {
+      const profile = ruleType?.value === 'service';
+      for (const id of ['host-firewall-port', 'host-firewall-protocol']) {
+        const input = document.getElementById(id); if (input) input.disabled = profile;
+      }
+      const service = document.getElementById('host-firewall-service'); if (service) service.disabled = !profile;
+    };
+    ruleType?.addEventListener('change', setRuleType);
+    setRuleType();
     document.getElementById('host-firewall-refresh')?.addEventListener('click', (e) => {
       e.preventDefault();
       const aid = ctx.getCurrentAgentId ? ctx.getCurrentAgentId() : null;
       if (aid) void loadFirewall(ctx, aid);
     });
-    ['allow', 'deny', 'delete'].forEach((action) => {
+    ['allow', 'deny'].forEach((action) => {
       document.getElementById(`host-firewall-${action}`)?.addEventListener('click', (e) => {
         e.preventDefault();
         const aid = ctx.getCurrentAgentId ? ctx.getCurrentAgentId() : null;

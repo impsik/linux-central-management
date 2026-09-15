@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/yourorg/fleet-agent/internal"
@@ -1437,6 +1439,7 @@ func queryPkgVersions(ctx context.Context, packages []string) (string, string, i
 }
 
 type FirewallRule struct {
+	Scope    string `json:"scope,omitempty"`
 	Zone     string `json:"zone,omitempty"`
 	ID       string `json:"id,omitempty"`
 	Backend  string `json:"backend"`
@@ -1464,6 +1467,9 @@ func queryFirewall(ctx context.Context) (string, string, int, string) {
 		}
 		return queryFirewalld(queryCtx)
 	case "ufw":
+		if !state.active {
+			return queryInactiveUfw(queryCtx, ops)
+		}
 		return queryUfw(queryCtx)
 	default:
 		return "", "", 1, "no supported firewall manager found (expected firewalld or ufw)"
@@ -1471,57 +1477,15 @@ func queryFirewall(ctx context.Context) (string, string, int, string) {
 }
 
 func queryFirewalld(ctx context.Context) (string, string, int, string) {
-	zone := "public"
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--get-default-zone").Output(); err == nil {
-		if z := strings.TrimSpace(string(out)); z != "" {
-			zone = z
-		}
-	}
-
-	rules := make([]FirewallRule, 0)
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-ports").Output(); err == nil {
-		for _, item := range strings.Fields(string(out)) {
-			parts := strings.SplitN(item, "/", 2)
-			r := FirewallRule{Backend: "firewalld", Action: "allow", Raw: item}
-			if len(parts) == 2 {
-				r.Port = parts[0]
-				r.Protocol = parts[1]
-			} else {
-				r.Port = item
-			}
-			rules = append(rules, r)
-		}
-	}
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-services").Output(); err == nil {
-		for _, svc := range strings.Fields(string(out)) {
-			rules = append(rules, FirewallRule{Backend: "firewalld", Action: "allow", Service: svc, Raw: svc})
-		}
-	}
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-rich-rules").Output(); err == nil {
-		for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			rules = append(rules, firewalldRichRule(line))
-		}
-	}
-
-	payload := map[string]any{
-		"backend": "firewalld",
-		"status":  "running",
-		"zone":    zone,
-		"rules":   rules,
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
-	}
-	return string(b), "", 0, ""
+	return queryFirewalldWithOps(ctx, true, systemFirewallOps())
 }
 
 func queryUfw(ctx context.Context) (string, string, int, string) {
-	out, err := exec.CommandContext(ctx, "ufw", "status", "numbered").CombinedOutput()
+	return queryUfwWithOps(ctx, systemFirewallOps())
+}
+
+func queryUfwWithOps(ctx context.Context, ops firewallOps) (string, string, int, string) {
+	out, err := ops.privileged(ctx, "ufw", "status", "numbered")
 	if err != nil {
 		return "", string(out), 1, fmt.Sprintf("ufw status failed: %v", err)
 	}
@@ -1647,10 +1611,7 @@ func controlFirewall(ctx context.Context, action string, port int, protocol, sou
 	}
 	switch state.backend {
 	case "firewalld":
-		if !state.active {
-			return "", "", 1, "firewalld is inactive; enable it before changing runtime rules"
-		}
-		return controlFirewalld(queryCtx, action, port, protocol, source, service)
+		return controlFirewalldWithOps(queryCtx, action, port, protocol, source, service, state.active, systemFirewallOps())
 	case "ufw":
 		return controlUfw(queryCtx, action, port, protocol, source, service)
 	default:
@@ -1684,69 +1645,8 @@ func isSafeFirewallSource(s string) bool {
 	return true
 }
 
-func controlFirewalld(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
-	if source != "" && action != "deny" {
-		return "", "", 1, "source-scoped rules are not supported for firewalld simple rules yet"
-	}
-	arg := ""
-	if action == "deny" {
-		if service != "" {
-			return "", "", 1, "deny by service is not supported for firewalld; use port/protocol"
-		}
-		arg = "--add-rich-rule=" + buildFirewalldRejectRule(port, protocol, source)
-	} else if service != "" {
-		if action == "delete" {
-			arg = "--remove-service=" + service
-		} else {
-			arg = "--add-service=" + service
-		}
-	} else {
-		spec := fmt.Sprintf("%d/%s", port, protocol)
-		if action == "delete" {
-			arg = "--remove-port=" + spec
-		} else {
-			arg = "--add-port=" + spec
-		}
-	}
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "firewall-cmd", "--permanent", arg)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), "", 1, fmt.Sprintf("firewall-cmd failed: %v", err)
-	}
-	reload := exec.CommandContext(ctx, "sudo", "-n", "firewall-cmd", "--reload")
-	reloadOut, reloadErr := reload.CombinedOutput()
-	combined := append(out, reloadOut...)
-	if reloadErr != nil {
-		return string(combined), "", 1, fmt.Sprintf("firewall-cmd reload failed: %v", reloadErr)
-	}
-	return string(combined), "", 0, ""
-}
-
-func buildFirewalldRejectRule(port int, protocol, source string) string {
-	family := "ipv4"
-	if strings.Contains(source, ":") {
-		family = "ipv6"
-	}
-	parts := []string{fmt.Sprintf(`rule family="%s"`, family)}
-	if source != "" {
-		parts = append(parts, fmt.Sprintf(`source address="%s"`, source))
-	}
-	parts = append(parts, fmt.Sprintf(`port port="%d" protocol="%s" reject`, port, protocol))
-	return strings.Join(parts, " ")
-}
-
 func controlUfw(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
-	args := buildUfwArgs(action, port, protocol, source, service)
-	cmd := exec.CommandContext(ctx, "sudo", args...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), "", 1, fmt.Sprintf("ufw %s failed: %v", action, err)
-	}
-	if action == "delete" && !strings.Contains(strings.ToLower(string(out)), "rule deleted") {
-		return string(out), "", 1, "No matching allow rule was deleted; scan hosts and select the exact rule"
-	}
-	return string(out), "", 0, ""
+	return controlUfwWithOps(ctx, action, port, protocol, source, service, systemFirewallOps())
 }
 
 func buildUfwArgs(action string, port int, protocol, source, service string) []string {
@@ -3459,8 +3359,11 @@ func scheduleReboot(ctx context.Context) (string, string, int, string) {
 }
 
 func controlUser(ctx context.Context, username, action string) (string, string, int, string) {
-	if username == "" {
-		return "", "", 1, "username is required"
+	if username == "" || strings.HasPrefix(username, "-") || shellEscape(username) != username {
+		return "", "", 1, "invalid username"
+	}
+	if username == "root" {
+		return "", "", 1, "cannot lock or unlock root account"
 	}
 
 	// Create a context with timeout to prevent hanging
@@ -3551,13 +3454,14 @@ func controlUser(ctx context.Context, username, action string) (string, string, 
 			// Fix by setting a random password (so it's not passwordless) and then unlock.
 			if strings.Contains(outStr, "passwordless account") {
 				// generate random password from /dev/urandom (do not log it)
-				pwCmd := exec.CommandContext(controlCtx, "bash", "-lc", "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32")
-				pwBytes, pwErr := pwCmd.Output()
+				pwBytes := make([]byte, 32)
+				_, pwErr := rand.Read(pwBytes)
 				if pwErr == nil {
-					pw := strings.TrimSpace(string(pwBytes))
+					pw := hex.EncodeToString(pwBytes)
 					if pw != "" {
 						// set password
-						setCmd := exec.CommandContext(controlCtx, "bash", "-lc", fmt.Sprintf("echo %s | sudo -n chpasswd", shellQuote(fmt.Sprintf("%s:%s", username, pw))))
+						setCmd := exec.CommandContext(controlCtx, "sudo", "-n", "chpasswd")
+						setCmd.Stdin = strings.NewReader(username + ":" + pw + "\n")
 						setOut, setErr := setCmd.CombinedOutput()
 						allOutput.WriteString(string(setOut))
 						if setErr == nil {

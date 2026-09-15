@@ -23,7 +23,8 @@ def remote(tmp_path, monkeypatch):
     module.BINARY = tmp_path / 'fleet-agent'
     module.BINARY.write_bytes(b'old executable')
     module.BINARY.chmod(0o755)
-    monkeypatch.setattr(module, 'verify_identity', lambda expected: None)
+    monkeypatch.setattr(module, 'verify_identity', lambda expected: '123')
+    monkeypatch.setattr(module, 'running_binary', lambda pid: b'old executable')
     monkeypatch.setattr(module, 'configuration_hashes', lambda: {'env': 'unchanged'})
     monkeypatch.setattr(module.subprocess, 'run', lambda *a, **kw: None)
     monkeypatch.setattr(module, 'verify_running', lambda expected: None)
@@ -204,3 +205,15 @@ update_existing_agents
 ''', 'sh', str(functions), str(tmp_path), reply], capture_output=True, text=True, timeout=10)
     assert (result.returncode == 0) == skip
     assert 'No registered agents to update' in result.stdout if skip else 'Traceback' in result.stderr
+
+
+def test_rollback_uses_running_image_when_disk_already_contains_broken_update(remote, monkeypatch):
+    remote.BINARY.write_bytes(b'broken new disk image')
+    def verify(checksum):
+        if checksum != remote.sha256(b'old executable'):
+            raise RuntimeError('new process crashed')
+    monkeypatch.setattr(remote, 'verify_running', verify)
+    with pytest.raises(RuntimeError, match='previous binary restored'):
+        remote.update('node-1', b'broken new disk image', remote.sha256(b'broken new disk image'))
+    assert remote.BINARY.read_bytes() == b'old executable'
+    assert remote.BINARY.with_name('fleet-agent.previous').read_bytes() == b'old executable'

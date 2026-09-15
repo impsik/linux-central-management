@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import datetime, timezone, timedelta
 
@@ -39,6 +40,8 @@ def _normalize_firewall_rule(payload: FirewallRuleRequest) -> dict:
     service = (payload.service or "").strip()
     source = (payload.source or "").strip()
     port = payload.port
+    if service and port not in (None, 0):
+        raise HTTPException(400, "Choose either a port or a firewall profile/service, not both")
     if not service:
         if port is None:
             raise HTTPException(400, "port is required when service is not provided")
@@ -1200,6 +1203,8 @@ async def control_user(
     username = (username or "").strip()
     if not username:
         raise HTTPException(400, "username is required")
+    if username.startswith("-") or not re.fullmatch(r"[A-Za-z0-9_-]+", username):
+        raise HTTPException(400, "Invalid username")
     if username == "root":
         raise HTTPException(400, "Cannot lock root account")
 
