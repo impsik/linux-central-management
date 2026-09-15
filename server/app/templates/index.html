@@ -740,25 +740,25 @@
 
 
         <div class="hosts-table-wrap" style="margin-top:0.75rem;">
-          <table class="process-table hosts-table">
+          <table class="process-table hosts-table host-inventory-table">
             <thead>
               <tr>
-                <th style="width:36px;"><input type="checkbox" id="hosts-select-all" /></th>
-                <th class="sortable-col" id="hosts-th-host" title="Sort by host" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th class="sortable-col" id="hosts-th-owner" title="Sort by owner" tabindex="0" role="button">Owner <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th class="sortable-col" id="hosts-th-os" title="Sort by OS" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th>Kernel</th>
-                <th class="sortable-col" style="text-align:right;" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security pkgs <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th class="sortable-col" style="text-align:right;" id="hosts-th-upd" title="Sort by all updates" tabindex="0" role="button">Pending <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th>Reboot</th>
-                <th>Status</th>
-                <th class="sortable-col" id="hosts-th-last" title="Sort by last seen" tabindex="0" role="button">Last seen <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th style="text-align:right;">Actions</th>
+                <th class="host-col-select"><input type="checkbox" id="hosts-select-all" /></th>
+                <th class="sortable-col host-col-name" id="hosts-th-host" title="Sort by host" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col host-col-owner" id="hosts-th-owner" title="Sort by owner" tabindex="0" role="button">Owner <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col host-col-os" id="hosts-th-os" title="Sort by OS" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="host-col-kernel">Kernel</th>
+                <th class="sortable-col host-col-count" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security pkgs <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col host-col-count" id="hosts-th-upd" title="Sort by all updates" tabindex="0" role="button">Pending <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="host-col-state">Reboot</th>
+                <th class="host-col-state">Status</th>
+                <th class="sortable-col host-col-time" id="hosts-th-last" title="Sort by last seen" tabindex="0" role="button">Last seen <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="host-col-actions">Actions</th>
               </tr>
             </thead>
             <tbody id="hosts-table-body">
               <tr>
-                <td colspan="10" style="text-align:center;" class="status-muted">Loading…</td>
+                <td colspan="11" style="text-align:center;" class="status-muted">Loading…</td>
               </tr>
             </tbody>
           </table>

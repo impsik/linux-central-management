@@ -72,6 +72,12 @@ services:
       METRICS_BACKGROUND_REFRESH_SECONDS: ${METRICS_BACKGROUND_REFRESH_SECONDS:-60}
       METRICS_BACKGROUND_BATCH_LIMIT: ${METRICS_BACKGROUND_BATCH_LIMIT:-50}
 
+      # Keep only recent successful automatic metrics jobs. Manual actions,
+      # failures, active jobs, and audit/workflow references are preserved.
+      METRICS_JOB_RETENTION_DAYS: ${METRICS_JOB_RETENTION_DAYS:-7}
+      METRICS_JOB_CLEANUP_INTERVAL_SECONDS: ${METRICS_JOB_CLEANUP_INTERVAL_SECONDS:-300}
+      METRICS_JOB_CLEANUP_BATCH_SIZE: ${METRICS_JOB_CLEANUP_BATCH_SIZE:-5000}
+
       # Background CVE sync. Small installs can disable or defer startup sync.
       CVE_SYNC_ENABLED: ${CVE_SYNC_ENABLED:-true}
       CVE_SYNC_INITIAL_DELAY_SECONDS: ${CVE_SYNC_INITIAL_DELAY_SECONDS:-300}

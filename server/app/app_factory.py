@@ -4,18 +4,19 @@ import logging
 import secrets
 import ipaddress
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from sqlalchemy import delete, inspect, text
+from sqlalchemy import delete, inspect, select, text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 # NOTE: DB schema should be managed by Alembic in production.
 
 from .db import Base, SessionLocal, engine
-from .deps import get_current_user_from_request
+from .deps import sha256_hex
 from .routers import agent, ansible, approvals, audit, auth, backup_verification, cronjobs, dashboard, hosts, jobs, maintenance_windows, migrations, mfa, onboarding, enrollment, patching, reports, reports_html, search, sshkeys, terminal_ws, ui
 
 logger = logging.getLogger(__name__)
@@ -392,11 +393,15 @@ async def lifespan(app: FastAPI):
         logger.info('CVE reporting loop disabled by configuration')
         task5 = None
 
+    # Bound automatic metrics job history independently of interactive requests.
+    from .services.job_retention import job_retention_loop
+    retention_task = asyncio.create_task(job_retention_loop(stop_event))
+
     try:
         yield
     finally:
         stop_event.set()
-        tasks = [task]
+        tasks = [task, retention_task]
         try:
             if task2:
                 tasks.append(task2)
@@ -426,6 +431,41 @@ async def lifespan(app: FastAPI):
 
         import asyncio
         await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@dataclass(frozen=True)
+class _UIAuthState:
+    role: str
+    mfa_enabled: bool
+    mfa_verified: bool
+    session_expires: datetime
+
+
+def _resolve_ui_auth_state(token: str | None) -> _UIAuthState | None:
+    """Read authentication in a worker, returning no session-bound ORM objects."""
+    if not token:
+        return None
+    from .models import AppSession, AppUser
+
+    with SessionLocal() as db:
+        row = db.execute(
+            select(AppUser.role, AppUser.mfa_enabled, AppSession.mfa_verified_at, AppSession.expires_at)
+            .select_from(AppSession)
+            .join(AppUser, AppUser.id == AppSession.user_id)
+            .where(
+                AppSession.token_sha256 == sha256_hex(token),
+                AppSession.expires_at > datetime.now(timezone.utc),
+                AppUser.is_active.is_(True),
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return _UIAuthState(
+            role=(row.role or "operator").lower(),
+            mfa_enabled=bool(row.mfa_enabled),
+            mfa_verified=row.mfa_verified_at is not None,
+            session_expires=row.expires_at,
+        )
 
 
 def create_app() -> FastAPI:
@@ -470,62 +510,44 @@ def create_app() -> FastAPI:
         if path.startswith("/ws/"):
             return await call_next(request)
 
-        db = SessionLocal()
-        try:
-            user = get_current_user_from_request(request, db)
-            if not user:
-                if path == "/":
-                    return RedirectResponse(url="/login", status_code=302)
-                return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        from .services.background import run_blocking
 
-            # MFA enforcement (required for admin/operator unless readonly).
-            # Allow the UI shell and static assets so the user can complete MFA enrollment/verification flows.
-            role = (getattr(user, "role", "operator") or "operator").lower()
-            require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")
-            sess_res = None
-            if require_mfa:
-                # Always allow static assets and login shell.
-                if path.startswith("/assets/") or path.startswith("/static/") or path in ("/", "/terminal"):
-                    return await call_next(request)
-                if any(path.endswith(ext) for ext in (".css", ".js", ".map", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff", ".woff2", ".ttf")):
-                    return await call_next(request)
+        token = request.cookies.get("fleet_session")
+        auth_state = await run_blocking(_resolve_ui_auth_state, token)
+        if auth_state is None:
+            if path == "/":
+                return RedirectResponse(url="/login", status_code=302)
+            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
 
-                # Session is needed to check per-session verification.
-                from .deps import get_current_session_from_request
+        # The auth worker has closed its transaction before downstream handlers
+        # can wait for a body, another connection, or an asynchronous operation.
+        require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and auth_state.role in ("admin", "operator")
+        if require_mfa:
+            # Keep the authenticated shell accessible for MFA enrollment.
+            if path in ("/", "/terminal"):
+                return await call_next(request)
+            if any(path.endswith(ext) for ext in (".css", ".js", ".map", ".png", ".jpg", ".jpeg", ".svg", ".ico", ".woff", ".woff2", ".ttf")):
+                return await call_next(request)
+            if not auth_state.mfa_enabled:
+                return JSONResponse(status_code=403, content={"detail": "MFA enrollment required"})
+            if not auth_state.mfa_verified:
+                return JSONResponse(status_code=403, content={"detail": "MFA verification required"})
 
-                sess_res = get_current_session_from_request(request, db)
-                mfa_enabled = bool(getattr(user, "mfa_enabled", False))
-                mfa_verified = bool(sess_res and getattr(sess_res[0], "mfa_verified_at", None))
+        response = await call_next(request)
 
-                if not mfa_enabled:
-                    return JSONResponse(status_code=403, content={"detail": "MFA enrollment required"})
-                if not mfa_verified:
-                    return JSONResponse(status_code=403, content={"detail": "MFA verification required"})
+        # Refresh idle cookies using immutable auth data; no DB transaction is
+        # held while the endpoint runs, and no ORM objects cross thread borders.
+        from .deps import CSRF_COOKIE
+        from .routers.auth import _set_auth_cookies
 
-            response = await call_next(request)
-
-            # Keep rolling idle timeout alive for authenticated UI traffic.
-            token = request.cookies.get("fleet_session")
-            if token:
-                if sess_res is None:
-                    from .deps import get_current_session_from_request
-
-                    sess_res = get_current_session_from_request(request, db)
-                if sess_res:
-                    from .deps import CSRF_COOKIE
-                    from .routers.auth import _set_auth_cookies
-
-                    sess, _u = sess_res
-                    _set_auth_cookies(
-                        response,
-                        token=token,
-                        session_expires=sess.expires_at,
-                        csrf=(request.cookies.get(CSRF_COOKIE) or None),
-                    )
-
-            return response
-        finally:
-            db.close()
+        _set_auth_cookies(
+            response,
+            token=token,
+            session_expires=auth_state.session_expires,
+            csrf=(request.cookies.get(CSRF_COOKIE) or None),
+            request=request,
+        )
+        return response
 
     @app.middleware("http")
     async def csrf_middleware(request: Request, call_next):

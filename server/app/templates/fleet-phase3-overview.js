@@ -457,7 +457,7 @@
 
     if (!filteredCount) {
       if (counterEl) counterEl.textContent = `0 / ${total} hosts shown · online 0 · offline 0`;
-      w.setTableState(tbody, 10, 'empty', 'No hosts match current filters');
+      w.setTableState(tbody, 11, 'empty', 'No hosts match current filters');
       if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
       const selectAll = document.getElementById('hosts-select-all');
       if (selectAll) {
@@ -514,22 +514,24 @@
       }
       const selectedAgentIds = (ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || new Set();
       tr.innerHTML = `
-        <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
-        <td>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
-            <b>${w.escapeHtml(hostName)}</b>
+        <td class="host-col-select"><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
+        <td class="host-col-name">
+          <b>${w.escapeHtml(hostName)}</b>
+          <div class="host-identity-meta">
+            <span class="host-agent-id">${w.escapeHtml(it.agent_id || '')}</span>
+            ${it.ip_address ? `<span>${w.escapeHtml(it.ip_address)}</span>` : ''}
+            <span>agent ${w.escapeHtml(agentVersion)}</span>
           </div>
-          <div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''} • agent ${w.escapeHtml(agentVersion)}</div>
         </td>
-        <td>${owner ? `<code>${w.escapeHtml(owner)}</code>` : '<span class="status-muted">—</span>'}</td>
-        <td>${w.escapeHtml(os)}</td>
-        <td><code>${w.escapeHtml(kernel)}</code></td>
-        <td style="text-align:right;"><b>${sec}</b></td>
-        <td style="text-align:right;"><b>${all}</b></td>
-        <td>${reboot}</td>
-        <td>${online}</td>
-        <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
-        <td style="text-align:right;">${hostActionsMenu}</td>
+        <td class="host-col-owner">${owner ? `<code>${w.escapeHtml(owner)}</code>` : '<span class="status-muted">—</span>'}</td>
+        <td class="host-col-os">${w.escapeHtml(os)}</td>
+        <td class="host-col-kernel"><code>${w.escapeHtml(kernel)}</code></td>
+        <td class="host-col-count"><b>${sec}</b></td>
+        <td class="host-col-count"><b>${all}</b></td>
+        <td class="host-col-state">${reboot}</td>
+        <td class="host-col-state">${online}</td>
+        <td class="host-col-time status-muted">${w.escapeHtml(lastSeen)}</td>
+        <td class="host-col-actions">${hostActionsMenu}</td>
       `;
 
       tr.addEventListener('click', () => {
@@ -825,7 +827,7 @@
     const order = orderSel?.value || 'asc';
 
     try {
-      w.setTableState(tbody, 10, 'loading', 'Loading…');
+      w.setTableState(tbody, 11, 'loading', 'Loading…');
       const effectiveSort = sort === 'owner' ? 'hostname' : sort;
       const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(effectiveSort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
@@ -851,7 +853,7 @@
       if (!hostsTableItemsCache.length) {
         if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
         updateHostsUpdatesHint();
-        return w.setTableState(tbody, 10, 'empty', 'No hosts');
+        return w.setTableState(tbody, 11, 'empty', 'No hosts');
       }
 
       // Keep host metadata hydrated for filter options and host detail panel.
@@ -873,7 +875,7 @@
       updateHostsUpdatesHint();
 
     } catch (e) {
-      w.setTableState(tbody, 10, 'error', `Hosts table error: ${e.message || String(e)}`);
+      w.setTableState(tbody, 11, 'error', `Hosts table error: ${e.message || String(e)}`);
     }
   }
 

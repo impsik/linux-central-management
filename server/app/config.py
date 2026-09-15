@@ -106,6 +106,13 @@ class Settings(BaseSettings):
     metrics_background_refresh_seconds: int = 60  # set 0 to disable
     metrics_background_batch_limit: int = 50
 
+    # Retain successful automatic metrics job output for this many days. This
+    # does not remove manual jobs, failures, audit records, or metrics snapshots.
+    # Set retention days or cleanup interval to 0 to disable automatic cleanup.
+    metrics_job_retention_days: int = 7
+    metrics_job_cleanup_interval_seconds: int = 300
+    metrics_job_cleanup_batch_size: int = 5000  # hard cap: 5000 runs per pass
+
     # Background CVE sync. Small installs can disable or defer initial sync to
     # avoid doing memory-heavy OVAL processing during server startup.
     cve_sync_enabled: bool = True

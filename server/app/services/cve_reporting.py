@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import format_datetime
+from functools import lru_cache
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -206,34 +207,75 @@ def collect_high_severity_findings(db: Session, *, min_severity: float = 7.0) ->
     if not hosts:
         return findings
 
-    host_ids = [h.id for h in hosts]
-    pkg_rows = db.execute(select(HostPackage).where(HostPackage.host_id.in_(host_ids))).scalars().all()
-    update_rows = db.execute(select(HostPackageUpdate).where(HostPackageUpdate.host_id.in_(host_ids))).scalars().all()
-
-    pkg_map = {(row.host_id, row.name): row for row in pkg_rows}
-    names_by_host: dict[object, set[str]] = {}
-    for host_id, name in pkg_map:
-        names_by_host.setdefault(host_id, set()).add(name)
-    upd_map = {(row.host_id, row.name): row for row in update_rows if bool(row.update_available)}
-
     host_release_map = {host.id: _host_release_codename(host) for host in hosts}
-    all_pkg_names = sorted({row.name for row in pkg_rows})
     releases = sorted({r for r in host_release_map.values() if r})
-    if not all_pkg_names or not releases:
+    if not releases:
+        return findings
+    # Before the first sync (or for releases without CVEs), there is no reason
+    # to read any installed-package inventory, regardless of fleet size.
+    if db.execute(select(CVEPackage.id).where(CVEPackage.release.in_(releases)).limit(1)).first() is None:
         return findings
 
+    host_ids = [host.id for host in hosts if host_release_map[host.id]]
+    all_pkg_names = sorted(db.execute(
+        select(HostPackage.name).where(HostPackage.host_id.in_(host_ids)).distinct()
+    ).scalars().all())
+    if not all_pkg_names:
+        return findings
+
+    # Fleet-wide inventories often repeat the same packages. Resolve relevant
+    # CVEs first, using scalar columns rather than constructing package ORM
+    # objects for every installed package on every host.
     cve_rows = (
         db.execute(
-            select(CVEPackage).where(CVEPackage.release.in_(releases), CVEPackage.package_name.in_(all_pkg_names))
+            select(CVEPackage.cve_id, CVEPackage.package_name, CVEPackage.release,
+                   CVEPackage.fixed_version, CVEPackage.severity)
+            .where(CVEPackage.release.in_(releases), CVEPackage.package_name.in_(all_pkg_names))
         )
-        .scalars()
         .all()
     )
     severity_map = _load_cve_severity_map(db, sorted({str(r.cve_id) for r in cve_rows}))
 
-    by_release_pkg: dict[tuple[str, str], list[CVEPackage]] = {}
+    by_release_pkg: dict[tuple[str, str], list[tuple[str, str, float]]] = {}
+    names_by_release: dict[str, set[str]] = {}
     for row in cve_rows:
-        by_release_pkg.setdefault((str(row.release), str(row.package_name)), []).append(row)
+        severity = severity_map.get(str(row.cve_id)) or _parse_severity(row.severity)
+        if severity is None or severity <= float(min_severity):
+            continue
+        release, name = str(row.release), str(row.package_name)
+        by_release_pkg.setdefault((release, name), []).append((str(row.cve_id), row.fixed_version, severity))
+        names_by_release.setdefault(release, set()).add(name)
+    if not by_release_pkg:
+        return findings
+
+    host_ids_by_release = {
+        release: [host_id for host_id in host_ids if host_release_map[host_id] == release]
+        for release in names_by_release
+    }
+
+    def relevant_packages(model):
+        return or_(*(and_(model.host_id.in_(host_ids_by_release[release]), model.name.in_(sorted(names)))
+                     for release, names in names_by_release.items()))
+
+    pkg_rows = db.execute(
+        select(HostPackage.host_id, HostPackage.name, HostPackage.version).where(relevant_packages(HostPackage))
+    ).all()
+    if not pkg_rows:
+        return findings
+    update_rows = db.execute(
+        select(HostPackageUpdate.host_id, HostPackageUpdate.name, HostPackageUpdate.candidate_version)
+        .where(relevant_packages(HostPackageUpdate), HostPackageUpdate.update_available.is_(True))
+    ).all()
+    # Keep the existing one-version-per-host/package behavior for multiarch
+    # inventory; changing architecture semantics is separate from query sizing.
+    pkg_map = {(row.host_id, row.name): row.version for row in pkg_rows}
+    names_by_host: dict[object, set[str]] = {}
+    for host_id, name in pkg_map:
+        names_by_host.setdefault(host_id, set()).add(name)
+    upd_map = {(row.host_id, row.name): row.candidate_version for row in update_rows}
+    # Repeated versions across hosts/CVEs need one comparison per request. Keep
+    # the cache bounded and local so inventories and CVE changes are never stale.
+    version_lt = lru_cache(maxsize=8192)(_version_lt)
 
     for host in hosts:
         release = host_release_map.get(host.id)
@@ -241,28 +283,23 @@ def collect_high_severity_findings(db: Session, *, min_severity: float = 7.0) ->
             continue
         host_pkg_names = sorted(names_by_host.get(host.id, ()))
         for pkg_name in host_pkg_names:
-            pkg = pkg_map.get((host.id, pkg_name))
-            if not pkg:
-                continue
-            for cve_row in by_release_pkg.get((release, pkg_name), []):
-                severity = severity_map.get(str(cve_row.cve_id)) or _parse_severity(getattr(cve_row, "severity", None))
-                if severity is None or severity <= float(min_severity):
+            installed_version = pkg_map[(host.id, pkg_name)]
+            for cve_id, fixed_version, severity in by_release_pkg.get((release, pkg_name), []):
+                if not version_lt(installed_version, fixed_version):
                     continue
-                if not _version_lt(pkg.version, cve_row.fixed_version):
-                    continue
-                upd = upd_map.get((host.id, pkg_name))
+                candidate_version = upd_map.get((host.id, pkg_name))
                 findings.append(
                     SeverityFinding(
                         host_id=host.id,
                         agent_id=str(host.agent_id),
                         hostname=str(host.hostname),
                         package_name=str(pkg_name),
-                        installed_version=str(pkg.version),
-                        candidate_version=str(upd.candidate_version) if upd and upd.candidate_version else None,
-                        candidate_fixes=(not _version_lt(str(upd.candidate_version), cve_row.fixed_version)) if upd and upd.candidate_version else None,
-                        cve_id=str(cve_row.cve_id),
+                        installed_version=str(installed_version),
+                        candidate_version=str(candidate_version) if candidate_version else None,
+                        candidate_fixes=(not version_lt(str(candidate_version), fixed_version)) if candidate_version else None,
+                        cve_id=cve_id,
                         severity=severity,
-                        fixed_version=str(cve_row.fixed_version),
+                        fixed_version=str(fixed_version),
                         release=release,
                     )
                 )

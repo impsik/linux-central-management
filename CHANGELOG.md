@@ -5,6 +5,34 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- Bounded, configurable cleanup of successful automatic metrics job history,
+  preserving manual operations, failures, active runs, and audit/workflow references.
+- A realistic fleet capacity harness with signed agent requests, independent
+  heartbeat/inventory/job polling, and concurrent authenticated UI API probes.
+
+### Fixed
+- Agent authentication and job polling release database connections before
+  network waits; UI authentication also closes its session before downstream
+  requests. Blocking database work runs outside the API event loop, avoiding
+  connection-pool exhaustion with concurrent agents.
+- Concurrent agents can claim separate runs of the same batch without locking
+  its shared parent job; overlapping polls cannot retry the same stale run twice.
+- CVE reports filter relevant releases, packages, and severity before loading
+  fleet inventories, and reuse repeated version comparisons within each request.
+- Background metrics now select missing or oldest data before applying the
+  batch limit, so hosts beyond the first 50 also receive updates.
+- Setting the metrics refresh interval to zero now disables automatic collection.
+
+## [0.1.0-beta.1] - 2026-09-14
+
+### Added
+- A shared `VERSION` source for server and agent releases, a version sync helper,
+  and CI checks that reject mismatched generated versions.
+- `fleet-agent --version` for checking an installed binary without starting it.
+- Agent tests and `go vet` in CI.
+- Guided installer preflight, resumable setup and first-host onboarding.
+- One-time enrollment commands for adding hosts without existing Master SSH access.
+
 - OIDC week-1 foundation (feature-flagged):
   - new OIDC config/env keys (`AUTH_OIDC_*`)
   - startup validation for required OIDC settings when enabled
@@ -18,7 +46,6 @@ All notable changes to this project are documented in this file.
   - Admin UI card to run OIDC mapping previews by pasting claims JSON
   - Added OIDC auth flow tests (login redirect, callback provisioning, domain deny)
 
-### Added
 - Phase 1 groundwork for scoped RBAC by host labels:
   - new `app_user_scopes` table (Alembic migration `20260217_00`)
   - scope utility service (`services/user_scopes.py`) for selector evaluation and target filtering
@@ -28,6 +55,10 @@ All notable changes to this project are documented in this file.
   - `/auth/me` now returns scope metadata (`scope.limited`, `scope.selectors`)
 
 ### Changed
+- Server and agent now use the same `0.1.0-beta.1` release number.
+- Hosts table uses compact Owner/OS columns and wraps agent metadata as needed.
+- Dashboard refreshes avoid overlapping requests and pause when not visible.
+
 - Linux-Guardian parity pass for the main UI shell:
   - left-rail, dashboard-first navigation and dark theme alignment
   - operations dashboard composition updated (Host Inventory, Active Alerts, Operational Quality, Recent Failed Runs)
@@ -56,6 +87,16 @@ All notable changes to this project are documented in this file.
   - deactivation guardrail: cannot deactivate the last active admin
 
 ### Fixed
+- CVE parsing and periodic reporting no longer block the web event loop;
+  package lookup writes use parameter batches and reports avoid loading large
+  unused CVE documents.
+- Admin users and audit log loading no longer recurse indefinitely.
+- Sudo inventory checks actual policy instead of relying on command exit status
+  or group names alone.
+- Service inventory distinguishes static units and socket activation, with
+  enable/disable actions limited to supported units.
+- Console displays Master configuration readiness separately from permissions.
+
 - Metadata save now updates host header labels (`env` / `role`) immediately without requiring a page reload.
 - UI v2 stylesheet loading order fixed to prevent layout regression where the left menu rendered on top instead of side-by-side.
 

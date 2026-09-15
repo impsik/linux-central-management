@@ -11,6 +11,10 @@ managed Linux host. The project includes Debian/Ubuntu (APT/dpkg) and
 Red Hat-family (DNF/RPM) package-management paths; individual operations depend
 on the host distribution and installed tools.
 
+The server and agent share the release version in [`VERSION`](VERSION).
+The current release line is **0.1.0 beta**; see the [changelog](CHANGELOG.md)
+for the beta changes.
+
 ![Linux Central Management web dashboard for managing Linux servers](docs/screenshots/2.png)
 
 ## Common Use Cases
@@ -140,6 +144,61 @@ For a larger environment, use internal DNS for the application hostname.
 `/etc/hosts` works for testing, but every browser and managed host must resolve
 the name consistently. The `.local` suffix may conflict with mDNS on some
 networks.
+
+### Admin node sizing
+
+For around 100 managed hosts, start with **4 vCPU, 16 GB RAM, and a 150 GB SSD**
+for the application and PostgreSQL on the same machine. These are planning
+recommendations, not certified capacity limits:
+
+| Environment | CPU | RAM | SSD/NVMe storage |
+|---|---:|---:|---:|
+| 100-host pilot, few concurrent administrators | 4 vCPU | 8 GB | 100 GB |
+| 100 hosts, recommended starting point | 4 vCPU | 16 GB | 150 GB |
+| 250 hosts, validate with your workload | 8 vCPU | 16 GB | 200 GB |
+
+Allow for the OS, Docker images, database growth, and logs; keep independent
+backups elsewhere. Package count, inventory frequency, concurrent reports,
+and history retention affect resource use. Configure log rotation as well as
+database retention; unbounded container/proxy logs can dominate disk growth.
+These estimates assume roughly
+700–1000 installed packages per host and no local package mirror. Use the
+[capacity test procedure](docs/load-testing.md) before committing to a larger fleet.
+
+The [September 2026 capacity measurements](docs/performance-2026-09-14.md)
+document the tested workload, response times, resource use, and limitations.
+The short 100-host test met the 500 ms UI API p95 target (slowest route: 411 ms).
+The 250-host test reached 1,251 ms, missed heartbeat intervals, and had one
+disconnected poll during onboarding, so it did not pass all acceptance checks.
+Both tests used a shared machine with limits of 2 CPUs / 2 GiB per application
+and database container. The larger VM recommendation above has not been tested.
+More CPU cores alone do not guarantee faster reports in the current single
+application process; validate report latency on the intended hardware.
+
+Background metrics default to 50 hosts per 60-second batch, selecting missing
+or oldest data first. With all hosts online and responding, one pass takes
+roughly two minutes for 100 hosts or five minutes for 250 hosts. Adjust
+`METRICS_BACKGROUND_BATCH_LIMIT` (maximum 200) and
+`METRICS_BACKGROUND_REFRESH_SECONDS` for the freshness you need, then retest.
+Setting the refresh interval to `0` disables automatic collection.
+
+Successful automatic `query-metrics` job results expire after seven days.
+Manual jobs, failed or active runs, and jobs referenced by audit/workflow
+records are preserved. This policy is separate from metric snapshot cleanup.
+Configure these values in `deploy/docker/.env`:
+
+```dotenv
+METRICS_JOB_RETENTION_DAYS=7
+METRICS_JOB_CLEANUP_INTERVAL_SECONDS=300
+METRICS_JOB_CLEANUP_BATCH_SIZE=5000
+```
+
+Set retention days to `0` to disable this cleanup. Each pass removes at most
+5000 eligible runs; PostgreSQL can reuse the freed space without reducing the
+database file size immediately. Other job history and audit logs still need
+an organization-specific retention policy. Keep one application process until
+background schedulers have coordinated ownership; adding Uvicorn workers
+currently starts additional scheduler instances.
 
 ## Install the Admin Node
 
@@ -700,6 +759,19 @@ The backend lives in `server/`, the Go agent in `agent/`, deployment files in
 JavaScript templates in `server/app/templates/`.
 Agents use HTTPS requests and long polling; this repository does not use gRPC
 or generated Protocol Buffer sources.
+
+### Release versions
+
+Update the root `VERSION` file, then run `python3 scripts/sync-version.py`.
+This generates the server and agent version constants; commit both generated
+files with `VERSION`. CI runs `python3 scripts/sync-version.py --check` to reject
+missing or inconsistent versions. Ordinary Go and Docker builds include these
+constants without additional build flags.
+
+The UI footer shows the server version. Each host reports its own installed
+agent version, so existing agents retain their previous number until their
+binary is upgraded. Run `sudo /opt/fleet-agent/fleet-agent --version` on an installed
+host to inspect its binary without starting the service or connecting to the Master.
 
 To run the tests from a development checkout, use Python 3.12 (the backend CI
 version), Node.js 22, and a Go toolchain compatible with `agent/go.mod`:

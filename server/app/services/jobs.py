@@ -136,19 +136,20 @@ def recover_stale_job_runs_for_agent(db: Session, agent_id: str, *, now: datetim
 
     db.flush()
 
-    candidates = (
-        db.execute(
-            select(JobRun)
-            .where(
-                JobRun.agent_id == agent_id,
-                JobRun.status == "running",
-                JobRun.started_at.is_not(None),
-            )
-            .order_by(JobRun.started_at.asc())
+    stmt = (
+        select(JobRun)
+        .where(
+            JobRun.agent_id == agent_id,
+            JobRun.status == "running",
+            JobRun.started_at < cutoff,
         )
-        .scalars()
-        .all()
+        .order_by(JobRun.started_at.asc())
     )
+    if db.get_bind().dialect.name == "postgresql":
+        # Recovery and claiming share one transaction. Overlapping agent polls
+        # must not both retry the same abandoned run or rotate its nonce twice.
+        stmt = stmt.with_for_update(of=JobRun, skip_locked=True)
+    candidates = db.execute(stmt).scalars().all()
 
     requeued = 0
     failed = 0
@@ -232,7 +233,9 @@ def claim_queued_job_for_agent(db: Session, agent_id: str, job_key: str | None =
         except Exception:
             dialect = ""
         if dialect == "postgresql":
-            stmt = stmt.with_for_update(skip_locked=True)
+            # A batch shares its Job parent across agents. Lock only the run so
+            # different agents can claim their own work concurrently.
+            stmt = stmt.with_for_update(of=JobRun, skip_locked=True)
 
         row = db.execute(stmt).first()
         if not row:

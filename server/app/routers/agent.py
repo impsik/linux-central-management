@@ -10,13 +10,14 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..db import get_db
+from ..db import SessionLocal, get_db
 from ..dispatcher import dispatcher
 from ..models import HostUser, Host, HostCVEStatus, HostLoadMetric, HostMetricsSnapshot, HostPackage, HostPackageUpdate, Job, JobRun
 from ..schemas import AgentRegister, JobEvent, PackageUpdatesInventory, PackagesInventory
 from ..services.agents import get_client_ip
 from ..services.agent_auth import hash_agent_token, require_agent_token_dep
 from ..services.audit import log_event
+from ..services.background import run_blocking
 from ..services.jobs import claim_queued_job_for_agent, create_job_with_runs
 
 router = APIRouter(prefix="/agent", tags=["agent"], dependencies=[Depends(require_agent_token_dep)])
@@ -297,20 +298,31 @@ def agent_inventory_package_updates(payload: PackageUpdatesInventory, request: R
     return {"ok": True, "updates": len(payload.updates), "checked_at": checked_at.isoformat()}
 
 
-@router.get("/next-job")
-async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(get_db)):
-    _ensure_agent_identity(request, agent_id)
-    host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
-    if not host:
-        _audit_unknown_agent(db, request, agent_id, "next_job")
-        raise HTTPException(404, "unknown agent")
+def _claim_next_agent_job(agent_id: str, request: Request, *, touch_host: bool = False, job_key: str | None = None):
+    """Own a short DB session inside the worker; return only the job payload."""
+    with SessionLocal() as db:
+        if touch_host:
+            host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
+            if not host:
+                _audit_unknown_agent(db, request, agent_id, "next_job")
+                raise HTTPException(404, "unknown agent")
+            host.last_seen = datetime.now(timezone.utc)
+            db.commit()
 
-    host.last_seen = datetime.now(timezone.utc)
-    db.commit()
+        if job_key:
+            claimed = claim_queued_job_for_agent(db, agent_id, job_key=job_key)
+            if claimed is not None:
+                return claimed
+        return claim_queued_job_for_agent(db, agent_id)
+
+
+@router.get("/next-job")
+async def agent_next_job(agent_id: str, request: Request):
+    _ensure_agent_identity(request, agent_id)
 
     # Durable DB queue first. This survives process restarts and works without
     # relying on the in-memory dispatcher.
-    claimed = claim_queued_job_for_agent(db, agent_id)
+    claimed = await run_blocking(_claim_next_agent_job, agent_id, request, touch_host=True)
     if claimed is not None:
         return {"job": claimed}
 
@@ -320,10 +332,7 @@ async def agent_next_job(agent_id: str, request: Request, db: Session = Depends(
     wake = await dispatcher.pop_job(agent_id, timeout=settings.agent_poll_timeout_seconds)
     if wake is not None:
         job_key = str((wake or {}).get("job_id") or "").strip() or None
-        claimed = claim_queued_job_for_agent(db, agent_id, job_key=job_key)
-        if claimed is not None:
-            return {"job": claimed}
-        claimed = claim_queued_job_for_agent(db, agent_id)
+        claimed = await run_blocking(_claim_next_agent_job, agent_id, request, job_key=job_key)
         if claimed is not None:
             return {"job": claimed}
 

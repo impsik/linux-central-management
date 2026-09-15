@@ -6,6 +6,26 @@ on:
   pull_request:
 
 jobs:
+  version-and-agent-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check shared release version
+        run: python scripts/sync-version.py --check
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.6'
+          cache-dependency-path: agent/go.sum
+      - name: Test agent
+        working-directory: agent
+        run: go test ./...
+      - name: Check agent with go vet
+        working-directory: agent
+        run: go vet ./...
+
   frontend-tests:
     runs-on: ubuntu-latest
     steps:
@@ -35,6 +55,18 @@ jobs:
 
   backend-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: fleet_ci
+          POSTGRES_USER: fleet
+          POSTGRES_PASSWORD: ci-only-postgres-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U fleet -d fleet_ci"
+          --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -60,3 +92,12 @@ jobs:
           DB_AUTO_CREATE_TABLES: "false"
           DB_REQUIRE_MIGRATIONS_UP_TO_DATE: "false"
         run: pytest server/tests -q
+      - name: Migrate isolated PostgreSQL test database
+        working-directory: server
+        env:
+          DATABASE_URL: postgresql+psycopg://fleet:ci-only-postgres-password@127.0.0.1:5432/fleet_ci
+        run: alembic upgrade head
+      - name: Verify concurrent PostgreSQL job claims
+        env:
+          FLEET_TEST_POSTGRES_URL: postgresql+psycopg://fleet:ci-only-postgres-password@127.0.0.1:5432/fleet_ci
+        run: pytest server/tests/test_job_claim_concurrency.py -q

@@ -22,8 +22,6 @@ import (
 	"time"
 )
 
-const AgentVersion = "0.0.3-alpha"
-
 type Config struct {
 	ServerURL      string
 	AgentID        string
@@ -108,11 +106,15 @@ type JobEvent struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
+		fmt.Printf("fleet-agent %s\n", AgentVersion)
+		return
+	}
 	if internal.RunTerminalSSHLoginFromArgs(os.Args) {
 		return
 	}
 
-	log.Println("Fleet agent starting...")
+	log.Printf("Fleet agent %s starting...", AgentVersion)
 	go internal.StartTerminalServer()
 
 	cfg := loadConfig()

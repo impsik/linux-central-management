@@ -1550,117 +1550,87 @@ body.fleet-report {
   border-color: rgba(59, 130, 246, 0.6);
 }
 
-/* Hosts table: reduce forced horizontal scrolling */
-.hosts-table {
-  table-layout: auto;
-}
-
-.hosts-table th,
-.hosts-table td {
-  white-space: normal;
-}
-
-/* Keep the checkbox + host name reasonably compact */
-.hosts-table th:first-child,
-.hosts-table td:first-child {
-  width: 36px;
-  white-space: nowrap;
-}
-
-.hosts-table th:nth-child(2),
-.hosts-table td:nth-child(2) {
-  white-space: nowrap;
-}
-
-/* Hosts table: let columns size naturally to their content */
+/* Shared table presentation; inventory widths use named columns below. */
 .hosts-table {
   width: 100%;
   table-layout: auto;
 }
 
-/* Slightly tighter table to save width, use percentage/flex where possible */
 .hosts-table th,
 .hosts-table td {
   padding: 0.45rem 0.55rem;
   font-size: 0.84rem;
-  line-height: 1.15;
+  line-height: 1.25;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Column sizing - optimized for 1080p without scroll */
-.hosts-table th:first-child,
-.hosts-table td:first-child {
+/* Column names stay aligned when columns are added or reordered. */
+.host-inventory-table .host-col-select {
   width: 36px;
-  flex: 0 0 36px;
 }
 
-/* Host: flexible */
-.hosts-table th:nth-child(2),
-.hosts-table td:nth-child(2) {
-  width: 22%;
-  min-width: 160px;
-  max-width: 300px;
+.host-inventory-table .host-col-name {
+  width: 100%;
+  min-width: 18rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-/* OS: flexible */
-.hosts-table th:nth-child(3),
-.hosts-table td:nth-child(3) {
-  width: 14%;
-  min-width: 100px;
+.host-inventory-table .host-col-owner {
+  width: 7rem;
+  min-width: 6rem;
+  max-width: 7rem;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-/* Kernel: size to actual kernel string instead of reserving a large fixed slice */
-.hosts-table th:nth-child(4),
-.hosts-table td:nth-child(4) {
+.host-inventory-table .host-col-os {
+  width: 8rem;
+  min-width: 7rem;
+  white-space: normal;
+}
+
+.host-inventory-table .host-col-kernel,
+.host-inventory-table .host-col-count,
+.host-inventory-table .host-col-state,
+.host-inventory-table .host-col-time,
+.host-inventory-table .host-col-actions {
   width: 1%;
-  min-width: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
-/* Security */
-.hosts-table th:nth-child(5),
-.hosts-table td:nth-child(5) {
-  width: 90px;
+.host-inventory-table .host-col-count,
+.host-inventory-table .host-col-actions {
   text-align: right;
 }
 
-/* All updates */
-.hosts-table th:nth-child(6),
-.hosts-table td:nth-child(6) {
-  width: 95px;
-  text-align: right;
+.host-inventory-table .host-actions-toggle {
+  white-space: nowrap;
 }
 
-/* Reboot */
-.hosts-table th:nth-child(7),
-.hosts-table td:nth-child(7) {
-  width: 80px;
+.host-identity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.65rem;
+  margin-top: 0.15rem;
+  color: var(--muted-2);
+  font-size: 0.8rem;
 }
 
-/* Online */
-.hosts-table th:nth-child(8),
-.hosts-table td:nth-child(8) {
-  width: 90px;
+.host-identity-meta > span {
+  white-space: nowrap;
 }
 
-/* Last seen */
-.hosts-table th:nth-child(9),
-.hosts-table td:nth-child(9) {
-  width: 12%;
-  min-width: 120px;
+.host-identity-meta > .host-agent-id {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-/* Hosts table wrapper: avoid horizontal scrollbar on desktop; allow on small screens */
+/* Keep every column reachable when the table cannot fit a narrow viewport. */
 .hosts-table-wrap {
-  overflow-x: hidden;
-}
-
-@media (max-width: 1100px) {
-  .hosts-table-wrap {
-    overflow-x: auto;
-  }
+  overflow-x: auto;
 }
 
 /* First-host setup stays inside the dashboard; normal views remain accessible. */
