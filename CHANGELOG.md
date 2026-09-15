@@ -5,12 +5,18 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- Live name/description search in Hosts → Services, with matching counts and
+  a clear button; the filter survives refreshes of the same host.
+- Firewall management can enable installed UFW or firewalld across selected
+  online hosts, prepare Master SSH/Console access, and report per-host results.
 - Bounded, configurable cleanup of successful automatic metrics job history,
   preserving manual operations, failures, active runs, and audit/workflow references.
 - A realistic fleet capacity harness with signed agent requests, independent
   heartbeat/inventory/job polling, and concurrent authenticated UI API probes.
 
 ### Fixed
+- Inactive firewalld is recognized during firewall scans. Firewall actions
+  retain command diagnostics after rescanning and recover from stalled requests.
 - Agent authentication and job polling release database connections before
   network waits; UI authentication also closes its session before downstream
   requests. Blocking database work runs outside the API event loop, avoiding

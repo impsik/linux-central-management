@@ -59,9 +59,11 @@ for the beta changes.
 
 - package inventory, package updates, security campaigns, and controlled
   full package upgrades;
-- service status and start, stop, restart, enable, and disable operations;
+- service status, live search by name or description, and start, stop, restart,
+  enable, and disable operations;
 - user-account, SSH-key, and sudo-access management;
-- firewall inspection and management;
+- firewall inspection, rule management, and activation across selected hosts
+  ([usage and management-access checks](docs/firewall-management.md));
 - browser terminal access to managed hosts;
 - Ansible-backed actions across one or more selected hosts.
 

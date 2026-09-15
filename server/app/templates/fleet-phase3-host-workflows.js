@@ -81,8 +81,67 @@
     }
   }
 
+  const serviceViews = new WeakMap();
+
+  function isCurrentServicesHost(ctx, agentId) {
+    return typeof ctx.getCurrentAgentId !== 'function' || ctx.getCurrentAgentId() === agentId;
+  }
+
+  function filterServices(servicesList, view) {
+    const query = (view.search?.value || '').trim().toLowerCase();
+    if (view.clear) view.clear.disabled = !view.search?.value;
+    if (!view.loaded) return;
+    const cards = servicesList.querySelectorAll('.service-card[data-service-search]');
+    let visible = 0;
+    cards.forEach(card => {
+      const matches = (card.getAttribute('data-service-search') || '').includes(query);
+      card.hidden = !matches;
+      // The existing .service-card display:flex rule overrides the browser's
+      // default hidden styling, so set its display explicitly as well.
+      card.style.display = matches ? '' : 'none';
+      if (matches) visible++;
+    });
+    if (view.status) {
+      view.status.textContent = cards.length && !visible
+        ? `No services match your search. Showing 0 of ${cards.length} services.`
+        : `Showing ${visible} of ${cards.length} services.`;
+    }
+  }
+
+  function getServicesView(servicesList) {
+    let view = serviceViews.get(servicesList);
+    if (!view) {
+      view = {
+        agentId: null,
+        requestId: 0,
+        loaded: false,
+        search: document.getElementById('services-search'),
+        clear: document.getElementById('services-search-clear'),
+        status: document.getElementById('services-search-status'),
+      };
+      view.search?.addEventListener('input', () => filterServices(servicesList, view));
+      view.clear?.addEventListener('click', () => {
+        if (!view.search) return;
+        view.search.value = '';
+        filterServices(servicesList, view);
+        view.search.focus();
+      });
+      serviceViews.set(servicesList, view);
+    }
+    return view;
+  }
+
   async function loadServices(ctx, agentId) {
     const servicesList = document.getElementById('services-list');
+    if (!servicesList || !isCurrentServicesHost(ctx, agentId)) return;
+    const view = getServicesView(servicesList);
+    if (view.agentId !== agentId && view.search) view.search.value = '';
+    view.agentId = agentId;
+    view.loaded = false;
+    const requestId = ++view.requestId;
+    const isCurrentRequest = () => requestId === view.requestId && isCurrentServicesHost(ctx, agentId);
+    filterServices(servicesList, view);
+    if (view.status) view.status.textContent = 'Loading services...';
     servicesList.innerHTML = '<div class="loading">Loading services...</div>';
 
     try {
@@ -98,9 +157,12 @@
         throw new Error(`Failed to load services: ${errorMsg}`);
       }
       const data = await response.json();
+      if (!isCurrentRequest()) return;
+      view.loaded = true;
 
       if (!data.services || data.services.length === 0) {
         servicesList.innerHTML = '<div class="empty-state">No services found</div>';
+        filterServices(servicesList, view);
         return;
       }
 
@@ -111,7 +173,7 @@
         const canToggle = autostart.enabled ? autostart.canDisable : autostart.canEnable;
         const enabledBadge = `<span class="sudo-badge ${autostart.enabled ? 'yes' : 'no'}" style="margin-left: 0.5rem;" title="${w.escapeHtml(autostart.reason)}">Autostart: ${w.escapeHtml(autostart.label)}</span>`;
         return `
-            <div class="service-card" data-service-name="${w.escapeHtml(service.name)}">
+            <div class="service-card" data-service-name="${w.escapeHtml(service.name)}" data-service-search="${w.escapeHtml(`${service.name || ''} ${service.description || ''}`.toLowerCase())}">
               <div class="service-info">
                 <div class="service-name"><a href="#" class="service-name-link" data-service="${w.escapeHtml(service.name)}" style="text-decoration:underline;">${w.escapeHtml(service.name)}</a></div>
                 <div class="service-details">
@@ -133,6 +195,7 @@
             </div>
           `;
       }).join('');
+      filterServices(servicesList, view);
 
       servicesList.querySelectorAll('a.service-name-link').forEach(a => {
         a.addEventListener('click', (e) => {
@@ -153,8 +216,11 @@
         });
       });
     } catch (error) {
+      if (!isCurrentRequest()) return;
       console.error('Error loading services:', error);
-      servicesList.innerHTML = `<div class="error">Error loading services: ${error.message}</div>`;
+      view.loaded = false;
+      if (view.status) view.status.textContent = 'Services could not be loaded.';
+      servicesList.innerHTML = `<div class="error">Error loading services: ${w.escapeHtml(error.message)}</div>`;
     }
   }
 

@@ -48,7 +48,7 @@ describe('service autostart state', () => {
 
   it('renders a static service with disabled enable action but leaves runtime Start available', async () => {
     const list = { innerHTML: '', querySelectorAll: () => [] };
-    const browser = load({ document: { getElementById: () => list }, fetch: async () => ({ ok: true, json: async () => ({ services: [{ name: 'systemd-fsckd.service', status: 'inactive', unit_file_state: 'static', enabled: false, can_enable: false, can_disable: false }] }) }) });
+    const browser = load({ document: { getElementById: id => id === 'services-list' ? list : null }, fetch: async () => ({ ok: true, json: async () => ({ services: [{ name: 'systemd-fsckd.service', status: 'inactive', unit_file_state: 'static', enabled: false, can_enable: false, can_disable: false }] }) }) });
     vm.runInContext(read('fleet-phase3-host-workflows.js'), browser);
     await browser.phase3HostWorkflows.loadServices({}, 'node-1');
     expect(list.innerHTML).toContain('Autostart: Static');

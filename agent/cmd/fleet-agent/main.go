@@ -736,7 +736,7 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		return
 
 	case "firewall-control":
-		stdout, stderr, code, errMsg := controlFirewall(ctx, job.Action, job.Port, job.Protocol, job.Source, job.Service)
+		stdout, stderr, code, errMsg := controlFirewall(ctx, job.Action, job.Port, job.Protocol, job.Source, job.Service, serverURL)
 		if code == 0 && errMsg == "" {
 			ev.Status = "success"
 		} else {
@@ -1440,33 +1440,25 @@ type FirewallRule struct {
 	Raw      string `json:"raw,omitempty"`
 }
 
-func detectFirewallBackend(ctx context.Context) string {
-	if _, err := exec.LookPath("firewall-cmd"); err == nil {
-		stateCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(stateCtx, "firewall-cmd", "--state")
-		if out, err := cmd.Output(); err == nil && strings.TrimSpace(string(out)) == "running" {
-			return "firewalld"
-		}
-	}
-	if _, err := exec.LookPath("ufw"); err == nil {
-		return "ufw"
-	}
-	return ""
-}
-
 func queryFirewall(ctx context.Context) (string, string, int, string) {
 	queryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	backend := detectFirewallBackend(queryCtx)
-	switch backend {
+	ops := systemFirewallOps()
+	state, err := inspectFirewall(queryCtx, ops)
+	if err != nil {
+		return "", "", 1, err.Error()
+	}
+	switch state.backend {
 	case "firewalld":
+		if !state.active {
+			return queryInactiveFirewalld(queryCtx, ops)
+		}
 		return queryFirewalld(queryCtx)
 	case "ufw":
 		return queryUfw(queryCtx)
 	default:
-		return "", "", 1, "no supported firewall manager found (expected active firewalld or ufw)"
+		return "", "", 1, "no supported firewall manager found (expected firewalld or ufw)"
 	}
 }
 
@@ -1503,7 +1495,7 @@ func queryFirewalld(ctx context.Context) (string, string, int, string) {
 			if line == "" {
 				continue
 			}
-			rules = append(rules, FirewallRule{Backend: "firewalld", Action: "deny", Raw: line})
+			rules = append(rules, firewalldRichRule(line))
 		}
 	}
 
@@ -1605,13 +1597,16 @@ func parseUfwStatusLine(line string) FirewallRule {
 	return rule
 }
 
-func controlFirewall(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
+func controlFirewall(ctx context.Context, action string, port int, protocol, source, service, serverURL string) (string, string, int, string) {
 	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	action = strings.ToLower(strings.TrimSpace(action))
+	if action == "enable" {
+		return enableFirewall(ctx, serverURL, systemFirewallOps())
+	}
 	if action != "allow" && action != "deny" && action != "delete" {
-		return "", "", 1, "action must be allow, deny, or delete"
+		return "", "", 1, "action must be allow, deny, delete, or enable"
 	}
 	protocol = strings.ToLower(strings.TrimSpace(protocol))
 	if protocol == "" {
@@ -1632,13 +1627,20 @@ func controlFirewall(ctx context.Context, action string, port int, protocol, sou
 		return "", "", 1, "port must be between 1 and 65535"
 	}
 
-	switch detectFirewallBackend(queryCtx) {
+	state, err := inspectFirewall(queryCtx, systemFirewallOps())
+	if err != nil {
+		return "", "", 1, err.Error()
+	}
+	switch state.backend {
 	case "firewalld":
+		if !state.active {
+			return "", "", 1, "firewalld is inactive; enable it before changing runtime rules"
+		}
 		return controlFirewalld(queryCtx, action, port, protocol, source, service)
 	case "ufw":
 		return controlUfw(queryCtx, action, port, protocol, source, service)
 	default:
-		return "", "", 1, "no supported firewall manager found (expected active firewalld or ufw)"
+		return "", "", 1, "no supported firewall manager found (expected firewalld or ufw)"
 	}
 }
 

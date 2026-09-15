@@ -867,7 +867,7 @@
     <div class="tab-content-custom" id="firewall-management-tab">
       <div class="admin-content">
         <div class="section-title">Firewall management</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">Review firewall rules on visible online servers and apply simple allow, deny, or remove operations to selected hosts.</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Review and enable firewalls on selected online servers, or manage their allow and deny rules.</div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">Fleet firewall rules</div>
@@ -875,6 +875,7 @@
             <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
               <button class="btn btn-primary" id="firewall-management-refresh" type="button">Scan hosts</button>
               <button class="btn" id="firewall-management-select-all" type="button">Select all</button>
+              <button class="btn btn-primary" id="firewall-management-enable" type="button" disabled>Enable selected</button>
               <div style="min-width:110px;">
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
                 <input id="firewall-management-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
@@ -899,6 +900,7 @@
               <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove allow selected</button>
               <span id="firewall-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
             </div>
+            <div id="firewall-management-result" class="admin-note" role="status" aria-live="polite" style="white-space:pre-wrap;"></div>
             <div style="overflow:auto;">
               <table class="process-table hosts-table">
                 <thead>
@@ -1556,6 +1558,16 @@
           IP: <code class="host-context-ip">—</code>
         </div>
         <div class="section-title">System Services</div>
+        <div style="display:flex;gap:0.6rem;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:1;max-width:480px;min-width:200px;">
+            <label for="services-search" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Search services</label>
+            <input id="services-search" class="host-search" type="search"
+              placeholder="Name or description (e.g. ufw)" aria-controls="services-list" aria-describedby="services-search-status" />
+          </div>
+          <button class="btn" id="services-search-clear" type="button" disabled>Clear</button>
+        </div>
+        <div id="services-search-status" role="status" aria-live="polite" aria-atomic="true"
+          style="color:var(--muted-2);font-size:0.9rem;margin:0.65rem 0;"></div>
         <div id="services-list">
           <div class="loading">Select a host to view services...</div>
         </div>
