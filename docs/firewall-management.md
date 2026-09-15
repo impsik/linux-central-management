@@ -2,7 +2,7 @@
 
 Update both the Master and the managed node agents from the checkout containing
 these features. Older agents can report firewall status but may not support
-enabling or disabling it. Updating the Master alone does not replace existing
+enabling, disabling, or deleting selected rules. Updating the Master alone does not replace existing
 node binaries. Keep each node's existing identity and credentials when updating
 its agent; the displayed release number can be the same for different builds.
 
@@ -35,6 +35,33 @@ firewall protection and turns off its configured automatic startup; it does not
 mask firewalld or prevent an administrator or another service from starting it.
 The same service-management permissions, host scope, job results and audit trail
 apply as for enabling.
+
+## Remove specific rules from one or several hosts
+
+1. Scan hosts and select the host(s) to manage.
+2. Click **Remove rules…** to open their rules, grouped by host.
+3. Check only the rules to remove and click **Remove selected rules**.
+   Unchecked rules and hosts without checked rules remain unchanged. Cancel or
+   Escape closes the dialog without submitting a job.
+
+The dialog shows the original rule, including source, direction and IPv6 details,
+plus the firewalld zone. Both allow and deny rules can be selected. Port, Service
+and Source inputs in the main toolbar are not used for this operation. Removing
+SSH or Console allows may interrupt Master access; keep those rules unless that
+is intentional. There is a limit of 100 rules per host and 500 per operation.
+
+Agents re-read the rules before deleting and verify the result afterwards. UFW
+rules are removed by exact numbered identity in descending order; a stale list
+or unexpected post-deletion state fails with instructions to scan again. UFW
+must be active to expose numbered rules. Firewalld removes the exact port,
+service or rich rule in the displayed zone from runtime and permanent
+configuration where present, without a reload affecting unrelated runtime rules.
+For inactive firewalld, only permanent configuration is changed.
+
+A failure can leave earlier removals applied. Inspect the per-host error and
+rescan before retrying; a successful command that did not remove the selected
+rule is not reported as success. Rules edited independently on the node during
+an operation can cause it to stop with a verification error.
 
 ## Keep Master access available
 

@@ -103,6 +103,8 @@ def build_agent_job_payload(job: Job, agent_id: str) -> dict:
         out["service_name"] = payload.get("username") or payload.get("service_name") or ""
 
     if job_type == "firewall-control":
+        if payload.get("action") == "delete-rules":
+            out["rules"] = (payload.get("rules_by_agent") or {}).get(agent_id, [])
         for key in ("action", "port", "protocol", "source", "service"):
             if payload.get(key) is not None:
                 out[key] = payload.get(key)

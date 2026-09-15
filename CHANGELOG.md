@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- A firewall rule removal dialog with per-host selections for one or many hosts,
+  preserving unchecked rules and showing source, direction, IPv6 and zone details.
 - Hosts → System Services can sort by name in either direction or put enabled
   or disabled autostart services first, while retaining the current search.
 - Firewall management can disable active UFW or firewalld on selected hosts,
@@ -19,6 +21,8 @@ All notable changes to this project are documented in this file.
   heartbeat/inventory/job polling, and concurrent authenticated UI API probes.
 
 ### Fixed
+- Firewall removal verifies actual changes, rejects stale selections and preserves
+  source restrictions in legacy UFW deletes instead of reporting no-ops as success.
 - Firewalld status checks inspect systemd before using D-Bus, so scanning a
   stopped firewall does not reactivate it through service activation.
 - Inactive firewalld is recognized during firewall scans. Firewall actions

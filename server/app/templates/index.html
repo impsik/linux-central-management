@@ -898,7 +898,7 @@
               </div>
               <button class="btn btn-success" id="firewall-management-allow" type="button">Allow selected</button>
               <button class="btn btn-warning" id="firewall-management-deny" type="button">Deny selected</button>
-              <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove allow selected</button>
+              <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove rules…</button>
               <span id="firewall-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
             </div>
             <div id="firewall-management-result" class="admin-note" role="status" aria-live="polite" style="white-space:pre-wrap;"></div>
@@ -1855,6 +1855,18 @@
 
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+<dialog id="firewall-remove-dialog" class="firewall-remove-dialog" aria-labelledby="firewall-remove-title">
+  <h3 id="firewall-remove-title">Remove firewall rules</h3>
+  <p>Select only the rules to remove. Unchecked rules will be kept. IPv4 and IPv6 rules are separate selections.</p>
+  <p class="status-warn">Removing SSH or Console access rules can disconnect this host from the management server.</p>
+  <div id="firewall-remove-rules" style="max-height:50vh;overflow:auto;"></div>
+  <p id="firewall-remove-count" role="status" aria-live="polite"></p>
+  <div class="modal-actions">
+    <button id="firewall-remove-cancel" class="btn" type="button">Cancel</button>
+    <button id="firewall-remove-confirm" class="btn" type="button" disabled>Remove selected rules</button>
+  </div>
+</dialog>
+
   <script src="/assets/fleet-terminal-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-jobs-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-cronjobs-ui.js?v=__ASSET_VERSION__"></script>
@@ -1865,6 +1877,7 @@
   <script src="/assets/fleet-admin-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-failed-runs-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-app.js?v=__ASSET_VERSION__"></script>
+
 </body>
 
 </html>

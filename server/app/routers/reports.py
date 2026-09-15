@@ -53,7 +53,15 @@ class ServicePresenceActionRequest(BaseModel):
     agent_ids: list[str] | None = None
 
 
+class FirewallRuleSelection(BaseModel):
+    backend: str
+    raw: str
+    id: str = ""
+    zone: str = ""
+
+
 class FirewallFleetActionRequest(BaseModel):
+    rules_by_agent: dict[str, list[FirewallRuleSelection]] | None = None
     agent_ids: list[str] | None = None
     port: int | None = None
     protocol: str | None = "tcp"
@@ -63,8 +71,27 @@ class FirewallFleetActionRequest(BaseModel):
 
 def _normalize_firewall_action(action: str, payload: FirewallFleetActionRequest) -> dict:
     action_norm = (action or "").strip().lower()
-    if action_norm not in ("allow", "deny", "delete", "enable", "disable"):
-        raise HTTPException(400, "Invalid action. Must be allow, deny, delete, enable, or disable.")
+    if action_norm not in ("allow", "deny", "delete", "enable", "disable", "delete-rules"):
+        raise HTTPException(400, "Invalid action. Must be allow, deny, delete, delete-rules, enable, or disable.")
+    if action_norm == "delete-rules":
+        selections = payload.rules_by_agent or {}
+        if not selections or set(selections) != set(payload.agent_ids or []):
+            raise HTTPException(400, "Select rules for each requested host")
+        if sum(len(rules) for rules in selections.values()) > 500:
+            raise HTTPException(400, "Select at most 500 rules per operation")
+        for rules in selections.values():
+            if not rules or len(rules) > 100:
+                raise HTTPException(400, "Select between 1 and 100 rules per host")
+            for rule in rules:
+                if (
+                    rule.backend not in ("ufw", "firewalld") or not rule.raw.strip()
+                    or len(rule.raw) > 4096 or len(rule.id) > 16 or len(rule.zone) > 64
+                ):
+                    raise HTTPException(400, "Invalid firewall rule selection")
+        return {
+            "action": action_norm,
+            "rules_by_agent": {aid: [r.model_dump() for r in rules] for aid, rules in selections.items()},
+        }
     if action_norm in ("enable", "disable"):
         # Changing firewall state does not create or modify a specific rule.
         return {"action": action_norm}
@@ -803,6 +830,9 @@ async def firewall_rules_action(
     if not targets:
         raise HTTPException(400, "No online matching hosts selected for this firewall action")
 
+    if rule["action"] == "delete-rules":
+        rule["rules_by_agent"] = {aid: rule["rules_by_agent"][aid] for aid in targets}
+
     with transaction(db):
         created = create_job_with_runs(
             db=db,
@@ -817,9 +847,16 @@ async def firewall_rules_action(
         job_payload_builder=lambda aid: {
             "job_id": created.job_key,
             "type": "firewall-control",
-            **rule,
+            **({"action": "delete-rules", "rules": rule["rules_by_agent"][aid]} if rule["action"] == "delete-rules" else rule),
         },
     )
+
+    if rule["action"] in ("enable", "disable"):
+        target_name = rule["action"]
+    elif rule["action"] == "delete-rules":
+        target_name = "selected rules"
+    else:
+        target_name = rule.get("service") or f"{rule.get('port')}/{rule.get('protocol')}"
 
     with transaction(db):
         log_event(
@@ -828,7 +865,7 @@ async def firewall_rules_action(
             actor=user,
             request=request,
             target_type="firewall" if rule["action"] in ("enable", "disable") else "firewall_rule",
-            target_name=rule["action"] if rule["action"] in ("enable", "disable") else rule.get("service") or f"{rule.get('port')}/{rule.get('protocol')}",
+            target_name=target_name,
             meta={
                 "job_id": created.job_key,
                 "target_count": len(targets),

@@ -197,3 +197,44 @@ def test_existing_rule_actions_keep_payload_and_audit_shape(firewall_api, action
         event = db.execute(select(api.models.AuditEvent)).scalar_one()
         assert event.action == f"reports.firewall_rules.{action}"
         assert (event.target_type, event.target_name) == ("firewall_rule", target_name)
+
+
+def test_selected_rule_deletion_is_scoped_and_delivered_per_agent(firewall_api):
+    api = firewall_api
+    first = {"backend": "ufw", "id": "2", "raw": "[ 2] 22/tcp ALLOW IN 192.0.2.10", "zone": ""}
+    second = {"backend": "firewalld", "id": "", "raw": "8080/tcp", "zone": "public"}
+    response = api.client.post("/reports/firewall-rules/delete-rules", json={
+        "agent_ids": ["owned", "scoped", "foreign", "offline"],
+        "rules_by_agent": {"owned": [first], "scoped": [second], "foreign": [first], "offline": [first]},
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["targets"] == ["owned", "scoped"]
+    with api.sessions() as db:
+        job = db.execute(select(api.models.Job)).scalar_one()
+        assert set(job.payload["rules_by_agent"]) == {"owned", "scoped"}
+        for aid, wire in api.dispatched:
+            assert wire == api.build_payload(job, aid)
+            assert wire["rules"] == ([first] if aid == "owned" else [second])
+            assert "rules_by_agent" not in wire
+        event = db.execute(select(api.models.AuditEvent)).scalar_one()
+        assert event.action == "reports.firewall_rules.delete-rules"
+        assert event.target_name == "selected rules"
+
+
+@pytest.mark.parametrize("rules", [{}, {"owned": []}, {"foreign": [{"backend": "ufw", "raw": "x"}]},
+    {"owned": [{"backend": "shell", "raw": "x"}]}, {"owned": [{"backend": "ufw", "raw": ""}]},
+    {"owned": [{"backend": "ufw", "raw": "x"}] * 101}])
+def test_selected_rule_deletion_rejects_invalid_selection(firewall_api, rules):
+    api = firewall_api
+    result = api.client.post("/reports/firewall-rules/delete-rules", json={"agent_ids": ["owned"], "rules_by_agent": rules})
+    assert result.status_code == 400
+    assert_no_jobs(api)
+
+
+def test_readonly_cannot_delete_selected_rules(firewall_api):
+    api = firewall_api
+    api.actor.role = "readonly"
+    result = api.client.post("/reports/firewall-rules/delete-rules", json={"agent_ids": ["owned"], "rules_by_agent": {"owned": [{"backend": "ufw", "raw": "x"}]}})
+    assert result.status_code == 403
+    assert_no_jobs(api)

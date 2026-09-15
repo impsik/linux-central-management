@@ -71,6 +71,11 @@
     const protoEl = document.getElementById('firewall-management-protocol');
     const sourceEl = document.getElementById('firewall-management-source');
     if (!bodyEl) return;
+    const removeDialog = document.getElementById('firewall-remove-dialog');
+    const removeRulesEl = document.getElementById('firewall-remove-rules');
+    const removeConfirm = document.getElementById('firewall-remove-confirm');
+    const removeCount = document.getElementById('firewall-remove-count');
+    let removalChoices = [];
     let busy = false;
     let firewallItems = new Map();
 
@@ -189,12 +194,60 @@
       }
     }
 
-    async function runFirewallOperation(action) {
+    function selectedRemovalRules() {
+      const rulesByAgent = Object.create(null);
+      removeRulesEl.querySelectorAll('input[data-remove-rule]:checked').forEach((checkbox) => {
+        const choice = removalChoices[Number(checkbox.getAttribute('data-remove-rule'))];
+        if (choice) (rulesByAgent[choice.agentId] ||= []).push(choice.rule);
+      });
+      return rulesByAgent;
+    }
+
+    function updateRemovalCount() {
+      const selected = selectedRemovalRules();
+      const count = Object.values(selected).reduce((total, rules) => total + rules.length, 0);
+      removeConfirm.disabled = !count;
+      removeCount.textContent = `${count} rule(s) selected for removal on ${Object.keys(selected).length} host(s). All other rules will be kept.`;
+    }
+
+    function openRemovalDialog() {
+      if (busy || !ctx.getCurrentPermissions()?.can_manage_services || !removeDialog) return;
+      removalChoices = [];
+      removeRulesEl.innerHTML = selectedFirewallAgentIds().map((agentId) => {
+        const item = firewallItems.get(agentId);
+        if (!item) return '';
+        const rules = Array.isArray(item.rules) ? item.rules : [];
+        return `<fieldset style="margin:12px 0;padding:12px;border:1px solid var(--border);">
+          <legend>${esc(item.hostname || agentId)} · ${esc(item.ip_address || agentId)} · ${esc(item.backend)}${item.zone ? ` · zone ${esc(item.zone)}` : ''}</legend>
+          ${rules.length ? rules.map((rule) => {
+            const index = removalChoices.length;
+            const selectable = !!rule.raw && ['ufw', 'firewalld'].includes(item.backend) && (item.backend !== 'ufw' || !!rule.id);
+            removalChoices.push({ agentId, rule: { backend: item.backend, raw: rule.raw, id: rule.id || '', zone: item.zone || '' } });
+            return `<label style="display:flex;gap:10px;align-items:baseline;margin:8px 0;overflow-wrap:anywhere;">
+              <input type="checkbox" data-remove-rule="${index}" ${selectable ? '' : 'disabled'} />
+              <span>${rule.raw ? esc(rule.raw) : formatRule(rule)}${selectable ? '' : ' (Scan with an updated agent to select this rule)'}</span></label>`;
+          }).join('') : '<p class="status-muted">No rules reported. Nothing will be removed from this host.</p>'}
+        </fieldset>`;
+      }).join('');
+      updateRemovalCount();
+      removeDialog.showModal();
+    }
+
+    removeRulesEl?.addEventListener('change', updateRemovalCount);
+    document.getElementById('firewall-remove-cancel')?.addEventListener('click', () => removeDialog.close());
+    removeConfirm?.addEventListener('click', () => {
+      const selections = selectedRemovalRules();
+      if (!Object.keys(selections).length) return;
+      removeDialog.close();
+      void runFirewallOperation('delete-rules', selections);
+    });
+
+    async function runFirewallOperation(action, selections = null) {
       if (busy || !ctx.getCurrentPermissions()?.can_manage_services) return;
       const enabling = action === 'enable';
       const disabling = action === 'disable';
       const changingState = enabling || disabling;
-      const agentIds = selectedFirewallAgentIds().filter((id) => enabling ? canEnable(id) : disabling ? canDisable(id) : true);
+      const agentIds = (selections ? Object.keys(selections) : selectedFirewallAgentIds()).filter((id) => enabling ? canEnable(id) : disabling ? canDisable(id) : true);
       const port = Number(portEl?.value || '0');
       const service = String(serviceEl?.value || '').trim();
       const protocol = protoEl?.value || 'tcp';
@@ -203,16 +256,16 @@
         if (typeof ctx.showToast === 'function') ctx.showToast(enabling ? 'Select a host with an inactive firewall' : disabling ? 'Select a host with an active firewall' : 'Select at least one host', 'error');
         return;
       }
-      if (!changingState && !service && (!port || port < 1 || port > 65535)) {
+      if (!selections && !changingState && !service && (!port || port < 1 || port > 65535)) {
         if (typeof ctx.showToast === 'function') ctx.showToast('Enter a valid port or service', 'error');
         return;
       }
-      const label = enabling ? 'Enable' : disabling ? 'Disable' : action === 'delete' ? 'Remove allow' : action === 'allow' ? 'Allow' : 'Deny';
+      const label = selections ? 'Remove rules' : enabling ? 'Enable' : disabling ? 'Disable' : action === 'delete' ? 'Remove allow' : action === 'allow' ? 'Allow' : 'Deny';
       const target = service ? `service ${service}` : `${port}/${protocol}`;
       const confirmation = changingState
         ? `${label} firewalls on ${agentIds.length} selected host(s)?\n\n${agentIds.map((id) => firewallItems.get(id)?.hostname || id).join('\n')}\n\n${enabling ? 'Existing firewall rules will take effect.' : 'Host firewall protection will stop and automatic startup will be disabled. Saved rules will be kept.'}`
         : `${label} ${target} on ${agentIds.length} selected host(s)?`;
-      if (!confirm(confirmation)) return;
+      if (!selections && !confirm(confirmation)) return;
 
       busy = true;
       updateFirewallActionState();
@@ -223,7 +276,7 @@
         const data = await boundedJsonFetch(`/reports/firewall-rules/${encodeURIComponent(action)}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(changingState ? { agent_ids: agentIds } : { agent_ids: agentIds, port, protocol, source, service }),
+          body: JSON.stringify(selections ? { agent_ids: agentIds, rules_by_agent: selections } : changingState ? { agent_ids: agentIds } : { agent_ids: agentIds, port, protocol, source, service }),
         });
         if (!data.job_id) throw new Error('Server did not return a firewall job');
         queuedJobId = data.job_id;
@@ -286,7 +339,7 @@
     });
     allowBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('allow'); });
     denyBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('deny'); });
-    deleteBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('delete'); });
+    deleteBtn?.addEventListener('click', (e) => { e.preventDefault(); openRemovalDialog(); });
     enableBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('enable'); });
     disableBtn?.addEventListener('click', (e) => { e.preventDefault(); void runFirewallOperation('disable'); });
     updateFirewallActionState();

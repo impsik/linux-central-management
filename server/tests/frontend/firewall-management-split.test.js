@@ -15,6 +15,6 @@ describe('firewall management split', () => {
     expect(firewallManagement).toContain('/reports/firewall-rules');
     expect(firewallManagement).toContain("ctx.getCurrentPermissions()");
     expect(firewallManagement).toContain("void runFirewallOperation('allow')");
-    expect(firewallManagement).toContain("void runFirewallOperation('delete')");
+    expect(firewallManagement).toContain("void runFirewallOperation('delete-rules', selections)");
   });
 });

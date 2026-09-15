@@ -13,7 +13,25 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
     addEventListener(type, listener) { this.events[type] = listener; },
   });
   const elements = Object.fromEntries(['refresh', 'select-all', 'check-all', 'enable', 'disable', 'allow', 'deny', 'delete',
-    'status', 'result', 'table-body', 'port', 'service', 'protocol', 'source'].map(name => [name, node()]));
+    'status', 'result', 'table-body', 'port', 'service', 'protocol', 'source', 'firewall-remove-dialog', 'firewall-remove-rules', 'firewall-remove-confirm', 'firewall-remove-cancel', 'firewall-remove-count'].map(name => [name, node()]));
+  elements['firewall-remove-dialog'].showModal = vi.fn();
+  elements['firewall-remove-dialog'].close = vi.fn();
+  let removalChecks = [];
+  let removalMarkup = '';
+  Object.defineProperty(elements['firewall-remove-rules'], 'innerHTML', {
+    get: () => removalMarkup,
+    set(value) {
+      removalMarkup = value;
+      removalChecks = Array.from(value.matchAll(/<input[^>]*data-remove-rule="([^"]+)"[^>]*>/g), match => {
+        const check = node();
+        check.disabled = match[0].includes('disabled');
+        check.getAttribute = () => match[1];
+        return check;
+      });
+    },
+  });
+  elements['firewall-remove-rules'].querySelectorAll = selector => removalChecks.filter(check => !selector.endsWith(':checked') || check.checked);
+  const selectRule = index => { removalChecks[index].checked = true; elements['firewall-remove-rules'].events.change(); };
   let markup = '';
   let checks = [];
   Object.defineProperty(elements['table-body'], 'innerHTML', {
@@ -57,7 +75,7 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
     });
     showToast.mockClear();
   };
-  return { browser, elements, fetch, showToast, click, select, scan };
+  return { browser, elements, fetch, showToast, click, select, scan, selectRule };
 }
 
 afterEach(() => vi.useRealTimers());
@@ -262,5 +280,48 @@ describe('fleet firewall state changes', () => {
     expect(s.elements.result.textContent).toContain('Scan hosts again before retrying. Request timed out');
     expect(s.elements.refresh.disabled).toBe(false);
     expect(s.elements.enable.disabled).toBe(false);
+  });
+});
+
+
+describe('selected firewall rule removal', () => {
+  const rule = { backend: 'ufw', id: '2', raw: '[ 2] 22/tcp ALLOW IN 192.0.2.10' };
+  const v6 = { backend: 'ufw', id: '3', raw: '[ 3] 22/tcp (v6) DENY IN Anywhere (v6)' };
+  const items = [{ ...inactive, status: 'active', rules: [rule, v6] },
+    { ...active, zone: 'public', rules: [{ raw: '443/tcp' }] }];
+
+  it.each([false, true])('keeps unchecked rules and sends only selected per-host rules (multi=%s)', async multi => {
+    const s = setup({ items });
+    await s.scan();
+    s.select('node-1');
+    if (multi) s.select('node-2');
+    s.click('delete');
+    expect(s.elements['firewall-remove-dialog'].showModal).toHaveBeenCalledOnce();
+    expect(s.elements['firewall-remove-confirm'].disabled).toBe(true);
+    expect(s.elements['firewall-remove-rules'].innerHTML).toContain('192.0.2.10');
+    expect(s.elements['firewall-remove-rules'].innerHTML).toContain('Anywhere (v6)');
+    s.selectRule(1);
+    if (multi) s.selectRule(2);
+    const original = s.fetch.getMockImplementation();
+    s.fetch.mockImplementation((url, options) => url.endsWith('/delete-rules')
+      ? response({ job_id: 'job-1', targets: ['node-1'] }) : original(url, options));
+    s.elements.port.value = 'invalid';
+    s.click('firewall-remove-confirm');
+    await vi.waitFor(() => expect(s.elements.result.textContent).toContain('Remove rules: 1 succeeded'));
+    const post = s.fetch.mock.calls.find(([url]) => url.endsWith('/delete-rules'));
+    const expected = { 'node-1': [{ ...v6, zone: '' }] };
+    if (multi) expected['node-2'] = [{ backend: 'firewalld', raw: '443/tcp', id: '', zone: 'public' }];
+    expect(JSON.parse(post[1].body)).toEqual({ agent_ids: Object.keys(expected), rules_by_agent: expected });
+    expect(s.browser.confirm).not.toHaveBeenCalled();
+    expect(s.elements['firewall-remove-dialog'].close).toHaveBeenCalledOnce();
+  });
+
+  it('cancel and an empty selection never queue a deletion', async () => {
+    const s = setup({ items });
+    await s.scan(); s.select('node-1'); s.click('delete');
+    s.click('firewall-remove-confirm');
+    s.click('firewall-remove-cancel');
+    expect(s.fetch).toHaveBeenCalledTimes(1);
+    expect(s.elements['firewall-remove-dialog'].close).toHaveBeenCalledOnce();
   });
 });

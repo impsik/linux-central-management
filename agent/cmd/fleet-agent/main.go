@@ -77,21 +77,22 @@ type NextJobResponse struct {
 }
 
 type Job struct {
-	JobID          string   `json:"job_id"`
-	JobNonce       string   `json:"job_nonce,omitempty"`
-	Type           string   `json:"type"`
-	Packages       []string `json:"packages,omitempty"`
-	ServiceName    string   `json:"service_name,omitempty"`
-	Action         string   `json:"action,omitempty"`
-	PackageName    string   `json:"package_name,omitempty"`
-	Refresh        bool     `json:"refresh,omitempty"`
-	CVE            string   `json:"cve,omitempty"`
-	Port           int      `json:"port,omitempty"`
-	Protocol       string   `json:"protocol,omitempty"`
-	Source         string   `json:"source,omitempty"`
-	Service        string   `json:"service,omitempty"`
-	DryRun         bool     `json:"dry_run,omitempty"`
-	CleanupActions []string `json:"cleanup_actions,omitempty"`
+	Rules          []FirewallRule `json:"rules,omitempty"`
+	JobID          string         `json:"job_id"`
+	JobNonce       string         `json:"job_nonce,omitempty"`
+	Type           string         `json:"type"`
+	Packages       []string       `json:"packages,omitempty"`
+	ServiceName    string         `json:"service_name,omitempty"`
+	Action         string         `json:"action,omitempty"`
+	PackageName    string         `json:"package_name,omitempty"`
+	Refresh        bool           `json:"refresh,omitempty"`
+	CVE            string         `json:"cve,omitempty"`
+	Port           int            `json:"port,omitempty"`
+	Protocol       string         `json:"protocol,omitempty"`
+	Source         string         `json:"source,omitempty"`
+	Service        string         `json:"service,omitempty"`
+	DryRun         bool           `json:"dry_run,omitempty"`
+	CleanupActions []string       `json:"cleanup_actions,omitempty"`
 }
 
 type JobEvent struct {
@@ -736,7 +737,13 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		return
 
 	case "firewall-control":
-		stdout, stderr, code, errMsg := controlFirewall(ctx, job.Action, job.Port, job.Protocol, job.Source, job.Service, serverURL)
+		var stdout, stderr, errMsg string
+		var code int
+		if job.Action == "delete-rules" {
+			stdout, stderr, code, errMsg = deleteSelectedFirewallRules(ctx, job.Rules, systemFirewallOps())
+		} else {
+			stdout, stderr, code, errMsg = controlFirewall(ctx, job.Action, job.Port, job.Protocol, job.Source, job.Service, serverURL)
+		}
 		if code == 0 && errMsg == "" {
 			ev.Status = "success"
 		} else {
@@ -1430,6 +1437,7 @@ func queryPkgVersions(ctx context.Context, packages []string) (string, string, i
 }
 
 type FirewallRule struct {
+	Zone     string `json:"zone,omitempty"`
 	ID       string `json:"id,omitempty"`
 	Backend  string `json:"backend"`
 	Action   string `json:"action,omitempty"`
@@ -1727,9 +1735,13 @@ func buildFirewalldRejectRule(port int, protocol, source string) string {
 func controlUfw(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
 	args := buildUfwArgs(action, port, protocol, source, service)
 	cmd := exec.CommandContext(ctx, "sudo", args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "LANG=C")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), "", 1, fmt.Sprintf("ufw %s failed: %v", action, err)
+	}
+	if action == "delete" && !strings.Contains(strings.ToLower(string(out)), "rule deleted") {
+		return string(out), "", 1, "No matching allow rule was deleted; scan hosts and select the exact rule"
 	}
 	return string(out), "", 0, ""
 }
@@ -1742,12 +1754,12 @@ func buildUfwArgs(action string, port int, protocol, source, service string) []s
 		args = append(args, action)
 	}
 	if service != "" {
-		if source != "" && action != "delete" {
+		if source != "" {
 			args = append(args, "from", source, "to", "any", "app", service)
 		} else {
 			args = append(args, service)
 		}
-	} else if source != "" && action != "delete" {
+	} else if source != "" {
 		args = append(args, "from", source, "to", "any", "port", strconv.Itoa(port), "proto", protocol)
 	} else {
 		args = append(args, strconv.Itoa(port)+"/"+protocol)

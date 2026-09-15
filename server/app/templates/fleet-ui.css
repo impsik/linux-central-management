@@ -1658,3 +1658,19 @@ body.fleet-report {
 @media (max-width: 800px) { .onboarding-columns { grid-template-columns: 1fr; gap: 1rem; } }
 
 .onboarding-card h3 { color: var(--text); font-size: 1.05rem; font-weight: 600; margin: 0 0 .65rem; }
+
+/* Native dialog supplies focus containment, Escape and focus restoration. */
+.firewall-remove-dialog {
+  width: min(900px, 90vw);
+  max-height: 85vh;
+  margin: auto;
+  padding: 24px;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  box-shadow: 0 20px 50px var(--shadow);
+}
+.firewall-remove-dialog::backdrop { background: var(--modal-overlay-bg); }
+.firewall-remove-dialog p { margin: 12px 0; }
