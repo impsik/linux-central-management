@@ -101,6 +101,8 @@ def _normalize_firewall_action(action: str, payload: FirewallFleetActionRequest)
     service = (payload.service or "").strip()
     source = (payload.source or "").strip()
     port = payload.port
+    if service and port not in (None, 0):
+        raise HTTPException(400, "Choose either a port or a firewall profile/service, not both")
     if not service:
         if port is None:
             raise HTTPException(400, "port is required when service is not provided")

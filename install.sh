@@ -3,6 +3,7 @@ set -eu
 
 REPO_URL="${REPO_URL:-https://github.com/impsik/linux-central-management.git}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/linux-central-management}"
+INSTALL_REF_WAS_SET="${INSTALL_REF:+true}"
 INSTALL_REF="${INSTALL_REF:-main}"
 
 say() { printf '%s\n' "$*"; }
@@ -742,6 +743,57 @@ attach_hosts_with_recovery() {
   done
 }
 
+update_existing_agents() (
+  case "${UPDATE_AGENTS:-true}" in
+    false|no|0) info "Existing agent updates skipped (UPDATE_AGENTS=false)"; return 0 ;;
+    true|yes|1) ;;
+    *) warn "UPDATE_AGENTS must be true or false"; return 1 ;;
+  esac
+  record_install_stage "agent-update"
+  update_work="$(mktemp -d)" || return 1
+  trap 'rm -rf "$update_work"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' HUP TERM
+  cd "$APP_DIR/deploy/docker" || return 1
+  # Read registered hosts, including offline nodes, so failures stay visible.
+  # Inventory files alone do not include hosts joined through enrollment.
+  docker_compose exec -T server python -c '
+import json
+from sqlalchemy import select
+from app.db import SessionLocal
+from app.models import Host
+with SessionLocal() as db:
+    print(json.dumps([dict(row._mapping) for row in db.execute(
+        select(Host.agent_id, Host.hostname, Host.fqdn, Host.ip_address).order_by(Host.agent_id))]))
+' > "$update_work/hosts.json" || return 1
+  update_count="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$update_work/hosts.json")" || return 1
+  if [ "$update_count" = 0 ]; then
+    info "No registered agents to update"
+    return 0
+  fi
+  for update_arch in amd64 arm64; do
+    docker_compose exec -T server cat "/app/enrollment-agents/fleet-agent-$update_arch" > "$update_work/fleet-agent-$update_arch" || return 1
+  done
+  # Reuse saved per-host SSH usernames, ports, keys and inventory aliases.
+  set --
+  [ ! -s "$APP_DIR/hosts" ] || set -- "$@" -i "$APP_DIR/hosts"
+  [ ! -s "$APP_DIR/ansible/inventory.yml" ] || set -- "$@" -i "$APP_DIR/ansible/inventory.yml"
+  if [ "$#" -gt 0 ]; then
+    ansible-inventory "$@" --list > "$update_work/inventory.json" || return 1
+    set -- --inventory "$update_work/inventory.json"
+  fi
+  update_identity="${FLEET_SSH_IDENTITY:-$(get_env_value "$root_env" FLEET_SSH_IDENTITY)}"
+  if [ -n "$update_identity" ]; then set -- "$@" --identity "$update_identity"; fi
+  update_user="${ANSIBLE_USER:-$(get_env_value "$root_env" ANSIBLE_USER)}"
+  update_user="${update_user:-${SUDO_USER:-$(id -un)}}"
+  update_report="$APP_DIR/agent-update-results.json"
+  # The report contains host diagnostics, never credentials or configuration.
+  umask 077
+  python3 "$APP_DIR/scripts/update-agents.py" --hosts "$update_work/hosts.json" \
+    --artifacts "$update_work" --ssh-user "$update_user" \
+    --workers "${AGENT_UPDATE_WORKERS:-4}" --report "$update_report" "$@"
+)
+
 main() {
   say "Linux Central Management installer"
   say "----------------------------------"
@@ -758,7 +810,8 @@ main() {
         say "Usage: sh install.sh [--check] [--advanced] [--resume]"
         say "  --check     Run preflight only; do not install or write configuration"
         say "  --advanced  Include CA/IP, token rotation, terminal and initial agent options"
-        say "  --resume    Reuse saved answers and skip rebuilding an unchanged healthy Master"
+        say "  --resume    Reuse saved answers/ref and skip rebuilding an unchanged healthy Master"
+        say "  Existing agents are updated over SSH by default (UPDATE_AGENTS=false to skip)."
         return 0 ;;
       *) err "Unknown option: $option. Run sh install.sh --help." ;;
     esac
@@ -781,6 +834,10 @@ main() {
   if [ "$resume" = "true" ]; then
     [ -f "$resume_file" ] || err "No saved installation progress. Run ./install.sh normally first."
     info "Resuming installation from: $(get_env_value "$resume_file" STAGE)"
+    if [ -z "$INSTALL_REF_WAS_SET" ]; then
+      saved_ref="$(get_env_value "$resume_file" INSTALL_REF)"
+      INSTALL_REF="${saved_ref:-$INSTALL_REF}"
+    fi
     FLEET_HOSTNAME="${FLEET_HOSTNAME:-$(get_env_value "$resume_file" FLEET_HOSTNAME)}"
     FLEET_SERVER_IP="${FLEET_SERVER_IP:-$(get_env_value "$resume_file" FLEET_SERVER_IP)}"
     FLEET_CA_CERT="${FLEET_CA_CERT:-$(get_env_value "$resume_file" FLEET_CA_CERT)}"
@@ -863,6 +920,7 @@ main() {
   mkdir -p "$(dirname "$resume_file")"
   (umask 077; touch "$resume_file")
   chmod 600 "$resume_file"
+  set_env_value "$resume_file" INSTALL_REF "$INSTALL_REF"
   set_env_value "$resume_file" FLEET_HOSTNAME "$application_host"
   set_env_value "$resume_file" FLEET_SERVER_IP "$fleet_server_ip"
   set_env_value "$resume_file" FLEET_CA_CERT "$fleet_ca_cert"
@@ -877,6 +935,7 @@ main() {
   # installer. Environment overrides skip only these already answered prompts.
   export FLEET_HOSTNAME="$application_host" FLEET_SERVER_IP="$fleet_server_ip"
   export FLEET_CA_CERT="$fleet_ca_cert" INSTALL_NGINX="$install_nginx"
+  export INSTALL_REF
   record_install_stage "checkout-update"
   ensure_repo
   cd "$APP_DIR"
@@ -1022,6 +1081,9 @@ main() {
   set_env_value "$root_env" "FLEET_TERMINAL_CA_CERT" "$terminal_ca_cert"
   set_env_value "$root_env" "AGENT_TOKEN" "$final_agent_token"
   set_env_value "$root_env" "TERM_TOKEN" "$final_terminal_token"
+  saved_ssh_user="${ANSIBLE_USER:-$ansible_user}"
+  [ -z "$saved_ssh_user" ] || set_env_value "$root_env" "ANSIBLE_USER" "$saved_ssh_user"
+  [ -z "${FLEET_SSH_IDENTITY:-}" ] || set_env_value "$root_env" "FLEET_SSH_IDENTITY" "$FLEET_SSH_IDENTITY"
 
   prepare_https "$server_url" "$fleet_server_ip" "$fleet_ca_cert" "$install_nginx"
   enrollment_pki_dir="$(dirname "$fleet_ca_cert")/enrollment"
@@ -1062,17 +1124,33 @@ main() {
     fi
   fi
 
+  agent_update_failed="false"
+  if [ "$server_ready" = "true" ]; then
+    info "Checking existing agents for updates"
+    if update_existing_agents; then
+      info "Existing agent update stage completed"
+    else
+      agent_update_failed="true"
+      warn "Some agents could not be updated. Master remains installed; rerun ./install.sh --resume after resolving the reported errors."
+      warn "Agent update results (when available): $APP_DIR/agent-update-results.json"
+    fi
+  fi
+
   say ""
-  if [ "$server_ready" = "true" ] && [ "$node_attach_deferred" = "true" ]; then
+  if [ "$agent_update_failed" = "true" ]; then
+    record_install_stage "agent-update-pending"
+  elif [ "$server_ready" = "true" ] && [ "$node_attach_deferred" = "true" ]; then
     record_install_stage "node-attach-deferred"
   elif [ "$server_ready" = "true" ]; then
     record_install_stage "complete"
   else
     record_install_stage "waiting-for-proxy"
   fi
-  say "Install complete."
+  say "Master installation complete."
   if [ "$server_ready" = "true" ]; then
-    if [ "$node_attach_deferred" = "true" ]; then
+    if [ "$agent_update_failed" = "true" ]; then
+      say "Status: Master ready; agent updates pending"
+    elif [ "$node_attach_deferred" = "true" ]; then
       say "Status: Master ready; node attachment pending"
     else
       say "Status: ready"
@@ -1098,6 +1176,7 @@ main() {
   say "  Server certificate: $(dirname "$fleet_ca_cert")/fleet-server.crt"
   say "  Server private key: $(dirname "$fleet_ca_cert")/fleet-server.key"
   [ -n "$deploy_hosts" ] && say "  $APP_DIR/hosts"
+  [ "$agent_update_failed" != "true" ] || return 1
   return 0
 }
 

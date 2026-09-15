@@ -66,6 +66,7 @@
     const statusEl = document.getElementById('firewall-management-status');
     const resultEl = document.getElementById('firewall-management-result');
     const bodyEl = document.getElementById('firewall-management-table-body');
+    const ruleTypeEl = document.getElementById('firewall-management-rule-type');
     const portEl = document.getElementById('firewall-management-port');
     const serviceEl = document.getElementById('firewall-management-service');
     const protoEl = document.getElementById('firewall-management-protocol');
@@ -78,6 +79,15 @@
     let removalChoices = [];
     let busy = false;
     let firewallItems = new Map();
+
+    function updateRuleInputState() {
+      const profileMode = ruleTypeEl?.value === 'service';
+      if (portEl) portEl.disabled = profileMode;
+      if (serviceEl) serviceEl.disabled = !profileMode;
+      if (protoEl) protoEl.disabled = profileMode;
+    }
+    ruleTypeEl?.addEventListener('change', updateRuleInputState);
+    updateRuleInputState();
 
     function selectedFirewallAgentIds() {
       return Array.from(bodyEl.querySelectorAll('input[data-firewall-agent-id]:checked'))
@@ -248,15 +258,20 @@
       const disabling = action === 'disable';
       const changingState = enabling || disabling;
       const agentIds = (selections ? Object.keys(selections) : selectedFirewallAgentIds()).filter((id) => enabling ? canEnable(id) : disabling ? canDisable(id) : true);
-      const port = Number(portEl?.value || '0');
-      const service = String(serviceEl?.value || '').trim();
+      const profileMode = ruleTypeEl?.value === 'service';
+      const port = profileMode ? 0 : Number(portEl?.value || '0');
+      const service = profileMode ? String(serviceEl?.value || '').trim() : '';
       const protocol = protoEl?.value || 'tcp';
       const source = String(sourceEl?.value || '').trim();
       if (!agentIds.length) {
         if (typeof ctx.showToast === 'function') ctx.showToast(enabling ? 'Select a host with an inactive firewall' : disabling ? 'Select a host with an active firewall' : 'Select at least one host', 'error');
         return;
       }
-      if (!selections && !changingState && !service && (!port || port < 1 || port > 65535)) {
+      if (!selections && !changingState && profileMode && !service) {
+        ctx.showToast?.('Enter an existing firewall profile or service name', 'error');
+        return;
+      }
+      if (!selections && !changingState && !service && (!Number.isInteger(port) || port < 1 || port > 65535)) {
         if (typeof ctx.showToast === 'function') ctx.showToast('Enter a valid port or service', 'error');
         return;
       }

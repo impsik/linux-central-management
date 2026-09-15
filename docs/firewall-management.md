@@ -6,6 +6,21 @@ enabling, disabling, or deleting selected rules. Updating the Master alone does 
 node binaries. Keep each node's existing identity and credentials when updating
 its agent; the displayed release number can be the same for different builds.
 
+## Choose a port or a firewall profile
+
+Use **Rule type → Port** to allow or deny a numeric port and protocol. For
+example, to allow TCP port `1122`, select Port, enter `1122` and choose TCP.
+The profile field is disabled and is not sent in this mode.
+
+**Firewall profile / service** uses a named profile already defined by the
+host's firewall: a UFW application profile or a firewalld service. This is not a
+free-form rule description or the name of a systemd service. A profile named
+`cockpit` may exist in firewalld but be absent in UFW; in that case UFW reports
+that no matching profile exists. Profile mode uses the ports defined by that
+profile, rather than a custom port from the form. Profiles must exist on every
+selected host. Adding a rule does not start the application or enable an
+inactive firewall.
+
 ## Enable firewalls across hosts
 
 1. Open **Firewall management** and click **Scan hosts**.

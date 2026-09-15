@@ -414,3 +414,10 @@ func TestRunDiskCleanupRejectsUnsupportedAction(t *testing.T) {
 		t.Fatalf("error = %q, want unsupported cleanup action", errMsg)
 	}
 }
+
+func TestFirewallRejectsAmbiguousPortAndProfileBeforeOSAccess(t *testing.T) {
+	_, _, code, message := controlFirewall(context.Background(), "allow", 1122, "tcp", "", "cockpit", "https://fleet.example")
+	if code == 0 || !strings.Contains(message, "either a port") {
+		t.Fatalf("code=%d message=%s", code, message)
+	}
+}

@@ -238,3 +238,13 @@ def test_readonly_cannot_delete_selected_rules(firewall_api):
     result = api.client.post("/reports/firewall-rules/delete-rules", json={"agent_ids": ["owned"], "rules_by_agent": {"owned": [{"backend": "ufw", "raw": "x"}]}})
     assert result.status_code == 403
     assert_no_jobs(api)
+
+
+@pytest.mark.parametrize("action", ["allow", "deny", "delete"])
+def test_ambiguous_port_and_profile_are_rejected(firewall_api, action):
+    response = firewall_api.client.post(f"/reports/firewall-rules/{action}", json={
+        "agent_ids": ["owned"], "port": 1122, "service": "cockpit",
+    })
+    assert response.status_code == 400
+    assert "Choose either" in response.json()["detail"]
+    assert_no_jobs(firewall_api)

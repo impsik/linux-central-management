@@ -486,8 +486,9 @@ After a local installation error, retry the same command to finish a saved
 incomplete enrollment. If the initial enrollment response was lost before local
 credentials could be saved, generate a new command. Enrollment only installs new
 agents; it does not update a completed installation. Preserve the node's generated
-identity and credentials when updating its binary. Certificate renewal and an
-enrolled-agent update command are not yet part of this workflow.
+identity and credentials when updating its binary. `install.sh` now updates
+registered agents through existing Master SSH access (see below). Certificate
+renewal is not yet part of this workflow.
 
 An existing reverse proxy must overwrite `X-Real-IP` with the connecting node's
 address. The supplied nginx and Caddy configurations already do this; enrollment
@@ -620,7 +621,44 @@ repository or downloaded again with `curl`. For an existing checkout it:
    `install.sh`;
 6. preserves existing configuration and secrets; rotation is offered only in
    advanced mode;
-7. rebuilds and restarts the Docker Compose services.
+7. rebuilds and restarts the Docker Compose services;
+8. after the Master health check passes, updates registered agents over SSH using
+   the amd64/arm64 binaries built into that same server image.
+
+For example, update both the Master and its registered agents from `cleanup`:
+
+```bash
+INSTALL_REF=cleanup ./install.sh
+```
+
+Agent discovery uses the Master's database, including hosts joined through
+**Connect a Linux host**. SSH uses saved inventory usernames, ports and keys;
+`ANSIBLE_USER` supplies the fallback username (otherwise the saved installation
+user or current user). `FLEET_SSH_IDENTITY` can select a private key. The Master
+must already have trusted SSH host keys, key-based access and passwordless sudo
+(or root access). Enrollment alone does not establish this SSH access. Missing
+access is reported per host; the installer does not weaken SSH host-key checks,
+change sudo policy or ask for every node's password during an update.
+
+Updates compare SHA-256 hashes, so a new build with the same displayed release
+number is still installed. The updater verifies the running agent's identity
+before writing, replaces only its binary, restarts it and checks that the new
+process remains active. IDs, tokens, certificates, Console settings and service
+configuration are retained. A failed restart triggers restoration of the previous
+binary, retained as `/opt/fleet-agent/fleet-agent.previous`.
+
+Four hosts are processed concurrently by default. Offline/unreachable hosts or
+failed updates do not stop updates to other hosts; the installer exits nonzero
+with **Master ready; agent updates pending**, plus diagnostics in
+`agent-update-results.json`. Re-run `./install.sh --resume` after fixing access or
+bringing hosts online: it remembers the installation ref, skips an unchanged
+healthy Master rebuild and skips agents already running the matching binary.
+An active process check does not prove application compatibility; failed agents
+are never reported as updated. Custom binary paths and inactive agent services
+are left unchanged and reported for review.
+
+To update only the Master, use `UPDATE_AGENTS=false INSTALL_REF=cleanup ./install.sh`.
+Set `AGENT_UPDATE_WORKERS=1` for sequential agent updates (maximum: 16).
 
 If tracked files contain local changes, the installer stops before updating.
 Review and commit or stash those changes, then rerun it. It never performs a
@@ -651,7 +689,10 @@ also be supplied through environment variables.
 - `INSTALL_ADVANCED` — `true` to include advanced questions;
 - `ATTACH_HOSTS` — one or more initial managed-host IP addresses or hostnames,
   separated by spaces or commas;
-- `ANSIBLE_USER` — SSH user used to install the agent on initial hosts;
+- `ANSIBLE_USER` — SSH user for initial attachment and fallback user for agent updates;
+- `FLEET_SSH_IDENTITY` — private key for SSH attachment and agent updates;
+- `UPDATE_AGENTS` — update registered agents after Master installation, default `true`;
+- `AGENT_UPDATE_WORKERS` — concurrent SSH updates, default `4` (range 1–16);
 - `INSTALL_DIR` — repository/install directory, defaulting to
   `~/linux-central-management`;
 - `INSTALL_REF` — Git branch or ref to install, defaulting to `main`;

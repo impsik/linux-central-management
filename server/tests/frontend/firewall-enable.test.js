@@ -13,7 +13,7 @@ function setup({ canManage = true, items = [inactive, active] } = {}) {
     addEventListener(type, listener) { this.events[type] = listener; },
   });
   const elements = Object.fromEntries(['refresh', 'select-all', 'check-all', 'enable', 'disable', 'allow', 'deny', 'delete',
-    'status', 'result', 'table-body', 'port', 'service', 'protocol', 'source', 'firewall-remove-dialog', 'firewall-remove-rules', 'firewall-remove-confirm', 'firewall-remove-cancel', 'firewall-remove-count'].map(name => [name, node()]));
+    'status', 'result', 'table-body', 'port', 'service', 'protocol', 'source', 'rule-type', 'firewall-remove-dialog', 'firewall-remove-rules', 'firewall-remove-confirm', 'firewall-remove-cancel', 'firewall-remove-count'].map(name => [name, node()]));
   elements['firewall-remove-dialog'].showModal = vi.fn();
   elements['firewall-remove-dialog'].close = vi.fn();
   let removalChecks = [];
@@ -323,5 +323,34 @@ describe('selected firewall rule removal', () => {
     s.click('firewall-remove-cancel');
     expect(s.fetch).toHaveBeenCalledTimes(1);
     expect(s.elements['firewall-remove-dialog'].close).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe('explicit firewall rule type', () => {
+  it.each(['port', 'service'])('submits only the chosen %s even when both fields hold values', async mode => {
+    const s = setup();
+    await s.scan(); s.select('node-1');
+    s.elements['rule-type'].value = mode;
+    s.elements['rule-type'].events.change();
+    s.elements.port.value = '1122';
+    s.elements.service.value = 'cockpit';
+    expect(s.elements.port.disabled).toBe(mode === 'service');
+    expect(s.elements.service.disabled).toBe(mode === 'port');
+    const original = s.fetch.getMockImplementation();
+    s.fetch.mockImplementation((url, options) => url.endsWith('/allow')
+      ? response({ job_id: 'job-1', targets: ['node-1'] }) : original(url, options));
+    s.click('allow');
+    await vi.waitFor(() => expect(s.elements.result.textContent).toContain('Allow: 1 succeeded'));
+    const post = s.fetch.mock.calls.find(([url]) => url.endsWith('/allow'));
+    expect(JSON.parse(post[1].body)).toMatchObject({ port: mode === 'port' ? 1122 : 0, service: mode === 'service' ? 'cockpit' : '' });
+  });
+
+  it('requires a profile in profile mode and does not fall back to a retained port', async () => {
+    const s = setup(); await s.scan(); s.select('node-1');
+    s.elements.port.value = '1122'; s.elements['rule-type'].value = 'service';
+    s.click('allow');
+    expect(s.fetch).toHaveBeenCalledTimes(1);
+    expect(s.showToast).toHaveBeenCalledWith('Enter an existing firewall profile or service name', 'error');
   });
 });

@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- Installer updates registered agents from the same Master build using existing
+  SSH/sudo access, with checksum-based skipping, per-host results and binary rollback.
 - A firewall rule removal dialog with per-host selections for one or many hosts,
   preserving unchecked rules and showing source, direction, IPv6 and zone details.
 - Hosts → System Services can sort by name in either direction or put enabled
@@ -21,6 +23,9 @@ All notable changes to this project are documented in this file.
   heartbeat/inventory/job polling, and concurrent authenticated UI API probes.
 
 ### Fixed
+- Firewall rule creation explicitly selects either a port or a firewall profile,
+  preventing a populated Service field from silently overriding the chosen port.
+- Installer resume retains the selected installation ref for pending agent updates.
 - Firewall removal verifies actual changes, rejects stale selections and preserves
   source restrictions in legacy UFW deletes instead of reporting no-ops as success.
 - Firewalld status checks inspect systemd before using D-Bus, so scanning a

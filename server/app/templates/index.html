@@ -877,13 +877,20 @@
               <button class="btn" id="firewall-management-select-all" type="button">Select all</button>
               <button class="btn btn-primary" id="firewall-management-enable" type="button" disabled>Enable selected</button>
               <button class="btn btn-danger" id="firewall-management-disable" type="button" disabled>Disable selected</button>
+              <div style="min-width:150px;">
+                <label for="firewall-management-rule-type" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Rule type</label>
+                <select id="firewall-management-rule-type" class="host-search">
+                  <option value="port">Port</option>
+                  <option value="service">Firewall profile / service</option>
+                </select>
+              </div>
               <div style="min-width:110px;">
-                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
+                <label for="firewall-management-port" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
                 <input id="firewall-management-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
               </div>
               <div style="min-width:150px;">
-                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Service</label>
-                <input id="firewall-management-service" class="host-search" type="text" placeholder="cockpit" />
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;" for="firewall-management-service">Firewall profile / service</label>
+                <input id="firewall-management-service" class="host-search" type="text" placeholder="Existing profile name" aria-describedby="firewall-management-rule-help" disabled />
               </div>
               <div style="min-width:110px;">
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
@@ -901,6 +908,7 @@
               <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove rules…</button>
               <span id="firewall-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
             </div>
+            <div id="firewall-management-rule-help" class="admin-note">Port mode opens the specified port. Profile mode uses an existing UFW application profile or firewalld service on every selected host; it is not a rule name or a system service name.</div>
             <div id="firewall-management-result" class="admin-note" role="status" aria-live="polite" style="white-space:pre-wrap;"></div>
             <div style="overflow:auto;">
               <table class="process-table hosts-table">

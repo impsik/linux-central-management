@@ -1628,6 +1628,9 @@ func controlFirewall(ctx context.Context, action string, port int, protocol, sou
 	}
 	source = strings.TrimSpace(source)
 	service = strings.TrimSpace(service)
+	if service != "" && port != 0 {
+		return "", "", 1, "choose either a port or a firewall profile/service, not both"
+	}
 	if service != "" && !isSafeFirewallToken(service) {
 		return "", "", 1, "service contains unsupported characters"
 	}
