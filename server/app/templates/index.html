@@ -1566,6 +1566,15 @@
               placeholder="Name or description (e.g. ufw)" aria-controls="services-list" aria-describedby="services-search-status" />
           </div>
           <button class="btn" id="services-search-clear" type="button" disabled>Clear</button>
+          <div style="min-width:190px;">
+            <label for="services-sort" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Sort services</label>
+            <select id="services-sort" class="host-search" aria-controls="services-list">
+              <option value="name-asc">Name: A–Z</option>
+              <option value="name-desc">Name: Z–A</option>
+              <option value="enabled-first">Autostart: Enabled first</option>
+              <option value="disabled-first">Autostart: Disabled first</option>
+            </select>
+          </div>
         </div>
         <div id="services-search-status" role="status" aria-live="polite" aria-atomic="true"
           style="color:var(--muted-2);font-size:0.9rem;margin:0.65rem 0;"></div>

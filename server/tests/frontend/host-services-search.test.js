@@ -28,6 +28,8 @@ function setup(fetch = vi.fn(async () => response(services))) {
   const search = element();
   const clear = element();
   const status = element();
+  const sort = element();
+  sort.value = 'name-asc';
   // Parse just the rendered service-card nodes needed by this view, keeping its
   // real input/link/button listeners and refresh logic under test.
   const list = {
@@ -55,8 +57,12 @@ function setup(fetch = vi.fn(async () => response(services))) {
       if (selector === 'button[data-service-action][data-service-name]') return this.cards.flatMap(card => card.buttons);
       return [];
     },
+    appendChild(card) {
+      this.cards = this.cards.filter(item => item !== card);
+      this.cards.push(card);
+    },
   };
-  const elements = { 'services-list': list, 'services-search': search, 'services-search-clear': clear, 'services-search-status': status };
+  const elements = { 'services-list': list, 'services-search': search, 'services-search-clear': clear, 'services-search-status': status, 'services-sort': sort };
   let currentHost = 'node-a';
   const ctx = { getCurrentAgentId: () => currentHost };
   const browser = {
@@ -72,10 +78,11 @@ function setup(fetch = vi.fn(async () => response(services))) {
   vm.runInContext(read('fleet-phase3.js'), browser);
   vm.runInContext(read('fleet-phase3-host-workflows.js'), browser);
   return {
-    browser, ctx, list, search, clear, status, fetch,
+    browser, ctx, list, search, clear, status, sort, fetch,
     setHost(value) { currentHost = value; },
     load(host = currentHost) { return browser.phase3HostWorkflows.loadServices(ctx, host); },
     type(value) { search.value = value; search.dispatch('input'); },
+    sortBy(value) { sort.value = value; sort.dispatch('change'); },
     visible() { return list.cards.filter(card => !card.hidden && card.style.display !== 'none').map(card => card.getAttribute('data-service-name')); },
   };
 }
@@ -89,6 +96,57 @@ function deferred() {
 afterEach(() => vi.useRealTimers());
 
 describe('individual host service search', () => {
+  it('sorts names both ways and groups autostart states alphabetically without refetching', async () => {
+    const ui = setup();
+    await ui.load();
+    expect(ui.visible()).toEqual(['backup.service', 'ssh.service', 'ufw.service']);
+    ui.sortBy('name-desc');
+    expect(ui.visible()).toEqual(['ufw.service', 'ssh.service', 'backup.service']);
+    ui.sortBy('enabled-first');
+    expect(ui.visible()).toEqual(['ssh.service', 'ufw.service', 'backup.service']);
+    ui.sortBy('disabled-first');
+    expect(ui.visible()).toEqual(['backup.service', 'ssh.service', 'ufw.service']);
+    expect(ui.fetch).toHaveBeenCalledOnce();
+  });
+
+  it('uses autostart rather than running status and keeps special states separate', async () => {
+    const ui = setup(vi.fn(async () => response([
+      { name: 'z-disabled', enabled: false, status: 'active', unit_file_state: 'disabled' },
+      { name: 'a-static', enabled: false, unit_file_state: 'static' },
+      { name: 'c-masked', enabled: false, unit_file_state: 'masked' },
+      { name: 'd-enabled', enabled: true, status: 'inactive', unit_file_state: 'enabled-runtime' },
+      { name: 'b-socket', enabled: true, unit_file_state: 'static', socket_unit_file_state: 'enabled' },
+    ])));
+    await ui.load();
+    ui.sortBy('enabled-first');
+    expect(ui.visible()).toEqual(['b-socket', 'd-enabled', 'z-disabled', 'a-static', 'c-masked']);
+    ui.sortBy('disabled-first');
+    expect(ui.visible()).toEqual(['z-disabled', 'b-socket', 'd-enabled', 'a-static', 'c-masked']);
+  });
+
+  it('keeps sorting with search, refreshes and host changes, preserving existing card listeners', async () => {
+    const ui = setup();
+    await ui.load();
+    const originalCard = ui.list.cards.find(card => card.getAttribute('data-service-name') === 'ufw.service');
+    ui.type('service');
+    ui.sortBy('name-desc');
+    expect(ui.visible()).toEqual(['ufw.service', 'ssh.service', 'backup.service']);
+    expect(ui.list.cards[0]).toBe(originalCard);
+    ui.list.cards[0].links[0].click();
+    expect(ui.browser.openServiceModal).toHaveBeenCalledWith('node-a', 'ufw.service');
+    ui.type('ufw');
+    ui.sortBy('disabled-first');
+    expect(ui.visible()).toEqual(['ufw.service']);
+    await ui.load();
+    expect(ui.sort.value).toBe('disabled-first');
+    expect(ui.visible()).toEqual(['ufw.service']);
+    ui.clear.click();
+    expect(ui.visible()).toEqual(['backup.service', 'ssh.service', 'ufw.service']);
+    ui.setHost('node-b');
+    await ui.load();
+    expect(ui.sort.value).toBe('disabled-first');
+    expect(ui.sort.listeners.get('change')).toHaveLength(1);
+  });
   it('filters case-insensitive partial names and descriptions on input without fetching again', async () => {
     const ui = setup();
     await ui.load();
@@ -193,5 +251,7 @@ describe('individual host service search', () => {
     expect(tab).toMatch(/id="services-search"[\s\S]*?type="search"[\s\S]*?aria-controls="services-list"/);
     expect(tab).toMatch(/id="services-search-status"[^>]*role="status"[^>]*aria-live="polite"/);
     expect(tab).toContain('aria-describedby="services-search-status"');
+    expect(tab).toContain('for="services-sort"');
+    expect(tab).toMatch(/id="services-sort"[^>]*aria-controls="services-list"/);
   });
 });

@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- Hosts → System Services can sort by name in either direction or put enabled
+  or disabled autostart services first, while retaining the current search.
 - Firewall management can disable active UFW or firewalld on selected hosts,
   preserving saved rules and verifying the resulting state.
 - Live name/description search in Hosts → Services, with matching counts and

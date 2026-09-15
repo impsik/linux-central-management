@@ -59,8 +59,8 @@ for the beta changes.
 
 - package inventory, package updates, security campaigns, and controlled
   full package upgrades;
-- service status, live search by name or description, and start, stop, restart,
-  enable, and disable operations;
+- service status, live search by name or description, sorting by name or
+  autostart state, and start, stop, restart, enable, and disable operations;
 - user-account, SSH-key, and sudo-access management;
 - firewall inspection, rule management, and enabling/disabling across selected hosts
   ([usage and management-access checks](docs/firewall-management.md));

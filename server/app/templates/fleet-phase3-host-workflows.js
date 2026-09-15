@@ -82,6 +82,25 @@
   }
 
   const serviceViews = new WeakMap();
+  const serviceNameOrder = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+  function sortServices(servicesList, view) {
+    if (!view.loaded || !view.sort) return;
+    const mode = view.sort.value;
+    const preferred = mode === 'enabled-first' ? 'enabled' : mode === 'disabled-first' ? 'disabled' : null;
+    const rank = card => {
+      const state = card.getAttribute('data-service-autostart');
+      return state === preferred ? 0 : state === 'other' ? 2 : 1;
+    };
+    const cards = Array.from(servicesList.querySelectorAll('.service-card[data-service-search]'));
+    cards.sort((a, b) => {
+      const stateOrder = preferred ? rank(a) - rank(b) : 0;
+      const nameOrder = serviceNameOrder.compare(a.getAttribute('data-service-name') || '', b.getAttribute('data-service-name') || '');
+      return stateOrder || (mode === 'name-desc' ? -nameOrder : nameOrder);
+    });
+    // Move existing nodes so service details and action listeners stay intact.
+    cards.forEach(card => servicesList.appendChild(card));
+  }
 
   function isCurrentServicesHost(ctx, agentId) {
     return typeof ctx.getCurrentAgentId !== 'function' || ctx.getCurrentAgentId() === agentId;
@@ -117,9 +136,11 @@
         loaded: false,
         search: document.getElementById('services-search'),
         clear: document.getElementById('services-search-clear'),
+        sort: document.getElementById('services-sort'),
         status: document.getElementById('services-search-status'),
       };
       view.search?.addEventListener('input', () => filterServices(servicesList, view));
+      view.sort?.addEventListener('change', () => sortServices(servicesList, view));
       view.clear?.addEventListener('click', () => {
         if (!view.search) return;
         view.search.value = '';
@@ -169,11 +190,12 @@
       servicesList.innerHTML = data.services.map(service => {
         const statusClass = service.status === 'active' ? 'active' : service.status === 'failed' ? 'failed' : 'inactive';
         const autostart = w.describeServiceAutostart(service);
+        const sortState = autostart.enabled ? 'enabled' : (!autostart.state || autostart.state === 'disabled') ? 'disabled' : 'other';
         const toggleAction = autostart.enabled ? 'disable' : 'enable';
         const canToggle = autostart.enabled ? autostart.canDisable : autostart.canEnable;
         const enabledBadge = `<span class="sudo-badge ${autostart.enabled ? 'yes' : 'no'}" style="margin-left: 0.5rem;" title="${w.escapeHtml(autostart.reason)}">Autostart: ${w.escapeHtml(autostart.label)}</span>`;
         return `
-            <div class="service-card" data-service-name="${w.escapeHtml(service.name)}" data-service-search="${w.escapeHtml(`${service.name || ''} ${service.description || ''}`.toLowerCase())}">
+            <div class="service-card" data-service-name="${w.escapeHtml(service.name)}" data-service-autostart="${sortState}" data-service-search="${w.escapeHtml(`${service.name || ''} ${service.description || ''}`.toLowerCase())}">
               <div class="service-info">
                 <div class="service-name"><a href="#" class="service-name-link" data-service="${w.escapeHtml(service.name)}" style="text-decoration:underline;">${w.escapeHtml(service.name)}</a></div>
                 <div class="service-details">
@@ -195,6 +217,7 @@
             </div>
           `;
       }).join('');
+      sortServices(servicesList, view);
       filterServices(servicesList, view);
 
       servicesList.querySelectorAll('a.service-name-link').forEach(a => {
