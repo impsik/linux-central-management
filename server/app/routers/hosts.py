@@ -1774,7 +1774,6 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
                         "percent_used": float(snap.mem_percent_used) if snap.mem_percent_used not in (None, "") else None,
                     },
                     "cpu": {
-                        "vcpus": snap.vcpus,
                         "load_1min": float(snap.load_1min) if snap.load_1min not in (None, "") else None,
                     },
                     "ip_addresses": ip_list,
@@ -1838,7 +1837,9 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
                 disk_percent_used=str(disk.get("percent_used")) if isinstance(disk, dict) and disk.get("percent_used") is not None else None,
                 mem_percent_used=str(mem.get("percent_used")) if isinstance(mem, dict) and mem.get("percent_used") is not None else None,
                 load_1min=str(cpu.get("load_1min")) if isinstance(cpu, dict) and cpu.get("load_1min") is not None else None,
-                vcpus=int(cpu.get("vcpus")) if isinstance(cpu, dict) and cpu.get("vcpus") is not None else None,
+                # vCPU count is live-only data. Do not persist it as a stale
+                # value that could later be mistaken for the current count.
+                vcpus=None,
             )
             db.add(snap)
 

@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -3064,7 +3063,7 @@ func querySystemMetrics(ctx context.Context) (string, string, int, string) {
 	}
 
 	// Get CPU info (vCPUs and load)
-	metrics.CPU.VCPUs = runtime.NumCPU()
+	metrics.CPU.VCPUs = onlineCPUCount(os.ReadFile)
 
 	// Get load average from /proc/loadavg
 	loadCmd := exec.CommandContext(queryCtx, "cat", "/proc/loadavg")

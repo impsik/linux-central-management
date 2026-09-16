@@ -103,7 +103,7 @@ describe('phase3 metrics rendering', () => {
         json: async () => ({
           disk_usage: { used_gb: '3.0', total_gb: '19.0' },
           memory: { used_gb: '0.55', total_gb: '15.62' },
-          cpu: { cores: '4', load_1min: '0.12' },
+          cpu: { cores: '2', load_1min: '0.12' },
           ip_addresses: ['192.168.100.241'],
           top_processes: [],
         }),
@@ -130,8 +130,13 @@ describe('phase3 metrics rendering', () => {
 
     expect(elements['disk-usage'].textContent).toBe('15.8%');
     expect(elements['memory-usage'].textContent).toBe('3.5%');
-    expect(elements.vcpus.textContent).toBe('4');
+    expect(elements.vcpus.textContent).toBe('2');
     expect(elements['ip-addresses'].textContent).toBe(1);
+
+    // A background sample must replace the displayed count after CPU hot-add.
+    win.fetch = async () => ({ ok: true, json: async () => ({ cpu: { vcpus: 4 } }) });
+    await win.phase3Metrics.loadMetrics(metricsCtx, 'a-1', true);
+    expect(elements.vcpus.textContent).toBe('4');
 
     win.fetch = async () => {
       throw new Error('temporary network issue');
