@@ -329,22 +329,28 @@ and starts the application with Docker Compose.
 
 #### Installer questions
 
-The standard installation asks for three groups of settings:
+The standard installation asks for these settings:
 
 1. **Application hostname** — without `https://` or a path; default `fleet.local`.
 2. **HTTPS setup** — let the installer configure nginx (the default for new
    installations), or choose `no` to use an existing reverse proxy.
 3. **Admin account** — username and password. A blank password generates a
    secure password, displayed once in the installation summary.
+4. **Console** — enable browser terminal access now? The default is `no`.
+   Choosing `yes` generates the Master Console token. Hosts added afterwards
+   receive Console configuration through the host attachment/enrollment flow.
 
 The server IPv4 address is detected automatically and the internal CA defaults
 to `/etc/fleet-pki/fleet-ca.crt`. Use `FLEET_SERVER_IP` or `FLEET_CA_CERT` to
 override these values. Review the endpoint summary before proceeding.
 
 On an existing installation, the standard flow preserves configured passwords,
-tokens and the MFA key. It does not prompt to rotate them. Browser terminal
-access stays disabled on new installations, and agents can be added after
-signing in. MFA enrollment for privileged accounts remains required by default.
+tokens and the MFA key. It does not prompt to rotate them. If Console is already
+enabled, it remains enabled without another question. If disabled, the normal
+installer offers to enable it; `--resume` preserves the saved choice. Enabling
+Console on the Master does not reconfigure existing agents: binary-only agent
+updates retain their Console settings. Agents can be added after signing in.
+MFA enrollment for privileged accounts remains required by default.
 
 For additional options:
 
@@ -353,7 +359,7 @@ For additional options:
 ```
 
 Advanced mode includes server IP and CA-path questions, explicit secret-rotation
-choices, browser terminal enablement, and optional initial agent deployment.
+choices and optional initial agent deployment.
 `ATTACH_HOSTS` and `ANSIBLE_USER` remain available for scripted deployments in
 either mode. Rotating agent or terminal tokens requires redeploying affected
 agents; rotating the MFA key can invalidate enrollments.
@@ -741,8 +747,8 @@ curl -fsSL https://raw.githubusercontent.com/impsik/linux-central-management/mai
 
 The bootstrap admin password is still generated securely when no existing
 password is configured. The installer displays a newly generated password in
-its final summary. Browser terminal access remains an explicit advanced-mode
-opt-in and is not enabled merely by using non-interactive defaults.
+its final summary. Browser terminal access remains an explicit opt-in in the
+standard installer and is not enabled by non-interactive defaults.
 
 Review `install.sh` before unattended production use. Secret rotation and host
 attachment deliberately retain confirmation steps where appropriate.

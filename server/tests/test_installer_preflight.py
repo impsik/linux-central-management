@@ -114,10 +114,11 @@ def test_standard_mode_does_not_prompt_for_rotation(installer, tmp_path):
     assert result.stdout == ''
 
 
-@pytest.mark.parametrize('existing', [False, True])
+@pytest.mark.parametrize('existing', [False, True, 'console-disabled'])
+@pytest.mark.parametrize('console_answer', ['yes', 'no'])
 @pytest.mark.parametrize('attach', [False, True])
 @pytest.mark.parametrize('agent_update_ok', [False, True])
-def test_standard_install_questions_and_secret_preservation(installer, tmp_path, existing, attach, agent_update_ok):
+def test_standard_install_questions_and_secret_preservation(installer, tmp_path, existing, attach, agent_update_ok, console_answer):
     app = tmp_path / 'app'
     (app / 'deploy/docker').mkdir(parents=True)
     (app / 'env.example').write_text('SERVER_URL=\n')
@@ -128,7 +129,8 @@ def test_standard_install_questions_and_secret_preservation(installer, tmp_path,
         (app / 'deploy/docker/.env').write_text(
             'BOOTSTRAP_USERNAME=existing-admin\nBOOTSTRAP_PASSWORD=existing-password\n'
             'AGENT_SHARED_TOKEN=existing-token\nMFA_ENCRYPTION_KEY=existing-key\n'
-            'POSTGRES_PASSWORD=existing-postgres\nAGENT_TERMINAL_TOKEN=existing-terminal\n')
+            'POSTGRES_PASSWORD=existing-postgres\nAGENT_TERMINAL_TOKEN='
+            + ('existing-terminal' if existing is True else '') + '\n')
         (app / '.env').write_text('SERVER_URL=https://fleet.example.test\nFLEET_SERVER_IP=192.0.2.10\nINSTALL_NGINX=true\n')
     helper = app / 'add-host.sh'
     helper.write_text('#!/bin/sh\nprintf "%s|%s\\n" "$ATTACH_HOSTS" "$ANSIBLE_USER" > attached\n')
@@ -140,11 +142,15 @@ INSTALL_DIR="$2"
 trace="$3"
 ATTACH_HOSTS="$4"
 agent_update_ok="$5"
+console_answer="$6"
 ANSIBLE_USER=operator
 unset FLEET_HOSTNAME INSTALL_NGINX
 FLEET_SERVER_IP=192.0.2.10
 primary_ip() { printf 192.0.2.10; }
-prompt() { printf 'prompt:%s\n' "$1" >> "$trace"; printf '%s' "$2"; }
+prompt() {
+  printf 'prompt:%s\n' "$1" >> "$trace"
+  case "$1" in 'Enable browser Console now?'*) printf '%s' "$console_answer";; *) printf '%s' "$2";; esac
+}
 prompt_secret_or_generate() { printf 'secret:%s\n' "$1" >> "$trace"; printf new-password; }
 random_password() { printf new-password; }
 random_hex() { printf generated-token; }
@@ -162,7 +168,7 @@ write_inventory() { :; }
 update_existing_agents() { [ "$agent_update_ok" = true ]; }
 main
 '''
-    result = subprocess.run(['sh', '-c', harness, 'sh', str(installer), str(app), str(trace), 'first-node' if attach else '', str(agent_update_ok).lower()],
+    result = subprocess.run(['sh', '-c', harness, 'sh', str(installer), str(app), str(trace), 'first-node' if attach else '', str(agent_update_ok).lower(), console_answer],
                             cwd=tmp_path, capture_output=True, text=True, timeout=10)
     assert result.returncode == (0 if agent_update_ok else 1), result.stderr
     if not agent_update_ok:
@@ -177,17 +183,38 @@ main
     env = (app / 'deploy/docker/.env').read_text()
     if existing:
         assert 'Admin username' not in prompts
-        for secret in ('existing-password', 'existing-token', 'existing-key', 'existing-postgres', 'existing-terminal'):
+        for secret in ('existing-password', 'existing-token', 'existing-key', 'existing-postgres'):
             assert secret in env
     else:
         assert 'Admin username' in prompts
         assert 'secret:Bootstrap admin password' in prompts
-        assert 'AGENT_TERMINAL_TOKEN=\n' in env
+    if existing is True:
+        assert 'Enable browser Console now?' not in prompts
+        assert 'AGENT_TERMINAL_TOKEN=existing-terminal\n' in env
+        assert 'Console: enabled on Master' in result.stdout
+    else:
+        assert prompts.count('Enable browser Console now?') == 1
+        expected_token = 'generated-token' if console_answer == 'yes' else ''
+        assert f'AGENT_TERMINAL_TOKEN={expected_token}\n' in env
+        assert f'TERM_TOKEN={expected_token}\n' in (app / '.env').read_text()
+        assert ('Console: enabled on Master' if expected_token else 'Console: disabled') in result.stdout
     assert 'INSTALL_NGINX=true' in (app / '.env').read_text()
     assert 'Connect your first Linux host' in result.stdout
     assert (app / 'attached').exists() == attach
     if attach:
         assert (app / 'attached').read_text() == 'first-node|operator\n'
+    if existing is False and not attach and agent_update_ok:
+        # Resume must preserve both opt-in and opt-out without asking again,
+        # even if a later answer would have changed the original choice.
+        resumed = subprocess.run(
+            ['sh', '-c', harness.replace('\nmain\n', '\nmain --resume\n'), 'sh',
+             str(installer), str(app), str(trace), '', 'true',
+             'no' if console_answer == 'yes' else 'yes'],
+            cwd=tmp_path, capture_output=True, text=True, timeout=10,
+        )
+        assert resumed.returncode == 0, resumed.stderr
+        assert trace.read_text().count('Enable browser Console now?') == 1
+        assert (app / 'deploy/docker/.env').read_text() == env
 
 
 @pytest.mark.parametrize('family', ['apt', 'rpm'])

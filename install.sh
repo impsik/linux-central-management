@@ -809,7 +809,7 @@ main() {
       --help|-h)
         say "Usage: sh install.sh [--check] [--advanced] [--resume]"
         say "  --check     Run preflight only; do not install or write configuration"
-        say "  --advanced  Include CA/IP, token rotation, terminal and initial agent options"
+        say "  --advanced  Include CA/IP, token rotation and initial agent options"
         say "  --resume    Reuse saved answers/ref and skip rebuilding an unchanged healthy Master"
         say "  Existing agents are updated over SSH by default (UPDATE_AGENTS=false to skip)."
         return 0 ;;
@@ -990,14 +990,14 @@ main() {
   current_terminal_token="$(get_env_value "$docker_env" "AGENT_TERMINAL_TOKEN")"
   terminal_token=""
   if is_placeholder_value "$current_terminal_token"; then
-    if advanced_confirm "Enable browser terminal proxy token now? (higher risk)" "n"; then
+    if [ "$resume" != "true" ] && confirm "Enable browser Console now? (yes/no)" "no"; then
       terminal_token="$(random_hex 32)"
     fi
   elif advanced_confirm "Browser terminal proxy token already exists. Rotate it now? Existing agents must be redeployed if rotated." "n"; then
     terminal_token="$(random_hex 32)"
   else
     terminal_token="$current_terminal_token"
-    info "Preserved existing AGENT_TERMINAL_TOKEN"
+    info "Console is already enabled; preserved existing AGENT_TERMINAL_TOKEN"
   fi
 
   current_postgres_password="$(get_env_value "$docker_env" "POSTGRES_PASSWORD")"
@@ -1162,6 +1162,11 @@ main() {
     say "Proxy upstream: http://127.0.0.1:18000"
   fi
   say "Next: sign in, complete MFA setup, then follow Connect your first Linux host."
+  if [ -n "$final_terminal_token" ]; then
+    say "Console: enabled on Master; managed hosts also need Console configured."
+  else
+    say "Console: disabled. Rerun ./install.sh to enable it later."
+  fi
   say "Trust this CA on your browser machine: $fleet_ca_cert"
   say "To add a host later: cd $APP_DIR && ./add-host.sh"
   say "Advanced setup remains available with: ./install.sh --advanced"
