@@ -18,6 +18,7 @@ from ..services.cve_reporting import collect_high_severity_findings, merge_findi
 from ..services.db_utils import transaction
 from ..services.audit import log_event
 from ..services.hosts import is_host_online
+from ..services.background import run_blocking
 from ..services.jobs import create_job_with_runs, push_job_to_agents
 from ..services.json_utils import loads_or
 from ..services.rbac import permissions_for
@@ -53,7 +54,15 @@ class ServicePresenceActionRequest(BaseModel):
     agent_ids: list[str] | None = None
 
 
+class FirewallRuleSelection(BaseModel):
+    backend: str
+    raw: str
+    id: str = ""
+    zone: str = ""
+
+
 class FirewallFleetActionRequest(BaseModel):
+    rules_by_agent: dict[str, list[FirewallRuleSelection]] | None = None
     agent_ids: list[str] | None = None
     port: int | None = None
     protocol: str | None = "tcp"
@@ -63,14 +72,38 @@ class FirewallFleetActionRequest(BaseModel):
 
 def _normalize_firewall_action(action: str, payload: FirewallFleetActionRequest) -> dict:
     action_norm = (action or "").strip().lower()
-    if action_norm not in ("allow", "deny", "delete"):
-        raise HTTPException(400, "Invalid action. Must be allow, deny, or delete.")
+    if action_norm not in ("allow", "deny", "delete", "enable", "disable", "delete-rules"):
+        raise HTTPException(400, "Invalid action. Must be allow, deny, delete, delete-rules, enable, or disable.")
+    if action_norm == "delete-rules":
+        selections = payload.rules_by_agent or {}
+        if not selections or set(selections) != set(payload.agent_ids or []):
+            raise HTTPException(400, "Select rules for each requested host")
+        if sum(len(rules) for rules in selections.values()) > 500:
+            raise HTTPException(400, "Select at most 500 rules per operation")
+        for rules in selections.values():
+            if not rules or len(rules) > 100:
+                raise HTTPException(400, "Select between 1 and 100 rules per host")
+            for rule in rules:
+                if (
+                    rule.backend not in ("ufw", "firewalld") or not rule.raw.strip()
+                    or len(rule.raw) > 4096 or len(rule.id) > 80 or len(rule.zone) > 64
+                ):
+                    raise HTTPException(400, "Invalid firewall rule selection")
+        return {
+            "action": action_norm,
+            "rules_by_agent": {aid: [r.model_dump() for r in rules] for aid, rules in selections.items()},
+        }
+    if action_norm in ("enable", "disable"):
+        # Changing firewall state does not create or modify a specific rule.
+        return {"action": action_norm}
     protocol = (payload.protocol or "tcp").strip().lower()
     if protocol not in ("tcp", "udp"):
         raise HTTPException(400, "protocol must be tcp or udp")
     service = (payload.service or "").strip()
     source = (payload.source or "").strip()
     port = payload.port
+    if service and port not in (None, 0):
+        raise HTTPException(400, "Choose either a port or a firewall profile/service, not both")
     if not service:
         if port is None:
             raise HTTPException(400, "port is required when service is not provided")
@@ -93,32 +126,22 @@ async def _wait_for_job_runs(
     poll_interval_s: float = 0.5,
 ) -> list[JobRun]:
     wanted = sorted({str(a) for a in agent_ids if str(a).strip()})
-    start = time.time()
-    while time.time() - start < timeout_s:
-        db = SessionLocal()
-        try:
+    def read_runs():
+        with SessionLocal() as db:
             rows = db.execute(
                 select(JobRun).where(JobRun.job_id == job_id, JobRun.agent_id.in_(wanted))
             ).scalars().all()
-            done = [r for r in rows if r.status in ("success", "failed")]
-            if len(done) >= len(wanted):
-                for r in done:
-                    db.expunge(r)
-                return done
-        finally:
-            db.close()
-        await asyncio.sleep(poll_interval_s)
+            for row in rows:
+                db.expunge(row)
+            return rows
 
-    db = SessionLocal()
-    try:
-        rows = db.execute(
-            select(JobRun).where(JobRun.job_id == job_id, JobRun.agent_id.in_(wanted))
-        ).scalars().all()
-        for r in rows:
-            db.expunge(r)
-        return rows
-    finally:
-        db.close()
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_s:
+        rows = await run_blocking(read_runs)
+        if len([row for row in rows if row.status in ("success", "failed")]) >= len(wanted):
+            return rows
+        await asyncio.sleep(poll_interval_s)
+    return await run_blocking(read_runs)
 
 
 def _visible_online_hosts(
@@ -445,11 +468,10 @@ def cve_high_severity_report(
 
     findings = collect_high_severity_findings(db, min_severity=float(min_severity))
     package_findings = merge_findings_by_package(findings)
-    visible = []
-    for item in package_findings:
-        host = db.execute(select(Host).where(Host.id == item.host_id)).scalar_one_or_none()
-        if host and is_host_visible_to_user(db, user, host):
-            visible.append(item)
+    host_ids = {item.host_id for item in package_findings}
+    hosts = db.execute(select(Host).where(Host.id.in_(host_ids))).scalars().all() if host_ids else []
+    visible_host_ids = {host.id for host in hosts if is_host_visible_to_user(db, user, host)}
+    visible = [item for item in package_findings if item.host_id in visible_host_ids]
 
     reverse = order == "desc"
     key_map = {
@@ -610,6 +632,10 @@ async def service_presence_report(
                     "service_name": name,
                     "status": str(svc.get("status") or ""),
                     "enabled": bool(svc.get("enabled", False)),
+                    "unit_file_state": str(svc.get("unit_file_state") or ""),
+                    "socket_unit_file_state": str(svc.get("socket_unit_file_state") or ""),
+                    "can_enable": svc.get("can_enable") if isinstance(svc.get("can_enable"), bool) else None,
+                    "can_disable": svc.get("can_disable") if isinstance(svc.get("can_disable"), bool) else None,
                     "description": str(svc.get("description") or ""),
                 }
             )
@@ -760,6 +786,8 @@ async def firewall_rules_report(
                 "backend": str(data.get("backend") or ""),
                 "status": str(data.get("status") or ""),
                 "zone": str(data.get("zone") or ""),
+                "rules_scope": str(data.get("rules_scope") or "running"),
+                "notice": str(data.get("notice") or ""),
                 "rules": rules if isinstance(rules, list) else [],
             }
         )
@@ -797,6 +825,9 @@ async def firewall_rules_action(
     if not targets:
         raise HTTPException(400, "No online matching hosts selected for this firewall action")
 
+    if rule["action"] == "delete-rules":
+        rule["rules_by_agent"] = {aid: rule["rules_by_agent"][aid] for aid in targets}
+
     with transaction(db):
         created = create_job_with_runs(
             db=db,
@@ -811,9 +842,16 @@ async def firewall_rules_action(
         job_payload_builder=lambda aid: {
             "job_id": created.job_key,
             "type": "firewall-control",
-            **rule,
+            **({"action": "delete-rules", "rules": rule["rules_by_agent"][aid]} if rule["action"] == "delete-rules" else rule),
         },
     )
+
+    if rule["action"] in ("enable", "disable"):
+        target_name = rule["action"]
+    elif rule["action"] == "delete-rules":
+        target_name = "selected rules"
+    else:
+        target_name = rule.get("service") or f"{rule.get('port')}/{rule.get('protocol')}"
 
     with transaction(db):
         log_event(
@@ -821,8 +859,8 @@ async def firewall_rules_action(
             action=f"reports.firewall_rules.{rule['action']}",
             actor=user,
             request=request,
-            target_type="firewall_rule",
-            target_name=rule.get("service") or f"{rule.get('port')}/{rule.get('protocol')}",
+            target_type="firewall" if rule["action"] in ("enable", "disable") else "firewall_rule",
+            target_name=target_name,
             meta={
                 "job_id": created.job_key,
                 "target_count": len(targets),

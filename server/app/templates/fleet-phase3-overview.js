@@ -175,7 +175,21 @@
     renderAttentionRows(ctx);
   }
 
+  let overviewLoadPromise = null;
+
   async function loadFleetOverview(ctx, forceLive, backgroundRefresh) {
+    if (overviewLoadPromise) return overviewLoadPromise;
+    if (backgroundRefresh && (document.hidden || ctx.getCurrentAgentId?.()
+      || !document.getElementById('server-info-tab')?.classList.contains('active'))) return;
+    overviewLoadPromise = Promise.resolve().then(() => refreshFleetOverview(ctx, forceLive, backgroundRefresh));
+    try {
+      return await overviewLoadPromise;
+    } finally {
+      overviewLoadPromise = null;
+    }
+  }
+
+  async function refreshFleetOverview(ctx, forceLive, backgroundRefresh) {
     const isBackgroundRefresh = !!backgroundRefresh;
     const onlineEl = document.getElementById('kpi-online');
     const onlineDetailsEl = document.getElementById('kpi-online-details');
@@ -189,19 +203,6 @@
     const maintenanceEl = document.getElementById('maintenance-window-status');
 
     try {
-      // First hydrate update KPIs from hosts report (more resilient than summary-only path).
-      try {
-        const rr0 = await fetch('/reports/hosts-updates?only_pending=false&online_only=false&sort=hostname&order=asc&limit=500', { credentials: 'include', cache: 'no-store' });
-        if (rr0.ok) {
-          const report0 = await rr0.json();
-          const items0 = Array.isArray(report0?.items) ? report0.items : [];
-          const secHosts0 = items0.filter((it) => Number(it.security_updates || 0) > 0).length;
-          const secPkgs0 = items0.reduce((n, it) => n + Number(it.security_updates || 0), 0);
-          if (secEl) secEl.textContent = `${secHosts0} hosts`;
-          if (secDetailsEl) secDetailsEl.textContent = `${secPkgs0} packages`;
-        }
-      } catch (_) { }
-
       const r = await fetch('/dashboard/summary', { credentials: 'include', cache: 'no-store' });
       if (!r.ok) {
         if (r.status === 403) {
@@ -359,23 +360,21 @@
           const hostsOffline = Math.max(0, hostsTotal - hostsOnline);
           const secHosts = items.filter((it) => Number(it.security_updates || 0) > 0).length;
           const secPkgs = items.reduce((n, it) => n + Number(it.security_updates || 0), 0);
-          const updHosts = items.filter((it) => Number(it.updates || 0) > 0).length;
-          const updPkgs = items.reduce((n, it) => n + Number(it.updates || 0), 0);
 
           if (onlineEl) onlineEl.textContent = `${hostsOnline} / ${hostsTotal}`;
           if (onlineDetailsEl) onlineDetailsEl.textContent = `${hostsOffline} offline`;
           if (secEl) secEl.textContent = `${secHosts} hosts`;
           if (secDetailsEl) secDetailsEl.textContent = `${secPkgs} packages`;
-          if (updEl) updEl.textContent = `${updHosts} hosts`;
-          if (updDetailsEl) updDetailsEl.textContent = `${updPkgs} packages`;
         }
       } catch (_) { }
 
       if (attentionEl && !isBackgroundRefresh) attentionEl.textContent = `Overview error: ${e.message}`;
     }
 
-    ctx.loadPendingUpdatesReport(false, isBackgroundRefresh);
-    loadUrgentUpdates(ctx, isBackgroundRefresh, !!forceLive);
+    await Promise.allSettled([
+      ctx.loadPendingUpdatesReport(false, isBackgroundRefresh),
+      loadUrgentUpdates(ctx, isBackgroundRefresh, !!forceLive),
+    ]);
   }
 
   let hostsTableItemsCache = [];
@@ -458,7 +457,7 @@
 
     if (!filteredCount) {
       if (counterEl) counterEl.textContent = `0 / ${total} hosts shown · online 0 · offline 0`;
-      w.setTableState(tbody, 10, 'empty', 'No hosts match current filters');
+      w.setTableState(tbody, 11, 'empty', 'No hosts match current filters');
       if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
       const selectAll = document.getElementById('hosts-select-all');
       if (selectAll) {
@@ -515,22 +514,24 @@
       }
       const selectedAgentIds = (ctx.getSelectedAgentIds && ctx.getSelectedAgentIds()) || new Set();
       tr.innerHTML = `
-        <td><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
-        <td>
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
-            <b>${w.escapeHtml(hostName)}</b>
+        <td class="host-col-select"><input type="checkbox" class="hosts-row-select" data-agent-id="${w.escapeHtml(it.agent_id || '')}" ${selectedAgentIds.has(String(it.agent_id || '')) ? 'checked' : ''} /></td>
+        <td class="host-col-name">
+          <b>${w.escapeHtml(hostName)}</b>
+          <div class="host-identity-meta">
+            <span class="host-agent-id">${w.escapeHtml(it.agent_id || '')}</span>
+            ${it.ip_address ? `<span>${w.escapeHtml(it.ip_address)}</span>` : ''}
+            <span>agent ${w.escapeHtml(agentVersion)}</span>
           </div>
-          <div style="color:var(--muted-2);font-size:0.85rem;">${w.escapeHtml(it.agent_id || '')} ${it.ip_address ? '• ' + w.escapeHtml(it.ip_address) : ''} • agent ${w.escapeHtml(agentVersion)}</div>
         </td>
-        <td>${owner ? `<code>${w.escapeHtml(owner)}</code>` : '<span class="status-muted">—</span>'}</td>
-        <td>${w.escapeHtml(os)}</td>
-        <td><code>${w.escapeHtml(kernel)}</code></td>
-        <td style="text-align:right;"><b>${sec}</b></td>
-        <td style="text-align:right;"><b>${all}</b></td>
-        <td>${reboot}</td>
-        <td>${online}</td>
-        <td class="status-muted">${w.escapeHtml(lastSeen)}</td>
-        <td style="text-align:right;">${hostActionsMenu}</td>
+        <td class="host-col-owner">${owner ? `<code>${w.escapeHtml(owner)}</code>` : '<span class="status-muted">—</span>'}</td>
+        <td class="host-col-os">${w.escapeHtml(os)}</td>
+        <td class="host-col-kernel"><code>${w.escapeHtml(kernel)}</code></td>
+        <td class="host-col-count"><b>${sec}</b></td>
+        <td class="host-col-count"><b>${all}</b></td>
+        <td class="host-col-state">${reboot}</td>
+        <td class="host-col-state">${online}</td>
+        <td class="host-col-time status-muted">${w.escapeHtml(lastSeen)}</td>
+        <td class="host-col-actions">${hostActionsMenu}</td>
       `;
 
       tr.addEventListener('click', () => {
@@ -826,7 +827,7 @@
     const order = orderSel?.value || 'asc';
 
     try {
-      w.setTableState(tbody, 10, 'loading', 'Loading…');
+      w.setTableState(tbody, 11, 'loading', 'Loading…');
       const effectiveSort = sort === 'owner' ? 'hostname' : sort;
       const url = `/reports/hosts-updates?only_pending=false&online_only=false&sort=${encodeURIComponent(effectiveSort)}&order=${encodeURIComponent(order)}&limit=500`;
       const r = await fetch(url, { credentials: 'include', cache: 'no-store' });
@@ -852,7 +853,7 @@
       if (!hostsTableItemsCache.length) {
         if (ctx && typeof ctx.setLastRenderedAgentIds === 'function') ctx.setLastRenderedAgentIds([]);
         updateHostsUpdatesHint();
-        return w.setTableState(tbody, 10, 'empty', 'No hosts');
+        return w.setTableState(tbody, 11, 'empty', 'No hosts');
       }
 
       // Keep host metadata hydrated for filter options and host detail panel.
@@ -873,47 +874,8 @@
       applyHostsTableFilters(ctx);
       updateHostsUpdatesHint();
 
-      // Legacy hidden list fallback kept for compatibility.
-      const hostsEl = document.getElementById('hosts');
-      const hostText = (hostsEl?.textContent || '').toLowerCase();
-      if (hostsEl && hostText.includes('loading hosts')) {
-        hostsEl.innerHTML = hostsTableItemsCache.map((it) => {
-          const ip = it.ip_address || '';
-          const lastSeen = formatShortTimeSafe(ctx, it.last_seen);
-          const labels = (it.labels && typeof it.labels === 'object') ? it.labels : {};
-          const env = labels.env || '';
-          const role = labels.role || '';
-          return `
-          <div class="host-item" data-agent-id="${w.escapeHtml(it.agent_id || '')}">
-            <div class="host-meta">
-              <div class="host-row-top">
-                <div class="host-name">${w.escapeHtml(it.hostname || it.agent_id || '')}</div>
-                <span class="status-dot ${it.is_online ? 'online' : 'offline'}"></span>
-              </div>
-              <div class="host-subline">
-                <span class="host-subitem">${w.escapeHtml(ip || it.agent_id || '')}</span>
-                <span class="host-subsep">•</span>
-                <span class="host-subitem">seen ${w.escapeHtml(lastSeen)}</span>
-              </div>
-              <div class="host-tags">
-                ${env ? `<span class="tag">env: <code>${w.escapeHtml(env)}</code></span>` : ''}
-                ${role ? `<span class="tag">role: <code>${w.escapeHtml(role)}</code></span>` : ''}
-              </div>
-            </div>
-          </div>
-        `;
-        }).join('');
-        hostsEl.querySelectorAll('.host-item').forEach((el) => {
-          el.addEventListener('click', () => {
-            const aid = el.getAttribute('data-agent-id') || '';
-            if (!aid) return;
-            const row = hostsTableItemsCache.find((x) => (x.agent_id || '') === aid) || {};
-            ctx.selectHost(aid, row.hostname || aid);
-          });
-        });
-      }
     } catch (e) {
-      w.setTableState(tbody, 10, 'error', `Hosts table error: ${e.message || String(e)}`);
+      w.setTableState(tbody, 11, 'error', `Hosts table error: ${e.message || String(e)}`);
     }
   }
 
@@ -1226,7 +1188,6 @@
     const navSshKeys = document.getElementById('nav-sshkeys');
     const navReports = document.getElementById('nav-reports');
     const nextCronjobsOpenBtn = document.getElementById('overview-next-cronjobs-open');
-    const containerEl = document.querySelector('.container');
 
   function setGuardedButtonState(btn, blocked, message) {
     if (!btn) return;
@@ -1312,7 +1273,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('server-info-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadFleetOverview();
       ctx.loadFailedRuns(24, false);
       ctx.loadQueueHealth(false);
@@ -1325,7 +1285,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('hosts-table-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.remove('sidebar-collapsed');
       ctx.loadHostsTable();
     }
 
@@ -1333,7 +1292,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('cronjobs-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadCronjobs();
     }
 
@@ -1342,7 +1300,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('user-management-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     function showServiceManagementTab() {
@@ -1350,7 +1307,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('service-management-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     function showFirewallManagementTab() {
@@ -1358,14 +1314,12 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('firewall-management-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     function showSshKeysTab() {
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('sshkeys-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
       ctx.loadSshKeys();
       ctx.loadSshKeyRequests();
       ctx.maybeLoadSshKeyAdminQueue();
@@ -1376,7 +1330,6 @@
       ctx.clearCurrentHostSelection();
       document.querySelectorAll('.tab-content-custom, .tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById('reports-tab')?.classList.add('active');
-      if (containerEl) containerEl.classList.add('sidebar-collapsed');
     }
 
     navOverview?.addEventListener('click', (e) => { e.preventDefault(); showOverviewTab(); });
@@ -1390,7 +1343,6 @@
     nextCronjobsOpenBtn?.addEventListener('click', (e) => { e.preventDefault(); showCronjobsTab(); });
 
     showOverviewTab();
-    refreshMaintenanceGuardButtons();
 
     const refreshBtn = document.getElementById('overview-refresh');
     const kpiTimeframeEl = document.getElementById('kpi-timeframe');
@@ -1648,11 +1600,11 @@
     try {
       if (window.__fleetNotifInterval) clearInterval(window.__fleetNotifInterval);
       window.__fleetNotifInterval = setInterval(() => {
-        const isOverview = document.getElementById('server-info-tab')?.classList.contains('active');
-        if (isOverview) {
-          loadNotifications(ctx, false);
-          refreshMaintenanceGuardButtons();
-        }
+        if (document.hidden) return;
+        // Alert badges remain current across views; only Dashboard controls need its policy refresh.
+        loadNotifications(ctx, false);
+        const isOverview = document.getElementById('server-info-tab')?.classList.contains('active') && !ctx.getCurrentAgentId?.();
+        if (isOverview) refreshMaintenanceGuardButtons();
       }, 60000);
     } catch (_) { }
   }

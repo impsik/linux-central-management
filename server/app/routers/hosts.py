@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 from datetime import datetime, timezone, timedelta
 
@@ -39,6 +40,8 @@ def _normalize_firewall_rule(payload: FirewallRuleRequest) -> dict:
     service = (payload.service or "").strip()
     source = (payload.source or "").strip()
     port = payload.port
+    if service and port not in (None, 0):
+        raise HTTPException(400, "Choose either a port or a firewall profile/service, not both")
     if not service:
         if port is None:
             raise HTTPException(400, "port is required when service is not provided")
@@ -865,14 +868,14 @@ def list_host_packages(
             )
         ).scalars().all()
         
+        # Match each CVE against the installed package without scanning the
+        # entire package page for every CVE row. Preserve first-match semantics.
+        installed_versions = {}
+        for r in rows:
+            installed_versions.setdefault(r.name, r.version)
+
         for c in cve_rows:
-            # Check version vulnerability locally
-            pkg_ver = None
-            # Find installed version
-            for r in rows:
-                if r.name == c.package_name:
-                    pkg_ver = r.version
-                    break
+            pkg_ver = installed_versions.get(c.package_name)
             
             if pkg_ver and is_vulnerable(pkg_ver, c.fixed_version):
                 if c.package_name not in pkg_cves:
@@ -1200,6 +1203,8 @@ async def control_user(
     username = (username or "").strip()
     if not username:
         raise HTTPException(400, "username is required")
+    if username.startswith("-") or not re.fullmatch(r"[A-Za-z0-9_-]+", username):
+        raise HTTPException(400, "Invalid username")
     if username == "root":
         raise HTTPException(400, "Cannot lock root account")
 
@@ -1769,7 +1774,6 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
                         "percent_used": float(snap.mem_percent_used) if snap.mem_percent_used not in (None, "") else None,
                     },
                     "cpu": {
-                        "vcpus": snap.vcpus,
                         "load_1min": float(snap.load_1min) if snap.load_1min not in (None, "") else None,
                     },
                     "ip_addresses": ip_list,
@@ -1833,7 +1837,9 @@ async def get_metrics(agent_id: str, wait: bool = True, db: Session = Depends(ge
                 disk_percent_used=str(disk.get("percent_used")) if isinstance(disk, dict) and disk.get("percent_used") is not None else None,
                 mem_percent_used=str(mem.get("percent_used")) if isinstance(mem, dict) and mem.get("percent_used") is not None else None,
                 load_1min=str(cpu.get("load_1min")) if isinstance(cpu, dict) and cpu.get("load_1min") is not None else None,
-                vcpus=int(cpu.get("vcpus")) if isinstance(cpu, dict) and cpu.get("vcpus") is not None else None,
+                # vCPU count is live-only data. Do not persist it as a stale
+                # value that could later be mistaken for the current count.
+                vcpus=None,
             )
             db.add(snap)
 

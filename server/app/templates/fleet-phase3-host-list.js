@@ -60,98 +60,7 @@
       });
     }
 
-    ctx.renderHosts(filtered);
-  }
-
-  function renderHosts(ctx, hosts) {
-    const hostsDiv = document.getElementById('hosts');
-    hostsDiv.innerHTML = '';
-    ctx.setLastRenderedAgentIds((hosts || []).map(h => h.agent_id));
-
-    if (!hosts || hosts.length === 0) {
-      hostsDiv.innerHTML = '<div class="empty-state">No hosts match your filters</div>';
-      ctx.updateUpgradeControls();
-      return;
-    }
-
-    hosts.forEach(host => {
-      const div = document.createElement('div');
-      div.className = 'host-item';
-      div.dataset.agentId = host.agent_id;
-      div.onclick = () => { ctx.selectHost(host.agent_id, host.hostname); };
-
-      let pkgLine = '';
-      const pkgNameInput = (document.getElementById('vuln-package')?.value || '').trim();
-      const vulnVersionInput = (document.getElementById('vuln-version')?.value || '').trim();
-      const lastPkgVerification = ctx.getLastPkgVerification();
-      if (pkgNameInput && lastPkgVerification && lastPkgVerification.packageName === pkgNameInput) {
-        const r = (lastPkgVerification.resultsByAgentId || {})[host.agent_id];
-        if (r) {
-          const v = r.version ? `<code>${w.escapeHtml(r.version)}</code>` : '<code>n/a</code>';
-          if (r.status === 'upgraded') pkgLine = `<div class="pkg-status-line"><span class="pkg-badge good">Upgraded</span> ${v}</div>`;
-          else if (r.status === 'vulnerable') {
-            const vv = vulnVersionInput ? `<code>${w.escapeHtml(vulnVersionInput)}</code>` : '';
-            pkgLine = `<div class="pkg-status-line"><span class="pkg-badge bad">Still vulnerable</span> ${v} ${vv ? `<span class="status-muted">(vuln = ${vv})</span>` : ''}</div>`;
-          } else if (r.status === 'installed') pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Installed</span> ${v}</div>`;
-          else if (r.status === 'not-installed') pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Not installed</span></div>`;
-          else pkgLine = `<div class="pkg-status-line"><span class="pkg-badge neutral">Unknown</span></div>`;
-        }
-      }
-
-      const isOnline = !!host.is_online;
-      const lastSeen = host.last_seen ? new Date(host.last_seen) : null;
-      const lastSeenText = lastSeen ? w.formatRelativeTime(lastSeen) : 'never';
-      const ip = host.ip_address || '';
-      const fqdn = host.fqdn || '';
-      const env = w.hostLabel(host, 'env') || '';
-      const role = w.hostLabel(host, 'role') || '';
-      const selectedAgentIds = ctx.getSelectedAgentIds();
-
-      div.innerHTML = `
-        <div class="host-select-wrap">
-          <input class="host-select" type="checkbox" data-agent-id="${host.agent_id}" ${selectedAgentIds.has(host.agent_id) ? 'checked' : ''} />
-        </div>
-        <div class="host-meta">
-          <div class="host-row-top">
-            <div class="host-name">${w.escapeHtml(host.hostname || host.agent_id)}</div>
-            <span class="status-dot ${isOnline ? 'online' : 'offline'}" title="${isOnline ? 'online' : 'offline'}"></span>
-          </div>
-          <div class="host-subline">
-            <span class="host-subitem">${ip ? w.escapeHtml(ip) : (fqdn ? w.escapeHtml(fqdn) : '')}</span>
-            <span class="host-subsep">•</span>
-            <span class="host-subitem">seen ${w.escapeHtml(lastSeenText)}</span>
-          </div>
-          <div class="host-tags">
-            ${env ? `<span class="tag">env: <code>${w.escapeHtml(env)}</code></span>` : ''}
-            ${role ? `<span class="tag">role: <code>${w.escapeHtml(role)}</code></span>` : ''}
-          </div>
-          ${pkgLine}
-        </div>
-      `;
-      hostsDiv.appendChild(div);
-
-      const cb = div.querySelector('.host-select');
-      if (cb) {
-        cb.addEventListener('click', (e) => e.stopPropagation());
-        cb.addEventListener('change', (e) => {
-          e.stopPropagation();
-          const aid = cb.getAttribute('data-agent-id');
-          if (!aid) return;
-          const selected = ctx.getSelectedAgentIds();
-          if (cb.checked) selected.add(aid);
-          else selected.delete(aid);
-          ctx.updateUpgradeControls();
-        });
-      }
-    });
-
-    const currentAgentId = ctx.getCurrentAgentId();
-    if (currentAgentId) {
-      document.querySelectorAll('.host-item').forEach(item => {
-        if (item.dataset.agentId === currentAgentId) item.classList.add('active');
-      });
-    }
-
+    ctx.setLastRenderedAgentIds(filtered.map(h => h.agent_id));
     ctx.updateUpgradeControls();
   }
 
@@ -179,15 +88,10 @@
       }
       rebuildLabelFilterOptions(ctx);
 
-      if (list.length === 0) {
-        document.getElementById('hosts').innerHTML = '<div class="empty-state">No hosts found</div>';
-        return;
-      }
-
       applyHostFilters(ctx);
     } catch (error) {
       const msg = (error && error.name === 'AbortError') ? 'hosts request timed out' : (error?.message || String(error));
-      document.getElementById('hosts').innerHTML = `<div class="error">Error loading hosts: ${msg}</div>`;
+      console.error('[loadHosts failed]', msg);
     } finally {
       if (timeout) clearTimeout(timeout);
     }
@@ -196,7 +100,6 @@
   w.phase3HostList = {
     rebuildLabelFilterOptions,
     applyHostFilters,
-    renderHosts,
     loadHosts,
   };
 })(window);

@@ -55,6 +55,6 @@ def test_cve_sync_streams_oval_downloads_from_disk():
     src = Path('server/app/services/cve_sync.py').read_text(encoding='utf-8')
 
     assert 'iter_chunked(1024 * 1024)' in src
-    assert 'parse_oval_bz2_file(tmp_path, codename, release_cve_map)' in src
+    assert 'await run_blocking(parse_oval_bz2_file, tmp_path, codename, release_cve_map)' in src
     assert 'bz2.decompress(content)' not in src
     assert 'content = await resp.read()' not in src

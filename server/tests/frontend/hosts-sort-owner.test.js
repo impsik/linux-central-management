@@ -20,7 +20,7 @@ describe('hosts owner sorting UI', () => {
 
   it('renders the owner value as its own Hosts table column', () => {
     expect(overview).toContain("const owner = String(it?.labels?.owner || '').trim();");
-    expect(overview).toContain("<td>${owner ? `<code>${w.escapeHtml(owner)}</code>` : '<span class=\"status-muted\">—</span>'}</td>");
+    expect(overview).toContain("<td class=\"host-col-owner\">${owner ? `<code>${w.escapeHtml(owner)}</code>` : '<span class=\"status-muted\">—</span>'}</td>");
   });
 
   it('keeps owner sorting implemented in the hosts table loader', () => {

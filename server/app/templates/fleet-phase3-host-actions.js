@@ -122,27 +122,38 @@
     };
   }
 
-  function updateTerminalAccessIndicator(host, permissions) {
+  function terminalAccessState(host, permissions) {
     const policy = terminalAccessPolicy(host);
+    const role = String((permissions && permissions.role) || '').toLowerCase();
+    if (permissions?.terminal_configured === false) {
+      return { ...policy, blocked: true, label: 'Terminal: unavailable on Master',
+        reason: 'Console is not configured on the Master. Enable Console with install.sh --advanced.' };
+    }
+    if (permissions?.can_use_terminal === false) {
+      return { ...policy, blocked: true, label: 'Terminal: not allowed',
+        reason: 'Your account does not have Console permission.' };
+    }
+    if (role === 'operator' && policy.operatorBlocked) {
+      return { ...policy, blocked: true,
+        label: policy.value === 'none' ? 'Terminal: restricted' : 'Terminal: admins only', reason: policy.title };
+    }
+    return { ...policy, blocked: false, label: 'Terminal: allowed', reason: '' };
+  }
+
+  function updateTerminalAccessIndicator(host, permissions) {
+    const access = terminalAccessState(host, permissions);
     const badge = document.getElementById('host-terminal-policy');
     const button = document.getElementById('host-action-terminal');
-    const role = String((permissions && permissions.role) || '').toLowerCase();
-    const canUseTerminal = !permissions || permissions.can_use_terminal !== false;
-    const blockedForCurrentUser = !canUseTerminal || (role === 'operator' && policy.operatorBlocked);
-    const currentUserLabel = blockedForCurrentUser
-      ? (policy.value === 'none' ? 'Terminal: restricted' : 'Terminal: not allowed')
-      : 'Terminal: allowed';
-
     if (badge) {
-      badge.textContent = currentUserLabel;
-      badge.title = policy.title;
+      badge.textContent = access.label;
+      badge.title = access.reason || access.title;
     }
     if (button) {
-      button.disabled = !!blockedForCurrentUser;
-      button.title = blockedForCurrentUser ? policy.title : '';
-      button.setAttribute('aria-disabled', blockedForCurrentUser ? 'true' : 'false');
+      button.disabled = access.blocked;
+      button.title = access.reason;
+      button.setAttribute('aria-disabled', access.blocked ? 'true' : 'false');
     }
-    return policy;
+    return access;
   }
 
   function formatDiskCleanupResult(data) {
@@ -338,6 +349,7 @@
     populateHostMetadataEditor: populateHostMetadataEditor,
     populateDiskCleanupPanel: populateDiskCleanupPanel,
     terminalAccessPolicy: terminalAccessPolicy,
+    terminalAccessState: terminalAccessState,
     updateTerminalAccessIndicator: updateTerminalAccessIndicator,
     initDiskCleanupControls: initDiskCleanupControls,
     initCommonModalDismissHandlers: initCommonModalDismissHandlers,

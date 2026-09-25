@@ -1,12 +1,14 @@
 package internal
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/creack/pty"
@@ -64,6 +66,27 @@ func terminalSharedToken() string {
 
 func terminalListenAddr() string {
 	return resolveTerminalListenAddr(getenv("FLEET_TERMINAL_LISTEN", "auto:18080"))
+}
+
+// TerminalFirewallPort uses the same opt-in and listen settings as the server.
+// A loopback-only Console does not need an inbound firewall exception.
+func TerminalFirewallPort() (int, bool, error) {
+	token := terminalSharedToken()
+	if token == "" || isPlaceholderTerminalToken(token) {
+		return 0, false, nil
+	}
+	host, rawPort, err := net.SplitHostPort(terminalListenAddr())
+	if err != nil {
+		return 0, false, fmt.Errorf("cannot determine Console port: %w", err)
+	}
+	port, err := strconv.Atoi(rawPort)
+	if err != nil || port < 1 || port > 65535 {
+		return 0, false, fmt.Errorf("invalid Console listen port %q", rawPort)
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return 0, false, nil
+	}
+	return port, true, nil
 }
 
 func resolveTerminalListenAddr(value string) string {
@@ -248,7 +271,7 @@ func StartTerminalServer() {
 	// Back-compat env var names:
 	// - preferred: FLEET_TERMINAL_TOKEN (agent-side)
 	// - legacy:   AGENT_TERMINAL_TOKEN (server-side name; some deploys reused it)
-	// - legacy:   TERM_TOKEN (used by script.sh)
+	// - legacy:   TERM_TOKEN (older helper environments)
 	token := terminalSharedToken()
 	if token == "" {
 		log.Println("Terminal server disabled (set FLEET_TERMINAL_TOKEN)")

@@ -1,6 +1,6 @@
 # hosts.example
 #
-# Hosts where script.sh will deploy the fleet-agent binary via Ansible/SSH.
+# Hosts where add-host.sh will deploy the fleet-agent binary via Ansible/SSH.
 # Copy to ./hosts and replace with your own IPs/hostnames:
 #   cp hosts.example hosts
 #

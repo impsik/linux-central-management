@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from ..db import SessionLocal
 from ..models import JobRun
+from .background import run_blocking
 
 JobStatus = Literal["queued", "running", "success", "failed"]
 
@@ -34,26 +35,27 @@ async def wait_for_job_run(
     Uses fresh DB sessions to avoid stale ORM state.
     """
 
-    start = time.time()
-    polls = 0
-    while time.time() - start < timeout_s:
-        polls += 1
-        db = SessionLocal()
-        try:
-            db.expire_all()
+    def read_finished_run():
+        with SessionLocal() as db:
             run = db.execute(
                 select(JobRun).where(JobRun.job_id == job_id, JobRun.agent_id == agent_id)
             ).scalar_one_or_none()
             if run and run.status in ("success", "failed"):
-                # Detach by expunging so callers don't rely on a live session.
                 db.expunge(run)
-                return JobWaitResult(status=run.status, run=run, polls=polls, elapsed_s=time.time() - start)
-        finally:
-            db.close()
+                return run
+        return None
+
+    start = time.monotonic()
+    polls = 0
+    while time.monotonic() - start < timeout_s:
+        polls += 1
+        run = await run_blocking(read_finished_run)
+        if run is not None:
+            return JobWaitResult(status=run.status, run=run, polls=polls, elapsed_s=time.monotonic() - start)
 
         if on_poll is not None and polls % 10 == 0:
             on_poll(polls, agent_id)
 
         await asyncio.sleep(poll_interval_s)
 
-    return JobWaitResult(status="queued", run=None, polls=polls, elapsed_s=time.time() - start)
+    return JobWaitResult(status="queued", run=None, polls=polls, elapsed_s=time.monotonic() - start)

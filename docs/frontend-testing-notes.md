@@ -12,15 +12,18 @@
   - Current suites cover:
     - shared Phase 3 state helpers (`createUiStateAccess`, `stopMetricsPollingLifecycle`)
     - host-filter orchestrator module composition/contract
-    - host-filter behavioral flows:
-      - CVE upgrade status transitions (pre-check → checked/eligible)
-      - select-visible-hosts selection propagation
-      - label filter clear/reset interactions
+    - host filtering, selection, sorting, pagination and owner visibility
+    - package and CVE upgrade controls, rollout controls and load graph tooltips
+    - host onboarding, Console input transport and permission visibility
+    - user, service, firewall, report and administration module wiring
+    - theme tokens, navigation and page layout contracts
 
 - **CI wiring**:
   - `.github/workflows/ci.yml` runs `npm run test:frontend` on push/PR.
 
 ## Remaining gap
 
-- Still missing rich DOM-behavior assertions (real click/input flows and rendering behavior under jsdom/browser-like fixtures) for larger modules such as packages, host filters, and overview orchestration.
-- Recommended next step: add targeted module-level DOM fixtures for these workflows and run them in CI alongside pytest.
+- Tests use lightweight DOM fixtures, including simulated click/input flows;
+  they do not run a real browser layout engine.
+- Visual layout and browser integration still need manual or browser-based
+  verification when changes affect rendering or interaction.

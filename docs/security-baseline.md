@@ -1,10 +1,12 @@
-# Security baseline (Step 1)
+# Security baseline
 
 This project started as a LAN MVP. This document describes the **minimum security controls** to move toward a production-ready deployment.
 
 ## Assumptions
 - UI users are humans (operators/admins).
-- Agents run on managed hosts and communicate to the server with a shared agent token.
+- Agents run on managed hosts and authenticate runtime requests with individual
+  persisted tokens and HMAC signatures. Initial registration uses either a
+  one-time enrollment command or the shared bootstrap token in the SSH workflow.
 - Exposing the UI beyond a trusted LAN significantly increases risk.
 
 ## 1) Transport security

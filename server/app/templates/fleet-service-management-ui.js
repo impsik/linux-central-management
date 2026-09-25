@@ -45,6 +45,11 @@
     const bodyEl = document.getElementById('service-management-table-body');
     if (!serviceEl || !bodyEl) return;
 
+    function selectedAutostartSupported(action) {
+      return Array.from(bodyEl.querySelectorAll('input[data-service-agent-id]:checked'))
+        .every(el => el.getAttribute(`data-service-can-${action}`) !== 'false');
+    }
+
     function selectedServiceAgentIds() {
       return Array.from(bodyEl.querySelectorAll('input[data-service-agent-id]:checked'))
         .map((el) => el.getAttribute('data-service-agent-id') || '')
@@ -60,6 +65,11 @@
         if (!btn) return;
         btn.disabled = disabled;
         btn.title = canManageServices ? '' : 'Service management permission required';
+      });
+      [[enableBtn, 'enable'], [stopDisableBtn, 'disable']].forEach(([btn, action]) => {
+        if (!btn || disabled || selectedAutostartSupported(action)) return;
+        btn.disabled = true;
+        btn.title = 'Some selected units cannot change autostart directly. Check their Autostart state and select supported units.';
       });
       if (statusEl && !canManageServices) statusEl.textContent = 'Service management permission required';
     }
@@ -80,12 +90,13 @@
         const status = String(it.status || '');
         const statusCls = status === 'active' ? 'status-ok' : status === 'failed' ? 'status-error' : 'status-muted';
         const disabled = canManageServices ? '' : 'disabled';
+        const autostart = window.describeServiceAutostart(it);
         return `<tr>
-          <td><input type="checkbox" data-service-agent-id="${esc(agentId)}" ${disabled} /></td>
+          <td><input type="checkbox" data-service-agent-id="${esc(agentId)}" data-service-can-enable="${autostart.canEnable}" data-service-can-disable="${autostart.canDisable}" ${disabled} /></td>
           <td><b>${esc(it.hostname || agentId)}</b><div class="status-muted">${esc(agentId)}${it.ip_address ? ` • ${esc(it.ip_address)}` : ''}${osName ? ` • ${esc(osName)}` : ''}</div></td>
           <td><code>${esc(it.service_name || '')}</code></td>
           <td><span class="${statusCls}">${esc(status || '-')}</span></td>
-          <td><span class="${it.enabled ? 'status-warn' : 'status-muted'}">${it.enabled ? 'yes' : 'manual'}</span></td>
+          <td><span class="${autostart.enabled ? 'status-warn' : 'status-muted'}" title="${esc(autostart.reason)}">${esc(autostart.label)}</span></td>
           <td>${esc(it.description || '-')}</td>
           <td class="status-muted">${esc(it.last_seen || '')}</td>
         </tr>`;
@@ -152,6 +163,11 @@
       }
       if (!agentIds.length) {
         if (typeof ctx.showToast === 'function') ctx.showToast('Select at least one matching host', 'error');
+        return;
+      }
+      const autostartAction = kind === 'stop-disable' ? 'disable' : kind === 'enable' ? 'enable' : null;
+      if (autostartAction && !selectedAutostartSupported(autostartAction)) {
+        if (typeof ctx.showToast === 'function') ctx.showToast('Some selected units do not support this autostart change. Check their Autostart state.', 'error');
         return;
       }
       const label = kind === 'stop-disable' ? 'Stop and disable' : kind === 'enable' ? 'Enable' : kind === 'start' ? 'Start' : 'Stop';

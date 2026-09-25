@@ -61,22 +61,28 @@ async def _run_tick() -> None:
 async def _dispatch_one(db: Session, cj: CronJob) -> None:
     now = datetime.now(timezone.utc)
 
-    if _is_missed_recurring_run(cj, now):
-        missed_run_at = cj.run_at
-        next_run_at = _next_recurring_run_at(cj, after=now)
-        done_at = datetime.now(timezone.utc)
-        with transaction(db):
-            cj = db.execute(select(CronJob).where(CronJob.id == cj.id)).scalar_one()
-            if cj.status != "scheduled":
-                return
-            run = CronJobRun(
+    # Serialize claiming a due run across server workers. Refresh the identity
+    # map as another worker may have completed/rescheduled the row since tick.
+    with transaction(db):
+        cj = db.execute(
+            select(CronJob).where(CronJob.id == cj.id)
+            .with_for_update().execution_options(populate_existing=True)
+        ).scalar_one()
+        run_at = cj.run_at
+        if run_at.tzinfo is None:
+            run_at = run_at.replace(tzinfo=timezone.utc)
+        if cj.status != "scheduled" or run_at > now:
+            return
+
+        if _is_missed_recurring_run(cj, now):
+            next_run_at = _next_recurring_run_at(cj, after=now)
+            db.add(CronJobRun(
                 cron_job_id=cj.id,
                 status="skipped",
-                started_at=done_at,
-                finished_at=done_at,
+                started_at=now,
+                finished_at=now,
                 error="missed scheduled time; skipped catch-up run",
-            )
-            db.add(run)
+            ))
             if next_run_at is not None:
                 cj.run_at = next_run_at
                 cj.status = "scheduled"
@@ -85,24 +91,13 @@ async def _dispatch_one(db: Session, cj: CronJob) -> None:
                 cj.last_error = None
             else:
                 cj.status = "done"
-                cj.finished_at = done_at
-        logger.warning(
-            "Skipped missed recurring cronjob %s scheduled for %s; next_run_at=%s",
-            getattr(cj, "id", None),
-            missed_run_at,
-            next_run_at,
-        )
-        return
-
-    # best-effort lock by flipping status inside a transaction
-    with transaction(db):
-        cj = db.execute(select(CronJob).where(CronJob.id == cj.id)).scalar_one()
-        if cj.status != "scheduled":
+                cj.finished_at = now
+            logger.warning("Skipped missed recurring cronjob %s; next_run_at=%s", cj.id, next_run_at)
             return
+
         cj.status = "running"
         cj.started_at = now
         cj.last_error = None
-
         run = CronJobRun(cron_job_id=cj.id, status="running", started_at=now)
         db.add(run)
         db.flush()

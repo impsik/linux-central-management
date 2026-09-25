@@ -50,16 +50,9 @@
   --status-warn-bg: rgba(240, 171, 0, 0.16);
   --status-warn-border: rgba(240, 171, 0, 0.42);
 
-  --pkg-status-text: #6a6e73;
-  --pkg-badge-good-bg: #f3faf2;
-  --pkg-badge-good-text: #3d7317;
-  --pkg-badge-good-border: rgba(61, 115, 23, 0.35);
   --pkg-badge-bad-bg: #faeae8;
   --pkg-badge-bad-text: #a30000;
   --pkg-badge-bad-border: rgba(163, 0, 0, 0.35);
-  --pkg-badge-neutral-bg: #f5f5f5;
-  --pkg-badge-neutral-text: #3d3d3d;
-  --pkg-badge-neutral-border: #d2d2d2;
 
   --new-user-bg: rgba(240, 171, 0, 0.16);
   --new-user-border: rgba(240, 171, 0, 0.45);
@@ -136,16 +129,9 @@
   --status-warn-bg: rgba(240, 171, 0, 0.16);
   --status-warn-border: rgba(240, 171, 0, 0.42);
 
-  --pkg-status-text: #d2d2d2;
-  --pkg-badge-good-bg: rgba(91, 163, 82, 0.18);
-  --pkg-badge-good-text: #95d58d;
-  --pkg-badge-good-border: rgba(91, 163, 82, 0.38);
   --pkg-badge-bad-bg: rgba(246, 97, 81, 0.18);
   --pkg-badge-bad-text: #ffb3aa;
   --pkg-badge-bad-border: rgba(246, 97, 81, 0.4);
-  --pkg-badge-neutral-bg: #303437;
-  --pkg-badge-neutral-text: #d2d2d2;
-  --pkg-badge-neutral-border: #4f5255;
 
   --new-user-bg: rgba(240, 171, 0, 0.16);
   --new-user-border: rgba(240, 171, 0, 0.45);

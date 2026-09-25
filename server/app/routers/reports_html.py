@@ -150,11 +150,11 @@ def cve_high_severity_html(
     user=Depends(require_ui_user),
 ):
     findings = collect_high_severity_findings(db, min_severity=float(min_severity))
-    rows = []
-    for item in merge_findings_by_package(findings):
-        host = db.execute(select(Host).where(Host.id == item.host_id)).scalar_one_or_none()
-        if host and is_host_visible_to_user(db, user, host):
-            rows.append(item)
+    package_findings = merge_findings_by_package(findings)
+    host_ids = {item.host_id for item in package_findings}
+    hosts = db.execute(select(Host).where(Host.id.in_(host_ids))).scalars().all() if host_ids else []
+    visible_host_ids = {host.id for host in hosts if is_host_visible_to_user(db, user, host)}
+    rows = [item for item in package_findings if item.host_id in visible_host_ids]
 
     reverse = (order or "desc").lower() == "desc"
     key_map = {

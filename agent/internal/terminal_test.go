@@ -125,3 +125,31 @@ func TestPlaceholderTerminalTokensAreRejected(t *testing.T) {
 		t.Fatal("isPlaceholderTerminalToken(actual-random-token) = true, want false")
 	}
 }
+
+func TestTerminalFirewallPortMatchesTerminalConfiguration(t *testing.T) {
+	for _, test := range []struct {
+		name, tokenKey, token, listen string
+		port                          int
+		enabled, invalid              bool
+	}{
+		{"custom port", "FLEET_TERMINAL_TOKEN", "real-secret", "0.0.0.0:18443", 18443, true, false},
+		{"token alias", "AGENT_TERMINAL_TOKEN", "real-secret", "[::]:18080", 18080, true, false},
+		{"legacy token alias", "TERM_TOKEN", "real-secret", "192.0.2.20:18080", 18080, true, false},
+		{"disabled", "FLEET_TERMINAL_TOKEN", "", "0.0.0.0:18080", 0, false, false},
+		{"placeholder", "FLEET_TERMINAL_TOKEN", "change-me-token", "0.0.0.0:18080", 0, false, false},
+		{"loopback", "FLEET_TERMINAL_TOKEN", "real-secret", "127.0.0.1:18080", 0, false, false},
+		{"invalid port", "FLEET_TERMINAL_TOKEN", "real-secret", "0.0.0.0:nope", 0, false, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, key := range []string{"FLEET_TERMINAL_TOKEN", "AGENT_TERMINAL_TOKEN", "TERM_TOKEN"} {
+				t.Setenv(key, "")
+			}
+			t.Setenv(test.tokenKey, test.token)
+			t.Setenv("FLEET_TERMINAL_LISTEN", test.listen)
+			port, enabled, err := TerminalFirewallPort()
+			if port != test.port || enabled != test.enabled || (err != nil) != test.invalid {
+				t.Fatalf("got (%d, %v, %v)", port, enabled, err)
+			}
+		})
+	}
+}

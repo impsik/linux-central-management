@@ -1646,6 +1646,9 @@ def auth_admin_oidc_map_preview(
 @router.get("/me")
 def auth_me(request: Request, db: Session = Depends(get_db), user: AppUser = Depends(require_ui_user)):
     perms = permissions_for(user)
+    # A role can allow Console while the Master has not enabled its transport.
+    # Expose readiness separately; never send the shared credential to the UI.
+    perms["terminal_configured"] = bool(settings.agent_terminal_token)
 
     role = (perms.get("role") or "operator").lower()
     require_mfa = bool(getattr(settings, "mfa_require_for_privileged", True)) and role in ("admin", "operator")

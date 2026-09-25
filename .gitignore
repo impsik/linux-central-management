@@ -44,3 +44,6 @@ ansible/inventory.yml
 # Installer resume metadata (no credentials)
 *.install-progress
 *.install-logs/
+
+# Local fleet update diagnostics
+/agent-update-results.json

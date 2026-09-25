@@ -63,26 +63,6 @@ def login_page(request: Request):
     )
 
 
-@router.get("/assets/index-MnFIflNy.css")
-def ui_css():
-    return FileResponse(str(TEMPLATES_DIR / "index-MnFIflNy.css"), media_type="text/css")
-
-
-@router.get("/assets/fleet-ui.css")
-def ui_custom_css():
-    return FileResponse(str(TEMPLATES_DIR / "fleet-ui.css"), media_type="text/css")
-
-
-@router.get("/assets/fleet-theme-bootstrap.js")
-def ui_theme_bootstrap_js():
-    return FileResponse(str(TEMPLATES_DIR / "fleet-theme-bootstrap.js"), media_type="application/javascript")
-
-
-@router.get("/assets/fleet-phase3.js")
-def ui_phase3_js():
-    return FileResponse(str(TEMPLATES_DIR / "fleet-phase3.js"), media_type="application/javascript")
-
-
 @router.get("/assets/{asset_path:path}")
 def ui_asset_file(asset_path: str):
     # Serve additional UI assets from templates/ without adding one route per file.
@@ -92,7 +72,9 @@ def ui_asset_file(asset_path: str):
     if not requested.is_file():
         raise HTTPException(status_code=404, detail="Asset not found")
 
-    media_type, _ = mimetypes.guess_type(str(requested))
+    media_type = {".css": "text/css", ".js": "application/javascript"}.get(requested.suffix.lower())
+    if media_type is None:
+        media_type, _ = mimetypes.guess_type(str(requested))
     return FileResponse(str(requested), media_type=media_type)
 
 

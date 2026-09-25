@@ -5,14 +5,11 @@
   become: true
 
   # Prefer non-interactive usage:
-  #   ansible-playbook -i inventory.yml user_access_remove.yml -e target_hosts=... -e username=...
+  #   ansible-playbook -i inventory.yml user_access_remove.yml --limit <host-or-group> -e username=...
   vars_prompt:
     - name: username
       prompt: "Enter username: "
       private: false
-#    - name: target_hosts
-#      prompt: "Enter target hosts (FQDN, group, 'all', or space-separated hosts):"
-#      private: false
 
   pre_tasks:
     - name: Validate inputs

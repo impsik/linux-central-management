@@ -66,10 +66,6 @@
   </div>
 
   <div class="container">
-    <div class="sidebar" aria-hidden="true" style="display:none;">
-      <div id="hosts" style="display:none;"></div>
-    </div>
-
     <div class="main-content">
       <aside class="fleet-sidebar-shell">
       <div class="host-actions" id="fleet-actions" style="display: flex; gap: 0.5rem; margin-bottom: 0.35rem;">
@@ -160,7 +156,7 @@
               <div class="metric-card">
                 <div class="metric-label">vCPUs</div>
                 <div class="metric-value" id="vcpus">-</div>
-                <div class="metric-details">CPU Cores</div>
+                <div class="metric-details">Online logical CPUs</div>
               </div>
 
               <div class="metric-card">
@@ -744,25 +740,25 @@
 
 
         <div class="hosts-table-wrap" style="margin-top:0.75rem;">
-          <table class="process-table hosts-table">
+          <table class="process-table hosts-table host-inventory-table">
             <thead>
               <tr>
-                <th style="width:36px;"><input type="checkbox" id="hosts-select-all" /></th>
-                <th class="sortable-col" id="hosts-th-host" title="Sort by host" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th class="sortable-col" id="hosts-th-owner" title="Sort by owner" tabindex="0" role="button">Owner <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th class="sortable-col" id="hosts-th-os" title="Sort by OS" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th>Kernel</th>
-                <th class="sortable-col" style="text-align:right;" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security pkgs <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th class="sortable-col" style="text-align:right;" id="hosts-th-upd" title="Sort by all updates" tabindex="0" role="button">Pending <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th>Reboot</th>
-                <th>Status</th>
-                <th class="sortable-col" id="hosts-th-last" title="Sort by last seen" tabindex="0" role="button">Last seen <span class="sort-indicator" aria-hidden="true">↕</span></th>
-                <th style="text-align:right;">Actions</th>
+                <th class="host-col-select"><input type="checkbox" id="hosts-select-all" /></th>
+                <th class="sortable-col host-col-name" id="hosts-th-host" title="Sort by host" tabindex="0" role="button">Host <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col host-col-owner" id="hosts-th-owner" title="Sort by owner" tabindex="0" role="button">Owner <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col host-col-os" id="hosts-th-os" title="Sort by OS" tabindex="0" role="button">OS <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="host-col-kernel">Kernel</th>
+                <th class="sortable-col host-col-count" id="hosts-th-sec" title="Sort by security updates" tabindex="0" role="button">Security pkgs <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="sortable-col host-col-count" id="hosts-th-upd" title="Sort by all updates" tabindex="0" role="button">Pending <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="host-col-state">Reboot</th>
+                <th class="host-col-state">Status</th>
+                <th class="sortable-col host-col-time" id="hosts-th-last" title="Sort by last seen" tabindex="0" role="button">Last seen <span class="sort-indicator" aria-hidden="true">↕</span></th>
+                <th class="host-col-actions">Actions</th>
               </tr>
             </thead>
             <tbody id="hosts-table-body">
               <tr>
-                <td colspan="10" style="text-align:center;" class="status-muted">Loading…</td>
+                <td colspan="11" style="text-align:center;" class="status-muted">Loading…</td>
               </tr>
             </tbody>
           </table>
@@ -871,7 +867,7 @@
     <div class="tab-content-custom" id="firewall-management-tab">
       <div class="admin-content">
         <div class="section-title">Firewall management</div>
-        <div class="admin-note" style="margin-bottom:0.75rem;">Review firewall rules on visible online servers and apply simple allow, deny, or remove operations to selected hosts.</div>
+        <div class="admin-note" style="margin-bottom:0.75rem;">Review, enable or disable firewalls on selected online servers, or manage their allow and deny rules.</div>
 
         <div class="admin-card" style="margin-bottom:1rem;">
           <div class="admin-card-title">Fleet firewall rules</div>
@@ -879,13 +875,22 @@
             <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
               <button class="btn btn-primary" id="firewall-management-refresh" type="button">Scan hosts</button>
               <button class="btn" id="firewall-management-select-all" type="button">Select all</button>
+              <button class="btn btn-primary" id="firewall-management-enable" type="button" disabled>Enable selected</button>
+              <button class="btn btn-danger" id="firewall-management-disable" type="button" disabled>Disable selected</button>
+              <div style="min-width:150px;">
+                <label for="firewall-management-rule-type" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Rule type</label>
+                <select id="firewall-management-rule-type" class="host-search">
+                  <option value="port">Port</option>
+                  <option value="service">Firewall profile / service</option>
+                </select>
+              </div>
               <div style="min-width:110px;">
-                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
+                <label for="firewall-management-port" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
                 <input id="firewall-management-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
               </div>
               <div style="min-width:150px;">
-                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Service</label>
-                <input id="firewall-management-service" class="host-search" type="text" placeholder="cockpit" />
+                <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;" for="firewall-management-service">Firewall profile / service</label>
+                <input id="firewall-management-service" class="host-search" type="text" placeholder="Existing profile name" aria-describedby="firewall-management-rule-help" disabled />
               </div>
               <div style="min-width:110px;">
                 <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
@@ -900,9 +905,11 @@
               </div>
               <button class="btn btn-success" id="firewall-management-allow" type="button">Allow selected</button>
               <button class="btn btn-warning" id="firewall-management-deny" type="button">Deny selected</button>
-              <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove allow selected</button>
+              <button class="btn btn-danger" id="firewall-management-delete" type="button">Remove rules…</button>
               <span id="firewall-management-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
             </div>
+            <div id="firewall-management-rule-help" class="admin-note">Port mode adds a rule for the specified port. It does not replace existing rules or start a service. Inactive firewalls save rules without enforcing them. Profile mode uses an existing UFW application profile or firewalld service on every selected host; it is not a rule name or a system service name.</div>
+            <div id="firewall-management-result" class="admin-note" role="status" aria-live="polite" style="white-space:pre-wrap;"></div>
             <div style="overflow:auto;">
               <table class="process-table hosts-table">
                 <thead>
@@ -1560,6 +1567,25 @@
           IP: <code class="host-context-ip">—</code>
         </div>
         <div class="section-title">System Services</div>
+        <div style="display:flex;gap:0.6rem;align-items:flex-end;flex-wrap:wrap;">
+          <div style="flex:1;max-width:480px;min-width:200px;">
+            <label for="services-search" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Search services</label>
+            <input id="services-search" class="host-search" type="search"
+              placeholder="Name or description (e.g. ufw)" aria-controls="services-list" aria-describedby="services-search-status" />
+          </div>
+          <button class="btn" id="services-search-clear" type="button" disabled>Clear</button>
+          <div style="min-width:190px;">
+            <label for="services-sort" style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Sort services</label>
+            <select id="services-sort" class="host-search" aria-controls="services-list">
+              <option value="name-asc">Name: A–Z</option>
+              <option value="name-desc">Name: Z–A</option>
+              <option value="enabled-first">Autostart: Enabled first</option>
+              <option value="disabled-first">Autostart: Disabled first</option>
+            </select>
+          </div>
+        </div>
+        <div id="services-search-status" role="status" aria-live="polite" aria-atomic="true"
+          style="color:var(--muted-2);font-size:0.9rem;margin:0.65rem 0;"></div>
         <div id="services-list">
           <div class="loading">Select a host to view services...</div>
         </div>
@@ -1575,15 +1601,19 @@
         </div>
         <div class="section-title">Firewall</div>
         <div class="admin-card" style="margin-bottom:1rem;">
-          <div class="admin-card-title">Rule action</div>
+          <div class="admin-card-title">Add a rule (existing rules are kept)</div>
           <div class="admin-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end;">
+            <div style="min-width:150px;">
+              <label for="host-firewall-rule-type">Rule type</label>
+              <select id="host-firewall-rule-type" class="host-search"><option value="port">Port</option><option value="service">Firewall profile / service</option></select>
+            </div>
             <div style="min-width:110px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Port</label>
               <input id="host-firewall-port" class="host-search" type="number" min="1" max="65535" placeholder="443" />
             </div>
             <div style="min-width:150px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Service</label>
-              <input id="host-firewall-service" class="host-search" type="text" placeholder="cockpit" />
+              <input id="host-firewall-service" class="host-search" type="text" placeholder="Existing profile name" disabled />
             </div>
             <div style="min-width:110px;">
               <label style="display:block;color:var(--muted-2);font-size:0.85rem;margin-bottom:0.25rem;">Protocol</label>
@@ -1598,7 +1628,6 @@
             </div>
             <button class="btn btn-success" id="host-firewall-allow" type="button">Allow</button>
             <button class="btn btn-warning" id="host-firewall-deny" type="button">Deny</button>
-            <button class="btn btn-danger" id="host-firewall-delete" type="button">Remove allow</button>
             <button class="btn" id="host-firewall-refresh" type="button">Refresh</button>
             <span id="host-firewall-status" style="color:var(--muted-2);font-size:0.9rem;"></span>
           </div>
@@ -1837,6 +1866,18 @@
 
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
+<dialog id="firewall-remove-dialog" class="firewall-remove-dialog" aria-labelledby="firewall-remove-title">
+  <h3 id="firewall-remove-title">Remove firewall rules</h3>
+  <p>Select only the rules to remove. Unchecked rules will be kept. Active UFW entries distinguish IPv4/IPv6; a saved rule on an inactive UFW firewall may cover both.</p>
+  <p class="status-warn">Removing SSH or Console access rules can disconnect this host from the management server.</p>
+  <div id="firewall-remove-rules" style="max-height:50vh;overflow:auto;"></div>
+  <p id="firewall-remove-count" role="status" aria-live="polite"></p>
+  <div class="modal-actions">
+    <button id="firewall-remove-cancel" class="btn" type="button">Cancel</button>
+    <button id="firewall-remove-confirm" class="btn" type="button" disabled>Remove selected rules</button>
+  </div>
+</dialog>
+
   <script src="/assets/fleet-terminal-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-jobs-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-cronjobs-ui.js?v=__ASSET_VERSION__"></script>
@@ -1847,6 +1888,7 @@
   <script src="/assets/fleet-admin-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-failed-runs-ui.js?v=__ASSET_VERSION__"></script>
   <script src="/assets/fleet-app.js?v=__ASSET_VERSION__"></script>
+
 </body>
 
 </html>

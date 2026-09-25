@@ -1,9 +1,8 @@
 import bz2
 
-from app.services.cve_sync import parse_oval_bz2_file
-
-
 def test_stream_parser_preserves_package_index_children(tmp_path):
+    from app.services.cve_sync import parse_oval_bz2_file
+
     xml = b"""<?xml version="1.0" encoding="UTF-8"?>
 <oval_definitions xmlns="http://oval.mitre.org/XMLSchema/oval-definitions-5"
   xmlns:linux-def="http://oval.mitre.org/XMLSchema/oval-definitions-5#linux">

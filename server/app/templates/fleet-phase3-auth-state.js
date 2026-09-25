@@ -119,6 +119,8 @@ function setAdminStatus(message, state) {
       }
 
       updateSshKeysLabels();
+      const selectedHost = (allHosts || []).find(host => host.agent_id === currentAgentId);
+      window.phase3HostActions?.updateTerminalAccessIndicator(selectedHost, currentPermissions);
     }
 
     // Explicit exports for cross-file calls.

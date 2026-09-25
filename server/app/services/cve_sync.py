@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy import delete, select
 from app.config import settings
 from app.models import CVEDefinition, CVEPackage
+from .background import run_blocking
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,8 @@ async def _upsert_cve_definitions(db: AsyncSession, cve_map: dict):
 
 async def _replace_release_lookup(db: AsyncSession, codename: str, cve_map: dict):
     await db.execute(delete(CVEPackage).where(CVEPackage.release == codename))
+    # Missing severities must remain explicit NULLs so mixed rows share a batch.
+    stmt = insert(CVEPackage).execution_options(render_nulls=True)
 
     lookup_rows = []
     for cve_id, data in cve_map.items():
@@ -111,11 +114,11 @@ async def _replace_release_lookup(db: AsyncSession, codename: str, cve_map: dict
             })
 
             if len(lookup_rows) >= 5000:
-                await db.execute(insert(CVEPackage).values(lookup_rows))
+                await db.execute(stmt, lookup_rows)
                 lookup_rows = []
 
     if lookup_rows:
-        await db.execute(insert(CVEPackage).values(lookup_rows))
+        await db.execute(stmt, lookup_rows)
 
 
 async def sync_cve_definitions(db: AsyncSession):
@@ -129,23 +132,24 @@ async def sync_cve_definitions(db: AsyncSession):
             release_cve_map = {}
             
             try:
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        logger.error(f"Failed to fetch {url}: {resp.status}")
-                        continue
-
-                    fd, tmp_path = tempfile.mkstemp(prefix=f"cve-{codename}-", suffix=".oval.xml.bz2")
-                    try:
-                        with os.fdopen(fd, "wb") as tmp:
+                fd, tmp_path = tempfile.mkstemp(prefix=f"cve-{codename}-", suffix=".oval.xml.bz2")
+                try:
+                    with os.fdopen(fd, "wb") as tmp:
+                        async with session.get(url) as resp:
+                            if resp.status != 200:
+                                logger.error(f"Failed to fetch {url}: {resp.status}")
+                                continue
                             async for chunk in resp.content.iter_chunked(1024 * 1024):
                                 tmp.write(chunk)
 
-                        parse_oval_bz2_file(tmp_path, codename, release_cve_map)
-                    finally:
-                        try:
-                            os.unlink(tmp_path)
-                        except FileNotFoundError:
-                            pass
+                    # Parsing must run outside the response context: its HTTP
+                    # timeout applies to downloading, not CPU work on local data.
+                    await run_blocking(parse_oval_bz2_file, tmp_path, codename, release_cve_map)
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except FileNotFoundError:
+                        pass
                     
             except Exception as e:
                 logger.error(f"Error processing {codename}: {e}")

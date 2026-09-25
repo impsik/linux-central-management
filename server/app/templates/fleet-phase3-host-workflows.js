@@ -1,4 +1,5 @@
 (function (w) {
+  const pendingFirewallHosts = new Set();
   async function loadUsers(ctx, agentId) {
     const usersList = document.getElementById('users-list');
     usersList.innerHTML = '<div class="loading">Loading users...</div>';
@@ -77,12 +78,92 @@
       });
     } catch (error) {
       console.error('Error loading users:', error);
-      usersList.innerHTML = `<div class="error">Error loading users: ${error.message}</div>`;
+      usersList.innerHTML = `<div class="error">Error loading users: ${w.escapeHtml(error.message)}</div>`;
     }
+  }
+
+  const serviceViews = new WeakMap();
+  const serviceNameOrder = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+
+  function sortServices(servicesList, view) {
+    if (!view.loaded || !view.sort) return;
+    const mode = view.sort.value;
+    const preferred = mode === 'enabled-first' ? 'enabled' : mode === 'disabled-first' ? 'disabled' : null;
+    const rank = card => {
+      const state = card.getAttribute('data-service-autostart');
+      return state === preferred ? 0 : state === 'other' ? 2 : 1;
+    };
+    const cards = Array.from(servicesList.querySelectorAll('.service-card[data-service-search]'));
+    cards.sort((a, b) => {
+      const stateOrder = preferred ? rank(a) - rank(b) : 0;
+      const nameOrder = serviceNameOrder.compare(a.getAttribute('data-service-name') || '', b.getAttribute('data-service-name') || '');
+      return stateOrder || (mode === 'name-desc' ? -nameOrder : nameOrder);
+    });
+    // Move existing nodes so service details and action listeners stay intact.
+    cards.forEach(card => servicesList.appendChild(card));
+  }
+
+  function isCurrentServicesHost(ctx, agentId) {
+    return typeof ctx.getCurrentAgentId !== 'function' || ctx.getCurrentAgentId() === agentId;
+  }
+
+  function filterServices(servicesList, view) {
+    const query = (view.search?.value || '').trim().toLowerCase();
+    if (view.clear) view.clear.disabled = !view.search?.value;
+    if (!view.loaded) return;
+    const cards = servicesList.querySelectorAll('.service-card[data-service-search]');
+    let visible = 0;
+    cards.forEach(card => {
+      const matches = (card.getAttribute('data-service-search') || '').includes(query);
+      card.hidden = !matches;
+      // The existing .service-card display:flex rule overrides the browser's
+      // default hidden styling, so set its display explicitly as well.
+      card.style.display = matches ? '' : 'none';
+      if (matches) visible++;
+    });
+    if (view.status) {
+      view.status.textContent = cards.length && !visible
+        ? `No services match your search. Showing 0 of ${cards.length} services.`
+        : `Showing ${visible} of ${cards.length} services.`;
+    }
+  }
+
+  function getServicesView(servicesList) {
+    let view = serviceViews.get(servicesList);
+    if (!view) {
+      view = {
+        agentId: null,
+        requestId: 0,
+        loaded: false,
+        search: document.getElementById('services-search'),
+        clear: document.getElementById('services-search-clear'),
+        sort: document.getElementById('services-sort'),
+        status: document.getElementById('services-search-status'),
+      };
+      view.search?.addEventListener('input', () => filterServices(servicesList, view));
+      view.sort?.addEventListener('change', () => sortServices(servicesList, view));
+      view.clear?.addEventListener('click', () => {
+        if (!view.search) return;
+        view.search.value = '';
+        filterServices(servicesList, view);
+        view.search.focus();
+      });
+      serviceViews.set(servicesList, view);
+    }
+    return view;
   }
 
   async function loadServices(ctx, agentId) {
     const servicesList = document.getElementById('services-list');
+    if (!servicesList || !isCurrentServicesHost(ctx, agentId)) return;
+    const view = getServicesView(servicesList);
+    if (view.agentId !== agentId && view.search) view.search.value = '';
+    view.agentId = agentId;
+    view.loaded = false;
+    const requestId = ++view.requestId;
+    const isCurrentRequest = () => requestId === view.requestId && isCurrentServicesHost(ctx, agentId);
+    filterServices(servicesList, view);
+    if (view.status) view.status.textContent = 'Loading services...';
     servicesList.innerHTML = '<div class="loading">Loading services...</div>';
 
     try {
@@ -98,17 +179,24 @@
         throw new Error(`Failed to load services: ${errorMsg}`);
       }
       const data = await response.json();
+      if (!isCurrentRequest()) return;
+      view.loaded = true;
 
       if (!data.services || data.services.length === 0) {
         servicesList.innerHTML = '<div class="empty-state">No services found</div>';
+        filterServices(servicesList, view);
         return;
       }
 
       servicesList.innerHTML = data.services.map(service => {
         const statusClass = service.status === 'active' ? 'active' : service.status === 'failed' ? 'failed' : 'inactive';
-        const enabledBadge = service.enabled ? '<span class="sudo-badge yes" style="margin-left: 0.5rem;">✓ Autostart</span>' : '<span class="sudo-badge no" style="margin-left: 0.5rem;">✗ Manual start</span>';
+        const autostart = w.describeServiceAutostart(service);
+        const sortState = autostart.enabled ? 'enabled' : (!autostart.state || autostart.state === 'disabled') ? 'disabled' : 'other';
+        const toggleAction = autostart.enabled ? 'disable' : 'enable';
+        const canToggle = autostart.enabled ? autostart.canDisable : autostart.canEnable;
+        const enabledBadge = `<span class="sudo-badge ${autostart.enabled ? 'yes' : 'no'}" style="margin-left: 0.5rem;" title="${w.escapeHtml(autostart.reason)}">Autostart: ${w.escapeHtml(autostart.label)}</span>`;
         return `
-            <div class="service-card" data-service-name="${w.escapeHtml(service.name)}">
+            <div class="service-card" data-service-name="${w.escapeHtml(service.name)}" data-service-autostart="${sortState}" data-service-search="${w.escapeHtml(`${service.name || ''} ${service.description || ''}`.toLowerCase())}">
               <div class="service-info">
                 <div class="service-name"><a href="#" class="service-name-link" data-service="${w.escapeHtml(service.name)}" style="text-decoration:underline;">${w.escapeHtml(service.name)}</a></div>
                 <div class="service-details">
@@ -123,13 +211,15 @@
                 <button class="btn btn-warning" data-service-action="restart" data-service-name="${w.escapeHtml(service.name)}">Restart</button>
                 <button class="btn btn-danger" data-service-action="stop" data-service-name="${w.escapeHtml(service.name)}"
                   ${service.status !== 'active' ? 'disabled' : ''}>Stop</button>
-                <button class="btn ${service.enabled ? 'btn-danger' : 'btn-success'}" data-service-action="${service.enabled ? 'disable' : 'enable'}" data-service-name="${w.escapeHtml(service.name)}">
-                  ${service.enabled ? 'Disable' : 'Enable'}
+                <button class="btn ${autostart.enabled ? 'btn-danger' : 'btn-success'}" data-service-action="${toggleAction}" data-service-name="${w.escapeHtml(service.name)}" ${canToggle ? '' : 'disabled'} title="${w.escapeHtml(autostart.reason)}">
+                  ${autostart.enabled ? 'Disable' : 'Enable'}
                 </button>
               </div>
             </div>
           `;
       }).join('');
+      sortServices(servicesList, view);
+      filterServices(servicesList, view);
 
       servicesList.querySelectorAll('a.service-name-link').forEach(a => {
         a.addEventListener('click', (e) => {
@@ -145,13 +235,16 @@
           e.preventDefault();
           const action = btn.getAttribute('data-service-action') || '';
           const serviceName = btn.getAttribute('data-service-name') || '';
-          if (!action || !serviceName) return;
+          if (btn.disabled || !action || !serviceName) return;
           controlService(ctx, agentId, serviceName, action);
         });
       });
     } catch (error) {
+      if (!isCurrentRequest()) return;
       console.error('Error loading services:', error);
-      servicesList.innerHTML = `<div class="error">Error loading services: ${error.message}</div>`;
+      view.loaded = false;
+      if (view.status) view.status.textContent = 'Services could not be loaded.';
+      servicesList.innerHTML = `<div class="error">Error loading services: ${w.escapeHtml(error.message)}</div>`;
     }
   }
 
@@ -187,17 +280,14 @@
       const status = data.status || 'unknown';
       const zone = data.zone ? ` • zone ${w.escapeHtml(data.zone)}` : '';
       const canManage = !!ctx.getCurrentPermissions()?.can_manage_services;
-      const summary = `<div class="admin-note" style="margin-bottom:0.75rem;">Backend: <b>${w.escapeHtml(backend)}</b> • Status: <b>${w.escapeHtml(status)}</b>${zone}</div>`;
+      const summary = `<div class="admin-note" style="margin-bottom:0.75rem;">Backend: <b>${w.escapeHtml(backend)}</b> • Status: <b>${w.escapeHtml(status)}</b>${zone}${data.notice ? `<br>${w.escapeHtml(data.notice)}` : ''}</div>`;
       if (!rules.length) {
         list.innerHTML = summary + '<div class="empty-state">No firewall rules reported</div>';
         return;
       }
 
-      list.innerHTML = summary + rules.map((rule) => {
+      list.innerHTML = summary + rules.map((rule, ruleIndex) => {
         const text = formatFirewallRule(rule);
-        const port = rule.port || '';
-        const protocol = rule.protocol || 'tcp';
-        const service = rule.service || '';
         return `
           <div class="service-card">
             <div class="service-info">
@@ -205,7 +295,7 @@
               <div class="service-details">${w.escapeHtml(rule.raw || '')}</div>
             </div>
             <div class="service-actions">
-              <button class="btn btn-danger" data-firewall-delete="1" data-port="${w.escapeHtml(port)}" data-protocol="${w.escapeHtml(protocol)}" data-service="${w.escapeHtml(service)}" ${((!port && !service) || !canManage) ? 'disabled' : ''}>Remove allow</button>
+              <button class="btn btn-danger" data-firewall-delete="${ruleIndex}" ${(!rule.raw || !canManage) ? 'disabled' : ''}>Remove rule</button>
             </div>
           </div>
         `;
@@ -214,11 +304,9 @@
       list.querySelectorAll('button[data-firewall-delete]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           e.preventDefault();
-          const port = Number(btn.getAttribute('data-port') || '0');
-          const protocol = btn.getAttribute('data-protocol') || 'tcp';
-          const service = btn.getAttribute('data-service') || '';
-          if (!port && !service) return;
-          controlFirewall(ctx, agentId, { action: 'delete', port, protocol, service });
+          const rule = rules[Number(btn.getAttribute('data-firewall-delete'))];
+          if (!rule?.raw || !confirm(`Remove this rule from ${agentId}?\n\n${rule.raw}\n\nOther rules will be kept.`)) return;
+          void controlFirewall(ctx, agentId, { action: 'delete-rules', rules: [{ backend, id: rule.id || '', raw: rule.raw, zone: rule.zone || data.zone || '' }] });
         });
       });
     } catch (error) {
@@ -228,10 +316,11 @@
   }
 
   function readHostFirewallPayload(action) {
-    const port = Number(document.getElementById('host-firewall-port')?.value || '0');
+    const profileMode = document.getElementById('host-firewall-rule-type')?.value === 'service';
+    const port = profileMode ? 0 : Number(document.getElementById('host-firewall-port')?.value || '0');
     const protocol = document.getElementById('host-firewall-protocol')?.value || 'tcp';
     const source = (document.getElementById('host-firewall-source')?.value || '').trim();
-    const service = (document.getElementById('host-firewall-service')?.value || '').trim();
+    const service = profileMode ? (document.getElementById('host-firewall-service')?.value || '').trim() : '';
     return { action, port, protocol, source, service };
   }
 
@@ -240,17 +329,19 @@
       w.showToast('Service management permission required to manage firewall rules.', 'error');
       return;
     }
+    if (pendingFirewallHosts.has(agentId)) return;
     const statusEl = document.getElementById('host-firewall-status');
-    if (!payload.service && (!payload.port || payload.port < 1 || payload.port > 65535)) {
+    if (!payload.rules && !payload.service && (!Number.isInteger(payload.port) || payload.port < 1 || payload.port > 65535)) {
       w.showToast('Enter a valid port or service', 'error');
       return;
     }
+    pendingFirewallHosts.add(agentId);
     try {
       if (statusEl) statusEl.textContent = `${payload.action} rule queued…`;
-      const response = await fetch(`/hosts/${agentId}/firewall/rules`, {
+      const response = await fetch(`/reports/firewall-rules/${payload.action}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(payload.rules ? { agent_ids: [agentId], rules_by_agent: { [agentId]: payload.rules } } : { ...payload, agent_ids: [agentId] }),
       });
       if (!response.ok) {
         let errorMsg = `Failed to ${payload.action} firewall rule`;
@@ -262,25 +353,41 @@
         }
         throw new Error(errorMsg);
       }
-      await response.json();
-      if (statusEl) statusEl.textContent = 'Firewall updated. Refreshing…';
-      w.showToast('Firewall rule updated', 'success');
+      const queued = await response.json();
+      const summary = await w.fleetFirewallManagementUi.waitForJobDone(queued.job_id);
+      if (!summary.done) throw new Error(`Job ${queued.job_id} still running; check its result before retrying`);
+      if (summary.failed.length) throw new Error(summary.failureDetails.map((item) => item.message).join('; '));
+      if (!summary.success.includes(agentId)) throw new Error('The agent has not confirmed this change; scan again before retrying');
+      const message = summary.successDetails?.find((item) => item.agentId === agentId)?.message || 'Firewall rule updated';
+      if (statusEl) statusEl.textContent = message;
+      w.showToast(message, 'success');
       await loadFirewall(ctx, agentId);
-      if (statusEl) statusEl.textContent = '';
     } catch (error) {
       console.error('Error controlling firewall:', error);
       if (statusEl) statusEl.textContent = error.message || 'Firewall action failed';
       w.showToast(error.message || 'Firewall action failed', 'error');
+    } finally {
+      pendingFirewallHosts.delete(agentId);
     }
   }
 
   function initHostFirewallControls(ctx) {
+    const ruleType = document.getElementById('host-firewall-rule-type');
+    const setRuleType = () => {
+      const profile = ruleType?.value === 'service';
+      for (const id of ['host-firewall-port', 'host-firewall-protocol']) {
+        const input = document.getElementById(id); if (input) input.disabled = profile;
+      }
+      const service = document.getElementById('host-firewall-service'); if (service) service.disabled = !profile;
+    };
+    ruleType?.addEventListener('change', setRuleType);
+    setRuleType();
     document.getElementById('host-firewall-refresh')?.addEventListener('click', (e) => {
       e.preventDefault();
       const aid = ctx.getCurrentAgentId ? ctx.getCurrentAgentId() : null;
       if (aid) void loadFirewall(ctx, aid);
     });
-    ['allow', 'deny', 'delete'].forEach((action) => {
+    ['allow', 'deny'].forEach((action) => {
       document.getElementById(`host-firewall-${action}`)?.addEventListener('click', (e) => {
         e.preventDefault();
         const aid = ctx.getCurrentAgentId ? ctx.getCurrentAgentId() : null;
@@ -341,6 +448,7 @@
     if (targetCard) {
       const buttons = targetCard.querySelectorAll('.btn');
       buttons.forEach(btn => {
+        btn.dataset.previouslyDisabled = String(btn.disabled);
         btn.disabled = true;
         btn.style.opacity = '0.6';
         btn.style.cursor = 'wait';
@@ -385,7 +493,7 @@
       if (targetCard) {
         const buttons = targetCard.querySelectorAll('.btn');
         buttons.forEach(btn => {
-          btn.disabled = false;
+          btn.disabled = btn.dataset.previouslyDisabled === 'true';
           btn.style.opacity = '1';
           btn.style.cursor = 'pointer';
         });

@@ -4,15 +4,15 @@ import hashlib
 import hmac
 import time
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import HTTPException, Request
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 from starlette.requests import ClientDisconnect
 
 from ..config import settings
-from ..db import get_db
+from ..db import SessionLocal
 from ..models import Host
 from .audit import log_event
+from .background import run_blocking
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost", "testclient"}
 
@@ -86,34 +86,40 @@ def require_agent_token(request: Request) -> None:
         raise HTTPException(401, "Invalid agent token")
 
 
-def _log_agent_auth_failure(db: Session, request: Request, reason: str) -> None:
+def _agent_token_hash(agent_id: str) -> str | None:
+    # Authentication must release its connection before awaiting the request
+    # body. Otherwise concurrent uploads/long polls can exhaust the DB pool.
+    with SessionLocal() as db:
+        return db.execute(select(Host.agent_token_hash).where(Host.agent_id == agent_id)).scalar_one_or_none()
+
+
+def _log_agent_auth_failure(request: Request, reason: str) -> None:
     try:
-        log_event(
-            db,
-            action="agent.auth.failed",
-            actor=None,
-            request=request,
-            target_type="agent_api",
-            meta={
-                "reason": reason,
-                "path": str(getattr(getattr(request, "url", None), "path", "") or ""),
-            },
-        )
-        db.commit()
+        with SessionLocal() as db:
+            log_event(
+                db,
+                action="agent.auth.failed",
+                actor=None,
+                request=request,
+                target_type="agent_api",
+                meta={
+                    "reason": reason,
+                    "path": str(getattr(getattr(request, "url", None), "path", "") or ""),
+                },
+            )
+            db.commit()
     except Exception:
-        try:
-            db.rollback()
-        except Exception:
-            pass
+        # Closing the private session rolls back failed audit writes.
+        pass
 
 
-async def require_agent_token_dep(request: Request, db: Session = Depends(get_db)) -> None:
+async def require_agent_token_dep(request: Request) -> None:
     got = request.headers.get("X-Fleet-Agent-Token")
     expected = getattr(settings, "agent_shared_token", None)
     if expected and _safe_equal(got, expected):
         path = str(getattr(getattr(request, "url", None), "path", "") or "")
         if path != "/agent/register" and not bool(getattr(settings, "agent_shared_token_allow_runtime", False)):
-            _log_agent_auth_failure(db, request, "shared_token_not_allowed_for_runtime")
+            await run_blocking(_log_agent_auth_failure, request, "shared_token_not_allowed_for_runtime")
             raise HTTPException(403, "Shared agent token is only valid for registration")
         request.state.agent_auth_kind = "shared"
         request.state.agent_auth_agent_id = None
@@ -121,12 +127,11 @@ async def require_agent_token_dep(request: Request, db: Session = Depends(get_db
 
     agent_id = str(request.headers.get("X-Fleet-Agent-ID") or "").strip()
     if got and agent_id:
-        host = db.execute(select(Host).where(Host.agent_id == agent_id)).scalar_one_or_none()
-        expected_hash = getattr(host, "agent_token_hash", None) if host else None
+        expected_hash = await run_blocking(_agent_token_hash, agent_id)
         if expected_hash and _safe_equal(hash_agent_token(got), expected_hash):
             ok, reason = await _verify_agent_hmac(request, expected_hash)
             if not ok:
-                _log_agent_auth_failure(db, request, reason or "invalid_hmac_signature")
+                await run_blocking(_log_agent_auth_failure, request, reason or "invalid_hmac_signature")
                 raise HTTPException(401, "Invalid agent request signature")
             request.state.agent_auth_kind = "per_agent"
             request.state.agent_auth_agent_id = agent_id
@@ -136,7 +141,7 @@ async def require_agent_token_dep(request: Request, db: Session = Depends(get_db
     try:
         require_agent_token(request)
     except HTTPException as exc:
-        _log_agent_auth_failure(db, request, str(exc.detail or "invalid_agent_token"))
+        await run_blocking(_log_agent_auth_failure, request, str(exc.detail or "invalid_agent_token"))
         raise
     request.state.agent_auth_kind = "shared" if expected else "insecure_loopback"
     request.state.agent_auth_agent_id = None

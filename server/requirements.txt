@@ -6,7 +6,6 @@ greenlet==3.1.1
 psycopg[binary]==3.2.13
 pydantic==2.8.2
 pydantic-settings==2.3.4
-asyncssh==2.23.1
 passlib[bcrypt]==1.7.4
 # passlib 1.7.4 reads bcrypt.__about__.__version__; bcrypt 4.1+ removed __about__
 # which causes noisy warnings at startup/login. Pin to 4.0.1 for compatibility.

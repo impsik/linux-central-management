@@ -13,6 +13,9 @@
     function getTerminalCtx() {
       return {
         getTerm: () => term,
+        getTerminalAccess: (agentId) => window.phase3HostActions.terminalAccessState(
+          (allHosts || []).find(host => host.agent_id === agentId), currentPermissions
+        ),
         setTerm: (next) => { term = next; return term; },
         getTermFitAddon: () => termFitAddon,
         setTermFitAddon: (next) => { termFitAddon = next; return termFitAddon; },
@@ -148,7 +151,7 @@
       hostFilterSelectionState.set(key, value);
       return value;
     }
-    // Will be initialized in initHostFilters(); renderHosts() calls this.
+    // Initialized in initHostFilters(); refreshed when host filters change.
     let updateUpgradeControlsFn = () => { };
     let lastPkgVerification = null; // { packageName, vulnVersion, resultsByAgentId: { [aid]: { ok, found, version, status } } }
     let lastCveCheck = null; // { cve, resultsByAgentId: { [aid]: { affected, packages?: string[] } } }
@@ -180,13 +183,9 @@
         getLabelOwnerFilter: () => labelOwnerFilter,
         setLabelOwnerFilter: (v) => { labelOwnerFilter = syncHostFilterSelectionState('labelOwnerFilter', v); return labelOwnerFilter; },
         getVulnFilteredAgentIds: () => vulnFilteredAgentIds,
-        getSelectedAgentIds: () => selectedAgentIds,
         setLastRenderedAgentIds: (v) => { lastRenderedAgentIds = syncHostFilterSelectionState('lastRenderedAgentIds', v); return lastRenderedAgentIds; },
         getCurrentAgentId: () => currentAgentId,
-        getLastPkgVerification: () => lastPkgVerification,
-        selectHost,
         updateUpgradeControls: () => updateUpgradeControlsFn(),
-        renderHosts: (hosts) => renderHosts(hosts),
       };
     }
 
@@ -209,13 +208,6 @@
       }
     }
 
-    function renderHosts(hosts) {
-      const mod = window.phase3HostList;
-      if (mod && typeof mod.renderHosts === 'function') {
-        return mod.renderHosts(getHostListCtx(), hosts);
-      }
-    }
-
     function clearCurrentHostSelection() {
       currentAgentId = null;
       metricsLifecycleState.set('currentMetricsAgentId', null);
@@ -223,9 +215,6 @@
       // Stop any existing metrics updates
       stopMetricsPolling(metricsLifecycleState);
       
-
-      // Clear sidebar highlight
-      document.querySelectorAll('.host-item').forEach(item => item.classList.remove('active'));
 
       // Hide host action buttons
       const hostActions = document.getElementById('host-actions');
@@ -285,14 +274,6 @@
 
       // Clear load graph data when switching hosts
       loadGraphData = [];
-
-      // Update active host in sidebar
-      document.querySelectorAll('.host-item').forEach(item => {
-        item.classList.remove('active');
-        if (item.dataset.agentId === agentId) {
-          item.classList.add('active');
-        }
-      });
 
       // Update header content for the host overview panel
       document.getElementById('server-info-placeholder').style.display = 'none';
@@ -789,6 +770,11 @@
 
     function showTerminal() {
       if (!currentAgentId) return;
+      const access = window.phase3HostActions.updateTerminalAccessIndicator((allHosts || []).find(host => host.agent_id === currentAgentId), currentPermissions);
+      if (access?.blocked) {
+        showToast(access.reason, 'error');
+        return;
+      }
       setHostActionActive('terminal');
       // Stop metrics updates when leaving server info view
       stopMetricsPolling(metricsLifecycleState);
@@ -928,8 +914,8 @@
       }
     }
 
-    window.loadAdminUsers = (...args) => loadAdminUsers(...args);
-    window.loadAdminAudit = (...args) => loadAdminAudit(...args);
+    window.loadAdminUsers = loadAdminUsers;
+    window.loadAdminAudit = loadAdminAudit;
 
     function showAdminPage() {
       // Stop metrics updates when leaving server info view
@@ -962,37 +948,20 @@
       }
     }
 
-    async function loadHosts() {
-      const hostsEl = document.getElementById('hosts');
+    let hostsLoadPromise = null;
+    async function loadHosts(backgroundRefresh = false) {
+      if (hostsLoadPromise) return hostsLoadPromise;
+      if (backgroundRefresh && document.hidden) return;
       const mod = window.phase3HostList;
+      if (!mod || typeof mod.loadHosts !== 'function') {
+        console.error('[loadHosts] phase3HostList module missing');
+        return;
+      }
+      hostsLoadPromise = Promise.resolve().then(() => mod.loadHosts(getHostListCtx()));
       try {
-        if (mod && typeof mod.loadHosts === 'function') {
-          await mod.loadHosts(getHostListCtx());
-          return;
-        }
-
-        // Fallback path so UI doesn't stay stuck when module fails to load.
-        console.error('[loadHosts] phase3HostList module missing; using inline fallback');
-        const r = await fetch('/hosts?online_only=true', { credentials: 'include', cache: 'no-store' });
-        if (!r.ok) throw new Error(`hosts failed (${r.status})`);
-        const items = await r.json();
-        const hosts = Array.isArray(items) ? items : [];
-        if (!hostsEl) return;
-        if (!hosts.length) {
-          hostsEl.innerHTML = '<div class="empty-state">No hosts found</div>';
-          return;
-        }
-        hostsEl.innerHTML = hosts.map(h => `
-          <div class="host-item">
-            <div class="host-meta">
-              <div class="host-row-top"><div class="host-name">${escapeHtml(h.hostname || h.agent_id || '')}</div></div>
-              <div class="host-subline"><span class="host-subitem">${escapeHtml(h.agent_id || '')}</span></div>
-            </div>
-          </div>
-        `).join('');
-      } catch (e) {
-        console.error('[loadHosts failed]', e);
-        if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
+        return await hostsLoadPromise;
+      } finally {
+        hostsLoadPromise = null;
       }
     }
 
@@ -2452,33 +2421,16 @@
 
     function startHostRefresh() {
       if (hostsRefreshTimer) return;
-      hostsRefreshTimer = setInterval(loadHosts, HOSTS_REFRESH_MS);
+      hostsRefreshTimer = setInterval(() => { void loadHosts(true); }, HOSTS_REFRESH_MS);
     }
 
-    void loadHosts().catch((e) => {
+    void loadHosts(true).catch((e) => {
       console.error('[loadHosts failed]', e);
-      const hostsEl = document.getElementById('hosts');
-      if (hostsEl) hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
     });
-
-    // Watchdog: never let hosts panel stay in perpetual loading state.
-    setTimeout(() => {
-      const hostsEl = document.getElementById('hosts');
-      if (!hostsEl) return;
-      const txt = (hostsEl.textContent || '').trim().toLowerCase();
-      if (txt.includes('loading hosts')) {
-        console.warn('[hosts-watchdog] still loading after 10s; forcing inline fallback');
-        hostsEl.innerHTML = '<div class="error">Hosts view was stuck loading. Retrying…</div>';
-        void loadHosts().catch((e) => {
-          hostsEl.innerHTML = `<div class="error">Error loading hosts: ${escapeHtml(e?.message || String(e))}</div>`;
-        });
-      }
-    }, 10000);
 
     safeInit('initOnboarding', () => {
       window.fleetOnboarding?.init({ selectHost, showPackages });
     });
-    void loadFleetOverview();
     void refreshApprovalsIndicator();
     startHostRefresh();
     setInterval(() => { void loadFleetOverview(false, true); }, 15000);

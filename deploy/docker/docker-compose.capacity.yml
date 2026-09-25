@@ -1,0 +1,57 @@
+# Disposable capacity-test stack. Never shares the installation's .env,
+# PostgreSQL volume, SSH keys, enrollment PKI, or Ansible directories.
+# Use a distinct project name for each fleet size and retain its result files.
+services:
+  db:
+    image: postgres:16
+    cpus: 2.0
+    mem_limit: 2g
+    environment:
+      POSTGRES_DB: fleet
+      POSTGRES_USER: fleet
+      POSTGRES_PASSWORD: ${CAPACITY_DB_PASSWORD:?set a disposable test password}
+    volumes:
+      - capacity_database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U fleet -d fleet"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  server:
+    build:
+      context: ../..
+      dockerfile: server/Dockerfile
+    cpus: 2.0
+    mem_limit: 2g
+    environment:
+      DATABASE_URL: postgresql+psycopg://fleet:${CAPACITY_DB_PASSWORD:?set a disposable test password}@db:5432/fleet
+      SERVER_BIND_HOST: 0.0.0.0
+      DB_AUTO_CREATE_TABLES: "false"
+      DB_REQUIRE_MIGRATIONS_UP_TO_DATE: "true"
+      BOOTSTRAP_USERNAME: capacity-admin
+      BOOTSTRAP_PASSWORD: ${CAPACITY_UI_PASSWORD:?set a disposable test password}
+      AGENT_SHARED_TOKEN: ${CAPACITY_AGENT_TOKEN:?set a disposable bootstrap token}
+      AGENT_HMAC_REQUIRED: "true"
+      ALLOW_INSECURE_NO_AGENT_TOKEN: "false"
+      # API-only loopback test; the client supplies its test session explicitly.
+      UI_COOKIE_SECURE: "true"
+      MFA_REQUIRE_FOR_PRIVILEGED: "false"
+      METRICS_BACKGROUND_REFRESH_SECONDS: 60
+      METRICS_BACKGROUND_BATCH_LIMIT: 50
+      METRICS_JOB_RETENTION_DAYS: 7
+      METRICS_JOB_CLEANUP_INTERVAL_SECONDS: 300
+      METRICS_JOB_CLEANUP_BATCH_SIZE: 5000
+      CVE_SYNC_ENABLED: "true"
+      CVE_SYNC_INITIAL_DELAY_SECONDS: 150
+      CVE_SYNC_INTERVAL_SECONDS: 43200
+      CVE_REPORTING_ENABLED: "true"
+      TEAMS_ALERTS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:18800:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  capacity_database:

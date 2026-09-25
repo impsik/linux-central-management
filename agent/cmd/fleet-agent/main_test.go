@@ -14,12 +14,17 @@ func TestIsEnabledState(t *testing.T) {
 	cases := map[string]bool{
 		"enabled":         true,
 		"enabled-runtime": true,
-		"alias":           true,
-		"static":          true,
-		"indirect":        true,
+		"alias":           false,
+		"static":          false,
+		"indirect":        false,
 		"disabled":        false,
 		"masked":          false,
 		"not-found":       false,
+		"linked":          false,
+		"linked-runtime":  false,
+		"generated":       false,
+		"transient":       false,
+		"masked-runtime":  false,
 	}
 
 	for in, want := range cases {
@@ -88,23 +93,56 @@ func TestParsePasswdStatusAll(t *testing.T) {
 	}
 }
 
-func TestParseGroupMembers(t *testing.T) {
-	members := parseGroupMembers("wheel:x:10:imre,deploy\n")
-	if !members["imre"] || !members["deploy"] {
-		t.Fatalf("group members = %#v, want imre and deploy", members)
-	}
-	if members[""] {
-		t.Fatalf("empty member should not be recorded: %#v", members)
+func TestSudoListingAllowsCommands(t *testing.T) {
+	for _, tc := range []struct {
+		name, listing string
+		want          bool
+	}{
+		{"denied", "User nobody is not allowed to run sudo on slave1.\n", false},
+		{"defaults only", "Matching Defaults entries for user on host:\n    env_reset, authenticate\n", false},
+		{"root commands", "Sudoers entry: /etc/sudoers\n    RunAsUsers: ALL\n    Commands:\n\tALL\n", true},
+		{"limited commands", "Sudoers entry: /etc/sudoers.d/custom\n    Commands:\n\t/usr/bin/systemctl restart nginx\n", true},
+		{"deny only", "Sudoers entry: /etc/sudoers\n    Commands:\n\t!ALL\n", false},
+		{"deny overrides all", "Sudoers entry: /etc/sudoers\n    Commands:\n\tALL\n\t!ALL\n", false},
+		{"deny overrides command", "    Commands:\n\t/usr/bin/id\n\t!/usr/bin/id\n", false},
+		{"deny specific preserves other rights", "    Commands:\n\tALL\n\t!/usr/bin/id\n", true},
+		{"later allow", "    Commands:\n\t!ALL\n\nSudoers entry: custom\n    Commands:\n\t/usr/bin/id\n", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sudoListingAllowsCommands(tc.listing); got != tc.want {
+				t.Fatalf("sudoListingAllowsCommands = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
-func TestParseUserGroupsAndNamedGroupMatch(t *testing.T) {
-	groups := parseUserGroups("imre wheel docker")
-	if !hasAnyNamedGroup(groups, "sudo", "wheel", "admin") {
-		t.Fatalf("groups = %#v, want wheel sudo match", groups)
+func TestUserHasSudoAccessQueriesPolicyAndRequiresGrantedCommands(t *testing.T) {
+	bin := t.TempDir()
+	script := `#!/bin/sh
+[ "$LC_ALL" = C ] || exit 8
+[ "$1 $2 $3" = "-n -ll -U" ] || exit 9
+case "$4" in
+  nobody) printf 'User nobody is not allowed to run sudo on host.\n'; exit 0 ;;
+  sudo-group-denied) printf 'User sudo-group-denied is not allowed to run sudo on host.\n'; exit 0 ;;
+  custom-grant) printf 'Sudoers entry: custom\n    Commands:\n\t/usr/bin/id\n'; exit 0 ;;
+  listing-failed) printf 'Sudoers entry: custom\n    Commands:\n\tALL\n'; exit 1 ;;
+  *) exit 2 ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
 	}
-	if hasAnyNamedGroup(groups, "sudo", "admin") {
-		t.Fatalf("groups = %#v, should not match sudo/admin", groups)
+	t.Setenv("PATH", bin)
+	t.Setenv("LC_ALL", "et_EE.UTF-8")
+	for _, tc := range []struct {
+		user string
+		want bool
+	}{
+		{"root", true}, {"nobody", false}, {"sudo-group-denied", false}, {"custom-grant", true}, {"listing-failed", false},
+	} {
+		if got := userHasSudoAccess(context.Background(), tc.user); got != tc.want {
+			t.Errorf("userHasSudoAccess(%q) = %v, want %v", tc.user, got, tc.want)
+		}
 	}
 }
 
@@ -147,7 +185,7 @@ func TestServiceControlCommandsStopsSocketBeforeService(t *testing.T) {
 }
 
 func TestServiceControlCommandsDisablesSocketNow(t *testing.T) {
-	got, err := serviceControlCommands("ssh.service", "disable", true)
+	got, err := serviceAutostartCommands("ssh.service", "disable", "disabled", "enabled")
 	if err != nil {
 		t.Fatalf("serviceControlCommands returned error: %v", err)
 	}
@@ -193,24 +231,77 @@ func TestServiceControlCommandsRestartWaitsForSystemdResult(t *testing.T) {
 	}
 }
 
-func TestServiceInventoryEnabledTreatsSocketEnabledAsEnabled(t *testing.T) {
-	enabledUnits := map[string]bool{
-		"ssh.service": false,
-		"ssh.socket":  true,
-	}
-
-	if !serviceInventoryEnabled("ssh", func(unitName string) bool {
-		return enabledUnits[unitName]
-	}) {
-		t.Fatal("ssh inventory enabled = false, want true when ssh.socket is enabled")
+func TestServiceActivationPreservesUnitAndSocketStates(t *testing.T) {
+	for _, tc := range []struct {
+		service, socket                string
+		enabled, canEnable, canDisable bool
+	}{
+		{"disabled", "enabled", true, true, true},
+		{"static", "enabled", true, true, true},
+		{"static", "disabled", false, true, true},
+		{"static", "static", false, false, false},
+		{"disabled", "unknown", false, true, true},
+		{"enabled-runtime", "unknown", true, true, true},
+		{"indirect", "unknown", false, false, false},
+		{"generated", "unknown", false, false, false},
+		{"transient", "unknown", false, false, false},
+		{"masked", "enabled", true, false, true},
+		{"unknown", "unknown", false, false, false},
+	} {
+		got := serviceActivation(tc.service, tc.socket)
+		if got.UnitFileState != tc.service || got.SocketUnitFileState != tc.socket ||
+			got.Enabled != tc.enabled || got.CanEnable != tc.canEnable || got.CanDisable != tc.canDisable {
+			t.Errorf("serviceActivation(%q, %q) = %+v", tc.service, tc.socket, got)
+		}
 	}
 }
 
-func TestServiceInventoryEnabledFalseWhenServiceAndSocketDisabled(t *testing.T) {
-	if serviceInventoryEnabled("ssh", func(unitName string) bool {
-		return false
-	}) {
-		t.Fatal("ssh inventory enabled = true, want false when service and socket are disabled")
+func TestServiceAutostartCommandsDoNotToggleStaticUnits(t *testing.T) {
+	for _, tc := range []struct {
+		action, service, socket string
+		want                    [][]string
+	}{
+		{"enable", "disabled", "unknown", [][]string{{"enable", "example.service"}}},
+		{"enable", "static", "disabled", [][]string{{"enable", "example.socket"}}},
+		{"disable", "static", "enabled", [][]string{{"disable", "--now", "example.socket"}}},
+		{"disable", "enabled", "static", [][]string{{"disable", "example.service"}}},
+		{"disable", "static", "static", nil},
+		{"enable", "static", "static", nil},
+		{"enable", "indirect", "unknown", nil},
+		{"disable", "generated", "unknown", nil},
+		{"enable", "masked", "disabled", nil},
+	} {
+		got, err := serviceAutostartCommands("example.service", tc.action, tc.service, tc.socket)
+		if !reflect.DeepEqual(got, tc.want) || (err != nil) != (tc.want == nil) {
+			t.Errorf("%s %s/%s: commands=%v, error=%v; want %v", tc.action, tc.service, tc.socket, got, err, tc.want)
+		}
+	}
+}
+
+func TestControlServiceChecksActualStateBeforeAutostartMutation(t *testing.T) {
+	bin := t.TempDir()
+	logPath := filepath.Join(bin, "mutations")
+	t.Setenv("MUTATION_LOG", logPath)
+	if err := os.WriteFile(filepath.Join(bin, "systemctl"), []byte(`#!/bin/sh
+[ "$1 $2 $3" = "show --property=UnitFileState --value" ] || exit 8
+printf 'static\n'
+`), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte(`#!/bin/sh
+printf '%s\n' "$*" >> "$MUTATION_LOG"
+`), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	for _, action := range []string{"enable", "disable"} {
+		_, _, code, errText := controlService(context.Background(), "example", action)
+		if code == 0 || !strings.Contains(errText, "static") {
+			t.Errorf("controlService(%s): code=%d, error=%q", action, code, errText)
+		}
+	}
+	if _, err := os.Stat(logPath); !os.IsNotExist(err) {
+		t.Fatalf("sudo called for static units: stat error = %v", err)
 	}
 }
 
@@ -307,7 +398,7 @@ func TestBuildUfwArgsServiceAllowFromSource(t *testing.T) {
 }
 
 func TestBuildFirewalldRejectRule(t *testing.T) {
-	got := buildFirewalldRejectRule(443, "tcp", "10.0.0.0/8")
+	_, got := firewalldRuleSpec("deny", 443, "tcp", "10.0.0.0/8", "")
 	want := `rule family="ipv4" source address="10.0.0.0/8" port port="443" protocol="tcp" reject`
 	if got != want {
 		t.Fatalf("rich rule = %q, want %q", got, want)
@@ -321,5 +412,12 @@ func TestRunDiskCleanupRejectsUnsupportedAction(t *testing.T) {
 	}
 	if !strings.Contains(errMsg, "unsupported cleanup action") {
 		t.Fatalf("error = %q, want unsupported cleanup action", errMsg)
+	}
+}
+
+func TestFirewallRejectsAmbiguousPortAndProfileBeforeOSAccess(t *testing.T) {
+	_, _, code, message := controlFirewall(context.Background(), "allow", 1122, "tcp", "", "cockpit", "https://fleet.example")
+	if code == 0 || !strings.Contains(message, "either a port") {
+		t.Fatalf("code=%d message=%s", code, message)
 	}
 }

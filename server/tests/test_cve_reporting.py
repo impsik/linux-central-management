@@ -1,9 +1,45 @@
 import importlib
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
+
+
+def test_cve_report_batches_host_visibility_lookup(app, monkeypatch):
+    from app.routers import reports
+    from app.services.cve_reporting import SeverityFinding
+
+    findings = [
+        SeverityFinding(
+            host_id=host_id, agent_id=host_id, hostname=host_id, package_name=f"pkg{index}",
+            installed_version="1", candidate_version=None, candidate_fixes=None,
+            cve_id=f"CVE-2026-{index}", severity=8.0, fixed_version="2", release="noble",
+        )
+        for host_id in ("owned", "foreign") for index in range(25)
+    ]
+    queries = []
+    visibility_checks = []
+
+    class DB:
+        def execute(self, query):
+            queries.append(query)
+            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [
+                SimpleNamespace(id="owned"), SimpleNamespace(id="foreign"),
+            ]))
+
+    def visible(db, user, host):
+        visibility_checks.append(host.id)
+        return host.id == "owned"
+
+    monkeypatch.setattr(reports, "collect_high_severity_findings", lambda db, min_severity: findings)
+    monkeypatch.setattr(reports, "is_host_visible_to_user", visible)
+    result = reports.cve_high_severity_report(db=DB(), user=object())
+    assert result["total"] == 25
+    assert {item["agent_id"] for item in result["items"]} == {"owned"}
+    assert len(queries) == 1
+    assert visibility_checks == ["owned", "foreign"]
 
 
 @pytest.fixture()

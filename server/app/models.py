@@ -108,7 +108,10 @@ class JobRun(Base):
     stdout = Column(Text)
     stderr = Column(Text)
     error = Column(Text)
-    __table_args__ = (UniqueConstraint("job_id","agent_id", name="uq_job_agent"),)
+    __table_args__ = (
+        UniqueConstraint("job_id","agent_id", name="uq_job_agent"),
+        Index("ix_job_runs_status_finished_id", "status", "finished_at", "id"),
+    )
 
 class HostLoadMetric(Base):
     __tablename__ = "host_load_metrics"

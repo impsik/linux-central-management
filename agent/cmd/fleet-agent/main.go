@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"github.com/yourorg/fleet-agent/internal"
@@ -15,14 +17,11 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
-
-const AgentVersion = "0.0.3-alpha"
 
 type Config struct {
 	ServerURL      string
@@ -79,21 +78,22 @@ type NextJobResponse struct {
 }
 
 type Job struct {
-	JobID          string   `json:"job_id"`
-	JobNonce       string   `json:"job_nonce,omitempty"`
-	Type           string   `json:"type"`
-	Packages       []string `json:"packages,omitempty"`
-	ServiceName    string   `json:"service_name,omitempty"`
-	Action         string   `json:"action,omitempty"`
-	PackageName    string   `json:"package_name,omitempty"`
-	Refresh        bool     `json:"refresh,omitempty"`
-	CVE            string   `json:"cve,omitempty"`
-	Port           int      `json:"port,omitempty"`
-	Protocol       string   `json:"protocol,omitempty"`
-	Source         string   `json:"source,omitempty"`
-	Service        string   `json:"service,omitempty"`
-	DryRun         bool     `json:"dry_run,omitempty"`
-	CleanupActions []string `json:"cleanup_actions,omitempty"`
+	Rules          []FirewallRule `json:"rules,omitempty"`
+	JobID          string         `json:"job_id"`
+	JobNonce       string         `json:"job_nonce,omitempty"`
+	Type           string         `json:"type"`
+	Packages       []string       `json:"packages,omitempty"`
+	ServiceName    string         `json:"service_name,omitempty"`
+	Action         string         `json:"action,omitempty"`
+	PackageName    string         `json:"package_name,omitempty"`
+	Refresh        bool           `json:"refresh,omitempty"`
+	CVE            string         `json:"cve,omitempty"`
+	Port           int            `json:"port,omitempty"`
+	Protocol       string         `json:"protocol,omitempty"`
+	Source         string         `json:"source,omitempty"`
+	Service        string         `json:"service,omitempty"`
+	DryRun         bool           `json:"dry_run,omitempty"`
+	CleanupActions []string       `json:"cleanup_actions,omitempty"`
 }
 
 type JobEvent struct {
@@ -108,11 +108,15 @@ type JobEvent struct {
 }
 
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "--version" || os.Args[1] == "-version") {
+		fmt.Printf("fleet-agent %s\n", AgentVersion)
+		return
+	}
 	if internal.RunTerminalSSHLoginFromArgs(os.Args) {
 		return
 	}
 
-	log.Println("Fleet agent starting...")
+	log.Printf("Fleet agent %s starting...", AgentVersion)
 	go internal.StartTerminalServer()
 
 	cfg := loadConfig()
@@ -734,7 +738,13 @@ func handleJob(ctx context.Context, client *http.Client, serverURL, agentID stri
 		return
 
 	case "firewall-control":
-		stdout, stderr, code, errMsg := controlFirewall(ctx, job.Action, job.Port, job.Protocol, job.Source, job.Service)
+		var stdout, stderr, errMsg string
+		var code int
+		if job.Action == "delete-rules" {
+			stdout, stderr, code, errMsg = deleteSelectedFirewallRules(ctx, job.Rules, systemFirewallOps())
+		} else {
+			stdout, stderr, code, errMsg = controlFirewall(ctx, job.Action, job.Port, job.Protocol, job.Source, job.Service, serverURL)
+		}
 		if code == 0 && errMsg == "" {
 			ev.Status = "success"
 		} else {
@@ -1428,6 +1438,8 @@ func queryPkgVersions(ctx context.Context, packages []string) (string, string, i
 }
 
 type FirewallRule struct {
+	Scope    string `json:"scope,omitempty"`
+	Zone     string `json:"zone,omitempty"`
 	ID       string `json:"id,omitempty"`
 	Backend  string `json:"backend"`
 	Action   string `json:"action,omitempty"`
@@ -1438,88 +1450,41 @@ type FirewallRule struct {
 	Raw      string `json:"raw,omitempty"`
 }
 
-func detectFirewallBackend(ctx context.Context) string {
-	if _, err := exec.LookPath("firewall-cmd"); err == nil {
-		stateCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(stateCtx, "firewall-cmd", "--state")
-		if out, err := cmd.Output(); err == nil && strings.TrimSpace(string(out)) == "running" {
-			return "firewalld"
-		}
-	}
-	if _, err := exec.LookPath("ufw"); err == nil {
-		return "ufw"
-	}
-	return ""
-}
-
 func queryFirewall(ctx context.Context) (string, string, int, string) {
 	queryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	backend := detectFirewallBackend(queryCtx)
-	switch backend {
+	ops := systemFirewallOps()
+	state, err := inspectFirewall(queryCtx, ops)
+	if err != nil {
+		return "", "", 1, err.Error()
+	}
+	switch state.backend {
 	case "firewalld":
+		if !state.active {
+			return queryInactiveFirewalld(queryCtx, ops)
+		}
 		return queryFirewalld(queryCtx)
 	case "ufw":
+		if !state.active {
+			return queryInactiveUfw(queryCtx, ops)
+		}
 		return queryUfw(queryCtx)
 	default:
-		return "", "", 1, "no supported firewall manager found (expected active firewalld or ufw)"
+		return "", "", 1, "no supported firewall manager found (expected firewalld or ufw)"
 	}
 }
 
 func queryFirewalld(ctx context.Context) (string, string, int, string) {
-	zone := "public"
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--get-default-zone").Output(); err == nil {
-		if z := strings.TrimSpace(string(out)); z != "" {
-			zone = z
-		}
-	}
-
-	rules := make([]FirewallRule, 0)
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-ports").Output(); err == nil {
-		for _, item := range strings.Fields(string(out)) {
-			parts := strings.SplitN(item, "/", 2)
-			r := FirewallRule{Backend: "firewalld", Action: "allow", Raw: item}
-			if len(parts) == 2 {
-				r.Port = parts[0]
-				r.Protocol = parts[1]
-			} else {
-				r.Port = item
-			}
-			rules = append(rules, r)
-		}
-	}
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-services").Output(); err == nil {
-		for _, svc := range strings.Fields(string(out)) {
-			rules = append(rules, FirewallRule{Backend: "firewalld", Action: "allow", Service: svc, Raw: svc})
-		}
-	}
-	if out, err := exec.CommandContext(ctx, "firewall-cmd", "--zone="+zone, "--list-rich-rules").Output(); err == nil {
-		for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			rules = append(rules, FirewallRule{Backend: "firewalld", Action: "deny", Raw: line})
-		}
-	}
-
-	payload := map[string]any{
-		"backend": "firewalld",
-		"status":  "running",
-		"zone":    zone,
-		"rules":   rules,
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return "", "", 1, fmt.Sprintf("JSON marshal failed: %v", err)
-	}
-	return string(b), "", 0, ""
+	return queryFirewalldWithOps(ctx, true, systemFirewallOps())
 }
 
 func queryUfw(ctx context.Context) (string, string, int, string) {
-	out, err := exec.CommandContext(ctx, "ufw", "status", "numbered").CombinedOutput()
+	return queryUfwWithOps(ctx, systemFirewallOps())
+}
+
+func queryUfwWithOps(ctx context.Context, ops firewallOps) (string, string, int, string) {
+	out, err := ops.privileged(ctx, "ufw", "status", "numbered")
 	if err != nil {
 		return "", string(out), 1, fmt.Sprintf("ufw status failed: %v", err)
 	}
@@ -1603,13 +1568,19 @@ func parseUfwStatusLine(line string) FirewallRule {
 	return rule
 }
 
-func controlFirewall(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
+func controlFirewall(ctx context.Context, action string, port int, protocol, source, service, serverURL string) (string, string, int, string) {
 	queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	action = strings.ToLower(strings.TrimSpace(action))
+	if action == "enable" {
+		return enableFirewall(ctx, serverURL, systemFirewallOps())
+	}
+	if action == "disable" {
+		return disableFirewall(ctx, systemFirewallOps())
+	}
 	if action != "allow" && action != "deny" && action != "delete" {
-		return "", "", 1, "action must be allow, deny, or delete"
+		return "", "", 1, "action must be allow, deny, delete, enable, or disable"
 	}
 	protocol = strings.ToLower(strings.TrimSpace(protocol))
 	if protocol == "" {
@@ -1620,6 +1591,9 @@ func controlFirewall(ctx context.Context, action string, port int, protocol, sou
 	}
 	source = strings.TrimSpace(source)
 	service = strings.TrimSpace(service)
+	if service != "" && port != 0 {
+		return "", "", 1, "choose either a port or a firewall profile/service, not both"
+	}
 	if service != "" && !isSafeFirewallToken(service) {
 		return "", "", 1, "service contains unsupported characters"
 	}
@@ -1630,13 +1604,17 @@ func controlFirewall(ctx context.Context, action string, port int, protocol, sou
 		return "", "", 1, "port must be between 1 and 65535"
 	}
 
-	switch detectFirewallBackend(queryCtx) {
+	state, err := inspectFirewall(queryCtx, systemFirewallOps())
+	if err != nil {
+		return "", "", 1, err.Error()
+	}
+	switch state.backend {
 	case "firewalld":
-		return controlFirewalld(queryCtx, action, port, protocol, source, service)
+		return controlFirewalldWithOps(queryCtx, action, port, protocol, source, service, state.active, systemFirewallOps())
 	case "ufw":
 		return controlUfw(queryCtx, action, port, protocol, source, service)
 	default:
-		return "", "", 1, "no supported firewall manager found (expected active firewalld or ufw)"
+		return "", "", 1, "no supported firewall manager found (expected firewalld or ufw)"
 	}
 }
 
@@ -1666,65 +1644,8 @@ func isSafeFirewallSource(s string) bool {
 	return true
 }
 
-func controlFirewalld(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
-	if source != "" && action != "deny" {
-		return "", "", 1, "source-scoped rules are not supported for firewalld simple rules yet"
-	}
-	arg := ""
-	if action == "deny" {
-		if service != "" {
-			return "", "", 1, "deny by service is not supported for firewalld; use port/protocol"
-		}
-		arg = "--add-rich-rule=" + buildFirewalldRejectRule(port, protocol, source)
-	} else if service != "" {
-		if action == "delete" {
-			arg = "--remove-service=" + service
-		} else {
-			arg = "--add-service=" + service
-		}
-	} else {
-		spec := fmt.Sprintf("%d/%s", port, protocol)
-		if action == "delete" {
-			arg = "--remove-port=" + spec
-		} else {
-			arg = "--add-port=" + spec
-		}
-	}
-	cmd := exec.CommandContext(ctx, "sudo", "-n", "firewall-cmd", "--permanent", arg)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), "", 1, fmt.Sprintf("firewall-cmd failed: %v", err)
-	}
-	reload := exec.CommandContext(ctx, "sudo", "-n", "firewall-cmd", "--reload")
-	reloadOut, reloadErr := reload.CombinedOutput()
-	combined := append(out, reloadOut...)
-	if reloadErr != nil {
-		return string(combined), "", 1, fmt.Sprintf("firewall-cmd reload failed: %v", reloadErr)
-	}
-	return string(combined), "", 0, ""
-}
-
-func buildFirewalldRejectRule(port int, protocol, source string) string {
-	family := "ipv4"
-	if strings.Contains(source, ":") {
-		family = "ipv6"
-	}
-	parts := []string{fmt.Sprintf(`rule family="%s"`, family)}
-	if source != "" {
-		parts = append(parts, fmt.Sprintf(`source address="%s"`, source))
-	}
-	parts = append(parts, fmt.Sprintf(`port port="%d" protocol="%s" reject`, port, protocol))
-	return strings.Join(parts, " ")
-}
-
 func controlUfw(ctx context.Context, action string, port int, protocol, source, service string) (string, string, int, string) {
-	args := buildUfwArgs(action, port, protocol, source, service)
-	cmd := exec.CommandContext(ctx, "sudo", args...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(out), "", 1, fmt.Sprintf("ufw %s failed: %v", action, err)
-	}
-	return string(out), "", 0, ""
+	return controlUfwWithOps(ctx, action, port, protocol, source, service, systemFirewallOps())
 }
 
 func buildUfwArgs(action string, port int, protocol, source, service string) []string {
@@ -1735,12 +1656,12 @@ func buildUfwArgs(action string, port int, protocol, source, service string) []s
 		args = append(args, action)
 	}
 	if service != "" {
-		if source != "" && action != "delete" {
+		if source != "" {
 			args = append(args, "from", source, "to", "any", "app", service)
 		} else {
 			args = append(args, service)
 		}
-	} else if source != "" && action != "delete" {
+	} else if source != "" {
 		args = append(args, "from", source, "to", "any", "port", strconv.Itoa(port), "proto", protocol)
 	} else {
 		args = append(args, strconv.Itoa(port)+"/"+protocol)
@@ -2703,60 +2624,45 @@ func parsePasswdStatusAll(output string) map[string]string {
 	return m
 }
 
-func parseGroupMembers(output string) map[string]bool {
-	members := make(map[string]bool)
-	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
-		parts := strings.Split(strings.TrimSpace(line), ":")
-		if len(parts) < 4 {
+// sudoListingAllowsCommands reads sudo's long listing format. A successful
+// listing can still say that the user has no sudo rights, so exit 0 alone is
+// insufficient. Query the actual policy rather than guessing from group names
+// or the existence of a sudoers include.
+func sudoListingAllowsCommands(output string) bool {
+	allowed := make(map[string]bool)
+	inCommands := false
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "Commands:" {
+			inCommands = true
 			continue
 		}
-		for _, member := range strings.Split(parts[3], ",") {
-			member = strings.TrimSpace(member)
-			if member != "" {
-				members[member] = true
-			}
+		if !inCommands {
+			continue
+		}
+		if !strings.HasPrefix(line, "\t") {
+			inCommands = false
+			continue
+		}
+		if trimmed == "!ALL" {
+			clear(allowed)
+		} else if strings.HasPrefix(trimmed, "!") {
+			delete(allowed, strings.TrimSpace(strings.TrimPrefix(trimmed, "!")))
+		} else if trimmed != "" {
+			allowed[trimmed] = true
 		}
 	}
-	return members
+	return len(allowed) > 0
 }
 
-func parseUserGroups(output string) map[string]bool {
-	groups := make(map[string]bool)
-	for _, group := range strings.Fields(output) {
-		groups[group] = true
-	}
-	return groups
-}
-
-func hasAnyNamedGroup(groups map[string]bool, names ...string) bool {
-	for _, name := range names {
-		if groups[name] {
-			return true
-		}
-	}
-	return false
-}
-
-func userHasSudoAccess(ctx context.Context, username string, sudoGroupUsers map[string]bool) bool {
-	if sudoGroupUsers[username] {
+func userHasSudoAccess(ctx context.Context, username string) bool {
+	if username == "root" {
 		return true
 	}
-	if _, statErr := os.Stat(fmt.Sprintf("/etc/sudoers.d/fleet-%s", username)); statErr == nil {
-		return true
-	}
-
-	idCmd := exec.CommandContext(ctx, "id", "-nG", username)
-	if out, err := idCmd.Output(); err == nil {
-		if hasAnyNamedGroup(parseUserGroups(string(out)), "sudo", "wheel", "admin") {
-			return true
-		}
-	}
-
-	sudoCmd := exec.CommandContext(ctx, "sudo", "-n", "-l", "-U", username)
-	if _, err := sudoCmd.CombinedOutput(); err == nil {
-		return true
-	}
-	return false
+	sudoCmd := exec.CommandContext(ctx, "sudo", "-n", "-ll", "-U", username)
+	sudoCmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := sudoCmd.Output()
+	return err == nil && sudoListingAllowsCommands(string(out))
 }
 
 func queryUsers(ctx context.Context) (string, string, int, string) {
@@ -2781,15 +2687,6 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		IsLocked bool   `json:"is_locked"`
 	}
 
-	// Get list of users in sudo group once (more efficient)
-	sudoGroupUsers := make(map[string]bool)
-	sudoGroupCmd := exec.CommandContext(queryCtx, "getent", "group", "sudo")
-	if sudoGroupOut, err := sudoGroupCmd.Output(); err == nil {
-		for member := range parseGroupMembers(string(sudoGroupOut)) {
-			sudoGroupUsers[member] = true
-		}
-	}
-
 	// Determine lock status semantics:
 	// We only treat accounts as "locked" if they are explicitly locked via passwd/usermod.
 	// Use `passwd -S -a` (single call) when available, because shadow heuristics can confuse
@@ -2800,16 +2697,6 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 	if outAll, err := passwdAllCmd.CombinedOutput(); err == nil {
 		passwdStatusMap = parsePasswdStatusAll(string(outAll))
 		passwdStatusOK = true
-	}
-
-	// Also check wheel and admin groups
-	for _, groupName := range []string{"wheel", "admin"} {
-		groupCmd := exec.CommandContext(queryCtx, "getent", "group", groupName)
-		if groupOut, err := groupCmd.Output(); err == nil {
-			for member := range parseGroupMembers(string(groupOut)) {
-				sudoGroupUsers[member] = true
-			}
-		}
 	}
 
 	var users []UserInfo
@@ -2825,7 +2712,12 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		home := parts[5]
 		shell := parts[6]
 
-		hasSudo := userHasSudoAccess(queryCtx, username, sudoGroupUsers)
+		// Skip service accounts before querying sudo policy individually.
+		uidInt, parseErr := strconv.Atoi(uid)
+		if parseErr != nil || (uidInt < 1000 && uidInt != 0) {
+			continue
+		}
+		hasSudo := userHasSudoAccess(queryCtx, username)
 
 		// "Locked" should reflect practical login-blocking state for SSH/user presence.
 		// Password lock alone (status=L) is not sufficient because SSH key auth can still work.
@@ -2850,20 +2742,15 @@ func queryUsers(ctx context.Context) (string, string, int, string) {
 		}
 		isLocked := passwordLocked && shellBlocked
 
-		// Only include regular users (UID >= 1000) or root
-		uidInt := 0
-		fmt.Sscanf(uid, "%d", &uidInt)
-		if uidInt >= 1000 || uidInt == 0 {
-			users = append(users, UserInfo{
-				Username: username,
-				UID:      uid,
-				GID:      gid,
-				Home:     home,
-				Shell:    shell,
-				HasSudo:  hasSudo,
-				IsLocked: isLocked,
-			})
-		}
+		users = append(users, UserInfo{
+			Username: username,
+			UID:      uid,
+			GID:      gid,
+			Home:     home,
+			Shell:    shell,
+			HasSudo:  hasSudo,
+			IsLocked: isLocked,
+		})
 	}
 
 	result := map[string]interface{}{
@@ -2886,7 +2773,7 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 		Name        string `json:"name"`
 		Status      string `json:"status"`
 		Description string `json:"description"`
-		Enabled     bool   `json:"enabled"`
+		ServiceActivation
 	}
 
 	// Map to track services we've seen (by name)
@@ -2939,7 +2826,6 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 					Name:        name,
 					Status:      status,
 					Description: description,
-					Enabled:     false, // Will be checked later
 				}
 			}
 		}
@@ -2975,7 +2861,6 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 					Name:        name,
 					Status:      "failed",
 					Description: description,
-					Enabled:     false, // Will be checked later
 				}
 			} else {
 				// Update existing entry to ensure status is "failed"
@@ -2984,11 +2869,14 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 		}
 	}
 
-	// Check enabled state for each service
+	// Preserve the real unit state as well as socket activation. Static units
+	// have no install links to enable/disable, even when dependencies start them.
 	for name, svc := range serviceMap {
-		svc.Enabled = serviceInventoryEnabled(name, func(unitName string) bool {
-			return isSystemdUnitEnabled(queryCtx, unitName)
-		})
+		serviceUnit := normalizeServiceUnit(name)
+		svc.ServiceActivation = serviceActivation(
+			systemdUnitFileState(queryCtx, serviceUnit),
+			systemdUnitFileState(queryCtx, serviceSocketUnit(serviceUnit)),
+		)
 	}
 
 	// Convert map to slice
@@ -3008,28 +2896,47 @@ func queryServices(ctx context.Context) (string, string, int, string) {
 	return string(jsonOut), "", 0, ""
 }
 
+type ServiceActivation struct {
+	Enabled             bool   `json:"enabled"`
+	UnitFileState       string `json:"unit_file_state"`
+	SocketUnitFileState string `json:"socket_unit_file_state"`
+	CanEnable           bool   `json:"can_enable"`
+	CanDisable          bool   `json:"can_disable"`
+}
+
 func isEnabledState(state string) bool {
 	switch strings.TrimSpace(state) {
-	case "enabled", "enabled-runtime", "alias", "static", "indirect", "linked", "linked-runtime", "generated", "transient":
+	case "enabled", "enabled-runtime":
 		return true
 	default:
 		return false
 	}
 }
 
-func isSystemdUnitEnabled(ctx context.Context, unitName string) bool {
-	enabledCmd := exec.CommandContext(ctx, "systemctl", "is-enabled", unitName)
-	enabledOut, err := enabledCmd.Output()
-	if err != nil {
-		return false
-	}
-	return isEnabledState(strings.TrimSpace(string(enabledOut)))
+func unitFileStateToggleable(state string) bool {
+	return isEnabledState(state) || state == "disabled"
 }
 
-func serviceInventoryEnabled(serviceName string, checkUnitEnabled func(string) bool) bool {
-	serviceUnit := normalizeServiceUnit(serviceName)
-	socketUnit := serviceSocketUnit(serviceUnit)
-	return checkUnitEnabled(serviceUnit) || checkUnitEnabled(socketUnit)
+func serviceActivation(serviceState, socketState string) ServiceActivation {
+	serviceToggle := unitFileStateToggleable(serviceState)
+	socketToggle := unitFileStateToggleable(socketState)
+	return ServiceActivation{
+		Enabled:             isEnabledState(serviceState) || isEnabledState(socketState),
+		UnitFileState:       serviceState,
+		SocketUnitFileState: socketState,
+		CanEnable:           serviceToggle || (socketToggle && serviceState != "masked" && serviceState != "masked-runtime"),
+		CanDisable:          serviceToggle || socketToggle,
+	}
+}
+
+func systemdUnitFileState(ctx context.Context, unitName string) string {
+	cmd := exec.CommandContext(ctx, "systemctl", "show", "--property=UnitFileState", "--value", unitName)
+	out, err := cmd.Output()
+	state := strings.TrimSpace(string(out))
+	if err != nil || state == "" {
+		return "unknown"
+	}
+	return state
 }
 
 func querySystemMetrics(ctx context.Context) (string, string, int, string) {
@@ -3156,7 +3063,7 @@ func querySystemMetrics(ctx context.Context) (string, string, int, string) {
 	}
 
 	// Get CPU info (vCPUs and load)
-	metrics.CPU.VCPUs = runtime.NumCPU()
+	metrics.CPU.VCPUs = onlineCPUCount(os.ReadFile)
 
 	// Get load average from /proc/loadavg
 	loadCmd := exec.CommandContext(queryCtx, "cat", "/proc/loadavg")
@@ -3307,13 +3214,18 @@ func controlService(ctx context.Context, serviceName, action string) (string, st
 	defer cancel()
 
 	serviceUnit := normalizeServiceUnit(serviceName)
-	socketExists := false
-	if action == "stop" || action == "disable" {
-		socketExists = systemdUnitFileExists(controlCtx, serviceSocketUnit(serviceUnit), "socket")
+	var commands [][]string
+	var err error
+	if action == "enable" || action == "disable" {
+		commands, err = serviceAutostartCommands(serviceUnit, action,
+			systemdUnitFileState(controlCtx, serviceUnit),
+			systemdUnitFileState(controlCtx, serviceSocketUnit(serviceUnit)))
+	} else {
+		socketExists := action == "stop" && systemdUnitFileExists(controlCtx, serviceSocketUnit(serviceUnit), "socket")
+		commands, err = serviceControlCommands(serviceUnit, action, socketExists)
 	}
-	commands, err := serviceControlCommands(serviceUnit, action, socketExists)
 	if err != nil {
-		return "", "", 1, fmt.Sprintf("invalid action: %s (must be start, stop, restart, enable, or disable)", action)
+		return "", "", 1, err.Error()
 	}
 
 	var stdout strings.Builder
@@ -3363,18 +3275,31 @@ func serviceControlCommands(serviceUnit, action string, socketExists bool) ([][]
 		return commands, nil
 	case "restart":
 		return [][]string{{"restart", serviceUnit}}, nil
-	case "enable":
-		return [][]string{{"enable", serviceUnit}}, nil
-	case "disable":
-		commands := make([][]string, 0, 2)
-		if socketExists {
-			commands = append(commands, []string{"disable", "--now", socketUnit})
-		}
-		commands = append(commands, []string{"disable", serviceUnit})
-		return commands, nil
 	default:
 		return nil, fmt.Errorf("invalid action: %s", action)
 	}
+}
+
+func serviceAutostartCommands(serviceUnit, action, serviceState, socketState string) ([][]string, error) {
+	activation := serviceActivation(serviceState, socketState)
+	socketUnit := serviceSocketUnit(serviceUnit)
+	if action == "enable" && activation.CanEnable {
+		if unitFileStateToggleable(serviceState) {
+			return [][]string{{"enable", serviceUnit}}, nil
+		}
+		return [][]string{{"enable", socketUnit}}, nil
+	}
+	if action == "disable" && activation.CanDisable {
+		commands := make([][]string, 0, 2)
+		if unitFileStateToggleable(socketState) {
+			commands = append(commands, []string{"disable", "--now", socketUnit})
+		}
+		if unitFileStateToggleable(serviceState) {
+			commands = append(commands, []string{"disable", serviceUnit})
+		}
+		return commands, nil
+	}
+	return nil, fmt.Errorf("cannot %s autostart for %s (service: %s, socket: %s)", action, serviceUnit, serviceState, socketState)
 }
 
 func systemdUnitFileExists(ctx context.Context, unitName, unitType string) bool {
@@ -3433,8 +3358,11 @@ func scheduleReboot(ctx context.Context) (string, string, int, string) {
 }
 
 func controlUser(ctx context.Context, username, action string) (string, string, int, string) {
-	if username == "" {
-		return "", "", 1, "username is required"
+	if username == "" || strings.HasPrefix(username, "-") || shellEscape(username) != username {
+		return "", "", 1, "invalid username"
+	}
+	if username == "root" {
+		return "", "", 1, "cannot lock or unlock root account"
 	}
 
 	// Create a context with timeout to prevent hanging
@@ -3525,13 +3453,14 @@ func controlUser(ctx context.Context, username, action string) (string, string, 
 			// Fix by setting a random password (so it's not passwordless) and then unlock.
 			if strings.Contains(outStr, "passwordless account") {
 				// generate random password from /dev/urandom (do not log it)
-				pwCmd := exec.CommandContext(controlCtx, "bash", "-lc", "tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32")
-				pwBytes, pwErr := pwCmd.Output()
+				pwBytes := make([]byte, 32)
+				_, pwErr := rand.Read(pwBytes)
 				if pwErr == nil {
-					pw := strings.TrimSpace(string(pwBytes))
+					pw := hex.EncodeToString(pwBytes)
 					if pw != "" {
 						// set password
-						setCmd := exec.CommandContext(controlCtx, "bash", "-lc", fmt.Sprintf("echo %s | sudo -n chpasswd", shellQuote(fmt.Sprintf("%s:%s", username, pw))))
+						setCmd := exec.CommandContext(controlCtx, "sudo", "-n", "chpasswd")
+						setCmd.Stdin = strings.NewReader(username + ":" + pw + "\n")
 						setOut, setErr := setCmd.CombinedOutput()
 						allOutput.WriteString(string(setOut))
 						if setErr == nil {

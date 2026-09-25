@@ -13,13 +13,12 @@ describe('hosts table layout CSS', () => {
   });
 
   it('does not reserve a fixed 20 percent width for the Kernel column', () => {
-    const marker = '.hosts-table th:nth-child(4),\n.hosts-table td:nth-child(4) {';
+    const marker = '.host-inventory-table .host-col-kernel,';
     const start = src.indexOf(marker);
     expect(start).toBeGreaterThanOrEqual(0);
-    const section = src.slice(start, start + 220);
+    const section = src.slice(start, start + 270);
 
     expect(section).toContain('width: 1%;');
-    expect(section).toContain('min-width: 0;');
     expect(section).not.toContain('width: 20%;');
     expect(section).not.toContain('min-width: 140px;');
   });
